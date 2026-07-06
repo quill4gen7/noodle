@@ -164,6 +164,19 @@ def test_bypass_flag_round_trips():
     assert "bypassed" not in g2.node("b").to_dict()
 
 
+def test_group_boxes_round_trip():
+    # Editor-only group metadata is carried through unchanged so logical
+    # clustering survives save/reload and api/copilot round-trips.
+    groups = [{"title": "Corpo base", "bounding": [0, 0, 200, 120], "color": "#3f589e"}]
+    g = Graph.from_dict({"nodes": [{"id": "b", "type": "Box"}],
+                         "connections": [], "groups": groups})
+    assert g.groups == groups
+    assert g.to_dict()["groups"] == groups
+    # absent key when there are no groups (no empty clutter on disk)
+    g2 = Graph.from_dict({"nodes": [{"id": "b", "type": "Box"}], "connections": []})
+    assert "groups" not in g2.to_dict()
+
+
 def test_transpile_select_edge_and_targeted_fillet():
     # SelectEdge resolves its picked set at run time; FilletSelectedEdges rounds
     # only those edges (vs Fillet which rounds all).

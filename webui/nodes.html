@@ -1707,7 +1707,18 @@ function toGraphJSON(name){
       to_node:idMap[l.target_id],   to_socket:tn.inputs[l.target_slot].name,
     });
   }
-  return {name, nodes, connections};
+  // Group boxes (editor-only): serialise so logical clustering survives a
+  // round-trip. LiteGraph's own LGraphGroup.serialize gives {title,bounding,
+  // color,font_size}; fall back to reading the fields directly.
+  const groups = [];
+  for (const g of (lgraph._groups||[])){
+    if (g.serialize){ groups.push(g.serialize()); continue; }
+    const b = g._bounding || [0,0,140,80];
+    groups.push({title:g.title||'Group', bounding:[Math.round(b[0]),Math.round(b[1]),Math.round(b[2]),Math.round(b[3])], color:g.color, font_size:g.font_size});
+  }
+  const out = {name, nodes, connections};
+  if (groups.length) out.groups = groups;
+  return out;
 }
 
 // ── rebuild Litegraph from our graph JSON (round-trip, incl. MCP-made graphs) ──
@@ -1785,6 +1796,15 @@ function fromGraphJSON(data){
     updateGizmoLockedWidgets(node);                          // grey gizmo binds when locked
     updateParamSocketWired(node);                             // grey any param whose socket is wired
     node.size = node.computeSize(); node.size[0] = Math.max(node.size[0], 150);
+  }
+  // Restore group boxes (editor-only clustering). LiteGraph's add() routes an
+  // LGraphGroup into lgraph._groups; configure() reads title/bounding/color.
+  const GroupCtor = window.LGraphGroup || LiteGraph.LGraphGroup;
+  if (GroupCtor) for (const gd of (data.groups||[])){
+    const g = new GroupCtor();
+    if (g.configure) g.configure(gd);
+    else { g.title = gd.title||'Group'; g.color = gd.color; if (gd.bounding && g._bounding) g._bounding.set(gd.bounding); }
+    lgraph.add(g);
   }
   nodeByGraphId = Object.assign({}, map);   // disk ids -> node (matches /ui until next save)
   refreshAllPolyTypes();
@@ -1960,6 +1980,35 @@ function groupSelected(){
   lgraph.add(g);
   lcanvas.setDirty(true, true);
   setStatus('grouped '+ns.length+' node(s)','ok');
+}
+
+// Double-click a group's title bar to rename it (app-styled modal, matching how
+// Note nodes are edited). Litegraph opens the node-search on a double-click over
+// empty canvas, and a group sits "under" that gesture, so we intercept its
+// showSearchBox: a double-click on a group's TITLE strip renames it; a
+// double-click in the group BODY still falls through to the node search (so you
+// can drop a node inside a group as usual).
+function groupTitleAt(gp){
+  const th = (LiteGraph.NODE_TITLE_HEIGHT || 20) + 6;   // title strip height
+  for (const g of (lgraph && lgraph._groups || [])){
+    const x=g.pos[0], y=g.pos[1], w=g.size[0];
+    if (gp[0]>=x && gp[0]<=x+w && gp[1]>=y && gp[1]<=y+th) return g;
+  }
+  return null;
+}
+async function renameGroup(g){
+  const name = await promptModal('Rename group', 'Group title:', g.title || '');
+  if (name != null && name !== g.title){ g.title = name; lcanvas.setDirty(true, true); }
+}
+function initGroupRename(){
+  const origSearch = lcanvas.showSearchBox.bind(lcanvas);
+  lcanvas.showSearchBox = function(e){
+    try {
+      const g = e && groupTitleAt(lcanvas.convertEventToCanvasOffset(e));
+      if (g){ renameGroup(g); return; }
+    } catch(_){}
+    return origSearch(e);
+  };
 }
 
 function cloneSelected(){
@@ -3108,6 +3157,7 @@ function initGraph(){
   lcanvas.onNodeSelected = (node)=> broadcastReveal(node);   // tell /ui to scroll to it
   lgraph.start();
   initCrossView();
+  initGroupRename();      // dbl-click a group title -> rename
   resizeGraph();
 }
 function resizeGraph(){
@@ -3314,7 +3364,8 @@ window.openShortcuts = function(){
   closeMenus();
   const rows=[['Ctrl+Enter','Run graph'],['Ctrl+S','Save'],['Ctrl+N','New project'],['Ctrl+K','Command palette'],
     ['F','Fit to view'],['I','Isolate selected shapes'],['Ctrl+G','Group selection'],['Ctrl+B','Bypass'],['Del','Delete'],
-    ['Ctrl+C / Ctrl+V','Copy / paste'],['Esc','Exit edit / close'],['dbl-click','Search nodes']];
+    ['Ctrl+C / Ctrl+V','Copy / paste'],['Esc','Exit edit / close'],['dbl-click','Search nodes'],
+    ['dbl-click group title','Rename group']];
   buildModal(`<h3>Keyboard shortcuts</h3><div class="kbd-grid">`+
     rows.map(([k,v])=>`<kbd>${k}</kbd><span>${v}</span>`).join('')+
     `</div><div class="modal-actions"><button class="tb-btn primary" onclick="this.closest('.modal-overlay').remove()">Close</button></div>`);

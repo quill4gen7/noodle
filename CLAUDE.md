@@ -149,9 +149,18 @@ A project is `projects/<name>/graph.json`:
   "connections": [
     { "id": "l1", "from_node": "n1", "from_socket": "result",
       "to_node": "n2", "to_socket": "shape" }
+  ],
+  "groups": [                                        // optional, editor-only
+    { "title": "Base body", "bounding": [20,40,300,760], "color": "#3f589e" }
   ]
 }
 ```
+
+`groups` are LiteGraph group boxes that visually cluster nodes (title + bounding
+rect + colour). They're **editor-only metadata**: the engine never reads them, but
+`Graph` carries them through `to_dict`/`from_dict` so logical grouping survives
+save/reload and api/copilot round-trips. Serialized/restored in `nodes.html`
+(`toGraphJSON`/`fromGraphJSON`); created with Ctrl+G (`groupSelected`).
 
 Execution writes `output.stl` + `view.json` (meshes) alongside it.
 
