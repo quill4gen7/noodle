@@ -21,7 +21,10 @@ build the same graphs — in practice the most capable way to drive it today.
 > and polish are still landing. It's **single-user — run it locally.** Feedback
 > is very welcome.
 
-<!-- TODO: drop a GIF of the node editor here → ![node editor](docs/screenshot.gif) -->
+<p align="center">
+  <img src="docs/asset/noodle-lego-brick-editor.png" alt="noodle node editor building a parametric LEGO brick with embossed NOODLE text" width="880">
+</p>
+
 > **New here?** Start the app, open the node editor, and pick one of the bundled
 > example projects — **rounded-box**, **flange**, **bolt-flange** — from *Your
 > projects*. They seed automatically on the first run.
