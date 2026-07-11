@@ -129,14 +129,22 @@ def list_fonts(fonts_dir=None) -> dict:
 
 def resolve_font(name, fonts_dir=None) -> dict:
     """Map a stored font name to ``Text`` kwargs. A custom uploaded font (matched
-    by family / filename stem / filename) -> ``{"font_path": <abs path>}``; any
-    other name -> ``{"font": <name>}`` (a system family via fontconfig)."""
+    by family / filename stem / filename) -> ``{"font_path": <abs path>, "font":
+    <family>}``; any other name -> ``{"font": <name>}`` (a system family via
+    fontconfig).
+
+    The family name is returned ALONGSIDE the path on purpose. build123d's
+    ``Text`` registers every face in the file and then picks ``font`` if it's
+    among the face names, else ``face_names[0]``. For a VARIABLE font that first
+    face is a weight instance (e.g. "Exo 2 Thin"), so passing only the path
+    silently renders the wrong weight (and can degrade to a system fallback).
+    Passing the family selects the right face, honouring ``font_style``."""
     if not name:
         return {"font": "Arial"}
     low = str(name).lower()
     for d in _font_search_dirs(fonts_dir):
         for f in _iter_font_files(d):
-            stem = f.stem.lower()
-            if low in (f.name.lower(), stem, family_of(f).lower()):
-                return {"font_path": str(f)}
+            fam = family_of(f)
+            if low in (f.name.lower(), f.stem.lower(), fam.lower()):
+                return {"font_path": str(f), "font": fam}
     return {"font": str(name)}
