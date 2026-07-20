@@ -504,6 +504,21 @@ thirds of the material within one — so orientation decides **where the part br
     A single part + a moving container is PROMOTED to a Scene for this reason (else the
     bowl would be invisible). Verified in the browser: scrubbing `t` moves all 4 bodies,
     bowl included. Preview the Drop, not the bowl, or you get a static ghost of it too.
+  - **KNOWN LIMITATION — one finish for the whole scene, container included.**
+    `finish`/`color` are resolved per NODE (`finishOf(id)` in nodes.html), but a
+    collide scene is ONE preview: the falling parts and the container are bodies
+    inside the Drop node's preview, so they all get the Drop node's finish. A
+    glass jar with steel bolts is not expressible today. (Colour per body IS free
+    — `rainbow` already gives each one its own hue — because every body is its
+    own mesh with its own material; it is only the finish resolution that is
+    per-preview.) The fix, scoped: stamp the container's SOURCE node id onto the
+    extra bodies (the emitter can read it off `graph.connections` for the
+    `container` socket; note `Mesh.__slots__` must gain the attribute or the
+    assignment is swallowed, exactly as `_noodle_anim` was), carry it through
+    `mesh_extractor._preview_of` as `body.owner`, and let `objFromPreview`'s
+    `bodies` branch resolve `colorOf`/`finishOf` per body instead of once per
+    preview. Four files, and the whole chain fails SILENTLY when it is wrong —
+    so it wants its own change and a rendered before/after, not a drive-by.
   - Example: `examples/container-tilt.json` (balls land, then the bowl tips over its own
     rim and pours them out). Costs ~5ms per simulated second to drive.
 - Tests: `tests/test_print.py`.
