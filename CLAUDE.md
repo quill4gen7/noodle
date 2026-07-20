@@ -75,6 +75,8 @@ server.py            FastAPI HTTP API (port 8090). Routes under /api/* :
                        keep it in sync when the API surface changes),
                        /api/agent/tags (ToAgent provenance index, §7b),
                        /api/graph/{name}/slice_summary|section_outline (§7b),
+                       /api/graph/{name}/screenshot (PNG of the viewport, §9 —
+                       the agent's eyes; also MCP cad_screenshot),
                        /api/graph/{name}/progress (SSE: per-node execution events
                        of the run in flight, tailed from the workdir's
                        progress.jsonl — see transpiler `_ev`),
@@ -213,6 +215,12 @@ cad_nodes/
   store.py           GraphStore: load/save projects/<name>/{graph,meta,view}.json
                        and output.stl.
   copilot.py         ★ in-app NL copilot (§7). OpenAI-compatible tool loop.
+  screenshot.py      ★ the agent's EYES (§9): renders the viewport to a PNG by
+                       driving headless Chromium over this server's own /nodes
+                       page — the REAL viewer.js, so the picture an agent sees is
+                       the picture the user sees. Warm browser (the cost is the
+                       launch, not the frame). Camera presets + azim/elev/zoom,
+                       frame-one-node, ortho. NOT a second renderer, on purpose.
   slice_summary.py   retro-engineering perception (§7b): slice_summary
                        (symbolic cross-sections; STEP exact, STL arc-fitted)
                        + section_outline (one exact section, edge by edge).
@@ -820,3 +828,49 @@ transpiler output, api ops.
 ```bash
 python -m pytest tests/ -v        # pytest may need installing in your env
 ```
+
+## 9. The agent's eyes — `/api/graph/{name}/screenshot`
+
+`GET /api/graph/{name}/screenshot` → `image/png` (= `cad_screenshot` on MCP,
+`api.screenshot`, code in `cad_nodes/screenshot.py`). Args: `view`
+(`iso|front|back|left|right|top|bottom`) or `azim`+`elev`, `zoom`, `node`+
+`isolate` (frame one node), `width`/`height`/`scale`, `projection`,
+`chrome`, `run`. Headers: `X-Noodle-Ran`, `X-Noodle-Size-Mm`.
+
+**Why it exists, concretely.** The Thread node (§5g) shipped with volume
+1922mm³, a watertight mesh, an exact major diameter and 237 green tests — and
+no thread on the bolt at all: the example wired a shank as fat as the nominal
+diameter, so the union filled every groove. Nothing in the API could report
+that. The first rendered picture did, immediately. **Numbers verify what you
+thought to measure; a picture shows what you did not.**
+
+- **It is the REAL viewer, not a second renderer.** Headless Chromium over this
+  server's own `/nodes` page: same `viewer.js`, materials, finishes, selective
+  bloom, same camera code. A numpy rasterizer was considered and rejected — it
+  would be free to drift from the thing users actually look at, and blind to
+  precisely the work that went into glass/emissive/rainbow/bloom.
+- **No GPU**: SwiftShader, verified pixel-identical to hardware GL.
+- **The browser is kept WARM**, like the execution worker: ~10s cold, **~1.5s**
+  warm with `run=0`. Take extra angles freely; re-run only when geometry changed.
+- **NOT on `asyncio.to_thread`** (unlike /execute) and deliberately: the work
+  happens in the browser process, so the coroutine only awaits I/O. The graph run
+  it triggers goes through /execute, which is already off the loop.
+- **Two traps paid for.** `openGraph` is async, so calling `runGraph()` too early
+  executes an EMPTY graph and the wait for previews then times out with nothing
+  to explain it — wait for `lgraph._nodes.length > 0` first. And the first `iso`
+  preset used a POSITIVE azimuth, which puts the camera behind anything modelled
+  facing front: every default shot came back with its lettering mirrored. It is
+  now front-right-top (-45°, true isometric 35.264°). Both were found by looking.
+- **Deployment**: `playwright install --with-deps` resolves an UBUNTU package set
+  and dies on Debian (`ttf-ubuntu-font-family has no installation candidate`),
+  taking the browser with it — the Dockerfile lists the libs by hand, and
+  `fonts-liberation` is the one that matters (without a font, every label in the
+  viewport renders as a blank box). Browsers go to `/opt/playwright`, world-
+  readable, because the server runs as uid 1000 and cannot read root's HOME.
+  Only the **headless shell** is installed: `playwright install chromium` fetches
+  the full browser too (549MB) and noodle never opens a window — the shell does
+  WebGL2 through SwiftShader (ANGLE/Vulkan), verified. Measured cost of the whole
+  feature: **1.87GB -> 2.6GB** (+730MB); installing both browsers made it 3.35GB.
+  A missing browser is a **503**, not a 500.
+- Tests: `tests/test_screenshot.py` (pure-Python: camera planning, the clamps,
+  and that HTTP/MCP expose one operation rather than two).

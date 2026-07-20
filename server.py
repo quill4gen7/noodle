@@ -21,6 +21,7 @@ from fastapi.responses import (
     FileResponse,
     HTMLResponse,
     PlainTextResponse,
+    Response,
     StreamingResponse,
 )
 from fastapi.staticfiles import StaticFiles
@@ -29,6 +30,7 @@ from pydantic import BaseModel
 # Node-based CAD engine (pure imports; build123d only used in the subprocess)
 from cad_nodes import api, catalog
 from cad_nodes.graph import Graph, ValidationError
+from cad_nodes.screenshot import ScreenshotUnavailable
 from cad_nodes.transpiler import transpile, transpile_with_map
 from cad_nodes.executor import execute_graph, export_graph, extract_subshapes_for_node
 from cad_nodes.store import GraphStore, stamp_agent_tags, validate_graph_id
@@ -778,6 +780,57 @@ async def api_delete_font(filename: str):
     p.unlink()
     logger.info("font deleted: %s", filename)
     return {"status": "deleted", "file": filename}
+
+
+@app.get("/api/graph/{name}/screenshot")
+async def api_screenshot(
+    name: str,
+    view: str = "iso",
+    azim: float = None,
+    elev: float = None,
+    zoom: float = 1.0,
+    width: int = 900,
+    height: int = 700,
+    projection: str = "",
+    node: str = "",
+    isolate: bool = False,
+    hq: bool = True,
+    chrome: bool = False,
+    run: bool = True,
+    scale: int = 2,
+):
+    """Render the viewport to a PNG — the agent's eyes on its own geometry.
+
+    This drives headless Chromium over this very server's /nodes page, so the
+    image comes out of the REAL viewer (same materials, finishes, bloom). It is
+    NOT put on `asyncio.to_thread` like /execute, and deliberately: the work
+    happens in the browser process, so this coroutine is only awaiting I/O. The
+    graph run it triggers goes through /execute, which is already off the loop.
+
+    `X-Noodle-Ran` says whether the graph was actually re-executed — `run=0`
+    reuses what is already on screen, but falls back to running rather than
+    returning an empty frame.
+    """
+    require_project(name)
+    try:
+        png, meta = await api.screenshot(
+            GraphStore(PROJECTS_DIR), name, view=view, azim=azim, elev=elev,
+            zoom=zoom,
+            width=width, height=height, projection=projection, node=node,
+            isolate=isolate, hq=hq, chrome=chrome, run=run, scale=scale)
+    except ScreenshotUnavailable as e:
+        raise HTTPException(503, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    logger.info("screenshot '%s' %s %dx%d (%d bytes, ran=%s)",
+                name, view, meta["width"], meta["height"], meta["bytes"],
+                meta["ran"])
+    return Response(
+        content=png, media_type="image/png",
+        headers={"X-Noodle-Ran": "1" if meta["ran"] else "0",
+                 "X-Noodle-Size-Mm": ",".join(str(v) for v in
+                                              meta.get("size_mm", [])),
+                 "Cache-Control": "no-store"})
 
 
 @app.post("/api/graph/{name}/execute")

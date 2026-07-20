@@ -306,3 +306,19 @@ def export(store: GraphStore, graph_id: str, fmt: str = "step") -> str:
     graph = store.load(graph_id)
     out = export_graph(graph, store.dir(graph_id), fmt)
     return str(out)
+
+
+async def screenshot(store: GraphStore, graph_id: str, **opts):
+    """Render the graph's viewport to a PNG. Returns (png_bytes, meta).
+
+    The one op here that is async, because it drives a browser rather than the
+    B-Rep kernel: it renders through the REAL viewer (headless Chromium over
+    /nodes), so what an agent sees is exactly what the user sees. See
+    cad_nodes/screenshot.py for why that matters more than it sounds.
+
+    Kept in api.py like everything else so the HTTP route and the MCP tool are
+    the same operation rather than two that drift.
+    """
+    from . import screenshot as _shot
+    store.load(graph_id)                 # 404 on an unknown/invalid project id
+    return await _shot.render(graph_id, **opts)

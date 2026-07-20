@@ -13,7 +13,7 @@ Or mount the SSE app into another ASGI server via `mcp.sse_app()`.
 
 import json
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP, Image
 
 from cad_nodes import api
 from cad_nodes.store import GraphStore
@@ -157,6 +157,35 @@ def cad_section_outline(graph_id: str, axis: str = "z", position: float = 0.0,
     `path='assets/part.step'`: section that file. Use it where a summary line
     is ambiguous (poly fallback, unclear joins)."""
     return _safe(api.section_outline, STORE, graph_id, axis, position, path or None)
+
+
+@mcp.tool()
+async def cad_screenshot(graph_id: str, view: str = "iso", azim: float = None,
+                         elev: float = None, zoom: float = 1.0,
+                         node: str = "", isolate: bool = False,
+                         width: int = 900, height: int = 700,
+                         run: bool = True) -> Image:
+    """SEE the graph's geometry — render its viewport to a PNG you can look at.
+
+    Numbers do not catch everything: a part can have the right volume, a
+    watertight mesh and a green test suite while being visibly wrong (a boolean
+    that filled the feature it was meant to cut, a part sunk through the bed, an
+    array pointing the wrong way). Take a picture when you have built or changed
+    something and want to know it is right.
+
+    `view` is one of iso / front / back / left / right / top / bottom, or give
+    `azim`+`elev` in degrees (azimuth in the XY plane from +X, elevation from
+    it; the scene is Z-up). `zoom` > 1 pulls back. `node` frames one node's
+    preview by id, and `isolate` hides the rest. `run=False` reuses what is
+    already on screen instead of re-executing — cheap for extra angles.
+    """
+    try:
+        png, _meta = await api.screenshot(
+            STORE, graph_id, view=view, azim=azim, elev=elev, zoom=zoom,
+            node=node, isolate=isolate, width=width, height=height, run=run)
+    except Exception as e:  # noqa: BLE001 - an agent cannot see a traceback
+        raise RuntimeError(f"{type(e).__name__}: {e}") from e
+    return Image(data=png, format="png")
 
 
 @mcp.tool()
