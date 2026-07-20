@@ -614,32 +614,39 @@ def cad_analyze() -> str:
 
 ---
 
-## Piano di Implementazione
+## Piano di Implementazione — FATTO
+
+> **Le fasi 0-5 sono in produzione.** Le caselle qui sotto restano come registro
+> storico del piano originale, NON come lista di cose da fare: sono spuntate
+> perché sono state fatte. Ciò che esiste davvero è documentato in `CLAUDE.md`
+> (mappa architetturale) e nei `PLAN_*.md` per singola feature.
+> **La roadmap di ciò che viene DOPO è la sezione successiva.**
+
 
 ### Fase 0 — Setup (30 min)
-- [ ] Dockerfile: `build123d` → sostituisce `cadquery==2.7.0`
-- [ ] Aggiungi `mcp`, `numpy` al requirements
-- [ ] Crea cartella `cad_nodes/` con struttura modulare
+- [x] Dockerfile: `build123d` → sostituisce `cadquery==2.7.0`
+- [x] Aggiungi `mcp`, `numpy` al requirements
+- [x] Crea cartella `cad_nodes/` con struttura modulare
 
 ### Fase 1 — Core Engine (2-3 giorni)
-- [ ] `cad_nodes/node_catalog.py`: catalogo nodi in JSON (tutti i tipi sopra)
-- [ ] `cad_nodes/graph.py`: Graph model + serialization JSON
-- [ ] `cad_nodes/toposort.py`: Kahn topological sort del DAG
-- [ ] `cad_nodes/transpiler.py`: graph → codice build123d Python
-- [ ] `cad_nodes/executor.py`: esecuzione codice in subprocess venv
-- [ ] `cad_nodes/mesh_extractor.py`: Shape → view JSON (bbox, volume, vertici, facce)
-- [ ] Test CLI: crea grafo manuale → transpila → esegui → ispeziona output
+- [x] `cad_nodes/node_catalog.py`: catalogo nodi in JSON (tutti i tipi sopra)
+- [x] `cad_nodes/graph.py`: Graph model + serialization JSON
+- [x] `cad_nodes/toposort.py`: Kahn topological sort del DAG
+- [x] `cad_nodes/transpiler.py`: graph → codice build123d Python
+- [x] `cad_nodes/executor.py`: esecuzione codice in subprocess venv
+- [x] `cad_nodes/mesh_extractor.py`: Shape → view JSON (bbox, volume, vertici, facce)
+- [x] Test CLI: crea grafo manuale → transpila → esegui → ispeziona output
 
 ### Fase 2 — MCP Server (1-2 giorni)
-- [ ] `mcp_server.py`: FastMCP con tutti i tools sopra
-- [ ] Lifecycle: init engine → context condiviso
-- [ ] Resources: graph, code, view, export
-- [ ] Tools: graph CRUD + execute + export
-- [ ] Prompts: design, modify, analyze
-- [ ] Test: connetti con MCP Inspector, verifica tutti i tools
+- [x] `mcp_server.py`: FastMCP con tutti i tools sopra
+- [x] Lifecycle: init engine → context condiviso
+- [x] Resources: graph, code, view, export
+- [x] Tools: graph CRUD + execute + export
+- [x] Prompts: design, modify, analyze
+- [x] Test: connetti con MCP Inspector, verifica tutti i tools
 
 ### Fase 3 — REST API + Viewport (1 giorno)
-- [ ] Aggiorna `server.py` con nuovi endpoint:
+- [x] Aggiorna `server.py` con nuovi endpoint:
   - `POST /api/graph` — crea
   - `GET /api/graph/{id}` — leggi
   - `POST /api/graph/{id}/node` — aggiungi nodo
@@ -647,31 +654,99 @@ def cad_analyze() -> str:
   - `POST /api/graph/{id}/execute` — esegui
   - `GET /api/graph/{id}/view` — vista 3D JSON
   - `GET /api/graph/{id}/export/{format}` — download
-- [ ] WebSocket `/ws/graph/{id}` — stream esecuzione (log, errori)
-- [ ] Serve frontend static
+- [x] WebSocket `/ws/graph/{id}` — stream esecuzione (log, errori)
+- [x] Serve frontend static
 
 ### Fase 4 — Frontend Litegraph.js (3-4 giorni)
-- [ ] Scaffold frontend (HTML+JS, Litegraph.js + Three.js)
-- [ ] Registra tutti i nodi CAD nel Litegraph registry
-- [ ] Widget parametri: slider, input, dropdown, color picker
-- [ ] 3D Viewer Three.js: STL/glTF loader, OrbitControls, selezione facce
-- [ ] Pannelli Panel: display valori in tempo reale
-- [ ] Codice generato: pannello laterale syntax-highlighted
-- [ ] Auto-save grafo su localStorage
-- [ ] Tema scuro (stile Grasshopper/ComfyUI)
+- [x] Scaffold frontend (HTML+JS, Litegraph.js + Three.js)
+- [x] Registra tutti i nodi CAD nel Litegraph registry
+- [x] Widget parametri: slider, input, dropdown, color picker
+- [x] 3D Viewer Three.js: STL/glTF loader, OrbitControls, selezione facce
+- [x] Pannelli Panel: display valori in tempo reale
+- [x] Codice generato: pannello laterale syntax-highlighted
+- [x] Auto-save grafo su localStorage
+- [x] Tema scuro (stile Grasshopper/ComfyUI)
 
 ### Fase 5 — CodeBlock + User Nodes (1 giorno)
-- [ ] Editor Python nel nodo CodeBlock (CodeMirror o Monaco)
-- [ ] Salva CodeBlock come nuovo tipo nodo
-- [ ] Catalogo utente (JSON, caricabile)
+- [x] Editor Python nel nodo CodeBlock (CodeMirror o Monaco)
+- [x] Salva CodeBlock come nuovo tipo nodo
+- [x] Catalogo utente (JSON, caricabile)
 
-### Fase 6 — Integrazione nanobot (1 giorno)
+### Fase 6 — Integrazione nanobot — NON REALIZZATA, fuori piano
 - [ ] Skill CAD: `/cad` comandi in chat
-- [ ] MCP auto-avvio con noodle
+- [x] MCP auto-avvio con noodle (`mcp_server.py`) — l'unico pezzo esistente
 - [ ] Notifica su Matrix quando modello pronto
 - [ ] `/cad status`, `/cad export`, `/cad design "descrizione"`
 
 ---
+
+## Roadmap — prossimi passi
+
+Voci concrete: il **problema osservato**, non la feature astratta, e cosa le
+rende non banali. Chi ne aggiunge una scriva anche cosa va deciso prima di
+mettere mano al codice.
+
+### 1. Materiali e colori per GEOMETRIA, non per nodo
+
+**Problema.** `previewColor` e `previewFinish` (solid / glass / emissive /
+metal) sono **uno per nodo** — salvati come `nd.color` / `nd.finish` nel graph
+JSON, impostati dal menu destro. Ma molti nodi emettono **più corpi distinti**:
+
+- `Drop` con più forme cablate, e a maggior ragione una scena `collide` /
+  `container` (bodies indipendenti e posabili, CLAUDE.md §5d)
+- `Voronoi3D` → lista di celle; qualunque nodo in fan-out (§5b)
+- `OverhangFaces` / `SupportVolume` mostrati accanto al pezzo (§5d)
+
+Tutti ricevono lo stesso materiale. L'unica variazione per pezzo è `rainbow`,
+che è una **rampa di tinte automatica**: non una scelta, e non serve a dire
+"il contenitore è vetro, le sfere che ci cadono dentro sono metallo".
+
+**Cosa serve.** Un modale materiali per corpo: colore, finish, opacità,
+roughness/metalness — per indice di lista, per input, per body della scena.
+
+**Da decidere prima di scrivere codice:**
+
+- **L'identità del corpo.** Per nodo basta l'id. Per corpo serve una chiave
+  *stabile fra un'esecuzione e l'altra*: l'indice di lista cambia appena cambia
+  il conteggio (uno slider `count`), quindi indicizzare per posizione perde
+  l'assegnazione al primo movimento di un parametro. Indice (semplice, fragile)
+  o qualcosa derivato dal nodo sorgente? Questa è la decisione centrale.
+- **Dove si salva.** `params._ui` è il namespace editor-only (§4) ed è il posto
+  naturale; `nd.color`/`nd.finish` restano per il caso a corpo singolo. Un
+  grafo esistente deve rendere **identico** a prima.
+- **Il costo di rendering.** `rainbow` oggi è UN buffer con geometry groups.
+  Materiali diversi per corpo significa più materiali, e il **bloom selettivo**
+  va ripensato: la maschera `GLOW_LAYER` è per oggetto (viewer.js, §3).
+- **Il nodo non ancora eseguito.** Senza preview non esiste un elenco di corpi
+  da cui scegliere: il modale deve dire qualcosa di sensato, non aprirsi vuoto.
+
+### 2. Thumbnail dei workflow
+
+**Problema.** La `/library`, il menu a tendina dei progetti e i modali di
+apertura elencano i workflow **per nome**. Con decine di progetti il nome non
+dice che pezzo sia, e l'unico modo di saperlo è aprirlo ed eseguirlo.
+
+**Abilitante.** `GET /api/graph/{name}/screenshot` (§9) ora esiste e rende il
+viewport vero in ~1.5s a browser caldo. La thumbnail *è* quell'immagine, salvata.
+
+**Cosa serve.** `projects/<name>/thumb.png`, un endpoint che la serve, e la
+sua comparsa nelle card della libreria, nel menu a tendina e nei modali.
+
+**Da decidere prima di scrivere codice:**
+
+- **Quando si rigenera.** Ad ogni execute è spreco (~1.5s per run, quasi sempre
+  inutile). Solo su richiesta è preciso ma ci si dimentica. Probabile risposta:
+  al salvataggio, in background, con un flag "stale" — **mai** bloccando la run.
+- **La ricorsione.** Lo screenshot ESEGUE il grafo. Generare la thumbnail dentro
+  la execute significa una execute dentro una execute: va tenuto fuori banda.
+- **I casi vuoti.** Grafo senza geometria, grafo che fallisce, grafo mai
+  eseguito: serve un placeholder esplicito, non un PNG nero che sembra un bug.
+- **Il costo su disco e in git.** `projects/` è gitignored, quindi le PR non si
+  gonfiano; ma le thumbnail degli **esempi** seminati (`cad_nodes/examples/`)
+  sì — decidere se versionarle o generarle al primo avvio.
+- Vantaggio secondario e forse il più grosso: **la thumbnail è una prova di
+  esecuzione**. Un progetto che non riesce a produrne una è rotto, e si vede
+  dalla libreria senza aprirlo.
 
 ## Data Flow Architecture (dettaglio)
 

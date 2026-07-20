@@ -37,25 +37,45 @@ docker logs -f noodle         # tail logs
 For a keyed OpenAI-compatible provider instead, set `COPILOT_BASE_URL` +
 `COPILOT_API_KEY` + `COPILOT_MODEL` (Groq / OpenRouter / Gemini's OpenAI endpoint…).
 
-## 2. Develop & verify without Docker
+## 2. Develop & verify outside the editor
 
-There is a host venv `.venv-b123d/` with build123d installed. Use it to transpile
-and execute a graph directly — the fastest way to verify an engine change:
+Run the engine where it will really run — **in the container**. This needs no
+host setup and cannot drift from production:
 
 ```bash
-.venv-b123d/bin/python - <<'PY' 2>/dev/null   # 2>/dev/null hides fontconfig noise
+docker exec -i noodle python - <<'PY' 2>/dev/null   # hides fontconfig noise
 import json, pathlib
 from cad_nodes.graph import Graph
 from cad_nodes.transpiler import transpile
 from cad_nodes.executor import execute_graph
-g = Graph.from_dict(json.loads(pathlib.Path("projects/<name>/graph.json").read_text()))
+g = Graph.from_dict(json.loads(pathlib.Path("/app/projects/<name>/graph.json").read_text()))
 print(transpile(g))                                   # inspect generated build123d source
 view = execute_graph(g, pathlib.Path("/tmp/work"), timeout=60).get("view")
 print(view["success"], view.get("node_errors"))       # per-node errors if any
 PY
 ```
 
-Or drive the live server: `curl -s -X POST localhost:8090/api/graph/<name>/execute`.
+To exercise a **PREAMBLE helper** on its own — no graph, no worker — take it
+straight out of the transpiler and call it:
+
+```bash
+docker exec -i noodle python -c "
+from cad_nodes.transpiler import PREAMBLE
+G = {}; exec(PREAMBLE, G)
+print(G['_bbox_plane'])          # any helper, callable, with build123d loaded"
+```
+
+When the part you want to check is pure arithmetic, lift that fragment out and
+test it with no build123d in the room at all — `tests/test_polyhedron.py::
+_preamble_fragment` and `tests/test_thread.py::_fragment` both do this.
+
+A host venv also works and iterates faster, but it is **optional and frequently
+absent — never assume it exists**; create it with
+`python -m venv .venv-b123d && .venv-b123d/bin/pip install -r requirements.txt`.
+
+Then drive the live server: `curl -s -X POST localhost:8090/api/graph/<name>/execute`
+— and **look at the result**: `GET /api/graph/<name>/screenshot` (§9). Numbers
+verify what you thought to measure; a picture shows what you did not.
 
 ## 3. Architecture & file map
 
@@ -228,7 +248,9 @@ cad_nodes/
   catalog … examples/  sample graphs used by tests.
 projects/            saved graphs (written as uid 1000 — host-editable).
 tests/               test_engine.py, test_api.py — pure-Python (no build123d).
-PLAN_NODE_CAD.md     the full design doc + node roadmap (~150 planned nodes).
+PLAN_NODE_CAD.md     the original design doc (phases 0-5 = shipped, kept as the
+                     historical record) + the node catalogue, and the FORWARD
+                     roadmap: "Roadmap — prossimi passi". New work goes there.
 PLAN_THREADS.md      the Thread node (§5g): why threads are triangles, the four
                      profile families, and the clearance measurements.
 PLAN_VIZ_ALGORITHMS.md  the "algorithms as geometry" example family (softmax,
@@ -762,7 +784,7 @@ WRONGLY is far worse than one that does not anticipate at all.
   the read-only mount alone isn't enough).
 - Frontend (`webui/*.html`) change → hard-refresh the browser (Ctrl+Shift+R);
   the file is static and cached.
-- Verify engine logic fast on the host with `.venv-b123d` (§2) before restarting.
+- Verify engine logic fast in the container (§2) before restarting.
 
 **Gotchas:**
 - The container runs as **uid 1000** (`noodle`), matching the typical host user,
@@ -773,8 +795,8 @@ WRONGLY is far worse than one that does not anticipate at all.
   path segment, `[A-Za-z0-9][A-Za-z0-9._ -]{0,63}`. Anything else is a 400
   (path-traversal guard) — keep any new route that touches `projects/` on
   `project_dir()`/`GraphStore.dir()`.
-- Running build123d on the host prints noisy fontconfig warnings to **stderr** —
-  redirect `2>/dev/null` and read stdout.
+- Running build123d prints noisy fontconfig warnings to **stderr** — redirect
+  `2>/dev/null` and read stdout.
 - The copilot/MCP both go through `cad_nodes.api`; new capabilities belong there
   so all three surfaces (UI, MCP, copilot) get them.
 
