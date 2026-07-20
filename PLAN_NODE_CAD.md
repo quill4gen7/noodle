@@ -720,33 +720,46 @@ roughness/metalness — per indice di lista, per input, per body della scena.
 - **Il nodo non ancora eseguito.** Senza preview non esiste un elenco di corpi
   da cui scegliere: il modale deve dire qualcosa di sensato, non aprirsi vuoto.
 
-### 2. Thumbnail dei workflow
+### 2. Thumbnail dei workflow ✅ (2026-07-20)
 
-**Problema.** La `/library`, il menu a tendina dei progetti e i modali di
-apertura elencano i workflow **per nome**. Con decine di progetti il nome non
-dice che pezzo sia, e l'unico modo di saperlo è aprirlo ed eseguirlo.
+**Problema.** La home, il menu a tendina dei progetti e i modali di apertura
+elencavano i workflow **per nome**. Con decine di progetti il nome non dice che
+pezzo sia, e l'unico modo di saperlo era aprirlo ed eseguirlo.
 
-**Abilitante.** `GET /api/graph/{name}/screenshot` (§9) ora esiste e rende il
-viewport vero in ~1.5s a browser caldo. La thumbnail *è* quell'immagine, salvata.
+**Fatto.** `projects/<name>/thumb.jpg` + `PUT|GET /api/projects/{name}/thumb`;
+`/api/projects` porta `thumb` = l'mtime (0 = assente), che serve da cache-buster
+per gli `<img>`. Card della home e chip nel menu progetti, con placeholder `⬡`
+esplicito quando manca. Dettagli e trappole in **CLAUDE.md §9b**.
 
-**Cosa serve.** `projects/<name>/thumb.png`, un endpoint che la serve, e la
-sua comparsa nelle card della libreria, nel menu a tendina e nei modali.
+**Come è stata risolta ogni domanda aperta** — la prima diversamente da come il
+piano se l'aspettava:
 
-**Da decidere prima di scrivere codice:**
-
-- **Quando si rigenera.** Ad ogni execute è spreco (~1.5s per run, quasi sempre
-  inutile). Solo su richiesta è preciso ma ci si dimentica. Probabile risposta:
-  al salvataggio, in background, con un flag "stale" — **mai** bloccando la run.
-- **La ricorsione.** Lo screenshot ESEGUE il grafo. Generare la thumbnail dentro
-  la execute significa una execute dentro una execute: va tenuto fuori banda.
-- **I casi vuoti.** Grafo senza geometria, grafo che fallisce, grafo mai
-  eseguito: serve un placeholder esplicito, non un PNG nero che sembra un bug.
-- **Il costo su disco e in git.** `projects/` è gitignored, quindi le PR non si
-  gonfiano; ma le thumbnail degli **esempi** seminati (`cad_nodes/examples/`)
-  sì — decidere se versionarle o generarle al primo avvio.
-- Vantaggio secondario e forse il più grosso: **la thumbnail è una prova di
-  esecuzione**. Un progetto che non riesce a produrne una è rotto, e si vede
-  dalla libreria senza aprirlo.
+- **NON con lo screenshot dell'agente (§9).** Quello guida un **secondo browser**
+  headless che ri-esegue il grafo per ridisegnare un fotogramma che l'utente ha
+  già davanti. La thumbnail si legge invece dal canvas dell'editor stesso
+  (`CadViewer.snapshot()`): un render in più di una scena già disegnata 60 volte
+  al secondo, zero esecuzioni, ed è *letteralmente ciò che l'utente vede* — vetro,
+  bloom, angolo di camera compresi. Il server salva soltanto dei byte.
+- **Quando si rigenera.** Al **salvataggio**, che in Live arriva ad ogni modifica:
+  quindi gratis e invisibile. La condizione però non è "modalità Live" ma qualcosa
+  di più stretto e più vero — `lastRunJSON === lastSavedJSON`, cioè *la geometria
+  a schermo è stata calcolata dal grafo che è ora su disco*. Fuori da Live vale
+  ugualmente dopo Run+Save; un salvataggio nudo non scatta nulla, perché una
+  thumbnail che mente è peggio di nessuna thumbnail.
+- **La ricorsione**: non esiste più, perché non c'è nessuna execute dentro la
+  execute. Resta un solo anello da tagliare, e taglia: la pagina headless
+  dell'agente è **lo stesso editor** e anch'essa salva, quindi `screenshot.py`
+  le stampa `window.__noodleShot` e `maybeThumb()` si tira indietro. Senza,
+  ogni screenshot dell'agente sovrascriverebbe in silenzio la thumbnail
+  dell'utente con l'angolo di camera chiesto dall'agente.
+- **I casi vuoti**: viewport vuoto → nessun upload, l'ultima immagine buona
+  sopravvive; mai eseguito → placeholder esplicito, non un rettangolo nero.
+- **Il costo su disco**: ~10-20KB a JPEG (lato lungo 480). `projects/` è
+  gitignored; per gli esempi seminati non si versiona nulla — si generano da sé
+  alla prima esecuzione, che è esattamente il punto qui sotto.
+- Vantaggio secondario e forse il più grosso, confermato appena acceso: **la
+  thumbnail è una prova di esecuzione**. Un progetto che non riesce a produrne
+  una è rotto, e si vede dalla galleria senza aprirlo.
 
 ## Data Flow Architecture (dettaglio)
 

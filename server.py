@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Body, FastAPI, File, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import (
     FileResponse,
     HTMLResponse,
@@ -459,10 +459,15 @@ async def list_projects():
             meta_path = d / "meta.json"
             if meta_path.exists():
                 meta = json.loads(meta_path.read_text())
+            thumb = d / THUMB_NAME
             projects.append({
                 "name": d.name,
                 "backend": meta.get("backend", "nodegraph"),
                 "description": meta.get("description", ""),
+                # the listing carries the thumbnail's mtime rather than a bare
+                # flag: it doubles as the cache-buster for <img src>, so a
+                # freshly re-shot workflow shows its new picture immediately.
+                "thumb": int(thumb.stat().st_mtime) if thumb.exists() else 0,
             })
     return projects
 
@@ -472,6 +477,51 @@ async def delete_project(name: str):
     d = require_project(name)
     shutil.rmtree(d)
     return {"status": "deleted"}
+
+
+# ---------------------------------------------------------------------------
+# Workflow thumbnails
+# ---------------------------------------------------------------------------
+# A name in a list does not say what the part is; a picture does. The picture is
+# the one the EDITOR already drew: nodes.html reads its own WebGL canvas back
+# after a run and PUTs the JPEG here (see `postThumb`). That is why this is an
+# upload endpoint and not a call into cad_nodes/screenshot.py — the agent's eyes
+# (§9) drive a SECOND, headless browser, so using them here would re-execute the
+# graph to re-draw a frame the user is already looking at. Reading the live
+# canvas costs one extra render of a scene that is already on screen: free, and
+# it is literally what the user sees, camera angle included.
+THUMB_NAME = "thumb.jpg"
+_THUMB_MAX_BYTES = 4 * 1024 * 1024
+
+
+@app.put("/api/projects/{name}/thumb")
+async def put_thumb(name: str, request: Request):
+    """Store the editor's canvas capture as this workflow's thumbnail."""
+    d = require_project(name)
+    data = await request.body()
+    if not data:
+        raise HTTPException(400, "Empty thumbnail body")
+    if len(data) > _THUMB_MAX_BYTES:
+        raise HTTPException(413, "Thumbnail too large "
+                                 f"({len(data)} > {_THUMB_MAX_BYTES} bytes)")
+    if not data.startswith(b"\xff\xd8\xff"):        # JPEG SOI, never a stray body
+        raise HTTPException(415, "Thumbnail must be a JPEG")
+    # atomic: the library reads this file while the editor writes it
+    tmp = d / (THUMB_NAME + ".tmp")
+    tmp.write_bytes(data)
+    tmp.replace(d / THUMB_NAME)
+    logger.info("thumbnail saved: %s (%d bytes)", name, len(data))
+    return {"status": "saved", "name": name, "bytes": len(data)}
+
+
+@app.get("/api/projects/{name}/thumb")
+async def get_thumb(name: str):
+    """The stored thumbnail, or 404 — the caller draws its own placeholder
+    rather than being handed a black PNG that reads as a bug."""
+    thumb = require_project(name) / THUMB_NAME
+    if not thumb.exists():
+        raise HTTPException(404, f"No thumbnail for '{name}' yet")
+    return FileResponse(thumb, media_type="image/jpeg")
 
 
 # ---------------------------------------------------------------------------

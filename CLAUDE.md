@@ -81,7 +81,10 @@ verify what you thought to measure; a picture shows what you did not.
 
 ```
 server.py            FastAPI HTTP API (port 8090). Routes under /api/* :
-                       projects list/delete, /api/graph/{name}/execute|code,
+                       projects list/delete (the listing carries each project's
+                       `thumb` = its thumbnail mtime, 0 = none — see §9b),
+                       PUT|GET /api/projects/{name}/thumb (§9b),
+                       /api/graph/{name}/execute|code,
                        /api/graph/{name}/code?map=1 (code + editable param
                        source map), PATCH /api/graph/{name}/param (clamped
                        single-param edit; `_cb.<name>` targets a CodeBlock
@@ -130,7 +133,10 @@ webui/
                        (background nulled, or the clear colour blooms too), blur at
                        half res with threshold 0, and are composited ADDITIVELY on
                        top — which is what makes the glow cross the glass and
-                       spread. Two things that bit: the glow target holds LINEAR
+                       spread. `snapshot()` reads the canvas back as a JPEG data
+                       URL for the workflow thumbnail (§9b) — same render path,
+                       one extra frame, camera restored in a `finally`.
+                       Two things that bit: the glow target holds LINEAR
                        un-tone-mapped values (three tone maps only to the canvas)
                        and UnrealBloomPass returns emitters+blur, so the quad is
                        scaled down or the core blows white twice over; and
@@ -911,3 +917,38 @@ thought to measure; a picture shows what you did not.**
   A missing browser is a **503**, not a 500.
 - Tests: `tests/test_screenshot.py` (pure-Python: camera planning, the clamps,
   and that HTTP/MCP expose one operation rather than two).
+
+## 9b. Workflow thumbnails — the picture the library lists you by
+
+A name does not say what a part is. `projects/<name>/thumb.jpg` does, and it shows
+up in the `/` gallery cards and the editor's project dropdown (placeholder `⬡`
+when absent). Roadmap item 2 of `PLAN_NODE_CAD.md`.
+
+- **It is NOT taken with §9.** The agent's eyes drive a *second, headless* browser
+  that re-executes the graph to redraw a frame the user is already looking at.
+  The thumbnail is instead read straight off the editor's own canvas
+  (`CadViewer.snapshot()` → `PUT /api/projects/{name}/thumb`): one extra render of
+  a scene drawn 60×/s anyway, no execution, and it is literally what the user sees
+  — glass, bloom, rainbow and camera angle included. The server only stores bytes.
+- **The read-back must be in the same task as the render.** Without
+  `preserveDrawingBuffer` the WebGL buffer is cleared once the browser composites,
+  so an `await` between `_renderFrame()` and `toDataURL()` comes back blank.
+  `_renderFrame()` is shared with the animate loop for the same reason a second
+  renderer was rejected in §9: a copy of the bloom sequence would drift.
+- **The gate is not "Live mode", it is `lastRunJSON === lastSavedJSON`** — the
+  geometry on screen was computed from the graph now on disk. In Live that is true
+  the instant the run lands, so it is free and invisible; outside Live, Run-then-Save
+  satisfies it too, and a bare save shoots nothing rather than storing a lie.
+  Opening another graph clears `lastRunJSON` (the viewport still shows the one you
+  left). Empty viewport → no upload, so the last good picture survives.
+- **The agent's headless page is not a user.** It loads this same editor and *does*
+  save (runGraph saves first), so `screenshot.py` stamps `window.__noodleShot` in an
+  init script and `maybeThumb()` bails. Without it every agent screenshot would
+  silently overwrite the user's thumbnail with the agent's camera angle.
+- Grid, origin axes and the nav gizmo are hidden for the shot and restored in a
+  `finally` — a 200px card wants the part, and yanking the user's camera on every
+  save would be worse than having no thumbnail. ~10-20KB per JPEG, long side 480.
+- Secondary and maybe the biggest win: **the thumbnail is a proof of execution**.
+  A workflow that cannot produce one is broken, and you see it from the gallery
+  without opening it.
+- Tests: `tests/test_thumbnail.py`.

@@ -98,7 +98,14 @@ async def _ensure_page(scale: int, hq: bool, width: int, height: int):
             device_scale_factor=scale)
         # The HQ path is read from localStorage at boot, so it has to be set
         # before the page script runs — not toggled afterwards.
+        #
+        # __noodleShot marks this page as NOT a user: the editor saves a
+        # workflow thumbnail from its own canvas on every save, and this page
+        # saves too (runGraph does) — without the flag every agent screenshot
+        # would overwrite the user's thumbnail with whatever angle the agent
+        # asked for.
         await _page.add_init_script(
+            "window.__noodleShot = true;"
             "localStorage.setItem('noodle:settings:hqRender', %r);"
             % ("1" if hq else "0"))
         _page_key = key

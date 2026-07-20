@@ -167,6 +167,11 @@ body{font-family:var(--font);background:var(--bg-0);color:var(--text);}
 .menu-item.danger{color:var(--err);} .menu-item.danger:hover{background:#3a1422;}
 .menu-item .k{margin-left:auto;font-size:10px;color:var(--text-dim);}
 .menu-item .ic{width:16px;text-align:center;color:var(--text-dim);}
+/* project thumbnail chip: says what the workflow IS, where the name can't */
+.menu-item .pthumb{width:40px;height:30px;flex:0 0 auto;border-radius:4px;object-fit:cover;
+  background:var(--bg-0);border:1px solid var(--border);}
+.menu-item .pthumb.ph{display:flex;align-items:center;justify-content:center;
+  font-size:13px;color:var(--border);}
 .menu-sep{height:1px;background:var(--border);margin:5px 4px;}
 .menu-head{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-dim);padding:4px 9px 2px;}
 .menu-search{width:100%;margin:2px 0 4px;background:var(--bg-3);border:1px solid var(--border);border-radius:5px;
@@ -2495,6 +2500,7 @@ window.newGraph = async function(name){
   currentName = name;
   setCurrentName(name);
   lastSavedJSON = JSON.stringify(toGraphJSON(name));
+  lastRunJSON = null;              // nothing on screen belongs to this graph yet
   clearDraft(name); setDocState('saved');
   histInit();
   await refreshGraphList();
@@ -2516,6 +2522,7 @@ async function persistToServer(){
     log('save: '+JSON.stringify(e.detail||e),'err'); return false; }
   lastSavedJSON = json; clearDraft(currentName); setDocState('saved');
   nodeByGraphId = Object.assign({}, nodeIndex);   // saved disk ids now equal serialized ids
+  thumbWanted = true; maybeThumb();               // the library's picture of this graph
   return true;
 }
 
@@ -2524,6 +2531,44 @@ window.saveGraph = async function(){
   const ok = await persistToServer();
   if (ok){ await refreshGraphList(); setStatus('saved ✓','ok'); }
 };
+
+// ── workflow thumbnail: the picture the library lists you by ───────────────
+// Taken on SAVE, from the canvas the editor has already drawn — so it costs one
+// extra render and no execution at all. The condition is not "live mode" but
+// something stricter and truer: the geometry on screen must have been computed
+// from the graph that was just written to disk (`lastRunJSON === lastSavedJSON`).
+// In Live that is satisfied the moment the run lands — save, run, shoot, all
+// without asking. Save while a run is still going and the shot simply waits: the
+// run ends by saving again and calling back in here. Outside Live a plain save
+// makes no thumbnail, because there is nothing on screen that provably matches
+// what was saved, and a thumbnail that lies is worse than none.
+let thumbWanted = false, thumbTimer = null;
+let lastRunJSON = null;        // the graph the previews on screen were built from
+
+function maybeThumb(){
+  // The agent's screenshot API drives a headless page of THIS editor: if it
+  // shot thumbnails too, its camera would overwrite the user's. It doesn't.
+  if (window.__noodleShot) return;
+  if (!thumbWanted || !currentName || !viewer) return;
+  if (lastRunJSON === null || lastRunJSON !== lastSavedJSON) return;
+  clearTimeout(thumbTimer);
+  thumbTimer = setTimeout(postThumb, 900);   // a burst of live runs = one upload
+}
+
+async function postThumb(){
+  if (!currentName || !viewer) return;
+  const name = currentName;
+  // Must be read back in one go, before the browser composites the frame away.
+  const url = viewer.snapshot();
+  if (!url) return;      // empty viewport: keep the last good picture, don't blank it
+  thumbWanted = false;
+  try {
+    const blob = await (await fetch(url)).blob();
+    const res = await fetch(`${API}/api/projects/${name}/thumb`,
+      {method:'PUT', headers:{'Content-Type':'image/jpeg'}, body: blob});
+    if (res.ok) refreshGraphList();     // repaint the menu with the new picture
+  } catch(e){ /* a thumbnail is never worth failing a save over */ }
+}
 
 // ── live mode: debounced auto-run on any graph change ──
 function scheduleLive(){
@@ -3313,6 +3358,10 @@ window.runGraph = async function(){
   else if ((data.warnings||[]).length){ setStatus(`done ⚠ · ${_elapsed()}`,'err'); }
   else { setStatus(`done ✓ · ${_elapsed()}`,'ok'); }
   log('executed '+currentName,'ok');
+  // What is on screen now provably came from what is on disk now (runGraph saved
+  // before executing) — the one moment a thumbnail can be taken truthfully.
+  lastRunJSON = lastSavedJSON;
+  maybeThumb();
 };
 
 window.exportStep = function(){
@@ -3336,9 +3385,12 @@ function stripMesh(v){
 }
 
 let projectNames = [];   // cached for the project menu + palette
+let projectThumbs = {};  // name -> thumbnail mtime (0 = none), doubles as cache-buster
 async function refreshGraphList(){
   const res = await fetch(`${API}/api/projects`);
-  projectNames = (await res.json()).filter(p=>p.backend==='nodegraph').map(p=>p.name).sort();
+  const list = (await res.json()).filter(p=>p.backend==='nodegraph');
+  projectNames = list.map(p=>p.name).sort();
+  projectThumbs = Object.fromEntries(list.map(p=>[p.name, p.thumb||0]));
   renderProjectList();
 }
 window.renderProjectList = function(){
@@ -3349,7 +3401,11 @@ window.renderProjectList = function(){
   if (!names.length){ list.innerHTML = '<div class="menu-status">No projects</div>'; }
   for (const n of names){
     const b = document.createElement('button'); b.className = 'menu-item';
-    b.innerHTML = `<span class="ic">${n===currentName?'●':''}</span>${n}`;
+    const t = projectThumbs[n];
+    const pic = t ? `<img class="pthumb" alt="" loading="lazy" onerror="this.remove()"`+
+                    ` src="${API}/api/projects/${encodeURIComponent(n)}/thumb?v=${t}">`
+                  : `<span class="pthumb ph" title="Not rendered yet">⬡</span>`;
+    b.innerHTML = `<span class="ic">${n===currentName?'●':''}</span>${pic}${n}`;
     b.onclick = ()=>{ closeMenus(); openGraph(n); };
     list.appendChild(b);
   }
@@ -3366,6 +3422,7 @@ window.openGraph = async function(name){
   currentName = name; if (viewer) viewer.resetFraming();   // frame the freshly opened graph once
   setCurrentName(name);
   lastSavedJSON = JSON.stringify(toGraphJSON(name));   // normalized disk baseline
+  lastRunJSON = null;    // the viewport still shows the graph we just left
   setDocState('saved');
   histInit();                                          // fresh undo history for this graph
   localStorage.setItem('noodle:last', name);
