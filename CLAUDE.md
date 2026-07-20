@@ -221,6 +221,8 @@ cad_nodes/
 projects/            saved graphs (written as uid 1000 — host-editable).
 tests/               test_engine.py, test_api.py — pure-Python (no build123d).
 PLAN_NODE_CAD.md     the full design doc + node roadmap (~150 planned nodes).
+PLAN_THREADS.md      the Thread node (§5g): why threads are triangles, the four
+                     profile families, and the clearance measurements.
 PLAN_VIZ_ALGORITHMS.md  the "algorithms as geometry" example family (softmax,
                      gradient descent, determinant, CLT, Fourier, k-means…): the
                      pattern they share, the idioms, the gotchas, and what's next.
@@ -591,6 +593,47 @@ after joining faces is `Shell` (thicken the open surface) or `Shell By Faces`:
   solid and pick the openings there — `Polyhedron → FacesByArea/FacesByNormal →
   ShellByFaces`. Verified end-to-end (icosahedron, wall 0.5 → volume 432.1, valid,
   watertight) and on every platonic solid. Do NOT remove the faces first.
+
+## 5g. Threads (category `fastener`)
+
+One node, `Thread`, makes a real screw thread — ISO metric, trapezoidal lead
+screw, UNC/UNF, ACME, tapered NPT — male or female, multi-start, left or right
+handed. Runtime in the transpiler PREAMBLE (`_thread`), full notes and every
+measurement in **`PLAN_THREADS.md`**. It is on the MESH lane, and that is the
+whole story:
+
+- **build123d 0.11 has no thread primitive** (they live in `bd_warehouse`, not a
+  dependency), and OCCT cannot be made to do it. The helical sweep is fast on
+  either lane (~0.03s), but fusing the rib to its core through the B-Rep kernel
+  costs 2-8s and **gets it wrong without raising**: M6x1 came back as the bare
+  core (volume 227.9, the thread silently gone) and M20x2.5 came back with volume
+  **0**. Letting the section abut the core instead of overlapping it does not even
+  build (`StdFail_NotDone`). manifold3d does the same union in ~0.02s, watertight,
+  major diameter exact to 4 decimals.
+- **Every family is the same trapezoid** with different numbers (half angle, crest
+  flat, depth, taper), so one section builder covers all four. Inch sizes are
+  stored as they are quoted (inches + TPI) and converted once — never transcribed.
+- **Male and female differ ONLY in the root truncation** (17H/24 vs 15H/24 on the
+  60° families). The `internal` result is not a female thread, it is **the TAP**:
+  subtract it and it drills the hole and cuts the thread in one go.
+- **`clearance` loosens the thread it is set on** — set it on ONE half of a pair or
+  you get double the gap. Measured on M6x1 by boolean interference: tangent by
+  construction at 0, free from 0.1mm up (residuals ≤0.013mm³ = 0.006% of the
+  thread, non-monotone in facet count and sometimes negative — numerical noise,
+  not contact). 0.3 is the FDM default because the printer's error dwarfs the
+  model's.
+- **An inverted winding is silent and catastrophic**: manifold3d reads it as
+  NEGATIVE volume and SUBTRACTS the rib. The first build returned a M6 rod of
+  180.5mm³ against a bare core of 227.9 — smaller than its own core, watertight,
+  no error. The faces are reversed once, deliberately, with a comment.
+- **The placement socket is `at`, NOT `origin`** — and a new node with an optional
+  `shape` should copy this. The emitter wraps an `origin` socket around the node's
+  WHOLE result (§4 / `_at`), which with `shape` wired would move the finished
+  assembly, so a tapped hole could never leave the axis. `_thread` takes the point
+  itself and places the thread BEFORE the boolean. Free bonus: a **list** of points
+  drills a whole pattern of tapped holes in one node.
+- Example: `examples/bolt-and-nut.json` (a bolt whose thread ADDS to its shank, a
+  nut whose thread CUTS). Tests: `tests/test_thread.py`.
 
 ## 5b. Lists & fan-out (Grasshopper-style)
 
