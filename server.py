@@ -1139,7 +1139,9 @@ async def library_list():
         if not d.is_dir() or d.name in _RESERVED_PROJECT_DIRS:
             continue
         files = _lib_entries(d, "exports") + _lib_entries(d, "assets")
-        projects.append({"project": d.name, "files": files})
+        thumb = d / THUMB_NAME
+        projects.append({"project": d.name, "files": files,
+                         "thumb": int(thumb.stat().st_mtime) if thumb.exists() else 0})
     return {"projects": projects}
 
 

@@ -139,3 +139,12 @@ def test_the_library_shows_a_placeholder_when_there_is_none():
 
 def test_the_project_menu_shows_them_too():
     assert "pthumb" in NODES and "/thumb?v=" in NODES
+
+
+def test_the_file_library_shows_them_too():
+    """/library groups exported files by project — the picture says which part
+    those files came out of."""
+    lib = (ROOT / "webui" / "library.html").read_text()
+    assert "pthumb" in lib and "/thumb?v=" in lib
+    listing = SERVER.split('@app.get("/api/library")')[1].split("\n@app.")[0]
+    assert '"thumb"' in listing
