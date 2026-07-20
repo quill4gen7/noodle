@@ -202,6 +202,7 @@ export class CadViewer {
       new THREE.MeshBasicMaterial({ color: 0xe94560 })));
     const previewGroup = new THREE.Group(); scene.add(previewGroup);
     const ax = new THREE.AxesHelper(20); ax.material.transparent = true; ax.material.opacity = .6; scene.add(ax);
+    this.axes = ax;                      // scene furniture: hidden in thumbnails
     scene.add(new THREE.AmbientLight(0x404060, 1.1));
     const key = new THREE.DirectionalLight(0xffffff, 2); key.position.set(40, 60, 80); scene.add(key);
     const fill = new THREE.DirectionalLight(0x8888cc, .8); fill.position.set(-40, -20, 40); scene.add(fill);
@@ -308,28 +309,83 @@ export class CadViewer {
       }
       this._wasAnimating = anim;
       this.controls.update();
-      // Bloom is what makes an emissive surface look like a SOURCE rather than a
-      // brightly painted one — the glow has to spill onto its surroundings. The
-      // extra passes run only while something in the scene actually declares
-      // itself emissive, and never when HQ is off.
-      const glow = this._bloomOn && HQ && this._glowComposer;
-      if (glow) {
-        // pass 1 — the emitters ALONE, on black, blurred into the glow target.
-        const mask = this.camera.layers.mask, bg = this.scene.background;
-        this.camera.layers.set(GLOW_LAYER);
-        this.scene.background = null;            // or the clear colour blooms too
-        this._glowPass.camera = this.camera;     // the viewport swaps persp/ortho
-        this._glowComposer.render();
-        this.camera.layers.mask = mask;
-        this.scene.background = bg;
-      }
-      this.renderer.clear();
-      this.renderer.render(this.scene, this.camera);
-      // pass 2 — add the blur back over the finished frame, glass included.
-      if (glow) this.renderer.render(this._glowQuadScene, this._glowQuadCam);
-      this.viewHelper.render(this.renderer);
+      this._renderFrame(true);
     };
     tick();
+  }
+
+  // One frame, drawn exactly as the animate loop draws it. Extracted so that
+  // snapshot() can render off-clock and read the buffer back without
+  // duplicating the bloom sequence — a second copy of it would drift.
+  _renderFrame(withHelper = true) {
+    // Bloom is what makes an emissive surface look like a SOURCE rather than a
+    // brightly painted one — the glow has to spill onto its surroundings. The
+    // extra passes run only while something in the scene actually declares
+    // itself emissive, and never when HQ is off.
+    const glow = this._bloomOn && HQ && this._glowComposer;
+    if (glow) {
+      // pass 1 — the emitters ALONE, on black, blurred into the glow target.
+      const mask = this.camera.layers.mask, bg = this.scene.background;
+      this.camera.layers.set(GLOW_LAYER);
+      this.scene.background = null;              // or the clear colour blooms too
+      this._glowPass.camera = this.camera;       // the viewport swaps persp/ortho
+      this._glowComposer.render();
+      this.camera.layers.mask = mask;
+      this.scene.background = bg;
+    }
+    this.renderer.clear();
+    this.renderer.render(this.scene, this.camera);
+    // pass 2 — add the blur back over the finished frame, glass included.
+    if (glow) this.renderer.render(this._glowQuadScene, this._glowQuadCam);
+    if (withHelper) this.viewHelper.render(this.renderer);
+  }
+
+  // ── thumbnail: read the viewport back as a JPEG data URL ────────────────
+  // The picture is the one already on screen, so it costs one extra render of a
+  // scene that is drawn 60 times a second anyway — no re-execution, no second
+  // browser (that is the agent's screenshot API, cad_nodes/screenshot.py, and
+  // it drives a headless page of its own). Returns null when there is nothing
+  // to show, so a caller never stores a black frame that reads as a bug.
+  //
+  // The read-back has to happen in the SAME task as the render: without
+  // `preserveDrawingBuffer` the WebGL buffer is cleared once the browser
+  // composites, and an await in between comes back blank.
+  snapshot({ maxSize = 480, quality = 0.85, frame = true } = {}) {
+    if (!this.previewGroup.children.length && !this.currentMesh) return null;
+    const cam = this.camera;
+    const saved = {
+      pos: cam.position.clone(), quat: cam.quaternion.clone(), zoom: cam.zoom,
+      tgt: this.controls.target.clone(), grid: this.grid.visible,
+      axes: this.axes.visible,
+      frustum: this.isOrtho
+        ? { l: cam.left, r: cam.right, t: cam.top, b: cam.bottom } : null,
+    };
+    try {
+      if (frame) this.frame();       // whole part in shot, at the user's angle
+      this.grid.visible = false;     // a 200px card wants the part, not the floor
+      this.axes.visible = false;     // nor three stray lines crossing it
+      this._renderFrame(false);      // and not the nav gizmo either
+      const src = this.canvas;
+      const s = Math.min(1, maxSize / Math.max(src.width, src.height, 1));
+      const out = document.createElement('canvas');
+      out.width = Math.max(1, Math.round(src.width * s));
+      out.height = Math.max(1, Math.round(src.height * s));
+      out.getContext('2d').drawImage(src, 0, 0, out.width, out.height);
+      return out.toDataURL('image/jpeg', quality);
+    } catch (e) {
+      return null;                   // a thumbnail is never worth an exception
+    } finally {
+      cam.position.copy(saved.pos); cam.quaternion.copy(saved.quat);
+      cam.zoom = saved.zoom;
+      if (saved.frustum) {
+        cam.left = saved.frustum.l; cam.right = saved.frustum.r;
+        cam.top = saved.frustum.t; cam.bottom = saved.frustum.b;
+      }
+      cam.updateProjectionMatrix();
+      this.controls.target.copy(saved.tgt); this.controls.update();
+      this.grid.visible = saved.grid;
+      this.axes.visible = saved.axes;
+    }
   }
 
   resize() {

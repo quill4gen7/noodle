@@ -2101,6 +2101,95 @@ register(NodeDef("OrientForPrint", "print", "Orient for Print",
 
 
 # ===========================================================================
+# 12d. Fasteners — threads that actually screw together
+# ===========================================================================
+# build123d 0.11 has no thread primitive, so noodle builds its own, and builds
+# it on the MESH lane. That is not a shortcut: fusing a helical rib to its core
+# through OCCT was measured at 2-8s AND WRONG WITHOUT RAISING (M6x1 came back as
+# the bare core with the thread silently gone; M20x2.5 came back with volume 0),
+# while manifold3d does it in 0.01s, watertight, with the major diameter exact.
+# The pair was verified the only way that means anything — by measuring the
+# boolean interference of a male thread inside its own nut. See PLAN_THREADS.md.
+
+_THREAD_SIZE_OPTIONS = [
+    "M1.6", "M2", "M2.5", "M3", "M3.5", "M4", "M5", "M6", "M8", "M10", "M12",
+    "M14", "M16", "M18", "M20", "M22", "M24", "M27", "M30", "M33", "M36",
+    "Tr8x1.5", "Tr10x2", "Tr12x3", "Tr14x3", "Tr16x4", "Tr18x4", "Tr20x4",
+    "Tr22x5", "Tr24x5", "Tr28x5", "Tr30x6", "Tr32x6", "Tr36x6", "Tr40x7",
+    "Tr44x7", "Tr48x8", "Tr50x8",
+    "#4-40 UNC", "#6-32 UNC", "#8-32 UNC", "#10-24 UNC", "1/4-20 UNC",
+    "5/16-18 UNC", "3/8-16 UNC", "7/16-14 UNC", "1/2-13 UNC", "5/8-11 UNC",
+    "3/4-10 UNC", "1-8 UNC",
+    "#4-48 UNF", "#6-40 UNF", "#8-36 UNF", "#10-32 UNF", "1/4-28 UNF",
+    "5/16-24 UNF", "3/8-24 UNF", "7/16-20 UNF", "1/2-20 UNF", "5/8-18 UNF",
+    "3/4-16 UNF", "1-12 UNF",
+    "1/4-16 ACME", "5/16-14 ACME", "3/8-12 ACME", "1/2-10 ACME", "5/8-8 ACME",
+    "3/4-6 ACME", "1-5 ACME", "1.1/4-5 ACME", "1.1/2-4 ACME",
+    "1/8 NPT", "1/4 NPT", "3/8 NPT", "1/2 NPT", "3/4 NPT", "1 NPT",
+    "1.1/4 NPT", "1.1/2 NPT", "2 NPT",
+    "custom",
+]
+
+register(NodeDef("Thread", "fastener", "Thread",
+    # `at`, not `origin`: an `origin` socket is wrapped around the node's whole
+    # result by the emitter, which with `shape` wired would move the finished
+    # assembly instead of putting the thread somewhere inside the part.
+    inputs=[Socket("at", WIRE_VECTOR, required=False),
+            Socket("shape", WIRE_SOLID, required=False,
+                   accepts=[WIRE_MESH, WIRE_SURFACE])]
+           + _pin("length", "clearance", "starts"),
+    params=[_choice("kind", "external", ["external", "internal"], label="kind"),
+            _choice("size", "M6", _THREAD_SIZE_OPTIONS, label="size"),
+            _f("length", 10.0, 0.5, 500, label="length (mm)", soft_max=100),
+            _f("clearance", 0.3, 0.0, 2.0, 0.05, label="clearance (mm)"),
+            _i("starts", 1, 1, 8, label="starts"),
+            _f("pitch", 0.0, 0.0, 20.0, 0.05, label="pitch (0 = standard)"),
+            _f("diameter", 0.0, 0.0, 200.0, 0.5, label="diameter (0 = standard)"),
+            _choice("profile", "ISO metric",
+                    ["ISO metric", "Trapezoidal", "ACME", "NPT"],
+                    label="profile (custom only)"),
+            Param("lefthand", "bool", "left-hand", False, widget="checkbox"),
+            Param("lead_in", "bool", "lead-in", True, widget="checkbox"),
+            _i("segments", 64, 12, 256, label="segments/turn", soft_max=128)],
+    outputs=_mesh(),
+    aliases=["filetto", "filettatura", "vite", "bullone", "madrevite", "dado",
+             "screw", "bolt", "nut", "tap", "helix thread", "iso", "metric",
+             "unc", "unf", "acme", "npt", "trapezoidal", "lead screw"],
+    code_template={"algebra":
+        "_thread({size}, {length}, {kind} == 'internal', {clearance}, {starts}, "
+        "{lefthand}, {lead_in}, {segments}, {profile}, {diameter}, {pitch}, "
+        "{shape}, {at})"},
+    description="A real screw thread — ISO metric (M), trapezoidal lead screw (Tr), "
+                "UNC/UNF, ACME, or tapered NPT pipe — as a mesh you can print. `kind` "
+                "external gives a threaded rod; internal gives the TAP: subtract it "
+                "from a body and it drills the hole and cuts the thread in one go, "
+                "which is why wiring `shape` is the easy path — the node picks the "
+                "boolean (external adds, internal cuts) so you cannot get the "
+                "direction backwards. Leave `shape` unwired to get the bare thread.\n"
+                "AN EXTERNAL THREAD ALREADY BRINGS ITS OWN CORE, so `shape` is for "
+                "what you are threading ONTO — a head, a flange, a boss. Wire a shank "
+                "as fat as the nominal diameter and it FILLS THE GROOVES: the union is "
+                "a plain cylinder, no error, and it looks fine until you zoom in. Any "
+                "body overlapping the threaded length must stay under the minor "
+                "diameter.\n"
+                "CLEARANCE is the whole game on a printer. It loosens THIS thread — "
+                "the male shrinks, the female grows — so set it on ONE half of a "
+                "mating pair, not both, or you get double the gap. Measured on M6x1: "
+                "at 0 the pair interferes by 0.011mm^3 (the theoretical line-to-line "
+                "fit, which will bind), at 0.2mm and above the interference is exactly "
+                "zero. 0.3 is a sane FDM default; go up for a coarse nozzle, down for "
+                "resin.\n"
+                "`pitch` overrides the table, which is how you ask for a fine pitch "
+                "(M8 + pitch 1.0). `starts` > 1 gives a multi-start thread — the "
+                "fast-action kind on a jar lid or a bottle cap. Internal threads print "
+                "best with the axis vertical; feed the result to Place on Bed or "
+                "Orient for Print.\n"
+                "`at` puts the thread somewhere other than the axis, BEFORE the "
+                "boolean — that is how a tapped hole goes where you want it. Wire a "
+                "LIST of points into it and one node drills the whole pattern."))
+
+
+# ===========================================================================
 # 13. Export / IO
 # ===========================================================================
 register(NodeDef("ExportSTEP", "export", "Export STEP",

@@ -21,6 +21,26 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir --timeout 120 --retries 5 -r requirements.txt
 
+# Chromium for /api/graph/{name}/screenshot (see cad_nodes/screenshot.py). It
+# renders through the app's own viewer.js, so the agent and the user see the
+# same image. Installed to a world-readable prefix rather than root's HOME,
+# because the server runs as uid 1000 and would not find it under /root.
+#
+# The runtime libs are listed by hand rather than via `playwright install
+# --with-deps`: that resolves an UBUNTU package set, and on Debian it dies on
+# `ttf-ubuntu-font-family has no installation candidate` — taking the whole
+# browser install with it. fonts-liberation is the substitute that matters
+# (without any font, Chromium renders the viewport's labels as blank boxes).
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libatspi2.0-0 \
+    libcups2 libdrm2 libgbm1 libxkbcommon0 libxcomposite1 libxdamage1 \
+    libxfixes3 libxrandr2 libpango-1.0-0 libcairo2 libasound2 \
+    libx11-6 libxext6 libexpat1 fonts-liberation \
+    && playwright install chromium-headless-shell \
+    && chmod -R a+rX /opt/playwright \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY server.py .
 COPY mcp_server.py .
 COPY cad_nodes/ ./cad_nodes/

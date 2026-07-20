@@ -1050,6 +1050,259 @@ def _mesh_bool(_mode, *_items):
     return _from_manifold(mf.Manifold.batch_boolean(mans, op))
 
 
+# --- threads (§12d) --------------------------------------------------------
+# build123d 0.11 ships NO thread primitive (they live in bd_warehouse, which is
+# not a dependency), so the geometry is ours — and it belongs on the MESH lane.
+# Measured on a real ISO 68-1 profile: the helical sweep is fast on either lane
+# (~0.03s), but fusing the rib to its core through OCCT costs 2-8s and gets it
+# WRONG WITHOUT RAISING — M6x1 came back as the bare core (the thread silently
+# dropped, volume 227.9 = the cylinder alone) and M20x2.5 came back with volume
+# ZERO. Letting the section abut the core instead of overlapping it does not
+# even build: StdFail_NotDone, "BRep_API: command not done". manifold3d does the
+# same union in 0.01s, watertight, major diameter exact to 4 decimals. Same
+# family of trap as the rest of PLAN_MESH_LANE.md. See PLAN_THREADS.md.
+_IN_MM = 25.4
+
+
+def _unified_sizes(_rows):
+    \"\"\"Inch families tabulated the way they are actually quoted — nominal
+    diameter in inches, threads per inch — and converted ONCE, here, instead of
+    by hand into a table nobody can proofread.\"\"\"
+    return {n: (d * _IN_MM, _IN_MM / t) for n, (d, t) in _rows.items()}
+
+
+_THREAD_SIZES = {
+    "ISO metric": {                                  # coarse pitch; fine via `pitch`
+        "M1.6": (1.6, 0.35), "M2": (2.0, 0.4), "M2.5": (2.5, 0.45),
+        "M3": (3.0, 0.5), "M3.5": (3.5, 0.6), "M4": (4.0, 0.7),
+        "M5": (5.0, 0.8), "M6": (6.0, 1.0), "M8": (8.0, 1.25),
+        "M10": (10.0, 1.5), "M12": (12.0, 1.75), "M14": (14.0, 2.0),
+        "M16": (16.0, 2.0), "M18": (18.0, 2.5), "M20": (20.0, 2.5),
+        "M22": (22.0, 2.5), "M24": (24.0, 3.0), "M27": (27.0, 3.0),
+        "M30": (30.0, 3.5), "M33": (33.0, 3.5), "M36": (36.0, 4.0),
+    },
+    "Trapezoidal": {                                 # ISO 2904 lead screws
+        "Tr8x1.5": (8.0, 1.5), "Tr10x2": (10.0, 2.0), "Tr12x3": (12.0, 3.0),
+        "Tr14x3": (14.0, 3.0), "Tr16x4": (16.0, 4.0), "Tr18x4": (18.0, 4.0),
+        "Tr20x4": (20.0, 4.0), "Tr22x5": (22.0, 5.0), "Tr24x5": (24.0, 5.0),
+        "Tr28x5": (28.0, 5.0), "Tr30x6": (30.0, 6.0), "Tr32x6": (32.0, 6.0),
+        "Tr36x6": (36.0, 6.0), "Tr40x7": (40.0, 7.0), "Tr44x7": (44.0, 7.0),
+        "Tr48x8": (48.0, 8.0), "Tr50x8": (50.0, 8.0),
+    },
+    "UNC": _unified_sizes({
+        "#4-40 UNC": (0.112, 40), "#6-32 UNC": (0.138, 32),
+        "#8-32 UNC": (0.164, 32), "#10-24 UNC": (0.190, 24),
+        "1/4-20 UNC": (0.250, 20), "5/16-18 UNC": (0.3125, 18),
+        "3/8-16 UNC": (0.375, 16), "7/16-14 UNC": (0.4375, 14),
+        "1/2-13 UNC": (0.500, 13), "5/8-11 UNC": (0.625, 11),
+        "3/4-10 UNC": (0.750, 10), "1-8 UNC": (1.000, 8),
+    }),
+    "UNF": _unified_sizes({
+        "#4-48 UNF": (0.112, 48), "#6-40 UNF": (0.138, 40),
+        "#8-36 UNF": (0.164, 36), "#10-32 UNF": (0.190, 32),
+        "1/4-28 UNF": (0.250, 28), "5/16-24 UNF": (0.3125, 24),
+        "3/8-24 UNF": (0.375, 24), "7/16-20 UNF": (0.4375, 20),
+        "1/2-20 UNF": (0.500, 20), "5/8-18 UNF": (0.625, 18),
+        "3/4-16 UNF": (0.750, 16), "1-12 UNF": (1.000, 12),
+    }),
+    "ACME": _unified_sizes({
+        "1/4-16 ACME": (0.250, 16), "5/16-14 ACME": (0.3125, 14),
+        "3/8-12 ACME": (0.375, 12), "1/2-10 ACME": (0.500, 10),
+        "5/8-8 ACME": (0.625, 8), "3/4-6 ACME": (0.750, 6),
+        "1-5 ACME": (1.000, 5), "1.1/4-5 ACME": (1.250, 5),
+        "1.1/2-4 ACME": (1.500, 4),
+    }),
+    "NPT": _unified_sizes({                          # pipe OD at the gauge plane
+        "1/8 NPT": (0.405, 27), "1/4 NPT": (0.540, 18), "3/8 NPT": (0.675, 18),
+        "1/2 NPT": (0.840, 14), "3/4 NPT": (1.050, 14), "1 NPT": (1.315, 11.5),
+        "1.1/4 NPT": (1.660, 11.5), "1.1/2 NPT": (1.900, 11.5),
+        "2 NPT": (2.375, 11.5),
+    }),
+}
+
+# family -> (half of the included flank angle, crest flat / pitch, radial taper).
+# Every family is the SAME trapezoid with different numbers, which is why one
+# section builder covers all of them.
+_THREAD_FAMILY = {
+    "ISO metric": (30.0, 0.125, 0.0),
+    "UNC": (30.0, 0.125, 0.0),
+    "UNF": (30.0, 0.125, 0.0),
+    "Trapezoidal": (15.0, 0.366, 0.0),
+    "ACME": (14.5, 0.3707, 0.0),
+    "NPT": (30.0, 0.0381, 1.0 / 32.0),     # 1:16 on the diameter = 1:32 on radius
+}
+
+
+def _thread_spec(_size, _profile="ISO metric", _diameter=0.0, _pitch=0.0):
+    \"\"\"Resolve a size name to (major diameter mm, pitch mm, family).
+
+    The size list is flat and the family is read OFF the name ("M6", "Tr20x4",
+    "1/4-20 UNC") rather than selected separately: a param's options cannot
+    depend on another param's value, and one searchable list beats two combos
+    that can disagree. `diameter`/`pitch` override whatever the table said —
+    that is how a fine pitch is asked for (M8 + pitch 1.0) and how "custom"
+    works at all.\"\"\"
+    fam, d, p = None, 0.0, 0.0
+    for family, table in _THREAD_SIZES.items():
+        if _size in table:
+            d, p = table[_size]
+            fam = family
+            break
+    if fam is None:                                  # "custom"
+        fam = _profile if _profile in _THREAD_FAMILY else "ISO metric"
+    if _diameter:
+        d = float(_diameter)
+    if _pitch:
+        p = float(_pitch)
+    if d <= 0 or p <= 0:
+        raise ValueError(
+            "Thread: size 'custom' needs both `diameter` and `pitch` set — pick "
+            "a standard size instead, or say how big the custom thread is.")
+    return d, p, fam
+
+
+def _thread_section(_fam, _p, _internal):
+    \"\"\"One pitch of the axial profile: (thread depth, crest flat, half width at
+    the root). Male and female are NOT two generators — on the 60 degree
+    families they are the same trapezoid truncated at a different depth
+    (17H/24 external, giving the ISO minor d3 = d - 1.2269p; 15H/24 internal,
+    giving D1 = d - 1.0825p). That difference IS male vs female.\"\"\"
+    half, crest_f, _taper = _THREAD_FAMILY[_fam]
+    if _fam in ("ISO metric", "UNC", "UNF"):
+        h = (15.0 if _internal else 17.0) / 24.0 * (math.sqrt(3) / 2 * _p)
+    elif _fam == "Trapezoidal":                      # ISO 2904 clearance ac
+        h = 0.5 * _p + (0.15 if _p <= 5 else (0.25 if _p <= 12 else 0.5))
+    elif _fam == "ACME":
+        h = 0.5 * _p + 0.254                         # 0.010" general purpose
+    else:                                            # NPT
+        h = 0.8 * _p
+    c = crest_f * _p
+    hw = c / 2.0 + h * math.tan(math.radians(half))
+    if 2.0 * hw >= _p:
+        raise ValueError(
+            "Thread: a %s profile of pitch %.3fmm has no room left between "
+            "turns — the flanks meet before the root does. Use a coarser pitch."
+            % (_fam, _p))
+    return h, c, hw
+
+
+def _thread(_size="M6", _length=10.0, _internal=False, _clearance=0.3,
+            _starts=1, _lefthand=False, _lead_in=True, _segments=64,
+            _profile="ISO metric", _diameter=0.0, _pitch=0.0, _shape=None,
+            _at_pt=None):
+    \"\"\"A threaded rod (external) or the tap that cuts a nut (internal), as a Mesh.
+
+    The female thread is not modelled directly: the tool IS the male thread
+    grown by the clearance, and subtracting it from a body drills the hole and
+    cuts the thread in one go — exactly what a tap does. Verified by measuring
+    the boolean interference of a mating pair (M6x1): the profiles are tangent
+    by construction at clearance 0 and free from 0.1mm up (residual ~0.01mm^3,
+    which is manifold3d's numerical noise, not contact).
+
+    The placement socket is `at`, NOT `origin`, and that is deliberate. The
+    emitter wraps an `origin` socket around the node's WHOLE result (_at is
+    applied outside the template), which with `shape` wired would displace the
+    finished assembly — so a tapped hole could never be put anywhere but the
+    axis. Taking the point here instead places the THREAD inside the part,
+    before the boolean, which is the only useful reading. It also means a LIST
+    of points drills a whole pattern of tapped holes in one node.\"\"\"
+    import numpy as np
+    d, p, fam = _thread_spec(_size, _profile, _diameter, _pitch)
+    h, c, hw = _thread_section(fam, p, _internal)
+    taper = _THREAD_FAMILY[fam][2]
+    L = float(_length)
+    if L <= 0:
+        raise ValueError("Thread: `length` must be positive.")
+    n_st = max(1, int(_starts))
+    lead = p * n_st                                  # axial advance per turn
+    # `clearance` loosens THIS thread: the male shrinks, the female tool grows.
+    # Set it on ONE half of a mating pair — applying it to both doubles the gap.
+    crest = d / 2.0 + (0.5 if _internal else -0.5) * float(_clearance)
+    root = crest - h
+    if root <= 0.0:
+        raise ValueError(
+            "Thread: %s of pitch %.3fmm cuts deeper (%.3fmm) than the %.3fmm "
+            "radius — the thread would swallow its own axis." % (fam, p, h, crest))
+    base = root - 0.15 * p          # reach INTO the core: the union needs real
+                                    # overlap, never a tangency (OCCT's failure)
+
+    # The section, one pitch tall. Consecutive turns of a rib abut exactly at
+    # +-p/2, which is what lets them fuse into a continuous helical ridge.
+    S = np.array([(base, -p / 2), (root, -p / 2), (root, -hw), (crest, -c / 2),
+                  (crest, c / 2), (root, hw), (root, p / 2), (base, p / 2)])
+    n = len(S)
+    turns = L / lead + 1.0
+    K = max(8, int(_segments * turns)) + 1
+    t = np.linspace(0.0, turns, K)
+    Z = (lead * t - p / 2.0)[:, None] + S[:, 1][None, :]
+    R = S[:, 0][None, :] + taper * Z                 # NPT opens away from the axis
+
+    # Connectivity is the same for every start, so build it once.
+    kk = np.arange(K - 1)[:, None]
+    jj = np.arange(n)[None, :]
+    a0 = (kk * n + jj).ravel()
+    b0 = (kk * n + (jj + 1) % n).ravel()
+    side = np.concatenate([np.stack([a0, b0, b0 + n], 1),
+                           np.stack([a0, b0 + n, a0 + n], 1)])
+    last = (K - 1) * n
+    caps = []
+    for j in range(1, n - 1):                        # the section is convex: fan
+        caps.append([0, j + 1, j])
+        caps.append([last, last + j, last + j + 1])
+    # Reversed: built inward-facing, and manifold3d reads an inverted winding as
+    # NEGATIVE volume and SUBTRACTS the rib — silently, and still watertight.
+    F = np.concatenate([side, np.array(caps, dtype=side.dtype)])[:, ::-1]
+
+    mf = _mf()
+    seg = max(24, int(_segments))
+    # n starts = n identical ribs rotated by 2pi/n. No axial offset: rotating a
+    # helix of lead n*p by 2pi/n already shifts it by exactly one pitch.
+    mans = []
+    for s in range(n_st):
+        a = (2 * math.pi * t * (-1.0 if _lefthand else 1.0))[:, None] \
+            + 2 * math.pi * s / n_st
+        V = np.stack([R * np.cos(a), R * np.sin(a), Z], -1).reshape(-1, 3)
+        mans.append(mf.Manifold(mf.Mesh(V.astype(np.float32),
+                                        F.astype(np.uint32))))
+    core = mf.Manifold.cylinder(L + 2 * p, max(root - taper * p, 1e-3),
+                                max(root + taper * (L + p), 1e-3), seg,
+                                False).translate([0, 0, -p])
+    body = mf.Manifold.batch_boolean([core] + mans, mf.OpType.Add)
+    span = 4 * (crest + taper * L) + 4
+    body = body ^ mf.Manifold.cube([span, span, L], True).translate([0, 0, L / 2])
+
+    if _lead_in and L > 3 * h:
+        # A thread that starts as a knife edge is unprintable and will not
+        # catch. The male gets its ends chamfered away, the female tool gets
+        # them FLARED so the mouth of the hole guides the bolt in.
+        def _rc(z):
+            return crest + taper * z + 0.001
+        if _internal:
+            body = mf.Manifold.batch_boolean([
+                body,
+                mf.Manifold.cylinder(h, _rc(0) + h, _rc(h), seg, False),
+                mf.Manifold.cylinder(h, _rc(L - h), _rc(L) + h, seg,
+                                     False).translate([0, 0, L - h]),
+            ], mf.OpType.Add)
+        else:
+            body = body ^ mf.Manifold.batch_boolean([
+                mf.Manifold.cylinder(h, max(_rc(0) - h, 1e-3), _rc(h), seg, False),
+                mf.Manifold.cylinder(L - 2 * h, _rc(h), _rc(L - h), seg,
+                                     False).translate([0, 0, h]),
+                mf.Manifold.cylinder(h, _rc(L - h), max(_rc(L) - h, 1e-3), seg,
+                                     False).translate([0, 0, L - h]),
+            ], mf.OpType.Add)
+
+    out = _from_manifold(body)
+    if _at_pt is not None:
+        out = _at(out, _at_pt)              # place the thread, THEN cut with it
+    if _shape is None:
+        return out
+    # The boolean nobody should have to get right by hand: a male thread ADDS to
+    # the part, a female tool CUTS from it.
+    return _mesh_bool("subtract" if _internal else "union", _shape, out)
+
+
 def _voronoi3d(_points, _body=None, _scale=0.9):
     \"\"\"3D Voronoi cells as closed convex Mesh bodies, clipped to `body`.
 

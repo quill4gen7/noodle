@@ -37,35 +37,61 @@ docker logs -f noodle         # tail logs
 For a keyed OpenAI-compatible provider instead, set `COPILOT_BASE_URL` +
 `COPILOT_API_KEY` + `COPILOT_MODEL` (Groq / OpenRouter / Gemini's OpenAI endpoint…).
 
-## 2. Develop & verify without Docker
+## 2. Develop & verify outside the editor
 
-There is a host venv `.venv-b123d/` with build123d installed. Use it to transpile
-and execute a graph directly — the fastest way to verify an engine change:
+Run the engine where it will really run — **in the container**. This needs no
+host setup and cannot drift from production:
 
 ```bash
-.venv-b123d/bin/python - <<'PY' 2>/dev/null   # 2>/dev/null hides fontconfig noise
+docker exec -i noodle python - <<'PY' 2>/dev/null   # hides fontconfig noise
 import json, pathlib
 from cad_nodes.graph import Graph
 from cad_nodes.transpiler import transpile
 from cad_nodes.executor import execute_graph
-g = Graph.from_dict(json.loads(pathlib.Path("projects/<name>/graph.json").read_text()))
+g = Graph.from_dict(json.loads(pathlib.Path("/app/projects/<name>/graph.json").read_text()))
 print(transpile(g))                                   # inspect generated build123d source
 view = execute_graph(g, pathlib.Path("/tmp/work"), timeout=60).get("view")
 print(view["success"], view.get("node_errors"))       # per-node errors if any
 PY
 ```
 
-Or drive the live server: `curl -s -X POST localhost:8090/api/graph/<name>/execute`.
+To exercise a **PREAMBLE helper** on its own — no graph, no worker — take it
+straight out of the transpiler and call it:
+
+```bash
+docker exec -i noodle python -c "
+from cad_nodes.transpiler import PREAMBLE
+G = {}; exec(PREAMBLE, G)
+print(G['_bbox_plane'])          # any helper, callable, with build123d loaded"
+```
+
+When the part you want to check is pure arithmetic, lift that fragment out and
+test it with no build123d in the room at all — `tests/test_polyhedron.py::
+_preamble_fragment` and `tests/test_thread.py::_fragment` both do this.
+
+A host venv also works and iterates faster, but it is **optional and frequently
+absent — never assume it exists**; create it with
+`python -m venv .venv-b123d && .venv-b123d/bin/pip install -r requirements.txt`.
+
+Then drive the live server: `curl -s -X POST localhost:8090/api/graph/<name>/execute`
+— and **look at the result**: `GET /api/graph/<name>/screenshot` (§9). Numbers
+verify what you thought to measure; a picture shows what you did not.
 
 ## 3. Architecture & file map
 
 ```
 server.py            FastAPI HTTP API (port 8090). Routes under /api/* :
-                       projects list/delete, /api/graph/{name}/execute|code,
+                       projects list/delete (the listing carries each project's
+                       `thumb` = its thumbnail mtime, 0 = none — see §9b),
+                       PUT|GET /api/projects/{name}/thumb (§9b),
+                       /api/graph/{name}/execute|code,
                        /api/graph/{name}/code?map=1 (code + editable param
                        source map), PATCH /api/graph/{name}/param (clamped
                        single-param edit; `_cb.<name>` targets a CodeBlock
                        override), /api/graph/{name}/codeblock/{id}/scan,
+                       POST /api/graph/{name}/arrange (tidy node positions; with
+                       a graph body = stateless and returns it, without = load/
+                       arrange/save — §6c),
                        /api/nodes (catalog), /api/copilot/chat|status,
                        /api/aliases (GET the personal add-node search aliases)
                        + PUT /api/aliases/{node_type} (replace one node's, []
@@ -75,6 +101,8 @@ server.py            FastAPI HTTP API (port 8090). Routes under /api/* :
                        keep it in sync when the API surface changes),
                        /api/agent/tags (ToAgent provenance index, §7b),
                        /api/graph/{name}/slice_summary|section_outline (§7b),
+                       /api/graph/{name}/screenshot (PNG of the viewport, §9 —
+                       the agent's eyes; also MCP cad_screenshot),
                        /api/graph/{name}/progress (SSE: per-node execution events
                        of the run in flight, tailed from the workdir's
                        progress.jsonl — see transpiler `_ev`),
@@ -108,7 +136,10 @@ webui/
                        (background nulled, or the clear colour blooms too), blur at
                        half res with threshold 0, and are composited ADDITIVELY on
                        top — which is what makes the glow cross the glass and
-                       spread. Two things that bit: the glow target holds LINEAR
+                       spread. `snapshot()` reads the canvas back as a JPEG data
+                       URL for the workflow thumbnail (§9b) — same render path,
+                       one extra frame, camera restored in a `finally`.
+                       Two things that bit: the glow target holds LINEAR
                        un-tone-mapped values (three tone maps only to the canvas)
                        and UnrealBloomPass returns emitters+blur, so the quad is
                        scaled down or the core blows white twice over; and
@@ -213,14 +244,26 @@ cad_nodes/
   store.py           GraphStore: load/save projects/<name>/{graph,meta,view}.json
                        and output.stl.
   copilot.py         ★ in-app NL copilot (§7). OpenAI-compatible tool loop.
+  screenshot.py      ★ the agent's EYES (§9): renders the viewport to a PNG by
+                       driving headless Chromium over this server's own /nodes
+                       page — the REAL viewer.js, so the picture an agent sees is
+                       the picture the user sees. Warm browser (the cost is the
+                       launch, not the frame). Camera presets + azim/elev/zoom,
+                       frame-one-node, ortho. NOT a second renderer, on purpose.
   slice_summary.py   retro-engineering perception (§7b): slice_summary
                        (symbolic cross-sections; STEP exact, STL arc-fitted)
                        + section_outline (one exact section, edge by edge).
   toposort.py        topological sort + cycle detection.
+  layout.py          ★ node SIZE model + automatic `arrange()` (§6c). The one
+                       place that knows how big a node is server-side.
   catalog … examples/  sample graphs used by tests.
 projects/            saved graphs (written as uid 1000 — host-editable).
 tests/               test_engine.py, test_api.py — pure-Python (no build123d).
-PLAN_NODE_CAD.md     the full design doc + node roadmap (~150 planned nodes).
+PLAN_NODE_CAD.md     the original design doc (phases 0-5 = shipped, kept as the
+                     historical record) + the node catalogue, and the FORWARD
+                     roadmap: "Roadmap — prossimi passi". New work goes there.
+PLAN_THREADS.md      the Thread node (§5g): why threads are triangles, the four
+                     profile families, and the clearance measurements.
 PLAN_VIZ_ALGORITHMS.md  the "algorithms as geometry" example family (softmax,
                      gradient descent, determinant, CLT, Fourier, k-means…): the
                      pattern they share, the idioms, the gotchas, and what's next.
@@ -494,6 +537,21 @@ thirds of the material within one — so orientation decides **where the part br
     A single part + a moving container is PROMOTED to a Scene for this reason (else the
     bowl would be invisible). Verified in the browser: scrubbing `t` moves all 4 bodies,
     bowl included. Preview the Drop, not the bowl, or you get a static ghost of it too.
+  - **KNOWN LIMITATION — one finish for the whole scene, container included.**
+    `finish`/`color` are resolved per NODE (`finishOf(id)` in nodes.html), but a
+    collide scene is ONE preview: the falling parts and the container are bodies
+    inside the Drop node's preview, so they all get the Drop node's finish. A
+    glass jar with steel bolts is not expressible today. (Colour per body IS free
+    — `rainbow` already gives each one its own hue — because every body is its
+    own mesh with its own material; it is only the finish resolution that is
+    per-preview.) The fix, scoped: stamp the container's SOURCE node id onto the
+    extra bodies (the emitter can read it off `graph.connections` for the
+    `container` socket; note `Mesh.__slots__` must gain the attribute or the
+    assignment is swallowed, exactly as `_noodle_anim` was), carry it through
+    `mesh_extractor._preview_of` as `body.owner`, and let `objFromPreview`'s
+    `bodies` branch resolve `colorOf`/`finishOf` per body instead of once per
+    preview. Four files, and the whole chain fails SILENTLY when it is wrong —
+    so it wants its own change and a rendered before/after, not a drive-by.
   - Example: `examples/container-tilt.json` (balls land, then the bowl tips over its own
     rim and pours them out). Costs ~5ms per simulated second to drive.
 - Tests: `tests/test_print.py`.
@@ -591,6 +649,47 @@ after joining faces is `Shell` (thicken the open surface) or `Shell By Faces`:
   solid and pick the openings there — `Polyhedron → FacesByArea/FacesByNormal →
   ShellByFaces`. Verified end-to-end (icosahedron, wall 0.5 → volume 432.1, valid,
   watertight) and on every platonic solid. Do NOT remove the faces first.
+
+## 5g. Threads (category `fastener`)
+
+One node, `Thread`, makes a real screw thread — ISO metric, trapezoidal lead
+screw, UNC/UNF, ACME, tapered NPT — male or female, multi-start, left or right
+handed. Runtime in the transpiler PREAMBLE (`_thread`), full notes and every
+measurement in **`PLAN_THREADS.md`**. It is on the MESH lane, and that is the
+whole story:
+
+- **build123d 0.11 has no thread primitive** (they live in `bd_warehouse`, not a
+  dependency), and OCCT cannot be made to do it. The helical sweep is fast on
+  either lane (~0.03s), but fusing the rib to its core through the B-Rep kernel
+  costs 2-8s and **gets it wrong without raising**: M6x1 came back as the bare
+  core (volume 227.9, the thread silently gone) and M20x2.5 came back with volume
+  **0**. Letting the section abut the core instead of overlapping it does not even
+  build (`StdFail_NotDone`). manifold3d does the same union in ~0.02s, watertight,
+  major diameter exact to 4 decimals.
+- **Every family is the same trapezoid** with different numbers (half angle, crest
+  flat, depth, taper), so one section builder covers all four. Inch sizes are
+  stored as they are quoted (inches + TPI) and converted once — never transcribed.
+- **Male and female differ ONLY in the root truncation** (17H/24 vs 15H/24 on the
+  60° families). The `internal` result is not a female thread, it is **the TAP**:
+  subtract it and it drills the hole and cuts the thread in one go.
+- **`clearance` loosens the thread it is set on** — set it on ONE half of a pair or
+  you get double the gap. Measured on M6x1 by boolean interference: tangent by
+  construction at 0, free from 0.1mm up (residuals ≤0.013mm³ = 0.006% of the
+  thread, non-monotone in facet count and sometimes negative — numerical noise,
+  not contact). 0.3 is the FDM default because the printer's error dwarfs the
+  model's.
+- **An inverted winding is silent and catastrophic**: manifold3d reads it as
+  NEGATIVE volume and SUBTRACTS the rib. The first build returned a M6 rod of
+  180.5mm³ against a bare core of 227.9 — smaller than its own core, watertight,
+  no error. The faces are reversed once, deliberately, with a comment.
+- **The placement socket is `at`, NOT `origin`** — and a new node with an optional
+  `shape` should copy this. The emitter wraps an `origin` socket around the node's
+  WHOLE result (§4 / `_at`), which with `shape` wired would move the finished
+  assembly, so a tapped hole could never leave the axis. `_thread` takes the point
+  itself and places the thread BEFORE the boolean. Free bonus: a **list** of points
+  drills a whole pattern of tapped holes in one node.
+- Example: `examples/bolt-and-nut.json` (a bolt whose thread ADDS to its shank, a
+  nut whose thread CUTS). Tests: `tests/test_thread.py`.
 
 ## 5b. Lists & fan-out (Grasshopper-style)
 
@@ -691,12 +790,94 @@ plain debounced re-run. That fallback is what makes an unanticipated node correc
 but merely slower — so when in doubt, return false. A node that anticipates
 WRONGLY is far worse than one that does not anticipate at all.
 
+### 6c. Node size & `arrange()` — why a graph you generate stops overlapping itself
+
+A node's on-canvas size is computed by **litegraph, in the browser**, from its
+socket and widget count — and, except for a resized sticky `Note`, it is never
+written to graph.json. So everything that placed nodes server-side (`api.add_node`,
+the copilot's 6-column grid, an agent writing graph.json by hand) was placing boxes
+whose height it could not know. Measured on the 58 saved projects: **539 pairs of
+nodes overlapping**, hiding each other.
+
+`cad_nodes/layout.py` fixes the cause, not the symptom.
+
+- **`node_size(ndef, node=None)` mirrors `LGraphNode.computeSize` exactly**, and is
+  pinned to reality rather than to itself: `scripts/capture_node_sizes.py` drops one
+  node of every registered type into a throwaway project, opens it in a headless
+  browser and reads `node.size` back out of the live editor into
+  `tests/fixtures/node_sizes.json`; `tests/test_layout.py` then asserts — pure
+  Python, no browser — that the model reproduces all 188. **If that test fails,
+  layout.py is wrong, not the fixture.** Re-run the capture after changing how
+  nodes.html builds sockets or widgets.
+- **The terms that a naive estimate gets wrong**, and they dominate: a float/int
+  param with BOTH min and max makes **two** widgets (the cadslider *and* the ✎
+  field); a `note` param makes **none**; and every fan-out-capable input carries a
+  `＋ name` toggle, which is a widget too. A `Vector` is 9 widgets and ~314px tall,
+  not the ~190 you would guess — which is exactly why `copilot.py`'s 180px row pitch
+  overlaps by construction.
+- **`node.position` is the BODY's top-left**; litegraph draws the title bar in the
+  30px ABOVE it. `node_box()` accounts for it — ignore it and titles collide while
+  the arithmetic says they don't.
+- **`arrange(graph)`** (also `api.arrange`): longest-path layering → column, barycentre
+  ordering within a column to cut crossings, then stacking on the real sizes. It
+  **asserts zero overlaps before returning** — a silent collision is the one outcome
+  it exists to prevent.
+- **Groups are the trap.** Membership is purely geometric (a group is a bare
+  rectangle, there is no member list), so `arrange` resolves membership BEFORE moving
+  anything and re-fits the boxes after. That alone is not enough: the barycentre
+  happily interleaves two groups down the same columns, and the boxes refitted around
+  them come out **cutting across each other** — visually worse than the unarranged
+  graph even though no two nodes collide. So each group also gets its own y-**band**,
+  packed per column. Across all saved projects that took group-box collisions from 43
+  to 2 (the survivors are graphs whose groups genuinely interleave in the dependency
+  order); it is reported as `group_overlaps`, not raised, since the nodes are still
+  correctly placed. Containment (a nested group) is not a collision.
+- Found while building it, because the model disagreed with the editor by exactly 96px:
+  `_curvePreviewH` was applied **only in the node constructor**, so a `GraphMapper`
+  rendered correctly when dropped and, after save+reload, drew its curve mini-preview
+  **on top of its own widgets**. All five `computeSize` call sites in nodes.html are
+  now one `resizeNode()` helper.
+- **Reaching it**: `⊞ Riordina` in the toolbar (Ctrl+Shift+A) → `POST /api/graph/
+  {name}/arrange`, or `api.arrange` for MCP/agents. The route has two modes and the
+  distinction matters: **with a graph body** it arranges THAT graph and returns it,
+  touching nothing on disk — which is what the editor posts, because the open canvas
+  may not be what is saved and arranging the stored copy would discard unsaved edits
+  and desync undo. **With no body** it loads, arranges and saves, for an agent or a
+  curl. The button applies the result through `fromGraphJSON` and then
+  `recordHistory()`, so Ctrl+Z puts every node back; it deliberately does NOT
+  `scheduleLive()` — moving a node cannot change the model.
+
+### 6d. Naming a node — and the input panel
+
+There is a per-node `title` (`Node.title`, persisted only when it differs from the
+type's label). It is documentation on any node, and on a **pure parameter source**
+(`category == "input"`: Number Slider, Integer, Number, Boolean, String) it is also
+a promotion: `arrange()` lifts every NAMED one out of the dependency flow and stacks
+it in a panel at the left, one click away.
+
+- **Naming is the whole mark, and that is the point.** Every knob in a graph is
+  called "Number Slider" until you rename it, so "has a name" already separates the
+  parameters the user cares about from the scratch ones — no second piece of UI, and
+  the panel comes out exactly as long as the labelling you bothered to do.
+- **Sorted by name, which is also how you order it**: prefix the names and they sort
+  that way. Rename with `✎ Rinomina…` in the node's right-click menu or **F2**;
+  clearing the field restores the type's label (and drops `title` from graph.json).
+- **An explicitly GROUPED node is left where it is** — putting a node in a group is a
+  stronger statement about where it belongs than naming it is.
+- **The title feeds litegraph's width**, so `node_size()` measures a renamed node with
+  its own name; forgetting that would desync the model from the editor for exactly
+  the nodes this feature creates. Verified against the browser: a 42-character name
+  gives 361.20000 in Python against 361.20001 on the canvas.
+- Still open: a graph with many UNNAMED sources still stacks them all in column 0, so
+  the result stays tall and narrow (`retromy`: 2010×8179). Naming them is the fix,
+  and now it is available.
+
 **Apply / reload rules:**
 - Backend Python change → `docker restart noodle` (process caches imports;
   the read-only mount alone isn't enough).
 - Frontend (`webui/*.html`) change → hard-refresh the browser (Ctrl+Shift+R);
   the file is static and cached.
-- Verify engine logic fast on the host with `.venv-b123d` (§2) before restarting.
+- Verify engine logic fast in the container (§2) before restarting.
 
 **Gotchas:**
 - The container runs as **uid 1000** (`noodle`), matching the typical host user,
@@ -707,8 +888,8 @@ WRONGLY is far worse than one that does not anticipate at all.
   path segment, `[A-Za-z0-9][A-Za-z0-9._ -]{0,63}`. Anything else is a 400
   (path-traversal guard) — keep any new route that touches `projects/` on
   `project_dir()`/`GraphStore.dir()`.
-- Running build123d on the host prints noisy fontconfig warnings to **stderr** —
-  redirect `2>/dev/null` and read stdout.
+- Running build123d prints noisy fontconfig warnings to **stderr** — redirect
+  `2>/dev/null` and read stdout.
 - The copilot/MCP both go through `cad_nodes.api`; new capabilities belong there
   so all three surfaces (UI, MCP, copilot) get them.
 
@@ -777,3 +958,84 @@ transpiler output, api ops.
 ```bash
 python -m pytest tests/ -v        # pytest may need installing in your env
 ```
+
+## 9. The agent's eyes — `/api/graph/{name}/screenshot`
+
+`GET /api/graph/{name}/screenshot` → `image/png` (= `cad_screenshot` on MCP,
+`api.screenshot`, code in `cad_nodes/screenshot.py`). Args: `view`
+(`iso|front|back|left|right|top|bottom`) or `azim`+`elev`, `zoom`, `node`+
+`isolate` (frame one node), `width`/`height`/`scale`, `projection`,
+`chrome`, `run`. Headers: `X-Noodle-Ran`, `X-Noodle-Size-Mm`.
+
+**Why it exists, concretely.** The Thread node (§5g) shipped with volume
+1922mm³, a watertight mesh, an exact major diameter and 237 green tests — and
+no thread on the bolt at all: the example wired a shank as fat as the nominal
+diameter, so the union filled every groove. Nothing in the API could report
+that. The first rendered picture did, immediately. **Numbers verify what you
+thought to measure; a picture shows what you did not.**
+
+- **It is the REAL viewer, not a second renderer.** Headless Chromium over this
+  server's own `/nodes` page: same `viewer.js`, materials, finishes, selective
+  bloom, same camera code. A numpy rasterizer was considered and rejected — it
+  would be free to drift from the thing users actually look at, and blind to
+  precisely the work that went into glass/emissive/rainbow/bloom.
+- **No GPU**: SwiftShader, verified pixel-identical to hardware GL.
+- **The browser is kept WARM**, like the execution worker: ~10s cold, **~1.5s**
+  warm with `run=0`. Take extra angles freely; re-run only when geometry changed.
+- **NOT on `asyncio.to_thread`** (unlike /execute) and deliberately: the work
+  happens in the browser process, so the coroutine only awaits I/O. The graph run
+  it triggers goes through /execute, which is already off the loop.
+- **Two traps paid for.** `openGraph` is async, so calling `runGraph()` too early
+  executes an EMPTY graph and the wait for previews then times out with nothing
+  to explain it — wait for `lgraph._nodes.length > 0` first. And the first `iso`
+  preset used a POSITIVE azimuth, which puts the camera behind anything modelled
+  facing front: every default shot came back with its lettering mirrored. It is
+  now front-right-top (-45°, true isometric 35.264°). Both were found by looking.
+- **Deployment**: `playwright install --with-deps` resolves an UBUNTU package set
+  and dies on Debian (`ttf-ubuntu-font-family has no installation candidate`),
+  taking the browser with it — the Dockerfile lists the libs by hand, and
+  `fonts-liberation` is the one that matters (without a font, every label in the
+  viewport renders as a blank box). Browsers go to `/opt/playwright`, world-
+  readable, because the server runs as uid 1000 and cannot read root's HOME.
+  Only the **headless shell** is installed: `playwright install chromium` fetches
+  the full browser too (549MB) and noodle never opens a window — the shell does
+  WebGL2 through SwiftShader (ANGLE/Vulkan), verified. Measured cost of the whole
+  feature: **1.87GB -> 2.6GB** (+730MB); installing both browsers made it 3.35GB.
+  A missing browser is a **503**, not a 500.
+- Tests: `tests/test_screenshot.py` (pure-Python: camera planning, the clamps,
+  and that HTTP/MCP expose one operation rather than two).
+
+## 9b. Workflow thumbnails — the picture the library lists you by
+
+A name does not say what a part is. `projects/<name>/thumb.jpg` does, and it shows
+up in the `/` gallery cards and the editor's project dropdown (placeholder `⬡`
+when absent). Roadmap item 2 of `PLAN_NODE_CAD.md`.
+
+- **It is NOT taken with §9.** The agent's eyes drive a *second, headless* browser
+  that re-executes the graph to redraw a frame the user is already looking at.
+  The thumbnail is instead read straight off the editor's own canvas
+  (`CadViewer.snapshot()` → `PUT /api/projects/{name}/thumb`): one extra render of
+  a scene drawn 60×/s anyway, no execution, and it is literally what the user sees
+  — glass, bloom, rainbow and camera angle included. The server only stores bytes.
+- **The read-back must be in the same task as the render.** Without
+  `preserveDrawingBuffer` the WebGL buffer is cleared once the browser composites,
+  so an `await` between `_renderFrame()` and `toDataURL()` comes back blank.
+  `_renderFrame()` is shared with the animate loop for the same reason a second
+  renderer was rejected in §9: a copy of the bloom sequence would drift.
+- **The gate is not "Live mode", it is `lastRunJSON === lastSavedJSON`** — the
+  geometry on screen was computed from the graph now on disk. In Live that is true
+  the instant the run lands, so it is free and invisible; outside Live, Run-then-Save
+  satisfies it too, and a bare save shoots nothing rather than storing a lie.
+  Opening another graph clears `lastRunJSON` (the viewport still shows the one you
+  left). Empty viewport → no upload, so the last good picture survives.
+- **The agent's headless page is not a user.** It loads this same editor and *does*
+  save (runGraph saves first), so `screenshot.py` stamps `window.__noodleShot` in an
+  init script and `maybeThumb()` bails. Without it every agent screenshot would
+  silently overwrite the user's thumbnail with the agent's camera angle.
+- Grid, origin axes and the nav gizmo are hidden for the shot and restored in a
+  `finally` — a 200px card wants the part, and yanking the user's camera on every
+  save would be worse than having no thumbnail. ~10-20KB per JPEG, long side 480.
+- Secondary and maybe the biggest win: **the thumbnail is a proof of execution**.
+  A workflow that cannot produce one is broken, and you see it from the gallery
+  without opening it.
+- Tests: `tests/test_thumbnail.py`.

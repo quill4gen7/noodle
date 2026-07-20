@@ -167,6 +167,11 @@ body{font-family:var(--font);background:var(--bg-0);color:var(--text);}
 .menu-item.danger{color:var(--err);} .menu-item.danger:hover{background:#3a1422;}
 .menu-item .k{margin-left:auto;font-size:10px;color:var(--text-dim);}
 .menu-item .ic{width:16px;text-align:center;color:var(--text-dim);}
+/* project thumbnail chip: says what the workflow IS, where the name can't */
+.menu-item .pthumb{width:40px;height:30px;flex:0 0 auto;border-radius:4px;object-fit:cover;
+  background:var(--bg-0);border:1px solid var(--border);}
+.menu-item .pthumb.ph{display:flex;align-items:center;justify-content:center;
+  font-size:13px;color:var(--border);}
 .menu-sep{height:1px;background:var(--border);margin:5px 4px;}
 .menu-head{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-dim);padding:4px 9px 2px;}
 .menu-search{width:100%;margin:2px 0 4px;background:var(--bg-3);border:1px solid var(--border);border-radius:5px;
@@ -306,6 +311,7 @@ body{font-family:var(--font);background:var(--bg-0);color:var(--text);}
       <button class="tb-btn primary" id="btn-run" onclick="runGraph()" title="Run the graph (Ctrl+Enter)">▶ Run</button>
       <button class="tb-btn toggle js-live-btn" id="btn-live" onclick="toggleLive()" title="Auto-run on every change — and drags (Move/Rotate/Scale, a Drop timeline) replay live in the viewport while you hold them. Settings ⚙ turns that anticipation off.">Live</button>
       <button class="tb-btn toggle js-cost-btn" id="btn-cost" onclick="toggleCost()" title="Show each node's cost from the last run (blue = served by the cache)">Costi</button>
+      <button class="tb-btn" id="btn-arrange" onclick="arrangeGraph()" title="Riordina i nodi: da sinistra a destra per profondità, senza sovrapposizioni, gruppi tenuti insieme (Ctrl+Shift+A)">⊞ Riordina</button>
       <div class="status-pill" id="status">Ready</div>
       <span class="health-dot" id="health" title="Backend health"></span>
     </div>
@@ -783,12 +789,7 @@ function registerNodes(defs){
         const self = this;
         setTimeout(() => { normalizeMultiSlots(self); if (typeof scheduleLive==='function') scheduleLive(); }, 0);
       };
-      this.size = this.computeSize();
-      this.size[0] = Math.max(this.size[0], 150);
-      if (this._curvePreviewH){                 // reserve space for the curve mini-preview
-        this.size[0] = Math.max(this.size[0], 200);
-        this.size[1] += this._curvePreviewH;
-      }
+      resizeNode(this);
       // bypass overlay: dim + diagonal slash + label across the node body
       this.onDrawForeground = function(ctx){
         if (this.flags.collapsed) return;
@@ -817,6 +818,7 @@ function registerNodes(defs){
            callback: ()=> setBypass(self, !self.bypassed)},
           {content: '▣ Group selected  (Ctrl+G)', callback: ()=> groupSelected()},
           {content: '🔎 Search aliases…', callback: ()=> editAliases(self.cadType)},
+          {content: '✎ Rinomina…  (F2)', callback: ()=> renameNode(self)},
         ];
         if (self.widgets && self.widgets.some(w=>w.isEye)){   // a node that renders geometry
           opts.push({content: (self.wireframe?'✓ ':'')+'Wireframe',
@@ -1292,6 +1294,22 @@ function openSliderCfg(node, w, ev){
   }, true), 0);
 }
 
+// Re-measure a node after its sockets or widgets changed. The ONE place that
+// applies our floors on top of litegraph's computeSize — every call site used to
+// inline them, and each inlining that forgot `_curvePreviewH` produced a node
+// whose curve mini-preview was drawn over its own widgets (visible on any saved
+// GraphMapper: correct when dropped, broken after reload). Mirrored in Python by
+// cad_nodes/layout.py::node_size, which tests/test_layout.py pins to reality.
+function resizeNode(node){
+  node.size = node.computeSize();
+  node.size[0] = Math.max(node.size[0], 150);
+  if (node._curvePreviewH){            // reserve space below the widgets
+    node.size[0] = Math.max(node.size[0], 200);
+    node.size[1] += node._curvePreviewH;
+  }
+  return node.size;
+}
+
 function addWidget(node, p){
   if (p.type === 'bool'){
     node.properties[p.name] = !!p.default;
@@ -1522,7 +1540,7 @@ function syncCodeblockParams(node){
       }
     }
   }
-  node.size = node.computeSize(); node.size[0] = Math.max(node.size[0], 180);
+  resizeNode(node);
   updateCbWired(node);
   node.setDirtyCanvas && node.setDirtyCanvas(true, true);
 }
@@ -2187,7 +2205,7 @@ function normalizeMultiSlots(node){
     }
   }
   if (changed){
-    node.size = node.computeSize(); node.size[0] = Math.max(node.size[0],150);
+    resizeNode(node);
     node.setDirtyCanvas && node.setDirtyCanvas(true,true);
   }
 }
@@ -2217,7 +2235,7 @@ function setMultiInput(node, name, on){
     }
   }
   if (widget) widget.value = on;
-  node.size = node.computeSize(); node.size[0] = Math.max(node.size[0],150);
+  resizeNode(node);
   node.setDirtyCanvas && node.setDirtyCanvas(true,true);
   if (typeof scheduleLive==='function') scheduleLive();
 }
@@ -2229,6 +2247,10 @@ function toGraphJSON(name){
     const id = 'n'+n.id; idMap[n.id] = id; nodeIndex[id] = n;
     const params = {};
     const nd = {id, type:n.cadType, params, position:[Math.round(n.pos[0]),Math.round(n.pos[1])]};
+    // A user-given name. Only stored when it differs from the type's own label,
+    // so an untouched node stays clean in graph.json — and so `layout.arrange`
+    // can tell a knob the user cares about from one they never named (§6d).
+    if (n.title && n.title !== defaultTitleOf(n.cadType)) nd.title = n.title;
     if (n.widgets) for (const w of n.widgets) if (w.cadParam) params[w.cadParam] = w.value;
     if (n._noteParam){
       params[n._noteParam] = n.properties[n._noteParam] ?? '';   // note text (no widget)
@@ -2284,6 +2306,7 @@ function createNodeFromData(nd){
   const def = catalog[nd.type]; if(!def){ log('unknown node type '+nd.type,'err'); return null; }
   const node = LiteGraph.createNode('cad/'+def.category+'/'+nd.type);
   node.pos = nd.position || [120, 120];
+  if (nd.title) node.title = nd.title;          // user-given name (see renameNode)
   node.previewMode = nd.preview === true ? 'on' : nd.preview === false ? 'off' : 'auto';
   if (nd.bypassed){ node.bypassed = true; node.mode = LiteGraph.NEVER; }
   if (nd.color) node.previewColor = nd.color;
@@ -2356,7 +2379,7 @@ function finalizeNodes(nodes){
     if (node.cadType === 'CodeBlock') updateCbWired(node);   // grey out wired params
     updateGizmoLockedWidgets(node);                          // grey gizmo binds when locked
     updateParamSocketWired(node);                             // grey any param whose socket is wired
-    node.size = node.computeSize(); node.size[0] = Math.max(node.size[0], 150);
+    resizeNode(node);
   }
 }
 
@@ -2495,6 +2518,7 @@ window.newGraph = async function(name){
   currentName = name;
   setCurrentName(name);
   lastSavedJSON = JSON.stringify(toGraphJSON(name));
+  lastRunJSON = null;              // nothing on screen belongs to this graph yet
   clearDraft(name); setDocState('saved');
   histInit();
   await refreshGraphList();
@@ -2516,6 +2540,7 @@ async function persistToServer(){
     log('save: '+JSON.stringify(e.detail||e),'err'); return false; }
   lastSavedJSON = json; clearDraft(currentName); setDocState('saved');
   nodeByGraphId = Object.assign({}, nodeIndex);   // saved disk ids now equal serialized ids
+  thumbWanted = true; maybeThumb();               // the library's picture of this graph
   return true;
 }
 
@@ -2524,6 +2549,44 @@ window.saveGraph = async function(){
   const ok = await persistToServer();
   if (ok){ await refreshGraphList(); setStatus('saved ✓','ok'); }
 };
+
+// ── workflow thumbnail: the picture the library lists you by ───────────────
+// Taken on SAVE, from the canvas the editor has already drawn — so it costs one
+// extra render and no execution at all. The condition is not "live mode" but
+// something stricter and truer: the geometry on screen must have been computed
+// from the graph that was just written to disk (`lastRunJSON === lastSavedJSON`).
+// In Live that is satisfied the moment the run lands — save, run, shoot, all
+// without asking. Save while a run is still going and the shot simply waits: the
+// run ends by saving again and calling back in here. Outside Live a plain save
+// makes no thumbnail, because there is nothing on screen that provably matches
+// what was saved, and a thumbnail that lies is worse than none.
+let thumbWanted = false, thumbTimer = null;
+let lastRunJSON = null;        // the graph the previews on screen were built from
+
+function maybeThumb(){
+  // The agent's screenshot API drives a headless page of THIS editor: if it
+  // shot thumbnails too, its camera would overwrite the user's. It doesn't.
+  if (window.__noodleShot) return;
+  if (!thumbWanted || !currentName || !viewer) return;
+  if (lastRunJSON === null || lastRunJSON !== lastSavedJSON) return;
+  clearTimeout(thumbTimer);
+  thumbTimer = setTimeout(postThumb, 900);   // a burst of live runs = one upload
+}
+
+async function postThumb(){
+  if (!currentName || !viewer) return;
+  const name = currentName;
+  // Must be read back in one go, before the browser composites the frame away.
+  const url = viewer.snapshot();
+  if (!url) return;      // empty viewport: keep the last good picture, don't blank it
+  thumbWanted = false;
+  try {
+    const blob = await (await fetch(url)).blob();
+    const res = await fetch(`${API}/api/projects/${name}/thumb`,
+      {method:'PUT', headers:{'Content-Type':'image/jpeg'}, body: blob});
+    if (res.ok) refreshGraphList();     // repaint the menu with the new picture
+  } catch(e){ /* a thumbnail is never worth failing a save over */ }
+}
 
 // ── live mode: debounced auto-run on any graph change ──
 function scheduleLive(){
@@ -2626,6 +2689,30 @@ function groupTitleAt(gp){
   }
   return null;
 }
+// ── naming a node ──────────────────────────────────────────────────────────
+// The title is documentation on any node, and on a pure parameter source
+// (category "input") it is also the PROMOTION: ⊞ Riordina gathers every named
+// slider into the panel on the left, sorted by name. Naming is the only mark —
+// every knob is called "Number Slider" until you name it, so the panel comes out
+// exactly as long as the labelling you bothered to do. See CLAUDE.md §6d.
+function defaultTitleOf(type){
+  const d = catalog[type];
+  return (d && (d.label || d.type)) || type;
+}
+
+async function renameNode(node){
+  if (!node) return;
+  const def = defaultTitleOf(node.cadType);
+  const name = await promptModal('Rinomina nodo',
+    `Nome (vuoto = torna a "${def}"):`, node.title === def ? '' : (node.title || ''));
+  if (name == null) return;                       // cancelled
+  node.title = name.trim() || def;
+  resizeNode(node);                               // the title drives node width
+  lcanvas.setDirty(true, true);
+  recordHistory();
+  checkDirty && checkDirty();                     // autosave the new name
+}
+
 async function renameGroup(g){
   const name = await promptModal('Rename group', 'Group title:', g.title || '');
   if (name != null && name !== g.title){ g.title = name; lcanvas.setDirty(true, true); }
@@ -2689,6 +2776,38 @@ function applyHistorySnapshot(json){
   updateUndoButtons();
   scheduleLive();                         // reflect the restored graph (respects Live)
 }
+// ── ⊞ Riordina: tidy the whole graph through the backend layout engine ──
+// The OPEN canvas is posted, not the saved file: what the user is looking at may
+// not be what is on disk, and arranging the stored copy would discard unsaved
+// edits. Only positions (and group boxes) come back, so no geometry is touched —
+// deliberately no scheduleLive(): moving a node cannot change the model, and a
+// re-run here would cost seconds for nothing.
+async function arrangeGraph(){
+  if (!currentName){ toast('info','Apri un progetto prima'); return; }
+  if (!lgraph._nodes.length){ toast('info','Il grafo è vuoto'); return; }
+  const btn = document.getElementById('btn-arrange');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(`/api/graph/${encodeURIComponent(currentName)}/arrange`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(toGraphJSON(currentName)),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'arrange failed');
+    histSuspend = true;
+    try { fromGraphJSON(data.graph); } finally { histSuspend = false; }
+    recordHistory();          // pushes the PRE-arrange state, so Ctrl+Z puts it back
+    const s = data.summary || {};
+    setStatus(`riordinati ${s.moved||0} nodi in ${s.columns||0} colonne`, 'ok');
+    if (s.group_overlaps)     // the nodes are fine; some group boxes still cross
+      toast('info', `${s.group_overlaps} riquadri di gruppo si intersecano ancora`);
+  } catch (e){
+    toast('error', 'Riordino fallito: ' + e.message);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 function undo(){
   clearTimeout(histTimer);
   if (!undoStack.length){ toast('info','Nothing to undo'); return; }
@@ -2760,6 +2879,7 @@ function pasteClipboard(){
 
 // expose the toolbar/palette-invoked ones (inline onclick resolves on window)
 window.undo = undo; window.redo = redo;
+window.arrangeGraph = arrangeGraph;   // module scope: the toolbar onclick needs it
 window.copySelected = copySelected; window.cutSelected = cutSelected; window.pasteClipboard = pasteClipboard;
 
 // ── keyboard shortcuts (ignored while typing in a field) ──
@@ -2774,6 +2894,11 @@ document.addEventListener('keydown', (e)=>{
   if (mod && !e.shiftKey && k === 'v'){ e.preventDefault(); pasteClipboard(); return; }
   if (mod && !e.shiftKey && k === 'x'){ e.preventDefault(); cutSelected(); return; }
   if (mod && !e.shiftKey && k === 'd'){ e.preventDefault(); cloneSelected(); recordHistory(); return; }
+  if (mod && e.shiftKey && k === 'a'){ e.preventDefault(); arrangeGraph(); return; }
+  if (k === 'f2'){                       // rename the selected node
+    const sel = Object.values(lcanvas.selected_nodes || {});
+    if (sel.length === 1){ e.preventDefault(); renameNode(sel[0]); return; }
+  }
   if (e.ctrlKey && !e.shiftKey && k === 'g'){ e.preventDefault(); groupSelected(); }
   else if (e.ctrlKey && !e.shiftKey && k === 'b'){ e.preventDefault(); toggleBypassSelected(); }
   else if ((k === 'delete' || k === 'backspace') && sketchNode && sketchSelIdx!=null){
@@ -3313,6 +3438,10 @@ window.runGraph = async function(){
   else if ((data.warnings||[]).length){ setStatus(`done ⚠ · ${_elapsed()}`,'err'); }
   else { setStatus(`done ✓ · ${_elapsed()}`,'ok'); }
   log('executed '+currentName,'ok');
+  // What is on screen now provably came from what is on disk now (runGraph saved
+  // before executing) — the one moment a thumbnail can be taken truthfully.
+  lastRunJSON = lastSavedJSON;
+  maybeThumb();
 };
 
 window.exportStep = function(){
@@ -3336,9 +3465,12 @@ function stripMesh(v){
 }
 
 let projectNames = [];   // cached for the project menu + palette
+let projectThumbs = {};  // name -> thumbnail mtime (0 = none), doubles as cache-buster
 async function refreshGraphList(){
   const res = await fetch(`${API}/api/projects`);
-  projectNames = (await res.json()).filter(p=>p.backend==='nodegraph').map(p=>p.name).sort();
+  const list = (await res.json()).filter(p=>p.backend==='nodegraph');
+  projectNames = list.map(p=>p.name).sort();
+  projectThumbs = Object.fromEntries(list.map(p=>[p.name, p.thumb||0]));
   renderProjectList();
 }
 window.renderProjectList = function(){
@@ -3349,7 +3481,11 @@ window.renderProjectList = function(){
   if (!names.length){ list.innerHTML = '<div class="menu-status">No projects</div>'; }
   for (const n of names){
     const b = document.createElement('button'); b.className = 'menu-item';
-    b.innerHTML = `<span class="ic">${n===currentName?'●':''}</span>${n}`;
+    const t = projectThumbs[n];
+    const pic = t ? `<img class="pthumb" alt="" loading="lazy" onerror="this.remove()"`+
+                    ` src="${API}/api/projects/${encodeURIComponent(n)}/thumb?v=${t}">`
+                  : `<span class="pthumb ph" title="Not rendered yet">⬡</span>`;
+    b.innerHTML = `<span class="ic">${n===currentName?'●':''}</span>${pic}${n}`;
     b.onclick = ()=>{ closeMenus(); openGraph(n); };
     list.appendChild(b);
   }
@@ -3366,6 +3502,7 @@ window.openGraph = async function(name){
   currentName = name; if (viewer) viewer.resetFraming();   // frame the freshly opened graph once
   setCurrentName(name);
   lastSavedJSON = JSON.stringify(toGraphJSON(name));   // normalized disk baseline
+  lastRunJSON = null;    // the viewport still shows the graph we just left
   setDocState('saved');
   histInit();                                          // fresh undo history for this graph
   localStorage.setItem('noodle:last', name);

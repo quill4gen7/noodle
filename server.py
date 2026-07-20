@@ -16,19 +16,21 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Body, FastAPI, File, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import (
     FileResponse,
     HTMLResponse,
     PlainTextResponse,
+    Response,
     StreamingResponse,
 )
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # Node-based CAD engine (pure imports; build123d only used in the subprocess)
-from cad_nodes import api, catalog
+from cad_nodes import api, catalog, layout
 from cad_nodes.graph import Graph, ValidationError
+from cad_nodes.screenshot import ScreenshotUnavailable
 from cad_nodes.transpiler import transpile, transpile_with_map
 from cad_nodes.executor import execute_graph, export_graph, extract_subshapes_for_node
 from cad_nodes.store import GraphStore, stamp_agent_tags, validate_graph_id
@@ -457,10 +459,15 @@ async def list_projects():
             meta_path = d / "meta.json"
             if meta_path.exists():
                 meta = json.loads(meta_path.read_text())
+            thumb = d / THUMB_NAME
             projects.append({
                 "name": d.name,
                 "backend": meta.get("backend", "nodegraph"),
                 "description": meta.get("description", ""),
+                # the listing carries the thumbnail's mtime rather than a bare
+                # flag: it doubles as the cache-buster for <img src>, so a
+                # freshly re-shot workflow shows its new picture immediately.
+                "thumb": int(thumb.stat().st_mtime) if thumb.exists() else 0,
             })
     return projects
 
@@ -470,6 +477,51 @@ async def delete_project(name: str):
     d = require_project(name)
     shutil.rmtree(d)
     return {"status": "deleted"}
+
+
+# ---------------------------------------------------------------------------
+# Workflow thumbnails
+# ---------------------------------------------------------------------------
+# A name in a list does not say what the part is; a picture does. The picture is
+# the one the EDITOR already drew: nodes.html reads its own WebGL canvas back
+# after a run and PUTs the JPEG here (see `postThumb`). That is why this is an
+# upload endpoint and not a call into cad_nodes/screenshot.py — the agent's eyes
+# (§9) drive a SECOND, headless browser, so using them here would re-execute the
+# graph to re-draw a frame the user is already looking at. Reading the live
+# canvas costs one extra render of a scene that is already on screen: free, and
+# it is literally what the user sees, camera angle included.
+THUMB_NAME = "thumb.jpg"
+_THUMB_MAX_BYTES = 4 * 1024 * 1024
+
+
+@app.put("/api/projects/{name}/thumb")
+async def put_thumb(name: str, request: Request):
+    """Store the editor's canvas capture as this workflow's thumbnail."""
+    d = require_project(name)
+    data = await request.body()
+    if not data:
+        raise HTTPException(400, "Empty thumbnail body")
+    if len(data) > _THUMB_MAX_BYTES:
+        raise HTTPException(413, "Thumbnail too large "
+                                 f"({len(data)} > {_THUMB_MAX_BYTES} bytes)")
+    if not data.startswith(b"\xff\xd8\xff"):        # JPEG SOI, never a stray body
+        raise HTTPException(415, "Thumbnail must be a JPEG")
+    # atomic: the library reads this file while the editor writes it
+    tmp = d / (THUMB_NAME + ".tmp")
+    tmp.write_bytes(data)
+    tmp.replace(d / THUMB_NAME)
+    logger.info("thumbnail saved: %s (%d bytes)", name, len(data))
+    return {"status": "saved", "name": name, "bytes": len(data)}
+
+
+@app.get("/api/projects/{name}/thumb")
+async def get_thumb(name: str):
+    """The stored thumbnail, or 404 — the caller draws its own placeholder
+    rather than being handed a black PNG that reads as a bug."""
+    thumb = require_project(name) / THUMB_NAME
+    if not thumb.exists():
+        raise HTTPException(404, f"No thumbnail for '{name}' yet")
+    return FileResponse(thumb, media_type="image/jpeg")
 
 
 # ---------------------------------------------------------------------------
@@ -638,6 +690,46 @@ async def patch_graph_param(name: str, payload: ParamPatch):
     return {"status": "ok", "value": value}
 
 
+@app.post("/api/graph/{name}/arrange")
+async def arrange_graph(name: str, graph: Optional[dict] = Body(default=None)):
+    """Tidy node positions — left-to-right by dependency depth, on the nodes' REAL
+    on-canvas sizes, so the result cannot contain overlapping nodes (§6c).
+
+    Two modes, one layout engine:
+
+    - **with a graph body** — arrange THAT graph and return it, touching nothing on
+      disk. This is what the editor uses: the open canvas, not the saved file, is
+      what the user is looking at, so arranging the stored copy would both discard
+      unsaved edits and desync undo.
+    - **with no body** — load the stored project, arrange, save. For an agent or a
+      curl driving a project it is not holding in memory.
+
+    Returns `{status, summary, graph?}`. `summary.group_overlaps` > 0 means some
+    group boxes still cut across each other (their members interleave in the
+    dependency order); the nodes are still correctly placed.
+    """
+    require_project(name)
+    if graph is not None:
+        graph.setdefault("name", name)
+        try:
+            g = Graph.from_dict(graph)
+            g.validate()
+        except (ValidationError, KeyError, ValueError) as e:
+            raise HTTPException(400, f"Invalid graph: {e}") from e
+        try:
+            summary = layout.arrange(g)
+        except (ValueError, AssertionError) as e:
+            raise HTTPException(400, str(e)) from e
+        return {"status": "ok", "summary": summary, "graph": g.to_dict()}
+
+    store = GraphStore(PROJECTS_DIR)
+    try:
+        summary = api.arrange(store, name)
+    except (ValueError, AssertionError, KeyError) as e:
+        raise HTTPException(400, str(e)) from e
+    return {"status": "ok", "summary": summary}
+
+
 @app.post("/api/graph/{name}/codeblock/{node_id}/scan")
 async def scan_codeblock_params(name: str, node_id: str):
     """The `#@param` schema a CodeBlock declares (with effective values), for the
@@ -778,6 +870,57 @@ async def api_delete_font(filename: str):
     p.unlink()
     logger.info("font deleted: %s", filename)
     return {"status": "deleted", "file": filename}
+
+
+@app.get("/api/graph/{name}/screenshot")
+async def api_screenshot(
+    name: str,
+    view: str = "iso",
+    azim: float = None,
+    elev: float = None,
+    zoom: float = 1.0,
+    width: int = 900,
+    height: int = 700,
+    projection: str = "",
+    node: str = "",
+    isolate: bool = False,
+    hq: bool = True,
+    chrome: bool = False,
+    run: bool = True,
+    scale: int = 2,
+):
+    """Render the viewport to a PNG — the agent's eyes on its own geometry.
+
+    This drives headless Chromium over this very server's /nodes page, so the
+    image comes out of the REAL viewer (same materials, finishes, bloom). It is
+    NOT put on `asyncio.to_thread` like /execute, and deliberately: the work
+    happens in the browser process, so this coroutine is only awaiting I/O. The
+    graph run it triggers goes through /execute, which is already off the loop.
+
+    `X-Noodle-Ran` says whether the graph was actually re-executed — `run=0`
+    reuses what is already on screen, but falls back to running rather than
+    returning an empty frame.
+    """
+    require_project(name)
+    try:
+        png, meta = await api.screenshot(
+            GraphStore(PROJECTS_DIR), name, view=view, azim=azim, elev=elev,
+            zoom=zoom,
+            width=width, height=height, projection=projection, node=node,
+            isolate=isolate, hq=hq, chrome=chrome, run=run, scale=scale)
+    except ScreenshotUnavailable as e:
+        raise HTTPException(503, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    logger.info("screenshot '%s' %s %dx%d (%d bytes, ran=%s)",
+                name, view, meta["width"], meta["height"], meta["bytes"],
+                meta["ran"])
+    return Response(
+        content=png, media_type="image/png",
+        headers={"X-Noodle-Ran": "1" if meta["ran"] else "0",
+                 "X-Noodle-Size-Mm": ",".join(str(v) for v in
+                                              meta.get("size_mm", [])),
+                 "Cache-Control": "no-store"})
 
 
 @app.post("/api/graph/{name}/execute")
@@ -1036,7 +1179,9 @@ async def library_list():
         if not d.is_dir() or d.name in _RESERVED_PROJECT_DIRS:
             continue
         files = _lib_entries(d, "exports") + _lib_entries(d, "assets")
-        projects.append({"project": d.name, "files": files})
+        thumb = d / THUMB_NAME
+        projects.append({"project": d.name, "files": files,
+                         "thumb": int(thumb.stat().st_mtime) if thumb.exists() else 0})
     return {"projects": projects}
 
 

@@ -26,7 +26,8 @@
 ## Tests run
 
 - [ ] `python -m pytest tests/ -v`
-- [ ] Verified on host with `.venv-b123d` (transpile/execute the graph) — see CLAUDE.md §2
+- [ ] Engine change verified by transpiling/executing the graph — see CLAUDE.md §2
+- [ ] Geometry change LOOKED at: `GET /api/graph/{name}/screenshot` (CLAUDE.md §9)
 - [ ] `docker restart noodle` + manual check (if backend changed)
 - [ ] Before/after behaviour confirmed
 
