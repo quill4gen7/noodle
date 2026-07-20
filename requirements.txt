@@ -34,3 +34,11 @@ python-multipart==0.0.12
 
 # Model Context Protocol server SDK (MIT)
 mcp==1.2.0
+
+# headless browser driving the REAL viewer for /api/graph/{name}/screenshot
+# (Apache-2.0). The agent needs to SEE its geometry: the Thread node shipped a
+# correct volume, a watertight mesh and 237 green tests with no thread on the
+# bolt at all — only a rendered picture caught it. Chromium renders through
+# viewer.js itself, so no second renderer exists to drift from the first; it
+# runs on SwiftShader, verified pixel-identical with no GPU.
+playwright==1.49.1
