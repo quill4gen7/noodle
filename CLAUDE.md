@@ -89,6 +89,9 @@ server.py            FastAPI HTTP API (port 8090). Routes under /api/* :
                        source map), PATCH /api/graph/{name}/param (clamped
                        single-param edit; `_cb.<name>` targets a CodeBlock
                        override), /api/graph/{name}/codeblock/{id}/scan,
+                       POST /api/graph/{name}/arrange (tidy node positions; with
+                       a graph body = stateless and returns it, without = load/
+                       arrange/save — §6c),
                        /api/nodes (catalog), /api/copilot/chat|status,
                        /api/aliases (GET the personal add-node search aliases)
                        + PUT /api/aliases/{node_type} (replace one node's, []
@@ -251,6 +254,8 @@ cad_nodes/
                        (symbolic cross-sections; STEP exact, STL arc-fitted)
                        + section_outline (one exact section, edge by edge).
   toposort.py        topological sort + cycle detection.
+  layout.py          ★ node SIZE model + automatic `arrange()` (§6c). The one
+                       place that knows how big a node is server-side.
   catalog … examples/  sample graphs used by tests.
 projects/            saved graphs (written as uid 1000 — host-editable).
 tests/               test_engine.py, test_api.py — pure-Python (no build123d).
@@ -784,6 +789,88 @@ Both return **false** when they cannot help, and the caller falls through to the
 plain debounced re-run. That fallback is what makes an unanticipated node correct
 but merely slower — so when in doubt, return false. A node that anticipates
 WRONGLY is far worse than one that does not anticipate at all.
+
+### 6c. Node size & `arrange()` — why a graph you generate stops overlapping itself
+
+A node's on-canvas size is computed by **litegraph, in the browser**, from its
+socket and widget count — and, except for a resized sticky `Note`, it is never
+written to graph.json. So everything that placed nodes server-side (`api.add_node`,
+the copilot's 6-column grid, an agent writing graph.json by hand) was placing boxes
+whose height it could not know. Measured on the 58 saved projects: **539 pairs of
+nodes overlapping**, hiding each other.
+
+`cad_nodes/layout.py` fixes the cause, not the symptom.
+
+- **`node_size(ndef, node=None)` mirrors `LGraphNode.computeSize` exactly**, and is
+  pinned to reality rather than to itself: `scripts/capture_node_sizes.py` drops one
+  node of every registered type into a throwaway project, opens it in a headless
+  browser and reads `node.size` back out of the live editor into
+  `tests/fixtures/node_sizes.json`; `tests/test_layout.py` then asserts — pure
+  Python, no browser — that the model reproduces all 188. **If that test fails,
+  layout.py is wrong, not the fixture.** Re-run the capture after changing how
+  nodes.html builds sockets or widgets.
+- **The terms that a naive estimate gets wrong**, and they dominate: a float/int
+  param with BOTH min and max makes **two** widgets (the cadslider *and* the ✎
+  field); a `note` param makes **none**; and every fan-out-capable input carries a
+  `＋ name` toggle, which is a widget too. A `Vector` is 9 widgets and ~314px tall,
+  not the ~190 you would guess — which is exactly why `copilot.py`'s 180px row pitch
+  overlaps by construction.
+- **`node.position` is the BODY's top-left**; litegraph draws the title bar in the
+  30px ABOVE it. `node_box()` accounts for it — ignore it and titles collide while
+  the arithmetic says they don't.
+- **`arrange(graph)`** (also `api.arrange`): longest-path layering → column, barycentre
+  ordering within a column to cut crossings, then stacking on the real sizes. It
+  **asserts zero overlaps before returning** — a silent collision is the one outcome
+  it exists to prevent.
+- **Groups are the trap.** Membership is purely geometric (a group is a bare
+  rectangle, there is no member list), so `arrange` resolves membership BEFORE moving
+  anything and re-fits the boxes after. That alone is not enough: the barycentre
+  happily interleaves two groups down the same columns, and the boxes refitted around
+  them come out **cutting across each other** — visually worse than the unarranged
+  graph even though no two nodes collide. So each group also gets its own y-**band**,
+  packed per column. Across all saved projects that took group-box collisions from 43
+  to 2 (the survivors are graphs whose groups genuinely interleave in the dependency
+  order); it is reported as `group_overlaps`, not raised, since the nodes are still
+  correctly placed. Containment (a nested group) is not a collision.
+- Found while building it, because the model disagreed with the editor by exactly 96px:
+  `_curvePreviewH` was applied **only in the node constructor**, so a `GraphMapper`
+  rendered correctly when dropped and, after save+reload, drew its curve mini-preview
+  **on top of its own widgets**. All five `computeSize` call sites in nodes.html are
+  now one `resizeNode()` helper.
+- **Reaching it**: `⊞ Riordina` in the toolbar (Ctrl+Shift+A) → `POST /api/graph/
+  {name}/arrange`, or `api.arrange` for MCP/agents. The route has two modes and the
+  distinction matters: **with a graph body** it arranges THAT graph and returns it,
+  touching nothing on disk — which is what the editor posts, because the open canvas
+  may not be what is saved and arranging the stored copy would discard unsaved edits
+  and desync undo. **With no body** it loads, arranges and saves, for an agent or a
+  curl. The button applies the result through `fromGraphJSON` and then
+  `recordHistory()`, so Ctrl+Z puts every node back; it deliberately does NOT
+  `scheduleLive()` — moving a node cannot change the model.
+
+### 6d. Naming a node — and the input panel
+
+There is a per-node `title` (`Node.title`, persisted only when it differs from the
+type's label). It is documentation on any node, and on a **pure parameter source**
+(`category == "input"`: Number Slider, Integer, Number, Boolean, String) it is also
+a promotion: `arrange()` lifts every NAMED one out of the dependency flow and stacks
+it in a panel at the left, one click away.
+
+- **Naming is the whole mark, and that is the point.** Every knob in a graph is
+  called "Number Slider" until you rename it, so "has a name" already separates the
+  parameters the user cares about from the scratch ones — no second piece of UI, and
+  the panel comes out exactly as long as the labelling you bothered to do.
+- **Sorted by name, which is also how you order it**: prefix the names and they sort
+  that way. Rename with `✎ Rinomina…` in the node's right-click menu or **F2**;
+  clearing the field restores the type's label (and drops `title` from graph.json).
+- **An explicitly GROUPED node is left where it is** — putting a node in a group is a
+  stronger statement about where it belongs than naming it is.
+- **The title feeds litegraph's width**, so `node_size()` measures a renamed node with
+  its own name; forgetting that would desync the model from the editor for exactly
+  the nodes this feature creates. Verified against the browser: a 42-character name
+  gives 361.20000 in Python against 361.20001 on the canvas.
+- Still open: a graph with many UNNAMED sources still stacks them all in column 0, so
+  the result stays tall and narrow (`retromy`: 2010×8179). Naming them is the fix,
+  and now it is available.
 
 **Apply / reload rules:**
 - Backend Python change → `docker restart noodle` (process caches imports;

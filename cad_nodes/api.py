@@ -322,3 +322,22 @@ async def screenshot(store: GraphStore, graph_id: str, **opts):
     from . import screenshot as _shot
     store.load(graph_id)                 # 404 on an unknown/invalid project id
     return await _shot.render(graph_id, **opts)
+
+
+def arrange(store: GraphStore, graph_id: str, **opts) -> dict:
+    """Tidy the graph's node positions, left-to-right by dependency depth.
+
+    Nodes are placed using their REAL on-canvas size (cad_nodes/layout.py mirrors
+    litegraph's own computeSize, pinned to a captured fixture), so the result is
+    guaranteed free of overlapping nodes rather than merely spread out — the
+    guarantee is asserted before the graph is saved. Group boxes are re-fitted
+    around the members they had BEFORE the move, and members are kept in one
+    y-band so two groups' boxes don't end up cutting across each other.
+
+    Returns the layout summary: nodes, columns, moved, overlaps, group_overlaps.
+    """
+    from . import layout as _layout
+    graph = store.load(graph_id)
+    summary = _layout.arrange(graph, **opts)
+    store.save(graph_id, graph)
+    return summary

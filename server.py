@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # Node-based CAD engine (pure imports; build123d only used in the subprocess)
-from cad_nodes import api, catalog
+from cad_nodes import api, catalog, layout
 from cad_nodes.graph import Graph, ValidationError
 from cad_nodes.screenshot import ScreenshotUnavailable
 from cad_nodes.transpiler import transpile, transpile_with_map
@@ -688,6 +688,46 @@ async def patch_graph_param(name: str, payload: ParamPatch):
     except (ValueError, KeyError) as e:
         raise HTTPException(400, str(e)) from e
     return {"status": "ok", "value": value}
+
+
+@app.post("/api/graph/{name}/arrange")
+async def arrange_graph(name: str, graph: Optional[dict] = Body(default=None)):
+    """Tidy node positions — left-to-right by dependency depth, on the nodes' REAL
+    on-canvas sizes, so the result cannot contain overlapping nodes (§6c).
+
+    Two modes, one layout engine:
+
+    - **with a graph body** — arrange THAT graph and return it, touching nothing on
+      disk. This is what the editor uses: the open canvas, not the saved file, is
+      what the user is looking at, so arranging the stored copy would both discard
+      unsaved edits and desync undo.
+    - **with no body** — load the stored project, arrange, save. For an agent or a
+      curl driving a project it is not holding in memory.
+
+    Returns `{status, summary, graph?}`. `summary.group_overlaps` > 0 means some
+    group boxes still cut across each other (their members interleave in the
+    dependency order); the nodes are still correctly placed.
+    """
+    require_project(name)
+    if graph is not None:
+        graph.setdefault("name", name)
+        try:
+            g = Graph.from_dict(graph)
+            g.validate()
+        except (ValidationError, KeyError, ValueError) as e:
+            raise HTTPException(400, f"Invalid graph: {e}") from e
+        try:
+            summary = layout.arrange(g)
+        except (ValueError, AssertionError) as e:
+            raise HTTPException(400, str(e)) from e
+        return {"status": "ok", "summary": summary, "graph": g.to_dict()}
+
+    store = GraphStore(PROJECTS_DIR)
+    try:
+        summary = api.arrange(store, name)
+    except (ValueError, AssertionError, KeyError) as e:
+        raise HTTPException(400, str(e)) from e
+    return {"status": "ok", "summary": summary}
 
 
 @app.post("/api/graph/{name}/codeblock/{node_id}/scan")

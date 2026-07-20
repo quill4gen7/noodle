@@ -47,6 +47,11 @@ class Node:
     finish: Optional[str] = None      # display-only: solid | glass | emissive | metal
     # Editor-only canvas size [w, h] — a resized sticky Note keeps its box.
     size: Optional[list[float]] = None
+    # User-given name for THIS node, replacing the type's label on the title bar.
+    # Documentation on any node; on a pure parameter source (category "input") it
+    # also PROMOTES the node to a graph parameter, which `layout.arrange` gathers
+    # into the panel on the left. See CLAUDE.md §6d.
+    title: Optional[str] = None
     # UX-only: names of inputs whose "multi" (+) toggle is on, so the editor
     # restores their extra/spare connection slots on reload. Ignored by the
     # engine (several connections to one socket already fan out by themselves).
@@ -72,6 +77,8 @@ class Node:
             d["finish"] = self.finish
         if self.size:
             d["size"] = list(self.size)
+        if self.title:
+            d["title"] = self.title
         if self.multi:
             d["multi"] = list(self.multi)
         return d
@@ -91,6 +98,7 @@ class Node:
             wireframe=bool(d.get("wireframe", False)),
             finish=d.get("finish"),
             size=list(d["size"]) if d.get("size") else None,
+            title=(d.get("title") or None),
             multi=list(d.get("multi", [])),
         )
 
