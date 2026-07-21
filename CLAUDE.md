@@ -871,13 +871,19 @@ the result without closing them first. They are replaced by one live modal
   never a run. Cancel/Esc restores the state captured on open, and the whole
   visit is ONE undo step, not one per click.
 - **A multi-selection is styled together** — the submenus could not do that.
-- **Per PIECE is expressed by the graph, not by this modal**: since §5d-bis every
-  body of a collide scene resolves colour and finish from the node that DREW it
-  (`body.owner`), so you style the jar by opening this on the jar's node and the
-  bolts by opening it on the Drop. Giving ONE bolt of a fan-out its own material
-  is deliberately absent — they are one node by construction, and telling them
-  apart would need a per-body override model (new state, new serialization, and
-  an answer for what happens when the count changes). `rainbow` remains that
+- **Per PIECE, and it needed no new state.** Since §5d-bis every body of a collide
+  scene names the node that DREW it (`body.owner`), so "glass jar, metal bolts"
+  was already expressible per node — but only if you knew to open the modal on
+  the CONTAINER's node, whose own preview is usually switched off. Nobody guesses
+  that. `piecesOf(node)` groups the last view's bodies by owner, and when there is
+  more than one the modal shows a **Pezzo** row that retargets it. Switching
+  re-reads that node's own values (showing the previous piece's colour would be a
+  lie), and Cancel restores every piece VISITED, not just the one on screen. It
+  is a view onto the per-node fields that already exist — no per-body override
+  map, so graph.json is untouched and a test pins that no such state was invented.
+- Giving ONE bolt of a fan-out its own material is still absent: those are one
+  node by construction, and telling them apart would need real per-body state
+  with an answer for what happens when the count changes. `rainbow` remains that
   answer.
 - Tests: `tests/test_appearance.py`.
 

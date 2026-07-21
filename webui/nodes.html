@@ -2714,17 +2714,43 @@ const FINISHES = [
   ['metal',    '🪙 Metal', ''],
 ];
 
+// The PIECES of a node's preview that can be styled apart. A collide Scene's
+// bodies each name the node that drew them (`body.owner`, §5d-bis) — a container
+// is a different node from the Drop that pours out of it — so "give the jar glass
+// and the bolts metal" is already expressible per node. What was missing is any
+// way to FIND that: you had to know to open this modal on the container's node,
+// whose own preview may well be switched off. So the modal lists them and
+// switches its target. No new state, no new serialization: it is a view onto the
+// per-node fields that already exist.
+function piecesOf(node){
+  const p = lastView && lastView.previews && lastView.previews['n' + node.id];
+  if (!p || !p.bodies || !p.bodies.length) return null;
+  const by = new Map();
+  for (const b of p.bodies){
+    const key = b.owner || '';
+    const e = by.get(key) || {owner: b.owner || null,
+                              node: b.owner ? nodeFor(b.owner) : node, n: 0};
+    e.n++; by.set(key, e);
+  }
+  const out = [...by.values()].filter(e => e.node);   // an owner we cannot resolve
+  return out.length > 1 ? out : null;                 // 1 piece = nothing to choose
+}
+
 async function editAppearance(node){
   if (!node) return;
   const drawsGeom = n => n.widgets && n.widgets.some(w => w.isEye);
   // Several nodes selected (and this one among them) → style them together.
   const sel = Object.values((lcanvas && lcanvas.selected_nodes) || {});
-  const targets = (sel.length > 1 && sel.includes(node))
+  let targets = (sel.length > 1 && sel.includes(node))
     ? sel.filter(drawsGeom) : [node];
   if (!targets.length) return;
 
-  const before = targets.map(n => ({n, color: n.previewColor,
-                                    finish: n.previewFinish, wire: n.wireframe}));
+  const pieces = targets.length === 1 ? piecesOf(node) : null;
+  // Every node the modal could touch is captured, so Cancel restores whichever
+  // pieces were visited — not just the one showing when it was closed.
+  const touch = pieces ? pieces.map(p => p.node) : targets;
+  const before = touch.map(n => ({n, color: n.previewColor,
+                                  finish: n.previewFinish, wire: n.wireframe}));
   const st = {color: node.previewColor ?? null,
               finish: node.previewFinish ?? null,
               wire: !!node.wireframe};
@@ -2734,8 +2760,10 @@ async function editAppearance(node){
                                  : esc(node.title || node.cadType);
 
   const m = buildModal(
-    `<h3>Aspetto — ${who}</h3>` +
+    `<h3>Aspetto — <span id="__who">${who}</span></h3>` +
     `<p>Solo visualizzazione: non tocca la geometria, quindi si applica subito.</p>` +
+    (pieces ? `<div style="margin:10px 0 4px"><b>Pezzo</b></div>` +
+              `<div id="__pc" class="chips"></div>` : '') +
     `<div style="margin:10px 0 4px"><b>Finish</b></div><div id="__fin" class="chips"></div>` +
     `<div style="margin:14px 0 4px"><b>Colore</b></div><div id="__col" class="chips"></div>` +
     `<div class="chip-add"><input class="menu-search" id="__hex" placeholder="#44cc88"></div>` +
@@ -2763,8 +2791,31 @@ async function editAppearance(node){
     return b;
   };
 
+  // Switch which piece the finish/colour sections are editing.
+  const pcBar = m.ov.querySelector('#__pc'), whoEl = m.ov.querySelector('#__who');
+  let cur = pieces ? pieces.find(p => p.node === node) || pieces[0] : null;
+  const pieceName = p => {           // raw text; escape at the point of use
+    const base = p.node.title || p.node.cadType;
+    return p.owner ? base : `${base} — cade${p.n > 1 ? ` ×${p.n}` : ''}`;
+  };
+  const selectPiece = p => {
+    cur = p; targets = [p.node];
+    st.color = p.node.previewColor ?? null;
+    st.finish = p.node.previewFinish ?? null;
+    st.wire = !!p.node.wireframe;
+    whoEl.textContent = pieceName(p);
+  };
+  if (pieces) selectPiece(cur);
+
   function draw(){
     finBar.innerHTML = ''; colBar.innerHTML = '';
+    if (pieces){
+      pcBar.innerHTML = '';
+      for (const p of pieces)
+        chip(pcBar, esc(pieceName(p)), p === cur, () => selectPiece(p))
+          .title = p.owner ? 'disegnato da un altro nodo (il contenitore)'
+                           : 'i corpi prodotti da questo nodo';
+    }
     for (const [v, label, hint] of FINISHES)
       chip(finBar, label, st.finish === v, () => { st.finish = v; })
         .title = hint || '';
