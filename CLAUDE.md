@@ -854,6 +854,33 @@ nodes overlapping**, hiding each other.
   `recordHistory()`, so Ctrl+Z puts every node back; it deliberately does NOT
   `scheduleLive()` — moving a node cannot change the model.
 
+### 6c-bis. 🎨 Aspetto — one modal for colour, finish and wireframe
+
+A node's right-click menu used to carry three separate entries for how it LOOKS: a
+Wireframe toggle and two submenus. Their common flaw was that you could not see
+the result without closing them first. They are replaced by one live modal
+(`editAppearance`, `nodes.html`); the old entries are gone and a test pins that.
+
+- **UI-only.** The state model is unchanged — `previewColor` / `previewFinish` /
+  `wireframe` on the node, `color` / `finish` / `wireframe` in graph.json. No
+  migration, nothing else in the app has to know.
+- **Live, because it costs nothing.** These three never reach the transpiler —
+  the generated source is byte-identical with and without them (pinned in
+  `tests/test_print.py`), which is also why editing them never invalidates the
+  memo cache. So every click is a `refreshDisplay()` (re-render the last view),
+  never a run. Cancel/Esc restores the state captured on open, and the whole
+  visit is ONE undo step, not one per click.
+- **A multi-selection is styled together** — the submenus could not do that.
+- **Per PIECE is expressed by the graph, not by this modal**: since §5d-bis every
+  body of a collide scene resolves colour and finish from the node that DREW it
+  (`body.owner`), so you style the jar by opening this on the jar's node and the
+  bolts by opening it on the Drop. Giving ONE bolt of a fan-out its own material
+  is deliberately absent — they are one node by construction, and telling them
+  apart would need a per-body override model (new state, new serialization, and
+  an answer for what happens when the count changes). `rainbow` remains that
+  answer.
+- Tests: `tests/test_appearance.py`.
+
 ### 6d. Naming a node — and the input panel
 
 There is a per-node `title` (`Node.title`, persisted only when it differs from the

@@ -820,31 +820,11 @@ function registerNodes(defs){
           {content: '🔎 Search aliases…', callback: ()=> editAliases(self.cadType)},
           {content: '✎ Rinomina…  (F2)', callback: ()=> renameNode(self)},
         ];
-        if (self.widgets && self.widgets.some(w=>w.isEye)){   // a node that renders geometry
-          opts.push({content: (self.wireframe?'✓ ':'')+'Wireframe',
-            callback: ()=>{ self.wireframe = !self.wireframe; refreshDisplay(); }});
-          opts.push({content: '✨ Finish', has_submenu: true,
-            callback: (v,o,e,menu)=>{
-              const set = f => ()=>{ self.previewFinish = f; refreshDisplay(); };
-              new LiteGraph.ContextMenu([
-                {content:'Solid (default)', callback:set(null)},
-                {content:'🔎 Glass — real transmission, see through it', callback:set('glass')},
-                {content:'💡 Emissive — it glows', callback:set('emissive')},
-                {content:'🪙 Metal', callback:set('metal')},
-              ], {event:e, parentMenu:menu, title:'Finish'});
-              return false;
-            }});
-          opts.push({content: '🎨 Preview colour', has_submenu: true,
-            callback: (v,o,e,menu)=>{
-              const sw = c=>`<span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${c};margin-right:6px;vertical-align:middle"></span>`;
-              const entries = [{content:'Auto (palette)', callback:()=>{ self.previewColor=null; refreshDisplay(); }},
-                {content:'🌈 Rainbow (one hue per piece)', callback:()=>{ self.previewColor='rainbow'; refreshDisplay(); }}];
-              for(const c of PALETTE) entries.push({content: sw(c)+c, callback:()=>{ self.previewColor=c; refreshDisplay(); }});
-              entries.push({content:'Custom…', callback:()=>{ const x=prompt('Hex colour (e.g. #44cc88):', self.previewColor||'#44cc88'); if(x){ self.previewColor=x.trim(); refreshDisplay(); } }});
-              new LiteGraph.ContextMenu(entries, {event:e, parentMenu:menu, title:'Preview colour'});
-              return false;
-            }});
-        }
+        // One modal for colour + finish + wireframe. It replaced three separate
+        // entries (a Wireframe toggle and two submenus) whose common flaw was
+        // that you could not SEE the result without closing them first.
+        if (self.widgets && self.widgets.some(w=>w.isEye))   // draws geometry
+          opts.push({content: '🎨 Aspetto…', callback: ()=> editAppearance(self)});
         return opts;
       };
     };
@@ -2711,6 +2691,121 @@ async function renameNode(node){
   lcanvas.setDirty(true, true);
   recordHistory();
   checkDirty && checkDirty();                     // autosave the new name
+}
+
+// ── 🎨 Aspetto: colour + finish + wireframe, in one live modal ─────────────
+// These three are DISPLAY-ONLY — they never reach the transpiler (the generated
+// source is byte-identical with and without them), so every change is a pure
+// re-render of the last view: no execute, no engine round trip. That is what
+// lets the modal apply instantly instead of making you close a submenu to find
+// out what you picked. Cancel restores the state captured on open, and the whole
+// visit is ONE undo step rather than one per click.
+//
+// Per PIECE is expressed by the graph, not by this modal: since §5d-bis every
+// body of a collide scene resolves colour and finish from the node that DREW it
+// (`body.owner`), so you style the jar by opening this on the jar's node and the
+// bolts by opening it on the Drop. Giving ONE bolt of a fan-out its own material
+// is deliberately not here — they are one node by construction, and telling them
+// apart needs a per-body override model. `rainbow` remains that answer.
+const FINISHES = [
+  [null,       'Solid',    'il default'],
+  ['glass',    '🔎 Glass', 'trasmissione vera, ci vedi attraverso'],
+  ['emissive', '💡 Emissive', 'emette luce'],
+  ['metal',    '🪙 Metal', ''],
+];
+
+async function editAppearance(node){
+  if (!node) return;
+  const drawsGeom = n => n.widgets && n.widgets.some(w => w.isEye);
+  // Several nodes selected (and this one among them) → style them together.
+  const sel = Object.values((lcanvas && lcanvas.selected_nodes) || {});
+  const targets = (sel.length > 1 && sel.includes(node))
+    ? sel.filter(drawsGeom) : [node];
+  if (!targets.length) return;
+
+  const before = targets.map(n => ({n, color: n.previewColor,
+                                    finish: n.previewFinish, wire: n.wireframe}));
+  const st = {color: node.previewColor ?? null,
+              finish: node.previewFinish ?? null,
+              wire: !!node.wireframe};
+  const esc = s => String(s).replace(/[&<>"]/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const who = targets.length > 1 ? `${targets.length} nodi`
+                                 : esc(node.title || node.cadType);
+
+  const m = buildModal(
+    `<h3>Aspetto — ${who}</h3>` +
+    `<p>Solo visualizzazione: non tocca la geometria, quindi si applica subito.</p>` +
+    `<div style="margin:10px 0 4px"><b>Finish</b></div><div id="__fin" class="chips"></div>` +
+    `<div style="margin:14px 0 4px"><b>Colore</b></div><div id="__col" class="chips"></div>` +
+    `<div class="chip-add"><input class="menu-search" id="__hex" placeholder="#44cc88"></div>` +
+    `<label style="display:flex;align-items:center;gap:7px;margin-top:12px;cursor:pointer">` +
+    `<input type="checkbox" id="__wf"> Wireframe</label>` +
+    `<div class="modal-actions"><button class="tb-btn" id="__ac">Annulla</button>` +
+    `<button class="tb-btn primary" id="__ok">Fatto</button></div>`);
+
+  const finBar = m.ov.querySelector('#__fin'), colBar = m.ov.querySelector('#__col');
+  const hex = m.ov.querySelector('#__hex'), wf = m.ov.querySelector('#__wf');
+
+  const apply = () => {
+    for (const t of targets){
+      t.previewColor = st.color; t.previewFinish = st.finish; t.wireframe = st.wire;
+    }
+    refreshDisplay();
+  };
+  const chip = (bar, label, on, onClick, style) => {
+    const b = document.createElement('button');
+    b.className = 'tb-btn' + (on ? ' primary' : '');
+    b.style.cssText = 'margin:0 5px 5px 0;' + (style || '');
+    b.innerHTML = label;
+    b.onclick = () => { onClick(); draw(); apply(); };
+    bar.appendChild(b);
+    return b;
+  };
+
+  function draw(){
+    finBar.innerHTML = ''; colBar.innerHTML = '';
+    for (const [v, label, hint] of FINISHES)
+      chip(finBar, label, st.finish === v, () => { st.finish = v; })
+        .title = hint || '';
+    chip(colBar, 'Auto', st.color == null, () => { st.color = null; });
+    chip(colBar, '🌈 Rainbow', st.color === 'rainbow', () => { st.color = 'rainbow'; })
+      .title = 'una tinta per pezzo';
+    for (const c of PALETTE)
+      chip(colBar, '&nbsp;', st.color === c, () => { st.color = c; },
+           `background:${c};min-width:26px;border-color:${c}`);
+    wf.checked = st.wire;
+    if (document.activeElement !== hex)
+      hex.value = (st.color && st.color !== 'rainbow') ? st.color : '';
+  }
+
+  hex.addEventListener('input', () => {
+    const v = hex.value.trim();
+    if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)){ st.color = v; draw(); apply(); }
+  });
+  wf.addEventListener('change', () => { st.wire = wf.checked; apply(); });
+  m.ov.querySelector('#__ac').onclick = () => m.close(false);
+  m.ov.querySelector('#__ok').onclick = () => m.close(true);
+  // buildModal handles the overlay click but not the key; Esc must revert too.
+  const onKey = e => {
+    if (e.key === 'Escape'){ e.stopPropagation(); m.close(false); }
+    else if (e.key === 'Enter' && document.activeElement !== hex) m.close(true);
+  };
+  m.ov.addEventListener('keydown', onKey);
+  document.addEventListener('keydown', onKey, true);
+  draw();
+
+  const ok = await m.p;
+  document.removeEventListener('keydown', onKey, true);
+  if (ok === false || ok === 'cancel'){          // Esc / overlay click / Annulla
+    for (const b of before){
+      b.n.previewColor = b.color; b.n.previewFinish = b.finish; b.n.wireframe = b.wire;
+    }
+    refreshDisplay();
+    return;
+  }
+  recordHistory();                                // one undo step for the visit
+  if (typeof checkDirty === 'function') checkDirty();
 }
 
 async function renameGroup(g){
