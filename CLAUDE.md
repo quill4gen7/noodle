@@ -103,9 +103,13 @@ server.py            FastAPI HTTP API (port 8090). Routes under /api/* :
                        /api/graph/{name}/slice_summary|section_outline (§7b),
                        /api/graph/{name}/screenshot (PNG of the viewport, §9 —
                        the agent's eyes; also MCP cad_screenshot),
-                       /api/graph/{name}/progress (SSE: per-node execution events
-                       of the run in flight, tailed from the workdir's
-                       progress.jsonl — see transpiler `_ev`),
+                       /api/graph/{name}/progress?run=<id> (SSE: per-node execution
+                       events, tailed from the workdir's progress.jsonl — see
+                       transpiler `_ev`. `run` is the id the caller is about to POST
+                       to /execute?run=; each run opens the file with a header line
+                       naming itself and closes it with a `done` line, so the stream
+                       knows whose events it is reading and when to hang up. Omit it
+                       and you get the next run that starts — the MCP/curl path),
                        /api/system/health|logs|restart.
                        NOTE /execute runs via `asyncio.to_thread`: a graph run is
                        seconds of blocking CPU and must NOT hold the event loop,
@@ -159,12 +163,37 @@ webui/
                        /api/wiretypes (derived from casts.py, §5 — the inline
                        literal is only an offline fallback).
                        Execution glow (beginExecGlow/glowEvent/drawExecGlow): the nodes
-                       light up AS THEY RUN. openProgress() subscribes to the SSE
-                       /api/graph/{name}/progress BEFORE POSTing /execute, so no start
-                       event is missed; each event opens or closes a node's span. A
-                       node executing right now breathes amber; when it finishes it
+                       light up AS THEY RUN. Each event opens or closes a node's span.
+                       A node executing right now breathes amber; when it finishes it
                        settles and fades — green if it really recomputed, cold blue if
                        the memo cache served it, red if it threw.
+                       RUNS ARE IDENTIFIED, NOT INFERRED — three bugs were paid for here
+                       and every one of them read as "the glow stops at random":
+                       (1) runGraph mints a `run` id and passes it to BOTH
+                       /progress?run= and /execute?run=, because progress.jsonl lives at
+                       ONE path per project and two warm runs write near-identical bytes
+                       — the old tailer watched the file SIZE and, when a run rewrote it
+                       to the same length inside one 50ms poll, dropped the whole run
+                       (measured: 5/5 nodes on voronoi-3d-lattice; big graphs survived,
+                       small fast ones lost everything). (2) The stream is NOT closed
+                       when the POST resolves: the browser dispatches that GET up to
+                       ~90ms AFTER the POST and needs ~90ms more to connect, so a warm
+                       ~350ms run was over before its stream arrived — only run 1 glowed
+                       and runs 2-5 received nothing at all. The run marks its own end
+                       instead (executor writes a `done` line in a `finally`; the server
+                       hangs up on it, freeing the connection — Request.is_disconnected()
+                       NEVER fires inside a StreamingResponse, measured, so a stream with
+                       no defined end lingers the full 180s idle timeout holding one of
+                       Chrome's 6 per-host connections). PROGRESS_GRACE_MS is only the
+                       backstop. (3) beginExecGlow stamps each glow with an id and
+                       endExecGlow(id) refuses to close one that isn't its own — a
+                       superseded run rejects on a microtask, i.e. AFTER its successor
+                       installed its glow, so it used to tear down the run that mattered
+                       (in Live mode a run is superseded on every 120ms debounce tick).
+                       Regression tests: tests/perf/test_progress_truth.py (backend) and
+                       test_ui_reactivity.py::test_every_run_glows_in_the_editor — the
+                       backend ones ALL passed while (2) was broken, so the browser-level
+                       one is the load-bearing one.
                        Cost badges (drawCostBadge, toolbar "Costi" toggle, remembered
                        in localStorage `noodle:settings:showCost`): the same story made
                        to stay — last run's wall-clock on each node's title bar, same
@@ -225,9 +254,14 @@ cad_nodes/
                        that works on BOTH paths — the warm worker redirects stdout
                        into a buffer during exec, and the cold subprocess has no pipe
                        home at all. The editor tails it over SSE and lights each node
-                       AS IT RUNS.
+                       AS IT RUNS. It is shared and rewritten in place, so a run BRACKETS
+                       itself in it: executor writes a `{"k":"run","r":<id>}` header when
+                       it opens the file and a `{"k":"done"}` line in a `finally` when it
+                       is over. Both are load-bearing — see the glow notes under
+                       webui/nodes.html for the three ways this went wrong without them.
   executor.py        Runs the generated script in a worker subprocess; captures
-                       STL + view JSON + per-node errors. execute_graph(graph, workdir).
+                       STL + view JSON + per-node errors. execute_graph(graph, workdir,
+                       run_id=…) — run_id names the run inside progress.jsonl.
   worker.py / mesh_extractor.py   the subprocess + meshing. The warm worker owns
                        the persistent __MEMO__ store (LRU 256: node outputs,
                        preview meshes, view stats) — on a repeat run only the
@@ -465,7 +499,8 @@ thirds of the material within one — so orientation decides **where the part br
   too — and then a plain preview carries an anim of kind "keys", which `applyDropAnim`
   routes to `sceneBodyPose` instead of `dropMatrixAt`. It is not an output; with no
   motion wired it never moves, so preview the bowl node itself. A MOVING CONTAINER
-  (`ContainerMotion` → the `motion` socket) is the exception, and §5d-bis below.
+  (`ContainerMotion`, labelled **Motion** → the `motion` socket) is the exception, and
+  §5d-bis below; the same node drives `Animate` with no physics at all (§5d-ter).
   GRIP: `grip` scales the friction of the whole
   scene (statics, parts, bed). It is not a detail — on a SLOPED static face high
   friction grabs a part and flings it sideways instead of letting it slide off, so
@@ -561,6 +596,50 @@ thirds of the material within one — so orientation decides **where the part br
       headlessly at all (§9 runs on SwiftShader, with no GPU).
   - Example: `examples/container-tilt.json` (balls land, then the bowl tips over its own
     rim and pours them out). Costs ~5ms per simulated second to drive.
+- **§5d-ter. `Animate` — the same motion with NO physics.** A Motion turned out to be
+  worth having on its own: a lid unscrewing off a jar, a drawer sliding out, a hinge
+  swinging, a part lifted clear of an assembly. `Animate(shape, motion, t)` just MOVES
+  the shape along the plan and `t` scrubs it. Drop asks *what would happen*; Animate
+  says *do this*. Because of that the `ContainerMotion` node is now labelled just
+  **Motion** (the TYPE string is unchanged — saved graphs and `_container_motion` keep
+  their names; only the label and the aliases moved).
+  - **It cost almost nothing to build, and that is the design.** A screw needs no new
+    vocabulary because the plan already advances translation and rotation on ONE
+    phase: `move z 12` + `rotate z 720`, `cycles 0`, and the cap rises as it turns.
+    The pose comes from the same `_motion_driver`, called with an identity bed frame
+    (`B = I`, `o = 0`) and the shape's own tessellated bbox centre as the pivot — the
+    same reason `PlaceOnBed` measures on the tessellation: the fast OCCT box is
+    oversized and an off-centre axis is exactly what an unscrewing lid cannot afford.
+  - **It bakes keyframes rather than staying analytic**, and that is why the frontend
+    change was three lines: the browser already replays a `kind:"keys"` plan at 60fps
+    (`sceneBodyPose`, built for collide scenes), so `_animate` samples `pose(tau)` at
+    60Hz (≥24 samples per oscillation cycle, capped at 2000) and ships it as
+    `_noodle_anim`. No new format, no new replay path. What DID have to change:
+    `applyLocalTransform`/`applyDropTargets` keyed on `cadType === 'Drop'` — now on
+    `TIMELINE_NODES`, or Animate would be correct and silently un-scrubbable. Measured
+    in the browser: scrubbing its own `t` = 60fps replay + exactly ONE re-bake at
+    settle; a Number Slider wired into `t` = 0 runs.
+  - **It must NOT copy Drop's un-fan.** A Drop gathers several shapes into one scene
+    because they have to collide with each other; nothing here interacts, so five lids
+    wired in are five independent movements — the ordinary fan-out rule. Equally: no
+    `container`, no `collide`, no `grip`, no `material`. Everything that costs compute
+    stays in Drop. Both share one Motion node, and one `t` slider can drive both.
+  - **`hold` exists because of how the live scrub finds its targets.** One slider driving
+    a 1.2s unscrew AND an 8s pour needs the two timelines to be the same LENGTH — and the
+    obvious fix, rescaling `t` through a `Remap`, silently costs you the 60fps replay:
+    `applyDropTargets` follows DIRECT links from the dragged value node into a `t` socket
+    and cannot evaluate a node in between (nor should it — that would mean reimplementing
+    engine math in JS). So Animate pads its own timeline with stillness after the motion
+    instead, and the wire stays direct. Past `end` the phase already parks (at the
+    destination for a ramp, at the start for an oscillation), so holding is free and
+    exact. **Pad the short clock; never rescale the wire.**
+  - Examples: `examples/jar-cap-unscrew.json` (the bare mechanism — scrub `t` and the cap
+    spins up off its thread) and `examples/threaded-jar-pour.json`, where it earns its
+    keep: ONE slider unscrews the golden cap (Animate, 0.4s delay + 0.8s + 6.8s hold =
+    8.0s) and then tips the glass jar (Drop + container motion, T = 7.9875s) so six
+    rainbow bolts pour out and fall to the bed. Verified in the browser: dragging that
+    one slider moves the cap and all seven scene bodies at 60fps, with exactly one
+    re-bake at settle. Both lanes — a solid stays a solid.
 - Tests: `tests/test_print.py`.
 
 ## 5e. Voronoi 3D + universal Populate
@@ -769,6 +848,27 @@ JSON. Catalog aliases are shown in the modal but never editable there — code o
 **Group nodes** (BuildPart/BuildSketch) use `is_group=True` + a `builder`
 template and emit nested `with` blocks — see existing examples.
 
+A child is substituted INLINE into the parent's `with` block instead of being
+emitted as a statement of its own, and that one difference hid two bugs for a
+long time — **no saved project uses a group**, so nothing exercised the path
+(`tests/test_group_children.py` now does):
+
+- **A child used to lose every parameter.** `_input_values` reports `"None"` for
+  each UNWIRED socket, but a socket sharing a param's name must fall back to the
+  widget (params-as-inputs, §5b). `_emit_simple` had that rule inline; the group
+  path merged blindly over it, so a child came out `Box(None, None, None)` and
+  the group died with an OCCT constructor TypeError. Both paths now go through
+  `_merge_inputs`, so the rule lives in ONE place.
+- **A child emitted no progress events**, so a BuildPart of twenty nodes lit one
+  glow while the twenty stayed dark all run. Children can't be `_guard`ed (they
+  are not statements), so they bracket themselves: `_ev('s'/'e')` inline, plus an
+  inner try/except that REPORTS and re-raises — a failing child still fails its
+  group exactly as before, but it no longer unwinds past its own start event and
+  leaves that node breathing amber forever. On a memo HIT the block is skipped
+  entirely, so `_guard(sub_ids=…)` reports the children cached too; without that
+  they would light on a cold run and go dark on every warm one, which is
+  indistinguishable from the glow failing at random.
+
 ### 6b. Drag anticipation (the old ✥ fastDrag)
 
 It is **not a mode of its own**: `fastDrag()` in nodes.html is `liveMode &&
@@ -786,16 +886,35 @@ decided at DRAG TIME, not at node creation — it depends on the wiring and on
 whether a preview mesh exists, so it cannot be a static flag on the NodeDef:
 
 - `applyLocalTransform(node)` — the node's own preview moved as a delta from the
-  baked params. Today: Move/Rotate/Scale (a `Location`) and Drop (its shipped
-  `_noodle_anim`). Add a node here only if the transform is expressible as a
-  matrix on the already-meshed preview.
-- `applyDropTargets(node)` — a value node (Number Slider…) wired into a `Drop.t`,
-  which replays each target instead of itself.
+  baked params. Today: Move/Rotate/Scale (a `Location`) and the `TIMELINE_NODES`
+  — Drop and Animate — replaying the `_noodle_anim` they ship. Add a node here
+  only if the transform is expressible as a matrix on the already-meshed preview.
+- `applyDropTargets(node)` — a value node (Number Slider…) wired into the `t` of a
+  timeline node, which replays each target instead of itself.
 
 Both return **false** when they cannot help, and the caller falls through to the
 plain debounced re-run. That fallback is what makes an unanticipated node correct
 but merely slower — so when in doubt, return false. A node that anticipates
 WRONGLY is far worse than one that does not anticipate at all.
+
+**Never build a preview key by hand — `graphIdOf(node)` is the only way across.**
+`previewMeshes` and `previewAnims` are keyed by the **on-disk graph id** (viewer.js
+keys `meshes[id]` by the `view.previews` key); a litegraph node carries a separate
+**runtime** id. As `nodeFor`'s comment already said, those "coincide only by luck" —
+and every replay/gizmo call site was building `'n'+node.id` anyway. It worked on a
+graph the editor had saved and reloaded in one go, which is why every test of the
+scrub passed, and it broke everywhere else — including on every hand-authored
+example, whose ids are words like `drop`. **Measured on `examples/threaded-jar-pour`:
+the Drop (runtime 30) looked up `n30` while its mesh sat under `n29`, and a Number
+Slider (runtime 31) resolved `n31` — the TORUS's mesh.** So the failure mode is not
+merely a lost 60fps scrub: a false hit hands a node ANOTHER node's geometry to
+transform, and the Move/Rotate/Scale gizmo reads the same map. It also cost a full
+12-minute screen recording that looked plausible until the frames were examined —
+the cap unscrewed (its ids happened to match) while the jar never tipped.
+`graphIdOf` / `previewMeshOf` / `previewAnimOf` are now the only readers;
+`tests/test_print.py::test_the_live_replay_resolves_meshes_by_ON_DISK_id` pins that
+no caller reconstructs the key, because this failed **silently** and would return
+the same way.
 
 ### 6c. Node size & `arrange()` — why a graph you generate stops overlapping itself
 

@@ -500,6 +500,8 @@ window._noodle = { get lgraph(){ return lgraph; }, get lcanvas(){ return lcanvas
   get execGlow(){ return execGlow; }, get lastCost(){ return lastCost; },
   get showCost(){ return showCost; },
   get THREE(){ return THREE; },
+  get liveMode(){ return liveMode; },
+  get previewMeshes(){ return previewMeshes; },
   paramChange(n){ return onParamChange(n); },
   togglePick(i){ return togglePick(i); } };
 let currentName = null;
@@ -3226,7 +3228,7 @@ function sceneBodyPose(anim, tNew, child){
 // single Drop is one mesh moved by M(tNew)·M(tBaked)⁻¹; a collide Scene is a
 // group whose bodies each carry their own keyframe plan.
 function applyDropAnim(node, tNew){
-  const m = previewMeshes['n'+node.id];
+  const m = previewMeshOf(node);
   if (!m) return false;
   if (m.userData && m.userData.isScene){
     let any = false;
@@ -3236,7 +3238,7 @@ function applyDropAnim(node, tNew){
     }
     return any;
   }
-  const anim = previewAnims['n'+node.id];
+  const anim = previewAnimOf(node);
   if (!anim) return false;
   // One part falling into a `container` is still a simulated scene — it just has
   // a single body, so it arrives as a plain preview carrying a keyframe plan.
@@ -3246,8 +3248,13 @@ function applyDropAnim(node, tNew){
   return true;
 }
 
-// A dragged value node (Number Slider…) wired straight into Drop `t` sockets:
-// replay each connected Drop live instead of waiting for the engine.
+// The nodes that ship a scrubbable timeline with their preview: Drop (a fall it
+// simulated) and Animate (a movement you dictated). One `t` slider commonly
+// drives several of both, and they replay through the same two plan kinds.
+const TIMELINE_NODES = new Set(['Drop', 'Animate']);
+
+// A dragged value node (Number Slider…) wired straight into a timeline node's
+// `t` socket: replay each connected one live instead of waiting for the engine.
 function applyDropTargets(node){
   if (!node || !node.outputs || !lgraph) return false;
   const v = node.properties && node.properties.value;
@@ -3257,7 +3264,7 @@ function applyDropTargets(node){
     for (const lid of (out.links || [])){
       const lk = lgraph.links[lid]; if (!lk) continue;
       const tn = lgraph.getNodeById(lk.target_id);
-      if (!tn || tn.cadType !== 'Drop') continue;
+      if (!tn || !TIMELINE_NODES.has(tn.cadType)) continue;
       const sock = (tn.inputs || [])[lk.target_slot];
       if (!sock || (sock.cadName || sock.name) !== 't') continue;
       if (applyDropAnim(tn, v)) hit = true;
@@ -3268,12 +3275,12 @@ function applyDropTargets(node){
 
 // Move/Rotate/Scale a node's own preview mesh in Three.js (60fps), as a delta
 // from the params baked into the current mesh. Returns false if not applicable.
-// Drop replays its shipped timeline the same way (dropMatrixAt).
+// A timeline node replays its shipped plan the same way (dropMatrixAt/keys).
 function applyLocalTransform(node){
   if (!node) return false;
-  if (node.cadType === 'Drop') return applyDropAnim(node, +node.properties.t);
+  if (TIMELINE_NODES.has(node.cadType)) return applyDropAnim(node, +node.properties.t);
   if (!['Move','Rotate','Scale'].includes(node.cadType)) return false;
-  const m = previewMeshes['n'+node.id];
+  const m = previewMeshOf(node);
   if (!m) return false;                 // this node's result isn't on screen
   const b = node._baked || {}, p = node.properties;
   if (node.cadType === 'Move'){
@@ -3338,7 +3345,7 @@ function gizmoAnchorPos(node){
   const g = node._gizmo, p = node.properties;
   if (g.anchor === 'origin') return new THREE.Vector3(0,0,0);   // rotate: about global axis
   if (g.anchor === 'preview' || g.kind === 'scale'){
-    const m = previewMeshes['n'+node.id];
+    const m = previewMeshOf(node);
     if (m){ const b=new THREE.Box3().setFromObject(m); const c=new THREE.Vector3(); b.getCenter(c); return c; }
   }
   // "params": the bound XYZ values ARE the point
@@ -3442,7 +3449,7 @@ function gizmoDragUpdate(){
     // catalog range in gizmoWriteParam.
     const dz = gizmoAnchor.position.z - gizmoStart.z;
     let span = Math.max(gizmoStart.z, 10);
-    const pm = previewMeshes['n'+node.id];
+    const pm = previewMeshOf(node);
     if (pm){ const b=new THREE.Box3().setFromObject(pm); span = Math.max(span, b.max.z-b.min.z); }
     gizmoWriteParam(node, g.binds[0], gizmoParamStart[g.binds[0]] - dz/span);
   } else {                                                  // translate
@@ -3457,7 +3464,7 @@ function gizmoDragUpdate(){
   // Timeline (Drop) rides the same fallback: the mesh follows the cursor until
   // the debounced exact run lands the bounce/topple frame (memo makes it cheap).
   if (!applyLocalTransform(node) && (g.kind === 'translate' || g.kind === 'timeline')){
-    const m = previewMeshes['n'+node.id];
+    const m = previewMeshOf(node);
     if (m) m.position.copy(gizmoAnchor.position.clone().sub(gizmoStart));
   }
   scheduleGizmoRun();
@@ -3500,21 +3507,55 @@ function showGizmoHint(node){
 }
 
 // Live per-node execution events for the run we're about to ask for. Feeds the glow.
-function openProgress(){
+// `runId` is passed to BOTH this stream and the /execute that follows, so the
+// server matches events to this exact run instead of inferring which run owns the
+// project's progress file — two warm runs write nearly identical bytes and it
+// used to guess wrong, silently, losing whole runs' worth of events.
+// How long to keep listening after the run's POST has already come back. The
+// browser can dispatch this GET ~90ms AFTER the POST and take another ~90ms to
+// connect (measured), while the run itself finishes in ~350ms — so closing the
+// stream the moment the POST resolved threw away the events of every fast run,
+// which is most of them once the memo cache is warm.
+const PROGRESS_GRACE_MS = 2000;
+
+function openProgress(runId, glowId){
   if (!window.EventSource) return null;
   try {
-    const es = new EventSource(`${API}/api/graph/${currentName}/progress`);
-    es._seen = 0;
-    es.onmessage = (m)=>{ es._seen++; try { glowEvent(JSON.parse(m.data)); } catch(e){} };
+    const es = new EventSource(`${API}/api/graph/${currentName}/progress?run=${encodeURIComponent(runId)}`);
+    es._seen = 0; es._glowId = glowId; es._done = false; es._closed = false;
+    es.onmessage = (m)=>{
+      es._seen++;
+      let ev = null;
+      try { ev = JSON.parse(m.data); } catch(e){ return; }
+      if (!ev) return;
+      if (ev.k === 'done'){ es._done = true; finishProgress(es); return; }
+      // Late events from a SUPERSEDED run must not paint the run that replaced
+      // it — the glow they belong to is gone.
+      if (!execGlow || execGlow.id !== es._glowId) return;
+      glowEvent(ev);
+    };
     es.onerror = ()=>{};    // a dropped stream costs us the glow, never the run
     return es;
   } catch(e){ return null; }
 }
-function closeProgress(es){
-  endExecGlow();
-  if (!es) return;
+
+// The stream reached the end of its run — or we stopped waiting for it.
+function finishProgress(es){
+  if (!es || es._closed) return;
+  es._closed = true;
+  if (es._grace) clearTimeout(es._grace);
   if (!es._seen) log('no live progress for this run (glow unavailable)', 'warn');
+  endExecGlow(es._glowId);
   es.close();
+}
+
+// The POST came back. That is NOT the same as the stream being finished: the run
+// marks its own end (executor writes a `done` line, the server hangs up on it),
+// so wait for that and keep this only as a backstop.
+function closeProgress(es, glowId){
+  if (!es){ endExecGlow(glowId); return; }
+  if (es._done || es._closed){ finishProgress(es); return; }
+  es._grace = setTimeout(()=>finishProgress(es), PROGRESS_GRACE_MS);
 }
 
 window.runGraph = async function(){
@@ -3537,17 +3578,20 @@ window.runGraph = async function(){
   const _tick = setInterval(()=> setStatus(_verb+'… '+_elapsed()), 250);
   // Subscribe BEFORE asking for the run, so no node's start event is missed. The
   // worker appends one per node as it goes; the server tails the file to us.
-  beginExecGlow();
-  const es = openProgress();
+  const _runId = (crypto.randomUUID ? crypto.randomUUID()
+                                    : String(Date.now()) + Math.random().toString(16).slice(2));
+  const _glowId = beginExecGlow();
+  const es = openProgress(_runId, _glowId);
   let res;
   try {
-    res = await fetch(`${API}/api/graph/${currentName}/execute`, {method:'POST', signal});
+    res = await fetch(`${API}/api/graph/${currentName}/execute?run=${encodeURIComponent(_runId)}`,
+                      {method:'POST', signal});
   } catch(e){
-    clearInterval(_tick); closeProgress(es);
+    clearInterval(_tick); closeProgress(es, _glowId);
     if(e.name === 'AbortError') return;    // a newer change took over
     setStatus('execution failed','err'); log('execute: '+e.message,'err'); return;
   }
-  clearInterval(_tick); closeProgress(es);
+  clearInterval(_tick); closeProgress(es, _glowId);
   if(!res.ok){
     const e = await res.json();
     const d = e.detail || e;
@@ -3949,10 +3993,13 @@ function clearExecGlow(){
   if (lcanvas) lcanvas.setDirty(true, true);
 }
 
+let glowSeq = 0;
 function beginExecGlow(){
   clearExecGlow();
-  if (!lcanvas) return;
-  execGlow = {byId: new Map(), open: true};
+  if (!lcanvas) return 0;
+  // Each glow is stamped, so a superseded run can only ever close its OWN — see
+  // endExecGlow. Returned to the caller as its claim ticket.
+  execGlow = {byId: new Map(), open: true, id: ++glowSeq};
   const step = () => {
     if (!execGlow){ glowRAF = 0; return; }
     lcanvas.setDirty(true, true);
@@ -3967,6 +4014,7 @@ function beginExecGlow(){
     glowRAF = requestAnimationFrame(step);
   };
   glowRAF = requestAnimationFrame(step);
+  return execGlow.id;
 }
 
 // One progress event from the running worker: 's' = this node started, 'e' = it's
@@ -3986,8 +4034,15 @@ function glowEvent(ev){
 }
 
 // The run returned: stop expecting events, let the last rings fade out.
-function endExecGlow(){
+// `id` is the ticket beginExecGlow handed out. A superseded run rejects on a
+// microtask — i.e. AFTER its successor has already installed its own execGlow —
+// so without this check the loser closed the WINNER's glow, the RAF step saw an
+// empty non-open glow and tore it down, and every event of the run that actually
+// mattered was dropped. In Live mode a run is superseded on every 120ms debounce
+// tick, so the glow died precisely when the user was working fastest.
+function endExecGlow(id){
   if (!execGlow) return;
+  if (id !== undefined && execGlow.id !== id) return;   // not ours to close
   execGlow.open = false;
   const now = performance.now();
   for (const sp of execGlow.byId.values()) if (sp.tEnd === null) sp.tEnd = now;
@@ -4206,7 +4261,7 @@ function syncIsolateForce(){
     if(_isoForced.includes(n)) continue;
     _isoForced.push(n);
     n._isoPrevMode = n.previewMode;
-    const shown = !!previewMeshes['n'+n.id];    // already visible -> don't disturb its eye
+    const shown = !!previewMeshOf(n);           // already visible -> don't disturb its eye
     if(!shown && n.previewMode !== 'on'){ _setEye(n,'on'); changed = true; }
   }
   for(const n of _isoForced.slice()){
@@ -4241,6 +4296,24 @@ function resizeViewer(){ if (viewer) viewer.resize(); }
 // only coincide by luck. nodeByGraphId is the bridge, and `order` may be absent
 // for a body since it is not one of the top-level preview slots.
 function nodeFor(id){ return nodeByGraphId[id] || nodeIndex[id] || null; }
+
+// The INVERSE of nodeFor, and it is load-bearing for every live-replay path.
+// `previewMeshes` is keyed by the ON-DISK graph id (viewer.js keys it by the
+// view.previews key), while a litegraph node carries its own runtime id — and
+// as the comment above says, those coincide only by luck. Building the key by
+// hand as `'n'+node.id` therefore worked on graphs the editor had saved and
+// reloaded in one go, and failed everywhere else. Failing was not the worst of
+// it: measured on jar-pour-film, the Drop (runtime 30) looked up `n30` and got
+// nothing while its mesh sat under `n29`, and a Number Slider (runtime 31) hit
+// `n31` — the TORUS's mesh. A miss loses the 60fps scrub; a false hit hands a
+// node someone else's geometry to transform.
+function graphIdOf(node){
+  if (!node) return null;
+  for (const gid in nodeByGraphId) if (nodeByGraphId[gid] === node) return gid;
+  return 'n' + node.id;      // never saved in this session: ids really are the editor's
+}
+function previewMeshOf(node){ const g = graphIdOf(node); return (g && previewMeshes[g]) || null; }
+function previewAnimOf(node){ const g = graphIdOf(node); return (g && previewAnims[g]) || null; }
 
 function resolveColor(id, order){
   const n = nodeFor(id);

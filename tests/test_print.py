@@ -642,3 +642,170 @@ def test_an_explicit_finish_is_what_overrides_a_body():
     import pathlib
     viewer = (pathlib.Path(__file__).parent.parent / "webui" / "viewer.js").read_text()
     assert "const f = opts.finishOf(own); if (f) bfinish = f;" in viewer
+
+
+# ---------------------------------------------------------------------------
+# Animate — the same motion, with nothing simulated.
+#
+# Drop asks "what would happen"; Animate says "do this". They share the Motion
+# node and the keyframe replay in the browser, and that sharing is the point:
+# the tests below pin what must stay COMMON (the plan, the "keys" format, the
+# timeline gizmo) and what must stay DIFFERENT (no un-fan, no container, no
+# solver).
+# ---------------------------------------------------------------------------
+
+def test_animate_is_registered_and_takes_a_motion_plan():
+    d = catalog.get("Animate")
+    assert d.category == "print"
+    assert d.input("motion").wire_type == WIRE_DATA
+    assert d.input("motion").required is False        # unwired = pass the shape through
+    # Both lanes, exactly like Drop and PlaceOnBed: it moves the ORIGINAL.
+    sh = d.input("shape")
+    assert sh.wire_type == WIRE_SOLID and WIRE_MESH in (sh.accepts or [])
+    assert d.output_follows == "shape"
+
+
+def test_animate_declares_the_same_timeline_gizmo_as_drop():
+    # One `t` slider commonly drives both, so they must feel like one control.
+    a, drop = catalog.get("Animate").gizmo, catalog.get("Drop").gizmo
+    assert a == drop == {"kind": "timeline", "binds": ["t"],
+                         "anchor": "preview", "lock": ["t"]}
+    p = catalog.get("Animate").param("t")
+    assert (p.default, p.min, p.max) == (1.0, 0.0, 1.0)
+
+
+def test_hold_pads_the_timeline_so_one_slider_can_drive_two_clocks():
+    """The live 60fps scrub only follows a wire that runs STRAIGHT into `t`
+    (applyDropTargets walks direct links), so lining a 1.2s unscrew up with an
+    8s pour must not be done by rescaling t through a Remap. `hold` pads the
+    shorter timeline instead and keeps the wire direct."""
+    p = catalog.get("Animate").param("hold")
+    assert p.default == 0.0 and p.min == 0.0
+    g = _g(
+        [{"id": "b", "type": "Box", "params": {}},
+         {"id": "m", "type": "ContainerMotion", "params": {"z": 10}},
+         {"id": "a", "type": "Animate", "params": {"hold": 6.8}}],
+        [{"id": "c1", "from_node": "b", "from_socket": "result",
+          "to_node": "a", "to_socket": "shape"},
+         {"id": "c2", "from_node": "m", "from_socket": "motion",
+          "to_node": "a", "to_socket": "motion"}],
+    )
+    g.validate()
+    call = next(l for l in transpile(g).splitlines() if "= _animate(" in l)
+    assert "6.8" in call
+
+
+def test_animate_transpiles_with_the_shape_the_plan_and_t():
+    g = _g(
+        [{"id": "b", "type": "Box", "params": {}},
+         {"id": "m", "type": "ContainerMotion", "params": {"z": 12, "rz": 720}},
+         {"id": "a", "type": "Animate", "params": {"t": 0.4}}],
+        [{"id": "c1", "from_node": "b", "from_socket": "result",
+          "to_node": "a", "to_socket": "shape"},
+         {"id": "c2", "from_node": "m", "from_socket": "motion",
+          "to_node": "a", "to_socket": "motion"}],
+    )
+    g.validate()
+    code = transpile(g)
+    assert _calls(code, "_animate")
+    call = next(l for l in code.splitlines() if "= _animate(" in l)
+    assert "0.4" in call and "__out_" in call
+
+
+def test_animate_without_a_motion_still_emits_the_argument():
+    # A half-wired node must not become a syntax error: `motion` arrives as None
+    # and the runtime returns the shape untouched.
+    g = _g([{"id": "b", "type": "Box", "params": {}},
+            {"id": "a", "type": "Animate", "params": {}}],
+           [{"id": "c1", "from_node": "b", "from_socket": "result",
+             "to_node": "a", "to_socket": "shape"}])
+    g.validate()
+    call = next(l for l in transpile(g).splitlines() if "= _animate(" in l)
+    assert "None" in call
+
+
+def test_animate_fans_out_over_several_shapes():
+    """The one place it must NOT copy Drop. A Drop un-fans its shapes into one
+    scene because they have to collide with each other; nothing here interacts,
+    so five lids wired in are five independent movements — the ordinary rule."""
+    g = _g(
+        [{"id": "x", "type": "Box", "params": {}},
+         {"id": "y", "type": "Box", "params": {}},
+         {"id": "m", "type": "ContainerMotion", "params": {}},
+         {"id": "a", "type": "Animate", "params": {}}],
+        [{"id": "c1", "from_node": "x", "from_socket": "result",
+          "to_node": "a", "to_socket": "shape"},
+         {"id": "c2", "from_node": "y", "from_socket": "result",
+          "to_node": "a", "to_socket": "shape"},
+         {"id": "c3", "from_node": "m", "from_socket": "motion",
+          "to_node": "a", "to_socket": "motion"}],
+    )
+    g.validate()
+    call = next(l for l in transpile(g).splitlines() if "_animate(" in l and "__out_" in l)
+    assert "_fanout" in call
+
+
+def test_animate_has_no_container_and_no_solver_switches():
+    # Everything that costs compute belongs to Drop. If one of these ever turns
+    # up here, the node has stopped being a displacement.
+    d = catalog.get("Animate")
+    names = {s.name for s in d.inputs} | {p.name for p in d.params}
+    assert not (names & {"container", "collide", "grip", "material", "settle", "plane"})
+
+
+def test_a_screw_is_one_phase_driving_move_and_rotation_together():
+    """Why a lid unscrewing needs no new vocabulary: the plan advances rotation
+    and translation on the SAME phase, so `move z` + `rotate z` is a helix. If
+    they ever ran on separate clocks the cap would rise and turn out of step."""
+    ns = _preamble_fns("_mat_quat", "_container_motion", "_motion_driver")
+    import numpy as np
+    plan = ns["_container_motion"](None, 0, 0, 12.0, 0, 0, 720.0, None,
+                                   0.0, 1.0, 0.0, "linear")
+    pose, end = ns["_motion_driver"](plan, np.eye(3), np.zeros(3), np.zeros(3))
+    assert end == 1.0
+    for f in (0.25, 0.5, 0.75, 1.0):
+        pos, q = pose(f)
+        assert pos[2] == pytest.approx(12.0 * f)          # risen proportionally…
+        # …and turned by exactly the matching fraction of the 720 deg (read back
+        # as the quaternion's half-angle, unwrapped by the rise).
+        ang = 2.0 * math.atan2(math.hypot(*q[:3]), q[3])
+        turned = math.radians(720.0 * f) % (2 * math.pi)
+        if turned > math.pi:
+            turned = 2 * math.pi - turned
+        assert abs(ang - turned) < 1e-9
+
+
+def test_the_editor_replays_both_timeline_nodes():
+    """The live 60fps scrub is shared: one set names who ships a timeline, and
+    both the node's own `t` and a slider wired into it consult it. Hard-coding
+    'Drop' in either place leaves Animate correct but silently un-scrubbable."""
+    import pathlib
+    js = (pathlib.Path(__file__).parent.parent / "webui" / "nodes.html").read_text()
+    assert "const TIMELINE_NODES = new Set(['Drop', 'Animate']);" in js
+    assert "if (TIMELINE_NODES.has(node.cadType)) return applyDropAnim(" in js
+    assert "if (!tn || !TIMELINE_NODES.has(tn.cadType)) continue;" in js
+
+
+def test_the_live_replay_resolves_meshes_by_ON_DISK_id():
+    """The bug this pins cost a whole recording, and it failed SILENTLY.
+
+    `previewMeshes` is keyed by the on-disk graph id (viewer.js keys it by the
+    view.previews key); a litegraph node carries a separate runtime id. They
+    coincide only for a graph the editor saved and reloaded in one go — which is
+    why every earlier test of the scrub passed. Measured on jar-pour-film: the
+    Drop (runtime 30) looked up 'n30' while its mesh sat under 'n29', and a
+    Number Slider (runtime 31) resolved 'n31' — the TORUS's mesh. So the failure
+    mode is not only a lost 60fps scrub, it is a node handed ANOTHER node's
+    geometry to transform. nodeByGraphId is the bridge and every lookup must
+    cross it.
+    """
+    import pathlib
+    js = (pathlib.Path(__file__).parent.parent / "webui" / "nodes.html").read_text()
+    # The inverse of nodeFor() exists and is the single place the key is built.
+    assert "function graphIdOf(node){" in js
+    assert "function previewMeshOf(node){" in js
+    assert "function previewAnimOf(node){" in js
+    # and NO caller hand-builds the key any more.
+    assert "previewMeshes['n'+node.id]" not in js
+    assert "previewAnims['n'+node.id]" not in js
+    assert "previewMeshes['n'+n.id]" not in js

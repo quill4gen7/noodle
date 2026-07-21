@@ -1989,9 +1989,10 @@ register(NodeDef("Drop", "print", "Drop",
                 "the bell collapses into two lumps; at 0.3 it comes out normal. Measured, "
                 "not guessed."))
 
-register(NodeDef("ContainerMotion", "print", "Container Motion",
+register(NodeDef("ContainerMotion", "print", "Motion",
     aliases=["Shake", "Tilt", "Pour", "Stir", "Agitate", "Spin", "Vibrate",
-             "Tumble", "Shaker"],
+             "Tumble", "Shaker", "Container Motion", "Unscrew", "Screw",
+             "Slide", "Swing", "Hinge", "Motion Path"],
     inputs=[Socket("offset", WIRE_VECTOR, required=False),
             Socket("pivot", WIRE_VECTOR, required=False)],
     params=[_f("x", 0, -500, 500, label="move x"),
@@ -2009,26 +2010,66 @@ register(NodeDef("ContainerMotion", "print", "Container Motion",
     code_template={"algebra": "_container_motion({offset}, {x}, {y}, {z}, "
                               "{rx}, {ry}, {rz}, {pivot}, {cycles}, {duration}, "
                               "{delay}, {easing})"},
-    description="MOVE the thing that was holding still: wire this into a Drop's "
-                "`motion` and its `container` — the bowl, the tray, the crate — "
-                "tilts, shakes or spins on the same timeline instead of just "
-                "sitting there. This is not gravity and not a fall. You dictate "
-                "the motion; the parts inside answer to it through contact and "
-                "friction alone, which is why they lag, slide, climb the wall and "
-                "spill rather than following it rigidly. `cycles` picks the shape "
+    description="A MOVEMENT, described once and reusable: where something goes, "
+                "how long it takes, and whether it goes there once or swings back "
+                "and forth. It is not geometry and does nothing on its own — wire "
+                "it into an ANIMATE node to move a shape along it (a lid "
+                "unscrewing, a drawer sliding, a hinge swinging), or into a Drop's "
+                "`motion` so that Drop's `container` — the bowl, the tray, the "
+                "crate — tilts, shakes or spins instead of just sitting there. The "
+                "two differ in what answers back: Animate is pure kinematics, the "
+                "shape simply goes; in a Drop the contents are NOT carried along, "
+                "they answer through contact and friction alone, which is why they "
+                "lag, slide, climb the wall and spill. `cycles` picks the shape "
                 "of the motion and everything else falls out of it: 0 is a RAMP — "
                 "go there once and stay, which is a tilt, a pour, a crate tipped "
                 "over; above 0 it OSCILLATES about the starting pose that many "
                 "times, which is a shake, a stir, a vibration, a tap. So: pour = "
                 "rotate x/y ~110 (past the wall, or nothing comes out) with cycles "
                 "0; shake = move 10 with cycles 8; settle a powder = move z 3, "
-                "cycles 20; centrifuge = rotate z 720. `delay` waits before it "
+                "cycles 20; centrifuge = rotate z 720. Move and rotate run on ONE "
+                "phase, so a SCREW motion falls straight out: move z 12 + rotate z "
+                "720 with cycles 0 and a cap rises as it turns off its thread. "
+                "`delay` waits before it "
                 "starts — fill the bowl first, THEN tilt it. Rotation is about the "
-                "container's own centre unless you wire a `pivot` (the hinge of a "
-                "hopper, the lip a crate tips over). Motion needs a container: on "
-                "its own it does nothing. Costs almost nothing to drive (~5ms per "
-                "simulated second), but it keeps the scene awake for its whole "
-                "duration — a shaker never settles, so it runs the full length."))
+                "moved shape's own centre unless you wire a `pivot` (the hinge of a "
+                "hopper, the lip a crate tips over). Costs almost nothing to drive "
+                "(~5ms per simulated second), but in a Drop it keeps the scene "
+                "awake for its whole duration — a shaker never settles, so it runs "
+                "the full length."))
+
+register(NodeDef("Animate", "print", "Animate",
+    aliases=["Move Along Motion", "Unscrew", "Kinematic", "Timeline", "Assemble",
+             "Explode", "Open", "Swing", "Slide"],
+    inputs=[Socket("shape", WIRE_SOLID, accepts=[WIRE_SURFACE, WIRE_MESH]),
+            Socket("motion", WIRE_DATA, required=False)] + _pin("t"),
+    params=[_f("t", 1.0, 0.0, 1.0, step=0.01, label="timeline"),
+            _f("hold", 0.0, 0.0, 60.0, step=0.1, label="hold after (s)")],
+    outputs=_geo(),
+    output_follows="shape",
+    gizmo={"kind": "timeline", "binds": ["t"], "anchor": "preview", "lock": ["t"]},
+    code_template={"algebra": "_animate({shape}, {motion}, {t}, {hold})"},
+    description="Move a shape along a Motion — no physics, no gravity, nothing to "
+                "simulate: it simply GOES where you said, and `timeline` scrubs it "
+                "from 0 (where the part is now) to 1 (arrived). This is the node "
+                "for a lid unscrewing off a jar, a drawer sliding out, a door "
+                "swinging on its hinge, a chuck spinning, or a part lifted clear of "
+                "an assembly to show how it comes apart. Wire a Motion node into "
+                "`motion` — with move z and rotate z together and cycles 0 you get "
+                "a real SCREW, rising as it turns. Both lanes: a solid stays a "
+                "solid, a mesh stays a mesh. Wire ONE Number Slider into the `t` of "
+                "several Animates (and of a Drop) and the whole assembly moves on "
+                "one clock; dragging that slider replays in the viewport at 60fps "
+                "without re-running the graph. For that to line up the timelines "
+                "must be the same LENGTH, which is what `hold` is for: it pads this "
+                "one with stillness after the motion ends (unscrew for 1.2s, hold "
+                "6.8s, and you match an 8s pour). Pad it — do not rescale `t` through "
+                "a Remap, because the live scrub only follows a wire that goes "
+                "straight into `t`. Several shapes wired in fan out — "
+                "each gets its own copy of the same movement. It is a DISPLACEMENT, "
+                "not a simulation: nothing collides, nothing falls, nothing is "
+                "carried along by friction. That is Drop's job, and the two share "
+                "the same Motion node."))
 
 register(NodeDef("PrintCheck", "print", "Print Check",
     inputs=[Socket("mesh", WIRE_MESH)],

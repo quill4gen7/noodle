@@ -924,7 +924,10 @@ async def api_screenshot(
 
 
 @app.post("/api/graph/{name}/execute")
-async def execute_graph_project(name: str):
+async def execute_graph_project(name: str, run: str | None = None):
+    """`run` is a caller-chosen id for this run. The editor generates one, opens
+    /progress?run=<id> with it and then POSTs here, so the progress stream can
+    match its events to this exact run instead of inferring them from the file."""
     d = require_project(name)
     graph = _load_graph(name)
     logger.info("execute graph '%s' (%d nodes)", name, len(graph.nodes))
@@ -934,7 +937,7 @@ async def execute_graph_project(name: str):
         # held the loop nothing else could be served — including the progress stream
         # that reports on this very run. The warm worker is already serialised by its
         # own lock, so concurrent runs queue rather than collide.
-        result = await asyncio.to_thread(execute_graph, graph, d, write_stl=False)
+        result = await asyncio.to_thread(execute_graph, graph, d, write_stl=False, run_id=run)
     except ValidationError as e:
         logger.error("execute '%s' invalid graph: %s", name, e)
         raise HTTPException(400, str(e)) from e
@@ -965,53 +968,131 @@ async def execute_graph_project(name: str):
     }
 
 
-async def _tail_progress(path: Path):
+async def _tail_progress(path: Path, want_run: str | None = None, request: Request | None = None):
     """Yield SSE events from a run's progress.jsonl as the worker appends to it.
 
-    The editor opens this stream BEFORE it POSTs /execute, so we start at the file's
-    current end (a previous run's events are not ours to replay) and treat a size
-    drop as "the executor truncated it — a new run just started".
+    Runs are identified, not guessed. `executor.execute_code` opens the file with
+    a header line naming the run (`{"k":"run","r":<id>}`), and the client passes
+    the id it is about to POST as `?run=`, so this stream knows exactly whose
+    events it is reading and can start from the file's BEGINNING.
+
+    That indirection is the whole fix. The previous version watched the file size
+    and treated a shrink as "a new run started" — but progress.jsonl lives at a
+    fixed path per project, and two warm runs of one graph write nearly identical
+    bytes. When a run rewrote the file to the same length inside one 50ms poll,
+    the tailer saw `size == offset`, concluded nothing had happened, and dropped
+    the ENTIRE run (measured: 5/5 nodes on voronoi-3d-lattice, all of
+    galton-board; the bigger lego-brick survived because it wrote more). That is
+    what made the editor's glow stop "at random" — the small, fast graphs lost
+    everything and the slow ones did not.
+
+    Re-reading the whole file each poll is affordable: it is a few hundred short
+    lines, and we were already stat()ing it at the same rate.
     """
-    offset = path.stat().st_size if path.exists() else 0
+    seen_run: str | None = None
+    sent = 0
     quiet = 0.0
+    since_beat = 0.0
+    # With no run id to wait for (MCP, curl, an older editor), keep the old
+    # intent: ignore whatever is already on disk and report the NEXT run.
+    if want_run is None:
+        seen_run = _run_id_of(path)
+
     while quiet < _PROGRESS_MAX_IDLE:
         await asyncio.sleep(0.05)
+
+        # HANG UP WHEN THE CLIENT DOES, and prove the connection is still alive in
+        # between. Without this the generator kept polling a stream nobody was
+        # reading: it only ever wrote when a node reported, so a finished run left
+        # it parked here for the full idle timeout with uvicorn holding the
+        # connection open. Chrome allows 6 per host, so after a handful of runs the
+        # editor's next EventSource never connected AT ALL — its progress stream
+        # silently queued behind its own dead predecessors and the glow stopped.
+        # Measured before the fix: runs 2-5 of five received zero events and never
+        # fired `open`. The heartbeat is what makes a dead peer detectable — a write
+        # to a closed socket is what tells uvicorn to cancel us.
+        if request is not None and await request.is_disconnected():
+            return
+        since_beat += 0.05
+        if since_beat >= 1.0:
+            since_beat = 0.0
+            yield ": ping\n\n"
+
         try:
-            size = path.stat().st_size
+            lines = path.read_text().splitlines()
         except OSError:
             quiet += 0.05
             continue
-        if size < offset:      # truncated: this is the run we're here for
-            offset = 0
-        if size == offset:
+        if not lines:
+            quiet += 0.05
+            continue
+
+        try:
+            head = json.loads(lines[0])
+        except ValueError:
+            quiet += 0.05
+            continue
+        if head.get("k") != "run":
+            quiet += 0.05
+            continue
+        run = head.get("r")
+
+        if run != seen_run:          # a different run owns the file now
+            if want_run is not None and run != want_run:
+                # Someone else's run. Wait for ours rather than glowing their nodes.
+                quiet += 0.05
+                continue
+            seen_run = run
+            sent = 0
+
+        # A half-written final line is skipped and picked up whole next poll.
+        body = lines[1:]
+        if not path.read_text().endswith("\n") and body:
+            body = body[:-1]
+        if len(body) <= sent:
             quiet += 0.05
             continue
         quiet = 0.0
-        with path.open() as f:
-            f.seek(offset)
-            chunk = f.read()
-            offset = f.tell()
-        if not chunk.endswith("\n"):
-            # A half-written line: rewind past it and pick it up whole next poll.
-            head, _, tail = chunk.rpartition("\n")
-            offset -= len(tail)
-            chunk = head
-        for line in chunk.splitlines():
-            if line.strip():
-                yield f"data: {line}\n\n"
+        done = False
+        for line in body[sent:]:
+            if not line.strip():
+                continue
+            yield f"data: {line}\n\n"
+            done = done or '"k": "done"' in line or '"k":"done"' in line
+        sent = len(body)
+        if done:
+            # The run marked itself finished (executor, in a finally). Hang up:
+            # this stream has nothing left to report, and holding it open is what
+            # used to starve the browser of connections.
+            return
+
+
+def _run_id_of(path: Path) -> str | None:
+    """The id of the run currently recorded in a progress file, if any."""
+    try:
+        first = path.read_text().splitlines()[0]
+        head = json.loads(first)
+    except (OSError, IndexError, ValueError):
+        return None
+    return head.get("r") if head.get("k") == "run" else None
 
 
 @app.get("/api/graph/{name}/progress")
-async def graph_progress(name: str):
+async def graph_progress(request: Request, name: str, run: str | None = None):
     """Live per-node execution events (SSE) for the run in flight on this graph.
 
     Emitted by the generated code itself (transpiler `_ev`), so it works on the warm
     worker AND the cold subprocess. The client closes the stream when its POST to
     /execute resolves.
+
+    `run` is the id the caller is about to POST to /execute. Passing it makes the
+    subscription exact — no guessing which run the file holds, and no race with
+    the POST landing first (which it routinely does, since `new EventSource()`
+    returns before its GET is dispatched).
     """
     d = require_project(name)
     return StreamingResponse(
-        _tail_progress(d / "progress.jsonl"),
+        _tail_progress(d / "progress.jsonl", run, request),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

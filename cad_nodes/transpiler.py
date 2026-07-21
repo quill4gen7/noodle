@@ -2170,6 +2170,73 @@ def _motion_driver(_plan, _B, _o, _pivot_bed):
     return pose, end
 
 
+def _animate(_shape, _motion=None, _t=1.0, _hold=0.0):
+    \"\"\"A prescribed motion with NO physics: the shape simply GOES where the plan
+    says, on a timeline you scrub. A lid unscrewing off a jar, a drawer sliding
+    out, a hinge swinging, a lathe chuck spinning, a part lifted clear of an
+    assembly to show how it comes apart.
+
+    It is the SAME motion vocabulary that drives a Drop's container
+    (`_container_motion` / `_motion_driver`), so one Motion node can tilt a jar
+    and unscrew its cap on one clock. The difference is that nothing here is
+    simulated and nothing answers back: no solver, no contact, no friction, no
+    cost — and equally, no falling, no collision. Screw motions fall straight
+    out of the shared plan because translation and rotation run on ONE phase:
+    move z 12 + rotate z 720, cycles 0, and the cap rises as it turns.
+
+    Baked to keyframes rather than left analytic on purpose: the browser already
+    replays a "keys" plan at 60fps (sceneBodyPose — the collide-scene machinery),
+    so scrubbing costs no engine run and no frontend format was invented.\"\"\"
+    if _shape is None or _motion is None:
+        return _shape
+    import numpy as _np
+    t = max(0.0, min(float(_t), 1.0))
+    B, o = _np.eye(3), _np.zeros(3)
+    # Rotation is about the part's OWN centre unless the plan names a pivot, and
+    # that centre is measured on the tessellation for the same reason PlaceOnBed
+    # is: the fast OCCT bounding box is oversized, and an off-centre axis is
+    # exactly what an unscrewing lid cannot afford.
+    m = _as_mesh(_shape)
+    if m is None:
+        return _shape
+    bb = _np.asarray(m.tm.bounds, dtype=float)
+    pose, end = _motion_driver(_motion, B, o, 0.5 * (bb[0] + bb[1]))
+    if pose is None or end <= 1e-9:
+        return _shape
+    # `hold` pads the timeline AFTER the motion is over, and its only job is to
+    # let one slider drive this node and something else — a Drop, another
+    # Animate — on ONE clock. The wire from a slider must go STRAIGHT into `t`
+    # for the live 60fps replay to see it (applyDropTargets follows direct links
+    # only), so rescaling t through a Remap in between costs you the scrub.
+    # Padding the shorter timeline instead keeps the wire direct. Past `end` the
+    # phase already parks — at the destination for a ramp, at the start for an
+    # oscillation — so holding is free and exact.
+    T = float(end) + max(0.0, float(_hold))
+    cyc = float(_motion.get("cycles", 0.0) or 0.0)
+    n = int(max(T * 60.0, cyc * 24.0, 2.0))            # >=24 samples per cycle
+    n = min(n, 2000)
+    times = [T * i / n for i in range(n + 1)]
+    poss, quats = [], []
+    for tau in times:
+        p_i, q_i = pose(tau)
+        poss.append([float(x) for x in p_i])
+        quats.append([float(x) for x in q_i])
+    plan = {"kind": "keys", "t": float(t), "T": T,
+            "c0": [0.0, 0.0, 0.0], "times": times, "pos": poss, "quat": quats}
+    p_t, q_t = pose(t * T)
+    ax, ang = _axis_angle(q_t)
+    ops = []
+    if ang > 1e-9:
+        ops.append(("r", (0.0, 0.0, 0.0), tuple(ax), math.degrees(ang)))
+    ops.append(("t3", tuple(float(x) for x in p_t)))
+    res = _drop_apply(_shape, B, o, ops)
+    try:
+        res._noodle_anim = plan
+    except Exception:
+        pass
+    return res
+
+
 def _dyn_sim(_hulls, _coms, _e, _t_max=8.0, _statics=(), _grip=1.0,
              _pose=None, _drive_until=0.0):
     \"\"\"The rigid-body simulation behind collide: pybullet, DIRECT mode, fixed
@@ -4476,6 +4543,25 @@ class Transpiler:
                 out[sock.name] = vars_[0] if vars_ else "None"
         return out
 
+    def _merge_inputs(self, node_id: str, ndef: catalog.NodeDef,
+                      values: dict[str, str]) -> dict[str, str]:
+        """Overlay wired inputs onto param values, honouring params-as-inputs.
+
+        An input socket that shares a param's name overrides the widget when
+        WIRED and falls back to it when not (§5b). `_input_values` cannot say
+        that — it reports "None" for every unwired socket — so merging it blindly
+        wipes the widget's value. `_emit_simple` has always had the rule inline;
+        the group path did not, and so emitted `Box(None, None, None)` for every
+        CHILD of a BuildPart: a group child silently lost all of its parameters
+        and the group failed with a constructor TypeError. Both paths merge here
+        now, so the rule lives in exactly one place.
+        """
+        for name, expr in self._input_values(node_id, ndef).items():
+            if expr == "None" and ndef.param(name) is not None:
+                continue                    # nothing wired: keep the widget value
+            values[name] = expr
+        return values
+
     def _param_values(self, node, ndef: catalog.NodeDef) -> dict[str, str]:
         out: dict[str, str] = {}
         for p in ndef.params:
@@ -4559,7 +4645,7 @@ class Transpiler:
         return key, wrapped
 
     def _guard(self, lines: list[str], body: list[str], node,
-               key_src: str = "") -> None:
+               key_src: str = "", sub_ids: list[str] | None = None) -> None:
         """Wrap a node's statement(s) in try/except so one node's runtime error
         is recorded in __errors__ and doesn't abort the rest of the workflow.
         In memo mode, also wrap the body in a cache lookup: on a hit the node's
@@ -4587,6 +4673,13 @@ class Transpiler:
             lines.append("    else:")
             lines.append(f"        ({tup}) = _m")
             lines.append(f"        __cached__[{node.id!r}] = True")
+            # The body was skipped, so anything nested in it (a group's children)
+            # never got to speak for itself. Report it as what it is: cached.
+            for sid in (sub_ids or []):
+                lines.append(f"        __cached__[{sid!r}] = True")
+                lines.append(f"        __timings__[{sid!r}] = 0.0")
+                lines.append(f"        _ev('s', {sid!r})")
+                lines.append(f"        _ev('e', {sid!r}, 0.0, True)")
             for bl in tail:
                 lines.append("    " + bl)
         else:
@@ -4918,8 +5011,7 @@ class Transpiler:
         ctx = f"__ctx_{self._counter}"
         var = f"__out_{self._counter}"
         self.var_of[node.id] = var
-        values = self._param_values(node, ndef)
-        values.update(self._input_values(node.id, ndef))
+        values = self._merge_inputs(node.id, ndef, self._param_values(node, ndef))
         values["ctx"] = ctx
         header = _substitute(ndef.code_template["builder"], values)
 
@@ -4933,10 +5025,33 @@ class Transpiler:
         for cid in child_order:
             child = self.graph.node(cid)
             cdef = catalog.get(child.type)
-            cvals = self._param_values(child, cdef)
-            cvals.update(self._input_values(child.id, cdef))
+            cvals = self._merge_inputs(child.id, cdef, self._param_values(child, cdef))
             tmpl = cdef.code_template.get("builder") or cdef.code_template.get("algebra", "")
-            body.append("    " + _substitute(tmpl, cvals) + _annot(child))
+            stmt = _substitute(tmpl, cvals) + _annot(child)
+            if not self._memo:
+                body.append("    " + stmt)
+                continue
+            # A child is substituted INLINE into the parent's `with` block, so it
+            # cannot be _guard()ed on its own — and for a long time that meant it
+            # reported nothing at all: a BuildPart of twenty nodes lit ONE glow and
+            # the twenty stayed dark for the whole run, however long they took.
+            # They bracket themselves instead.
+            #
+            # The inner try/except only REPORTS: it re-raises, so a failing child
+            # still fails its group exactly as before. Without it the exception
+            # would unwind straight past the child's 's' event to the group's
+            # handler, leaving that node breathing amber to the end of the run —
+            # the same lie that an un-closed span always tells.
+            body.append(f"    _ev('s', {cid!r})")
+            body.append("    _tc = _perf()")
+            body.append("    try:")
+            body.append("        " + stmt)
+            body.append("    except Exception:")
+            body.append(f"        __timings__[{cid!r}] = _perf() - _tc")
+            body.append(f"        _ev('e', {cid!r}, __timings__[{cid!r}], False, True)")
+            body.append("        raise")
+            body.append(f"    __timings__[{cid!r}] = _perf() - _tc")
+            body.append(f"    _ev('e', {cid!r}, __timings__[{cid!r}], False)")
         if not children:
             body.append("    pass")
 
@@ -4944,7 +5059,11 @@ class Transpiler:
         body.append(f"{var} = {ctx}.{attr}{_annot(node)}")
         if self._previewed(node, ndef):
             body.append(f"__previews__[{node.id!r}] = {var}")
-        self._guard(lines, body, node)
+        # On a cache hit the whole block is skipped, children included — so tell
+        # _guard who they are and it reports them cached too. Otherwise a group's
+        # children would light up on a cold run and go dark on every warm one,
+        # which looks exactly like the glow failing at random.
+        self._guard(lines, body, node, sub_ids=list(child_order))
 
     def _pick_result(self, order: list[str]) -> str | None:
         # A connection into a pure sink (a node with no outputs — every Export

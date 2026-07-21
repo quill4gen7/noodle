@@ -44,6 +44,13 @@ _EXAMPLE_DESCRIPTIONS = {
                       "bowl, then it tips over its own rim and pours them out. "
                       "The motion is dictated, not simulated — the balls answer "
                       "to it through contact and friction alone.",
+    "threaded-jar-pour": "One slider, two clocks: the threaded cap UNSCREWS "
+                         "(Animate — kinematics, no physics) and then the glass "
+                         "jar tips and pours six bolts onto the bed below "
+                         "(Drop + a moving container — real dynamics).",
+    "jar-cap-unscrew": "Animate: the same Motion node, with no physics at all — "
+                       "a threaded cap rises off the jar as it turns, on a "
+                       "timeline you scrub. Kinematics, not simulation.",
     "drop-in-bowl": "Drop with a container: three balls poured into a bowl that "
                     "never moves. The bowl is the one body kept CONCAVE, so it "
                     "cradles them instead of shedding them.",

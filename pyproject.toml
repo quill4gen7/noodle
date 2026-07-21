@@ -27,6 +27,11 @@ dependencies = { file = ["requirements.txt"] }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    # tests/perf drives the LIVE app (server + real browser) rather than the
+    # pure-Python engine. Opt in with NOODLE_PERF=1; see tests/perf/README.md.
+    "perf: speed / stability / reactivity tests against a running instance",
+]
 
 [tool.ruff]
 line-length = 120
