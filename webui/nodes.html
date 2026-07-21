@@ -3359,7 +3359,12 @@ function closeProgress(es){
 }
 
 window.runGraph = async function(){
-  await window.saveGraph();
+  // The agent's screenshot page is a READER, never a writer. It saved like any
+  // user, so a shot taken with a stale in-memory graph wrote that stale copy
+  // over the file on disk — taking a picture destroyed the user's work, and
+  // silently. /execute runs the graph ON DISK, which is exactly what an agent
+  // wants rendered, so skipping the save is also the more correct behaviour.
+  if (!window.__noodleShot) await window.saveGraph();
   if(!currentName) return;
   if(runAbort) runAbort.abort();          // supersede any in-flight run
   runAbort = new AbortController();
@@ -4072,10 +4077,16 @@ function resizeViewer(){ if (viewer) viewer.resize(); }
 
 // resolve a node's preview colour: explicit choice wins, else a stable palette
 // slot from its position among the rendered ids (so all terminals differ)
+// `id` is normally a preview key, but a Scene BODY resolves by its owner node's
+// ON-DISK id (§5d-bis) — a different namespace from nodeIndex's editor ids, which
+// only coincide by luck. nodeByGraphId is the bridge, and `order` may be absent
+// for a body since it is not one of the top-level preview slots.
+function nodeFor(id){ return nodeByGraphId[id] || nodeIndex[id] || null; }
+
 function resolveColor(id, order){
-  const n = nodeIndex[id];
+  const n = nodeFor(id);
   if (n && n.previewColor) return n.previewColor;
-  const i = order.indexOf(id);
+  const i = (order || []).indexOf(id);
   return PALETTE[(i<0?nodeNum(id):i) % PALETTE.length];
 }
 // the title-bar dot (LiteGraph node.boxcolor) mirrors the preview colour, so each
@@ -4091,8 +4102,8 @@ function renderPreviews(view){
   const setStats = (txt)=>{ const st=document.getElementById('viewer-stats'); st.innerHTML=txt; st.classList.add('visible'); };
   const r = viewer.renderPreviews((view && view.previews) || {}, {
     colorOf: (id, order)=> resolveColor(id, order),
-    wireOf:  (id)=> !!(nodeIndex[id] && nodeIndex[id].wireframe),
-    finishOf:(id)=> (nodeIndex[id] && nodeIndex[id].previewFinish) || null,
+    wireOf:  (id)=> { const n = nodeFor(id); return !!(n && n.wireframe); },
+    finishOf:(id)=> { const n = nodeFor(id); return (n && n.previewFinish) || null; },
     onEmpty: ()=>{ previewMeshes = {}; renderLegend([]); if(lcanvas) lcanvas.setDirty(true, true);
       viewer.loadSTL(`${API}/api/projects/${currentName}/download?t=`+Date.now(),
         { onSize:(s)=>{ if(s) setStats(`${s.x.toFixed(1)} × ${s.y.toFixed(1)} × ${s.z.toFixed(1)} mm`); } }); },

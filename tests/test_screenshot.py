@@ -91,9 +91,26 @@ def test_swiftshader_is_requested_because_there_is_no_gpu():
 
 def test_run_false_still_renders_something():
     """Reusing the viewport is an optimisation; handing back an empty frame
-    would be a lie."""
+    would be a lie — and so would handing back a frame of the PREVIOUS graph."""
     src = inspect.getsource(screenshot.render)
-    assert "if run or not have:" in src
+    assert "if run or not have or stale:" in src
+
+
+def test_an_edited_graph_is_never_shot_stale():
+    """The warm page only re-navigates when the URL changes, so without this an
+    agent that edits a graph and shoots it with run=0 is handed the geometry from
+    before the edit, silently. The graph.json mtime is what notices."""
+    src = inspect.getsource(screenshot.render)
+    assert "_graph_mtime(graph_id)" in src
+    assert "stale" in src
+    # Re-read in place rather than reload: the editor guards `beforeunload`
+    # while the doc is dirty and a navigation stalls on it.
+    assert "window.openGraph" in src
+
+
+def test_unknown_mtime_counts_as_stale():
+    """A project whose file cannot be stat'd must reload, not silently reuse."""
+    assert screenshot._graph_mtime("no-such-project-here") < 0
 
 
 # --- one operation, three surfaces ----------------------------------------
@@ -176,3 +193,15 @@ def test_iso_looks_from_the_front_not_the_back():
     azim, elev = screenshot.VIEWS["iso"]
     assert -90.0 < azim < 0.0
     assert 20.0 < elev < 50.0
+
+
+def test_the_shot_page_never_writes_the_graph():
+    """The agent's page loads the real editor, which saves before every run — so a
+    shot taken with a stale in-memory graph wrote that stale copy over the file on
+    disk. Taking a picture must never destroy the thing being pictured. /execute
+    runs the graph ON DISK, so skipping the save is also more correct."""
+    import pathlib
+    src = (pathlib.Path(__file__).parent.parent / "webui" / "nodes.html").read_text()
+    assert "if (!window.__noodleShot) await window.saveGraph();" in src
+    # and the flag is still stamped before the page loads
+    assert "window.__noodleShot = true;" in inspect.getsource(screenshot)

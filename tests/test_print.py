@@ -526,3 +526,90 @@ def test_angular_velocity_reproduces_the_prescribed_turn():
         w = ns["_ang_vel"](ns["_mat_quat"](np.eye(3)), ns["_mat_quat"](R), dt)
         assert np.allclose(w[:2], [0, 0], atol=1e-9)          # about z only
         assert w[2] == pytest.approx(a / dt, rel=2e-3)        # right rate, right sign
+
+
+# --- a finish per body: the glass jar that pours steel bolts (§5d-bis) -----
+def test_drop_emits_the_container_source_node_id():
+    """Only the EMITTER can know which node drew the container — the runtime is
+    handed a shape, never a graph. Without this the viewer cannot tell the bowl
+    from what falls into it, and the whole scene shares one finish."""
+    g = Graph.from_dict({
+        "nodes": [{"id": "ball", "type": "Sphere"},
+                  {"id": "bowl", "type": "Cylinder"},
+                  {"id": "d", "type": "Drop"}],
+        "connections": [
+            {"id": "c1", "from_node": "ball", "from_socket": "result",
+             "to_node": "d", "to_socket": "shape"},
+            {"id": "c2", "from_node": "bowl", "from_socket": "result",
+             "to_node": "d", "to_socket": "container"}],
+    })
+    code = transpile(g)
+    drop = next(l for l in code.splitlines() if "_drop(" in l and "@node:d" in l)
+    assert "['bowl']" in drop, drop
+
+
+def test_a_drop_with_no_container_still_emits_the_argument():
+    """The placeholder is unconditional; an empty list must not become a hole."""
+    g = Graph.from_dict({
+        "nodes": [{"id": "b", "type": "Box"}, {"id": "d", "type": "Drop"}],
+        "connections": [{"id": "c", "from_node": "b", "from_socket": "result",
+                         "to_node": "d", "to_socket": "shape"}],
+    })
+    drop = next(l for l in transpile(g).splitlines()
+                if "_drop(" in l and "@node:d" in l)
+    assert "[]" in drop, drop
+
+
+def test_mesh_slots_carry_the_owner():
+    """A build123d Shape takes any attribute, so the B-Rep lane works either way
+    and only the MESH lane hits the slots wall — where the assignment is swallowed
+    by _drop's try/except and the body silently loses its material. Same trap that
+    bit `_noodle_anim`."""
+    from cad_nodes.transpiler import PREAMBLE
+    assert '"_noodle_owner"' in PREAMBLE or "'_noodle_owner'" in PREAMBLE
+
+
+def test_preview_bodies_carry_owner():
+    """view.json is where to look first when a body renders with the wrong
+    material: the whole chain fails silently."""
+    from cad_nodes import mesh_extractor
+
+    class Fake:                       # duck-typed like the runtime's Mesh
+        def __init__(self, owner=None):
+            self._noodle_anim = {"kind": "keys", "t": 0.0, "T": 1.0}
+            self._noodle_owner = owner
+            self._noodle_extra = []
+
+    part, bowl = Fake(), Fake(owner="bowl_node")
+    part._noodle_extra = [bowl]
+    monkey = mesh_extractor._preview_geom
+    mesh_extractor._preview_geom = lambda v, *a, **k: {"mesh": {}, "bbox": None}
+    try:
+        out = mesh_extractor._preview_of([part])
+    finally:
+        mesh_extractor._preview_geom = monkey
+    assert out["kind"] == "Scene"
+    owners = [b.get("owner") for b in out["bodies"]]
+    assert owners == [None, "bowl_node"], owners   # the fallers keep the node look
+
+
+def test_viewer_resolves_finish_per_body():
+    import pathlib
+    src = (pathlib.Path(__file__).parent.parent / "webui" / "viewer.js").read_text()
+    assert "b.owner" in src and "opts.finishOf(own)" in src
+    # an emissive container must still reach the glow layer
+    assert "finishOf(b.owner) === 'emissive'" in src
+
+
+def test_body_owner_is_resolved_across_the_id_namespaces():
+    """`body.owner` is an ON-DISK graph id; the editor's colour/finish lookups are
+    keyed by its own litegraph-derived ids, and the two coincide only by luck.
+    nodeByGraphId is the bridge — without it resolveColor fell through to
+    `order.indexOf` on an undefined `order` and took the whole render down."""
+    import pathlib
+    src = (pathlib.Path(__file__).parent.parent / "webui" / "nodes.html").read_text()
+    assert "function nodeFor(id){ return nodeByGraphId[id] || nodeIndex[id] || null; }" in src
+    assert "const i = (order || []).indexOf(id);" in src      # order is optional for a body
+    # colorOf's second argument must survive the trip to the per-body call
+    viewer = (pathlib.Path(__file__).parent.parent / "webui" / "viewer.js").read_text()
+    assert "opts.colorOf(own, opts.order)" in viewer

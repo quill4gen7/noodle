@@ -1950,7 +1950,8 @@ register(NodeDef("Drop", "print", "Drop",
     output_follows="shape",
     gizmo={"kind": "timeline", "binds": ["t"], "anchor": "preview", "lock": ["t"]},
     code_template={"algebra": "_drop({shape}, {plane}, {t}, {material}, {settle}, "
-                              "{collide}, {container}, {grip}, {motion})"},
+                              "{collide}, {container}, {grip}, {motion}, "
+                              "{container_ids})"},
     description="Place on Bed, but as a FALL you can scrub: drag `timeline` from 0 "
                 "(where the part is now) to 1 (at rest on the plane). The part drops "
                 "under gravity, BOUNCES — each impact keeps a fixed fraction of the "

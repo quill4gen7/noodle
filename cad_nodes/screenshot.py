@@ -61,6 +61,24 @@ _pw = None
 _browser = None
 _page = None
 _page_key: tuple = ()          # (scale, hq) — a change means a fresh page
+# graph_id -> graph.json mtime when the warm page last loaded it. The page is
+# only re-navigated when the URL changes, which silently returns a STALE picture
+# after the graph is edited: an agent that changes a graph and shoots it with
+# run=0 would be handed the geometry it had before the edit, with nothing to say
+# so. Reloading unconditionally would cost a navigation on every extra camera
+# angle, so the mtime decides.
+_loaded_mtime: dict = {}
+
+
+def _graph_mtime(graph_id: str) -> float:
+    try:
+        import pathlib
+
+        from .store import DEFAULT_ROOT
+
+        return (pathlib.Path(DEFAULT_ROOT) / graph_id / "graph.json").stat().st_mtime
+    except Exception:
+        return -1.0        # unknown: reload rather than risk a stale picture
 
 
 class ScreenshotUnavailable(RuntimeError):
@@ -204,8 +222,17 @@ async def render(graph_id: str, *, view: str = "iso",
     async with _lock:                    # one shared page: shots are serialised
         page = await _ensure_page(scale, hq, width, height)
         url = f"{base}/nodes?p={graph_id}"
+        mtime = _graph_mtime(graph_id)
+        stale = mtime < 0 or _loaded_mtime.get(graph_id) != mtime
         if page.url.split("#")[0] != url:
             await page.goto(url, timeout=ms)
+        elif stale:
+            # Re-read the edited graph WITHOUT navigating: the editor guards
+            # `beforeunload` while the doc is dirty, and a reload stalls on it
+            # until the element screenshot times out. openGraph re-reads from the
+            # server, which is all this needs.
+            await page.evaluate("(n) => window.openGraph(n)", graph_id)
+            await page.wait_for_timeout(400)
         await page.wait_for_function(
             "() => window._noodle && window._noodle.viewer && window._noodle.lgraph"
             " && window._noodle.lgraph._nodes.length > 0", timeout=ms)
@@ -217,13 +244,21 @@ async def render(graph_id: str, *, view: str = "iso",
         ran = False
         have = await page.evaluate(
             "() => window._noodle.viewer.previewGroup.children.length")
-        if run or not have:
+        # `stale` forces a run: the previews still on screen were computed from
+        # the graph as it was BEFORE the edit, and handing those back is exactly
+        # the silent lie this whole path exists to avoid.
+        if run or not have or stale:
             ran = True
             await page.evaluate("() => window.runGraph()")
             await page.wait_for_function(
                 "() => window._noodle.viewer.previewGroup.children.length > 0",
                 timeout=ms)
             await page.wait_for_timeout(250)
+
+        # Record the mtime AFTER the run, not before: runGraph() saves the graph
+        # first, so noting it earlier leaves every later shot looking stale and
+        # re-running forever — the warm page would never be reused again.
+        _loaded_mtime[graph_id] = _graph_mtime(graph_id)
 
         if projection in ("persp", "ortho"):
             await page.evaluate("(m) => window._noodle.viewer.setProjection(m)",

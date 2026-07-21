@@ -537,21 +537,28 @@ thirds of the material within one — so orientation decides **where the part br
     A single part + a moving container is PROMOTED to a Scene for this reason (else the
     bowl would be invisible). Verified in the browser: scrubbing `t` moves all 4 bodies,
     bowl included. Preview the Drop, not the bowl, or you get a static ghost of it too.
-  - **KNOWN LIMITATION — one finish for the whole scene, container included.**
-    `finish`/`color` are resolved per NODE (`finishOf(id)` in nodes.html), but a
-    collide scene is ONE preview: the falling parts and the container are bodies
-    inside the Drop node's preview, so they all get the Drop node's finish. A
-    glass jar with steel bolts is not expressible today. (Colour per body IS free
-    — `rainbow` already gives each one its own hue — because every body is its
-    own mesh with its own material; it is only the finish resolution that is
-    per-preview.) The fix, scoped: stamp the container's SOURCE node id onto the
-    extra bodies (the emitter can read it off `graph.connections` for the
-    `container` socket; note `Mesh.__slots__` must gain the attribute or the
-    assignment is swallowed, exactly as `_noodle_anim` was), carry it through
-    `mesh_extractor._preview_of` as `body.owner`, and let `objFromPreview`'s
-    `bodies` branch resolve `colorOf`/`finishOf` per body instead of once per
-    preview. Four files, and the whole chain fails SILENTLY when it is wrong —
-    so it wants its own change and a rendered before/after, not a drive-by.
+  - **A finish PER BODY — the glass jar really does pour steel bolts.** A collide
+    scene is ONE preview, so `finishOf(id)` used to resolve once for the whole
+    pile and the container inherited the falling parts' material. Now each body
+    can name the node that DREW it: the emitter reads the `container` socket off
+    `graph.connections` and passes `{container_ids}` into `_drop` (only the
+    emitter can know this — the runtime is handed a shape, never a graph),
+    `_static_colliders` carries the id per collider, `_dyn_sim` stamps it on each
+    extra as `_noodle_owner`, `mesh_extractor._preview_of` emits it as
+    `body.owner`, and `objFromPreview`'s `bodies` branch resolves `colorOf` /
+    `finishOf` from it. Bodies with no owner are the Drop's own output and keep
+    the node-level look, so nothing changes for a scene without a container.
+    - **`Mesh.__slots__` must list `_noodle_owner`**, exactly as it must list
+      `_noodle_anim`: a build123d Shape takes any attribute, so the B-Rep lane
+      works either way and the mesh lane silently drops it inside `_drop`'s
+      `try/except`. The whole chain fails SILENTLY when any link is wrong —
+      check `body.owner` in view.json before blaming the renderer.
+    - The glow layer looks at body owners too, or an emissive container would
+      light nothing (`renderPreviews` sets `glowing` from both).
+    - Free side effect worth knowing: transmission costs a full scene re-render
+      per transparent body, so making the CONTENTS opaque and leaving only the
+      jar glass is also what makes the scene cheap enough to screenshot
+      headlessly at all (§9 runs on SwiftShader, with no GPU).
   - Example: `examples/container-tilt.json` (balls land, then the bowl tips over its own
     rim and pours them out). Costs ~5ms per simulated second to drive.
 - Tests: `tests/test_print.py`.
@@ -982,6 +989,33 @@ thought to measure; a picture shows what you did not.**
 - **No GPU**: SwiftShader, verified pixel-identical to hardware GL.
 - **The browser is kept WARM**, like the execution worker: ~10s cold, **~1.5s**
   warm with `run=0`. Take extra angles freely; re-run only when geometry changed.
+- **The warm page must not show you the PREVIOUS graph.** It only re-navigated
+  when the URL changed, so shooting the same project twice reused whatever was on
+  screen — edit a graph, shoot it with `run=0`, and you were handed the geometry
+  from before the edit, silently. That is the exact failure this endpoint exists
+  to prevent, and it cost three rounds of "why is the picture identical" before it
+  was found. `graph.json`'s mtime now decides: unchanged → reuse the page (the
+  fast multi-angle path is intact), changed → re-read AND re-run. Note it re-reads
+  with `window.openGraph(name)` rather than a reload: the editor guards
+  `beforeunload` while the doc is dirty, and a navigation stalls on that until the
+  element screenshot times out. A run is unavoidable on change — opening a project
+  does not restore previews from view.json (§9b), only running draws.
+- **The shot page is a READER — taking a picture must never destroy the subject.**
+  It loads the real editor, and `runGraph()` began with `await saveGraph()` like
+  any user, so a shot whose warm page held a STALE in-memory graph wrote that
+  stale copy straight over `graph.json`. Measured, the hard way: three rounds of
+  careful graph edits were reverted to a pre-fix version by the act of
+  screenshotting them, with the save logged from `127.0.0.1` (the headless
+  browser), not from the user. `runGraph` now skips the save when
+  `window.__noodleShot` is set — and that is also *more* correct, since /execute
+  runs the graph ON DISK, which is exactly what an agent wants rendered. The flag
+  already existed for the thumbnail (§9b); it now guards the write too.
+- **A heavy glass scene can be too slow to shoot at all.** `transmission` makes
+  three.js re-render the whole scene per transparent body; on SwiftShader (no GPU)
+  a pile of six glass bodies never finishes a frame and `Locator.screenshot` times
+  out with a misleading "element not stable". `hq=0` completes. If a scene must be
+  shot at HQ, give only the things that need it a glass finish — which per-body
+  finishes (§5d-bis) now make possible.
 - **NOT on `asyncio.to_thread`** (unlike /execute) and deliberately: the work
   happens in the browser process, so the coroutine only awaits I/O. The graph run
   it triggers goes through /execute, which is already off the loop.

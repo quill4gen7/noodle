@@ -157,8 +157,21 @@ function objFromPreview(p, color, opts, scale) {
     p.bodies.forEach((b, i) => {
       // Every body of a collide scene is already its own mesh with its own
       // material, so a colour per body is free — no extra draw calls at all.
-      const child = objFromPreview(b, color === 'rainbow' ? rainbowHue(i) : color,
-                                   opts, scale);
+      // A body that names its OWNER node (today: a Drop container) resolves its
+      // own colour and finish from that node, instead of inheriting the Drop's:
+      // that is what lets a glass jar pour steel bolts. Bodies without an owner
+      // are the Drop's own output and keep the node-level look.
+      const own = b.owner || null;
+      let bcolor = color === 'rainbow' ? rainbowHue(i) : color;
+      let bfinish = opts && opts.finish;
+      if (own && opts) {
+        // colorOf takes (id, order) — omitting `order` used to reach
+        // `order.indexOf` on undefined and kill the whole render.
+        if (opts.colorOf) { const c = opts.colorOf(own, opts.order); if (c) bcolor = c; }
+        if (opts.finishOf) { const f = opts.finishOf(own); if (f !== undefined) bfinish = f; }
+      }
+      const child = objFromPreview(b, bcolor,
+                                   Object.assign({}, opts, {finish: bfinish}), scale);
       if (!child) return;
       child.userData.bodyIndex = i;
       child.userData.anim = b.anim || null;
@@ -628,10 +641,16 @@ export class CadViewer {
     const colors = {}, meshes = {};
     for (const id of order) {
       const color = colorOf ? colorOf(id, order) : PALETTE[order.indexOf(id) % PALETTE.length];
+      const finish = finishOf ? finishOf(id) : null;
+      if (finish === 'emissive') glowing = true;
+      // A Scene body may name its own owner node (a Drop container), whose finish
+      // is resolved separately — so the glow layer has to look there too, or an
+      // emissive bowl would light nothing.
+      for (const b of (previews[id].bodies || []))
+        if (b.owner && finishOf && finishOf(b.owner) === 'emissive') glowing = true;
       const obj = objFromPreview(previews[id], color,
-      { wireframe: wireOf ? wireOf(id) : false,
-        finish: (fin => (fin === 'emissive' && (glowing = true), fin))(
-                  finishOf ? finishOf(id) : null) }, scale);
+      { wireframe: wireOf ? wireOf(id) : false, finish,
+        colorOf, finishOf, order }, scale);
       if (!obj) continue;
       obj.userData.nodeId = id;
       markGlow(obj);                      // put its emitters on the glow layer

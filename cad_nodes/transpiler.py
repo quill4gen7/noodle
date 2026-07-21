@@ -812,7 +812,7 @@ class Mesh:
     # collided simply never replayed in the browser, silently.
     # `_noodle_extra` rides the same way: the moving `container` bodies, which are
     # NOT outputs of the node but must still be drawn (and animated) in its preview.
-    __slots__ = ("tm", "_noodle_anim", "_noodle_extra")
+    __slots__ = ("tm", "_noodle_anim", "_noodle_extra", "_noodle_owner")
 
     def __init__(self, tm):
         self.tm = tm
@@ -1947,7 +1947,7 @@ def _drop_apply(_shape, _B, _o, _ops):
 
 
 def _drop(_shape, _plane=None, _t=1.0, _material="plastic", _settle=True,
-          _collide=False, _container=None, _grip=1.0, _motion=None):
+          _collide=False, _container=None, _grip=1.0, _motion=None, _owner_ids=None):
     \"\"\"A real fall onto the plane, scrubbed by _t: 0 = where the part is now,
     1 = at rest. The part falls, BOUNCES (each impact keeps _DROP_E of its
     speed), and — with `settle` — TOPPLES: once the bounces die, the quasi-
@@ -1967,7 +1967,7 @@ def _drop(_shape, _plane=None, _t=1.0, _material="plastic", _settle=True,
     if _container is not None or (_collide and isinstance(_shape, (list, tuple))):
         shapes = list(_shape) if isinstance(_shape, (list, tuple)) else [_shape]
         out = _drop_collide(shapes, _plane, _t, _material, _settle, _container,
-                            _grip, _motion)
+                            _grip, _motion, _owner_ids)
         return out if isinstance(_shape, (list, tuple)) else (out[0] if out else None)
     if _shape is None:
         return None
@@ -2226,7 +2226,7 @@ def _dyn_sim(_hulls, _coms, _e, _t_max=8.0, _statics=(), _grip=1.0,
         _pb.changeDynamics(pbody, -1, restitution=1.0, lateralFriction=0.8 * _grip,
                            physicsClientId=cl)
         sids = []
-        for (sv, sf, _src) in _statics:
+        for (sv, sf, _src, _own) in _statics:
             scs = _pb.createCollisionShape(
                 _pb.GEOM_MESH, vertices=_np.asarray(sv, dtype=float).tolist(),
                 indices=[int(i) for i in _np.asarray(sf).reshape(-1)],
@@ -2358,9 +2358,10 @@ def _keys_pose(_times, _pos, _quat, _tau):
     return p, _quat_slerp(_quat[i - 1], _quat[i], f)
 
 
-def _static_colliders(_container, _o, _B):
+def _static_colliders(_container, _o, _B, _owner_ids=None):
     \"\"\"The `container` input as pybullet-ready triangle soups in bed coordinates:
-    (vertices, faces, source shape) per body, NOT hulled — that is the whole point
+    (vertices, faces, source shape, owner node id) per body, NOT hulled — that is
+    the whole point
     of the socket. Accepts one shape or several wired into it. The source shape
     rides along because a MOVING container has to be drawn as well as simulated,
     and the preview wants the original (either lane), not the soup.\"\"\"
@@ -2379,20 +2380,26 @@ def _static_colliders(_container, _o, _B):
             out.append(v)
         return out
 
-    items = _flat(_container, [])
-    for c in items:
-        if c is None:
-            continue
-        m = _as_mesh(c)
-        if m is None or len(m.tm.faces) == 0:
-            continue
-        V = (_np.asarray(m.tm.vertices, dtype=float) - _o) @ _B
-        out.append((V, _np.asarray(m.tm.faces, dtype=int), c))
+    # Owner ids are per TOP-LEVEL container input, so flatten each separately and
+    # carry its id down: it is what lets the viewer give the bowl its own finish
+    # instead of the falling parts' (CLAUDE.md §5d-bis).
+    tops = list(_container) if isinstance(_container, (list, tuple)) else [_container]
+    ids = list(_owner_ids or [])
+    for k, top in enumerate(tops):
+        owner = ids[k] if k < len(ids) else (ids[0] if len(ids) == 1 else None)
+        for c in _flat(top, []):
+            if c is None:
+                continue
+            m = _as_mesh(c)
+            if m is None or len(m.tm.faces) == 0:
+                continue
+            V = (_np.asarray(m.tm.vertices, dtype=float) - _o) @ _B
+            out.append((V, _np.asarray(m.tm.faces, dtype=int), c, owner))
     return out
 
 
 def _drop_collide(_shapes, _plane=None, _t=1.0, _material="plastic", _settle=True,
-                  _container=None, _grip=1.0, _motion=None):
+                  _container=None, _grip=1.0, _motion=None, _owner_ids=None):
     \"\"\"The multi-body drop, done with real dynamics: every shape wired into the
     node becomes a rigid body (its convex hull) in ONE pybullet scene, and they
     all fall TOGETHER — colliding in the air, pushing each other, tumbling,
@@ -2426,10 +2433,10 @@ def _drop_collide(_shapes, _plane=None, _t=1.0, _material="plastic", _settle=Tru
     results = [bb["shape"] for bb in bodies]           # non-meshables pass through
     if not live:
         return results
-    statics = _static_colliders(_container, o, B)
+    statics = _static_colliders(_container, o, B, _owner_ids)
     pose, drive_until = None, 0.0
     if _motion is not None and statics:
-        allV = _np.vstack([sv for (sv, _sf, _s) in statics])
+        allV = _np.vstack([sv for (sv, _sf, _s, _o2) in statics])
         pose, drive_until = _motion_driver(
             _motion, B, o, 0.5 * (allV.min(axis=0) + allV.max(axis=0)))
     times, poss, quats, spos, squat = _dyn_sim(
@@ -2482,10 +2489,13 @@ def _drop_collide(_shapes, _plane=None, _t=1.0, _material="plastic", _settle=Tru
                           for pp in spos],
                   "quat": [[float(x) for x in qq] for qq in squat]}
         extras = []
-        for (_sv, _sf, src) in statics:
+        for (_sv, _sf, src, owner) in statics:
             try:
                 g = _drop_apply(src, B, o, ops_s)
                 g._noodle_anim = plan_s
+                # Whose node drew this? The viewer resolves colour AND finish per
+                # body from it, so a glass jar can pour steel bolts (§5d-bis).
+                g._noodle_owner = owner
                 extras.append(g)
             except Exception:
                 pass
@@ -4841,6 +4851,11 @@ class Transpiler:
         if node.type == "Drop":
             if "container" in fan:                  # several statics = one rig
                 subs["container"] = fan.pop("container")
+            # Which node DREW the container. Only the emitter knows — the runtime
+            # sees a shape, not a graph — and the viewer needs it to give the bowl
+            # its own colour and finish instead of the falling parts' (§5d-bis).
+            subs["container_ids"] = repr([fn for (fn, _fs)
+                                          in feeds.get("container", [])])
             scene = (subs.get("collide") == "True"
                      or subs.get("container") not in (None, "None"))
             if scene and "shape" in fan:
