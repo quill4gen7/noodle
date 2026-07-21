@@ -111,10 +111,24 @@ server.py            FastAPI HTTP API (port 8090). Routes under /api/* :
                        knows whose events it is reading and when to hang up. Omit it
                        and you get the next run that starts — the MCP/curl path),
                        /api/system/health|logs|restart.
-                       NOTE /execute runs via `asyncio.to_thread`: a graph run is
-                       seconds of blocking CPU and must NOT hold the event loop,
-                       or nothing else can be served meanwhile (the progress
-                       stream included). Keep any new long route off the loop.
+                       NOTE every route that reaches the executor goes through
+                       `off_loop()` — execute, render, download, export,
+                       slice_summary, section_outline, subshapes. An engine call
+                       is seconds of blocking CPU and must NOT hold the event
+                       loop, or nothing else is served meanwhile (the progress
+                       stream reporting on that very run included). Six of the
+                       seven used to call it straight from `async def`; measured
+                       on threaded-jar-pour, /health took **3.39s** during a 3.8s
+                       render and **1.2ms** after. `subshapes` was the worst,
+                       since the selection picker calls it on every click.
+                       `off_loop` is one named helper rather than scattered
+                       `to_thread` calls so the rule stays greppable and its
+                       reasoning lives in one docstring; tests/test_off_loop.py
+                       pins it structurally (a wrapped call passes the engine
+                       function by NAME, so it is never a Call target — any
+                       ast.Call on an engine name is a regression). /screenshot
+                       is the deliberate exception: its work is in the browser
+                       process, so it only awaits I/O.
 mcp_server.py        MCP server exposing the same cad_nodes.api operations.
 webui/
   viewer.js          ★ the SHARED Three.js viewport (ES module served at
@@ -1168,7 +1182,7 @@ thought to measure; a picture shows what you did not.**
   out with a misleading "element not stable". `hq=0` completes. If a scene must be
   shot at HQ, give only the things that need it a glass finish — which per-body
   finishes (§5d-bis) now make possible.
-- **NOT on `asyncio.to_thread`** (unlike /execute) and deliberately: the work
+- **NOT through `off_loop()`** (unlike every other engine route) and deliberately: the work
   happens in the browser process, so the coroutine only awaits I/O. The graph run
   it triggers goes through /execute, which is already off the loop.
 - **Two traps paid for.** `openGraph` is async, so calling `runGraph()` too early

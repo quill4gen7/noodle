@@ -198,6 +198,30 @@ def require_project(name: str) -> Path:
     return d
 
 
+async def off_loop(fn, *args, **kwargs):
+    """Run a CAD-engine call in a worker thread instead of on the event loop.
+
+    EVERY route that reaches cad_nodes.executor — execute, render, download,
+    export, slice_summary, section_outline, subshapes — must go through here.
+    Those calls are seconds of blocking CPU (a graph run, or a cold build123d
+    import at ~2.7s), and while one holds the loop NOTHING else is served: not
+    the next request, and not /api/graph/{name}/progress, the SSE stream that
+    reports on the very run in flight. Six of the seven used to be called
+    directly from `async def` and froze the server for their duration;
+    `subshapes` is the one that hurt most, since the selection picker calls it
+    on every click.
+
+    They serialise anyway inside the warm worker's own lock (executor.py), so
+    moving them off the loop makes concurrent calls queue rather than freeze.
+
+    NOT for /screenshot: the work happens in the browser process, so that
+    coroutine only awaits I/O (and the run it triggers goes through /execute,
+    which is already off the loop). Await, don't offload, when there is no
+    blocking CPU to move.
+    """
+    return await asyncio.to_thread(fn, *args, **kwargs)
+
+
 # ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
@@ -531,7 +555,7 @@ async def get_thumb(name: str):
 async def render_project(name: str):
     """Transpile + execute a node graph to build123d, producing output.stl."""
     d = require_project(name)
-    result = execute_graph(_load_graph(name), d)
+    result = await off_loop(execute_graph, _load_graph(name), d)
     if not result["success"]:
         raise HTTPException(400, f"Graph execution failed:\n{result.get('errors')}")
     return {
@@ -553,7 +577,7 @@ async def download_stl(name: str):
         graph_json.exists() and stl.stat().st_mtime < graph_json.stat().st_mtime)
     if stale:
         try:
-            execute_graph(_load_graph(name), d, write_stl=True)
+            await off_loop(execute_graph, _load_graph(name), d, write_stl=True)
         except Exception as e:
             logger.error("download '%s' re-render failed: %s", name, e)
     if not stl.exists():
@@ -893,7 +917,7 @@ async def api_screenshot(
 
     This drives headless Chromium over this very server's /nodes page, so the
     image comes out of the REAL viewer (same materials, finishes, bloom). It is
-    NOT put on `asyncio.to_thread` like /execute, and deliberately: the work
+    NOT put through off_loop() like /execute, and deliberately: the work
     happens in the browser process, so this coroutine is only awaiting I/O. The
     graph run it triggers goes through /execute, which is already off the loop.
 
@@ -933,11 +957,8 @@ async def execute_graph_project(name: str, run: str | None = None):
     logger.info("execute graph '%s' (%d nodes)", name, len(graph.nodes))
     try:
         # Live run: skip the STL export (regenerated on demand by /download).
-        # OFF THE EVENT LOOP: a graph run is seconds of blocking CPU, and while it
-        # held the loop nothing else could be served — including the progress stream
-        # that reports on this very run. The warm worker is already serialised by its
-        # own lock, so concurrent runs queue rather than collide.
-        result = await asyncio.to_thread(execute_graph, graph, d, write_stl=False, run_id=run)
+        # Off the event loop — see off_loop() for why every engine call is.
+        result = await off_loop(execute_graph, graph, d, write_stl=False, run_id=run)
     except ValidationError as e:
         logger.error("execute '%s' invalid graph: %s", name, e)
         raise HTTPException(400, str(e)) from e
@@ -1116,8 +1137,8 @@ async def graph_section_outline(name: str, axis: str = "z", pos: float = 0.0,
     """One exact section, edge by edge (the slice_summary 'microscope')."""
     require_project(name)
     try:
-        data = api.section_outline(GraphStore(PROJECTS_DIR), name, axis, pos,
-                                   path or None)
+        data = await off_loop(api.section_outline, GraphStore(PROJECTS_DIR),
+                              name, axis, pos, path or None)
     except (ValidationError, ValueError) as e:
         raise HTTPException(400, str(e)) from e
     if not data.get("success"):
@@ -1134,7 +1155,7 @@ async def graph_slice_summary(name: str, path: str = "", n: int = 10):
     require_project(name)
     store = GraphStore(PROJECTS_DIR)
     try:
-        data = api.slice_summary(store, name, path or None, n)
+        data = await off_loop(api.slice_summary, store, name, path or None, n)
     except (ValidationError, ValueError) as e:
         raise HTTPException(400, str(e)) from e
     if not data.get("success"):
@@ -1152,7 +1173,7 @@ async def graph_subshapes(name: str, node_id: str, kind: str = "edge"):
     d = require_project(name)
     graph = _load_graph(name)
     try:
-        data = extract_subshapes_for_node(graph, node_id, kind, d)
+        data = await off_loop(extract_subshapes_for_node, graph, node_id, kind, d)
     except ValidationError as e:
         raise HTTPException(400, str(e)) from e
     if not data.get("success"):
@@ -1204,7 +1225,7 @@ async def export_graph_project(name: str, fmt: str):
     graph = _load_graph(name)
     media, ext = _EXPORT_MEDIA[fmt]
     try:
-        out_path = export_graph(graph, d, fmt)
+        out_path = await off_loop(export_graph, graph, d, fmt)
     except ValidationError as e:
         raise HTTPException(400, str(e)) from e
     except (RuntimeError, ValueError) as e:
