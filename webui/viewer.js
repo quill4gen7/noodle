@@ -167,8 +167,12 @@ function objFromPreview(p, color, opts, scale) {
       if (own && opts) {
         // colorOf takes (id, order) — omitting `order` used to reach
         // `order.indexOf` on undefined and kill the whole render.
+        // Only an EXPLICIT value on the owner overrides: every falling body now
+        // names its own source node, and treating "unset" as an override would
+        // silently stop the Drop's own finish from reaching the parts it pours —
+        // which is what every existing graph relies on.
         if (opts.colorOf) { const c = opts.colorOf(own, opts.order); if (c) bcolor = c; }
-        if (opts.finishOf) { const f = opts.finishOf(own); if (f !== undefined) bfinish = f; }
+        if (opts.finishOf) { const f = opts.finishOf(own); if (f) bfinish = f; }
       }
       const child = objFromPreview(b, bcolor,
                                    Object.assign({}, opts, {finish: bfinish}), scale);

@@ -1947,7 +1947,8 @@ def _drop_apply(_shape, _B, _o, _ops):
 
 
 def _drop(_shape, _plane=None, _t=1.0, _material="plastic", _settle=True,
-          _collide=False, _container=None, _grip=1.0, _motion=None, _owner_ids=None):
+          _collide=False, _container=None, _grip=1.0, _motion=None, _owner_ids=None,
+          _shape_ids=None):
     \"\"\"A real fall onto the plane, scrubbed by _t: 0 = where the part is now,
     1 = at rest. The part falls, BOUNCES (each impact keeps _DROP_E of its
     speed), and — with `settle` — TOPPLES: once the bounces die, the quasi-
@@ -1967,7 +1968,7 @@ def _drop(_shape, _plane=None, _t=1.0, _material="plastic", _settle=True,
     if _container is not None or (_collide and isinstance(_shape, (list, tuple))):
         shapes = list(_shape) if isinstance(_shape, (list, tuple)) else [_shape]
         out = _drop_collide(shapes, _plane, _t, _material, _settle, _container,
-                            _grip, _motion, _owner_ids)
+                            _grip, _motion, _owner_ids, _shape_ids)
         return out if isinstance(_shape, (list, tuple)) else (out[0] if out else None)
     if _shape is None:
         return None
@@ -2399,7 +2400,8 @@ def _static_colliders(_container, _o, _B, _owner_ids=None):
 
 
 def _drop_collide(_shapes, _plane=None, _t=1.0, _material="plastic", _settle=True,
-                  _container=None, _grip=1.0, _motion=None, _owner_ids=None):
+                  _container=None, _grip=1.0, _motion=None, _owner_ids=None,
+                  _shape_ids=None):
     \"\"\"The multi-body drop, done with real dynamics: every shape wired into the
     node becomes a rigid body (its convex hull) in ONE pybullet scene, and they
     all fall TOGETHER — colliding in the air, pushing each other, tumbling,
@@ -2467,6 +2469,13 @@ def _drop_collide(_shapes, _plane=None, _t=1.0, _material="plastic", _settle=Tru
                 "quat": [[float(x) for x in qq] for qq in quats[j]]}
         try:
             res._noodle_anim = plan
+            # Which node drew THIS falling body. Several shapes wired into one
+            # Drop usually come from several nodes (five bolts, five Moves), so
+            # they can be styled apart exactly like the container. Only a single
+            # node fanning out into many pieces genuinely shares an owner.
+            if _shape_ids:
+                _k = b["i"]
+                res._noodle_owner = _shape_ids[_k] if _k < len(_shape_ids) else None
         except Exception:
             pass
         results[b["i"]] = res
@@ -4856,6 +4865,7 @@ class Transpiler:
             # its own colour and finish instead of the falling parts' (§5d-bis).
             subs["container_ids"] = repr([fn for (fn, _fs)
                                           in feeds.get("container", [])])
+            subs["shape_ids"] = repr([fn for (fn, _fs) in feeds.get("shape", [])])
             scene = (subs.get("collide") == "True"
                      or subs.get("container") not in (None, "None"))
             if scene and "shape" in fan:

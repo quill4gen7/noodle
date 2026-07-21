@@ -613,3 +613,32 @@ def test_body_owner_is_resolved_across_the_id_namespaces():
     # colorOf's second argument must survive the trip to the per-body call
     viewer = (pathlib.Path(__file__).parent.parent / "webui" / "viewer.js").read_text()
     assert "opts.colorOf(own, opts.order)" in viewer
+
+
+def test_each_wired_shape_carries_its_own_owner():
+    """Five bolts wired into one Drop are usually five NODES, not one node fanning
+    out — so they can be styled apart exactly like the container. Only a single
+    node producing many pieces genuinely shares an owner."""
+    g = Graph.from_dict({
+        "nodes": [{"id": "a", "type": "Sphere"}, {"id": "b", "type": "Sphere"},
+                  {"id": "bowl", "type": "Cylinder"}, {"id": "d", "type": "Drop"}],
+        "connections": [
+            {"id": "c1", "from_node": "a", "from_socket": "result",
+             "to_node": "d", "to_socket": "shape"},
+            {"id": "c2", "from_node": "b", "from_socket": "result",
+             "to_node": "d", "to_socket": "shape"},
+            {"id": "c3", "from_node": "bowl", "from_socket": "result",
+             "to_node": "d", "to_socket": "container"}],
+    })
+    drop = next(l for l in transpile(g).splitlines()
+                if "_drop(" in l and "@node:d" in l)
+    assert "['bowl']" in drop and "['a', 'b']" in drop, drop
+
+
+def test_an_explicit_finish_is_what_overrides_a_body():
+    """Now that EVERY falling body names an owner, treating "unset" as an
+    override would silently stop the Drop's own finish reaching the parts it
+    pours — which is what every existing graph relies on."""
+    import pathlib
+    viewer = (pathlib.Path(__file__).parent.parent / "webui" / "viewer.js").read_text()
+    assert "const f = opts.finishOf(own); if (f) bfinish = f;" in viewer

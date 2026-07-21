@@ -487,7 +487,7 @@ def test_all_templates_reference_real_sockets_or_params():
     # Names the EMITTER supplies rather than the node declaring them:
     # container_ids is the graph-level answer to "which node drew the Drop's
     # container", which the runtime cannot know (it only ever sees a shape).
-    provided = {"node_id", "ctx", "container_ids"}
+    provided = {"node_id", "ctx", "container_ids", "shape_ids"}
     for d in catalog.REGISTRY.values():
         names = ({s.name for s in d.inputs} | {p.name for p in d.params}
                  | provided)

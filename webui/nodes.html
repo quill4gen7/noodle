@@ -2794,8 +2794,21 @@ async function editAppearance(node){
   // Switch which piece the finish/colour sections are editing.
   const pcBar = m.ov.querySelector('#__pc'), whoEl = m.ov.querySelector('#__who');
   let cur = pieces ? pieces.find(p => p.node === node) || pieces[0] : null;
+  // Several pieces of one scene are usually the same TYPE (five bolts = five
+  // Move nodes), so the bare label would print "Move" three times and pick
+  // nothing. Duplicates get their node id appended; renaming them (F2) replaces
+  // that with something you chose.
+  const _dupes = new Set();
+  if (pieces){
+    const seen = new Set();
+    for (const p of pieces){
+      const base = p.node.title || p.node.cadType;
+      if (seen.has(base)) _dupes.add(base); else seen.add(base);
+    }
+  }
   const pieceName = p => {           // raw text; escape at the point of use
-    const base = p.node.title || p.node.cadType;
+    let base = p.node.title || p.node.cadType;
+    if (_dupes.has(base)) base += ` #${p.node.id}`;
     return p.owner ? base : `${base} — cade${p.n > 1 ? ` ×${p.n}` : ''}`;
   };
   const selectPiece = p => {
