@@ -270,9 +270,18 @@ async def system_warm_get():
 async def system_warm_set(body: dict = Body(default={})):
     """Toggle the persistent (warm) worker. Off shuts it down to free memory
     while noodle is idle; on lets the next run spawn it (first run pays the
-    ~2.7s build123d import, later runs skip it)."""
+    ~2.7s build123d import, later runs skip it).
+
+    Off the loop like the engine routes, though for a different reason: this one
+    does no CPU work itself, it WAITS. Turning warm off calls WarmWorker.
+    shutdown(), which takes the same lock a run holds for its whole duration —
+    so clicking the toggle mid-run froze the server until that run finished
+    (measured: /health at 601ms during a render). The wait itself is correct and
+    stays: killing the worker out from under a running job would be worse. It is
+    also bounded, since a run cannot outlive its own timeout.
+    """
     from cad_nodes import executor
-    return executor.set_warm(bool(body.get("enabled", True)))
+    return await off_loop(executor.set_warm, bool(body.get("enabled", True)))
 
 
 @app.post("/api/system/restart")

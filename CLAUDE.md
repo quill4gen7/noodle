@@ -276,6 +276,24 @@ cad_nodes/
   executor.py        Runs the generated script in a worker subprocess; captures
                        STL + view JSON + per-node errors. execute_graph(graph, workdir,
                        run_id=…) — run_id names the run inside progress.jsonl.
+                       WarmWorker._lock serialises runs, and a run holds it for its
+                       whole duration — so ANYTHING taking that lock from the event
+                       loop freezes the server just as a CPU call would. shutdown()
+                       does (set_warm(False) → POST /api/system/warm), which is why
+                       that route goes through off_loop(): clicking the ⚙ toggle
+                       mid-run used to hang everything (/health 601ms → 1.0ms). The
+                       WAIT itself is correct and stays — killing the worker under a
+                       running job would be worse — and it is bounded, since a run
+                       cannot outlive its own timeout. warm_status() only reads
+                       _alive(), takes no lock, so the GET is free.
+                       MEASURED AND NOT A BUG, so nobody "fixes" it again: run() was
+                       suspected of wedging on stdin.write under the lock. It does
+                       not. Driven against a worker that is silent / deaf / flooding
+                       stdout and never reads stdin, run() returned {'timeout':True}
+                       at exactly its timeout in all three cases and released the
+                       lock every time; five timeout+kill cycles leaked no threads,
+                       no fds and no zombies. The bound is _read_sentinel's
+                       join(timeout), and it holds.
   worker.py / mesh_extractor.py   the subprocess + meshing. The warm worker owns
                        the persistent __MEMO__ store (LRU 256: node outputs,
                        preview meshes, view stats) — on a repeat run only the

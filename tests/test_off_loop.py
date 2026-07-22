@@ -17,13 +17,17 @@ from pathlib import Path
 
 SERVER = Path(__file__).resolve().parent.parent / "server.py"
 
-# Everything in server.py that reaches cad_nodes.executor.
+# Everything in server.py that reaches cad_nodes.executor. `set_warm` is here
+# for a different reason than the rest: it does no CPU work itself, it WAITS on
+# the warm worker's lock — which a run holds for its whole duration. Blocking the
+# loop on a lock is blocking the loop.
 ENGINE_CALLS = {
     "execute_graph",
     "export_graph",
     "extract_subshapes_for_node",
     "slice_summary",
     "section_outline",
+    "set_warm",
 }
 
 
