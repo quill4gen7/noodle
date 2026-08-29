@@ -330,6 +330,11 @@ PLAN_NODE_CAD.md     the original design doc (phases 0-5 = shipped, kept as the
                      roadmap: "Roadmap — prossimi passi". New work goes there.
 PLAN_THREADS.md      the Thread node (§5g): why threads are triangles, the four
                      profile families, and the clearance measurements.
+PLAN_FLUID.md        the fluid lane (§5h): why the wind tunnel needs no GPU, the
+                     voxelisation that costs 500x less than the obvious one, and
+                     §7 — what the implementation actually cost, including the
+                     100 mm/s velocity clamp that had been switching gravity off
+                     in every collide scene, and why Cd only compares at equal Re.
 PLAN_VIZ_ALGORITHMS.md  the "algorithms as geometry" example family (softmax,
                      gradient descent, determinant, CLT, Fourier, k-means…): the
                      pattern they share, the idioms, the gotchas, and what's next.
@@ -808,6 +813,90 @@ whole story:
   drills a whole pattern of tapped holes in one node.
 - Example: `examples/bolt-and-nut.json` (a bolt whose thread ADDS to its shank, a
   nut whose thread CUTS). Tests: `tests/test_thread.py`.
+
+## 5h. Fluids (category `fluid`) — moving air, and what it does to a part
+
+Two nodes, one shared idea. **`Wind`** is a PLAN, not geometry — a plain dict, exactly
+like `ContainerMotion` (§5d-bis) — so it costs nothing and drives two different
+consumers. `Drop` asks *what happens to my part in this wind* (rigid bodies pushed by a
+fluid they do not disturb); **`WindTunnel`** asks the opposite, *what does the part do
+to the fluid*, and actually solves it (D3Q19 Lattice-Boltzmann in numpy, in the worker).
+No GPU, no OpenCL, no second image, no job queue — measured, ~20s at the default
+quality, and the memo cache pays for it once. Full notes and every measurement in
+**`PLAN_FLUID.md`** (§7 is the implementation record).
+
+- **THE BUG THAT WAS ALREADY THERE, and it is not about fluids**: `createMultiBody`
+  builds a **btMultiBody**, which carries a hard-wired `m_maxCoordinateVelocity` of 100
+  units/s — in millimetres, **10 cm/s**. Measured: a body released in vacuum held
+  exactly −100.0 mm/s for the whole drop instead of accelerating, so gravity was off in
+  all but name in EVERY collide scene, and nobody saw it because the timeline is
+  normalised and a slow-motion fall shown end to end reads as plausible.
+  `useMaximalCoordinates=True` makes it a btRigidBody: the same body then gives
+  −3270 / −6540 / −9810 mm/s at t = 1/3, 2/3, 1, free fall to the digit, and a 900→100mm
+  drop takes 0.40s against 0.40s analytic. Drag needed it more than anything (it goes as
+  v², and under the clamp it could not reach a thousandth of a part's weight). It is
+  retroactive: `container-tilt`, `drop-stack`, `threaded-jar-pour` were re-run and
+  LOOKED AT and are fine, but **`galton-board`'s gaussian fit drops from +0.81 to
+  +0.47** — still a bell, correctly tuned (four material/grip combinations tried, the
+  current one wins), just built against the old wrong physics.
+- **Everything is expressed relative to the PART's density** (`_medium_units`), and that
+  is the whole reason buoyancy comes out right. `_dyn_sim` works in mm with
+  `baseMass = hull volume`, i.e. every part has density 1 mass-unit/mm³ BY CONSTRUCTION.
+  Gravity and contact never notice (both are invariant under a global mass scaling) but
+  buoyancy and drag depend on the ABSOLUTE ratio — get the units wrong and wood sinks
+  while every test still passes. So `rho_rel = rho_fluid/rho_material`, nothing touches
+  `baseMass`, and **a vacuum cancels every added force exactly**, which is what makes
+  the change safe for existing scenes.
+- **A silhouette cannot make anything turn.** The first drag table projected the hull
+  per direction: areas correct (20.0× between a plate's largest and smallest, 1.00 for a
+  sphere) but **every centre of pressure came out exactly zero**, because for a centrally
+  symmetric body the silhouette's centroid IS the projected centre of mass. A plate would
+  never have flipped. `_body_aero` now integrates over the hull's FACES (Newtonian panel
+  drag): same cost, and the force stops being parallel to the wind — an inclined surface
+  gets a sideways push 0.90× the along-flow one at 45°, which is what makes a card fly.
+  Area still equals the silhouette exactly (a cube gives 400.00 for a 20mm face).
+- **A gas has no free surface; a liquid does.** Scaling drag by a submerged fraction that
+  air does not have made a 12 m/s wind move a plate by ONE MILLIMETRE. `_MEDIUM` carries
+  an `is_liquid` flag: a liquid fills up to `level`, a gas fills everything. And without
+  a `level` a buoyant part never stops rising — measured, a wooden cube reached z=858.
+  With it, wood settles 63% submerged against 60% theoretical.
+- **A wired Wind, or any non-vacuum medium, turns scene mode on by itself**, in BOTH the
+  emitter and `_drop`'s dispatch. The analytic path has nowhere to apply a force, so a
+  wind reaching it would be ignored in silence. And a Wind with the default `vacuum`
+  medium would blow on nothing, so a wind implies air unless something denser was chosen.
+- **The sleep guard lost its `_pose` test**: `if tau <= _drive_until` rather than
+  `if _pose is not None and tau <= _drive_until`. A gust that starts late finds the pile
+  asleep, exactly as a slowly tilting tray did. Backward-compatible by construction —
+  with the 0.0 default it is true only at k=0, where `still` is already 0.
+- **The bounce-back SIGN is the whole solver.** `np.roll(A, s)[x]` is `A[x-s]`, so the
+  neighbour at `x + c[q]` is `roll(solid, -c[q])`. With `+c[q]` the link set is mirrored,
+  reflected populations land on the wrong cells and **mass is destroyed instead of
+  bounced**: density drained from step one, went negative by step six, and the drag came
+  back `nan`. It looked like a stability problem — it diverged at EVERY tau, including
+  0.70 — and it was not.
+- **Cd is only comparable at the same Reynolds, and the report says so in six lines.**
+  With the sign fixed a sphere gives Cd 1.37 at Re 159 against Schiller-Naumann's 0.89
+  (1.54×, inside the factor-2 gate), but the teardrop < sphere < cube ordering still
+  fails — because each body lands at a DIFFERENT Re (86, 159, 183), and at these Re the
+  Cd runs as ~24/Re. The gate that passes is the PAIRED one: the same body turned around,
+  same grid, same Re. That one also corrected me — tail-downstream 1.157 beats
+  nose-upstream 1.314, because a teardrop is round in front and pointed behind.
+- **Voxelisation is shell-raster + flood-fill, never the winding number** (measured 8.65s
+  against 0.017s at 64×32×32 — the bridge cost more than the solver). `_winding_inside`
+  stays PopulateGeometry's point-in-mesh oracle; it is not a voxeliser.
+- **Streamlines are `Spline`s, one edge each, decimated to ≤32 points.** `_polylines_of`
+  samples EVERY EDGE at 33 points, so a `Polyline` of 120 points is 119 edges and 3927
+  points on the wire — 236k for sixty lines. A list of build123d curves then previews for
+  free (`_as_shape` compounds it, `_polylines_of` walks its edges): **frontend zero**,
+  as PLAN_FLUID promised. Seeds sit at 30–70% of the inlet, not across it — the domain is
+  4 body widths wide and a full-span grid draws a page of straight rules.
+- `WindTunnel` needs a custom emitter (`_emit_windtunnel`, modelled line for line on
+  `_emit_orient`): one solve, two outputs registered in `out_var_of`, `_rep = None`
+  pre-declared OUTSIDE the guard. Twenty seconds is too much to spend twice because a
+  Panel is wired in.
+- Examples: `examples/wind-drop.json` (the same plate twice, one facing the gust and one
+  edge-on: 59mm of drift and flat on the bed against 0.1mm and still standing) and
+  `examples/wind-tunnel.json`. Tests: `tests/test_fluid.py`.
 
 ## 5b. Lists & fan-out (Grasshopper-style)
 

@@ -54,6 +54,14 @@ _EXAMPLE_DESCRIPTIONS = {
     "drop-in-bowl": "Drop with a container: three balls poured into a bowl that "
                     "never moves. The bowl is the one body kept CONCAVE, so it "
                     "cradles them instead of shedding them.",
+    "wind-drop": "A gust across the bed: four shapes of the same material "
+                 "dropped into moving air. The plate and the card tumble, catch "
+                 "the wind and skid; the ball barely notices. Drag is measured "
+                 "on each part's real silhouette, which changes as it turns.",
+    "wind-tunnel": "The wind tunnel: a real Lattice-Boltzmann solve around the "
+                   "part, drawn as streamlines. A blunt shape and a faired one "
+                   "side by side — one leaves a dead wake, the other keeps the "
+                   "flow attached, and the report says by how much.",
     "galton-board": "The normal distribution, fallen out of gravity: 60 balls "
                     "down a grid of diamond pegs, with a blade you slide to bend "
                     "the whole distribution. Turn `grip` up and watch the bell die.",

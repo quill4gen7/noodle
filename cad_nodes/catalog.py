@@ -1939,19 +1939,26 @@ register(NodeDef("Drop", "print", "Drop",
             Socket("container", WIRE_SOLID, accepts=[WIRE_SURFACE, WIRE_MESH],
                    required=False),
             Socket("motion", WIRE_DATA, required=False),
+            Socket("wind", WIRE_DATA, required=False),
             Socket("plane", WIRE_PLANE, required=False)] + _pin("t"),
     params=[_f("t", 1.0, 0.0, 1.0, step=0.01, label="timeline"),
             Param("material", "select", "material", "plastic", widget="select",
                   options=["plastic", "rubber", "steel", "wood", "lead", "clay"]),
             Param("settle", "bool", "settle (topple)", True, widget="checkbox"),
             Param("collide", "bool", "collide (stack)", False, widget="checkbox"),
-            _f("grip", 1.0, 0.0, 2.0, step=0.05, label="grip (friction)")],
+            _f("grip", 1.0, 0.0, 2.0, step=0.05, label="grip (friction)"),
+            Param("medium", "select", "medium", "vacuum", widget="select",
+                  options=["vacuum", "air", "water", "oil", "honey"]),
+            _f("drag", 1.0, 0.0, 3.0, step=0.05, label="drag"),
+            _f("level", 100.0, 0.0, 2000.0, step=5, label="fluid level (mm)",
+               soft_max=400)],
     outputs=_geo(),
     output_follows="shape",
     gizmo={"kind": "timeline", "binds": ["t"], "anchor": "preview", "lock": ["t"]},
     code_template={"algebra": "_drop({shape}, {plane}, {t}, {material}, {settle}, "
                               "{collide}, {container}, {grip}, {motion}, "
-                              "{container_ids}, {shape_ids})"},
+                              "{container_ids}, {shape_ids}, {wind}, {medium}, "
+                              "{drag}, {level})"},
     description="Place on Bed, but as a FALL you can scrub: drag `timeline` from 0 "
                 "(where the part is now) to 1 (at rest on the plane). The part drops "
                 "under gravity, BOUNCES — each impact keeps a fixed fraction of the "
@@ -1987,7 +1994,21 @@ register(NodeDef("Drop", "print", "Drop",
                 "friction grabs a part and flings it sideways instead of letting it slide "
                 "off, so a Galton board built at grip 1 throws its balls to the walls and "
                 "the bell collapses into two lumps; at 0.3 it comes out normal. Measured, "
-                "not guessed."))
+                "not guessed. `medium` puts the whole scene INSIDE a fluid — air, water, "
+                "oil, honey — which is not cosmetic: it decides both the drag and whether "
+                "the part floats, because buoyancy compares the fluid's density with the "
+                "one `material` already implies. Wood floats in water, steel sinks, and in "
+                "honey almost nothing falls at all. `level` is where the surface of that "
+                "fluid sits: parts above it are in open air, parts below it are held up, "
+                "and one crossing it floats with exactly the right fraction submerged "
+                "(wood in water settles 60% under). Wire a Wind into `wind` and that fluid "
+                "MOVES: a gust that blows a stack over, a fan that skids parts across the "
+                "bed. Drag is computed from the part's real silhouette in the direction "
+                "the flow arrives (it changes by 20x as a flat part tumbles) and applied "
+                "at the centre of pressure, so parts turn edge-on, weathervane and flip "
+                "instead of sliding along rigidly. Either one turns scene mode on by "
+                "itself. `drag` scales the whole thing if you want it livelier or calmer; "
+                "the honest Cd of a specific shape comes from a Wind Tunnel."))
 
 register(NodeDef("ContainerMotion", "print", "Motion",
     aliases=["Shake", "Tilt", "Pour", "Stir", "Agitate", "Spin", "Vibrate",
@@ -2229,6 +2250,96 @@ register(NodeDef("Thread", "fastener", "Thread",
                 "`at` puts the thread somewhere other than the axis, BEFORE the "
                 "boolean — that is how a tapped hole goes where you want it. Wire a "
                 "LIST of points into it and one node drills the whole pattern."))
+
+
+# ===========================================================================
+# 12d. Fluids — moving air and water, and what they do to a part
+# ===========================================================================
+# Two nodes and one shared idea (PLAN_FLUID.md). `Wind` is a plan, not geometry:
+# a plain dict describing a flow, exactly as Motion describes a movement — which
+# is why it costs nothing and can be wired into two very different things.
+#
+# Drop reads it and answers "what happens to my part in this wind": rigid bodies
+# pushed around by a fluid they do not disturb. Wind Tunnel reads it and answers
+# the opposite question — "what does the part do to the fluid" — by actually
+# solving the flow (Lattice-Boltzmann, D3Q19, in numpy inside the worker).
+#
+# No GPU, no OpenCL, no second image, no job queue: a wind tunnel is ~20s at the
+# default quality and the memo cache pays for it once. What it is NOT is a
+# certification tool — the honest limits ride in the report the node emits, and
+# the blockage ratio is in there precisely so nobody quotes a Cd measured in a
+# box too small to measure it in.
+register(NodeDef("Wind", "fluid", "Wind",
+    aliases=["Flow", "Air", "Breeze", "Gust", "Fan", "Blower", "Jet", "Nozzle",
+             "Draft", "Vortex", "Whirlwind", "Airflow", "Stream"],
+    inputs=[Socket("direction", WIRE_VECTOR, required=False),
+            Socket("origin", WIRE_VECTOR, required=False)] + _pin("speed"),
+    params=[_f("dx", 1.0, -1.0, 1.0, step=0.05, label="dir x"),
+            _f("dy", 0.0, -1.0, 1.0, step=0.05, label="dir y"),
+            _f("dz", 0.0, -1.0, 1.0, step=0.05, label="dir z"),
+            _f("speed", 2000.0, 0.0, 20000.0, step=50, label="speed (mm/s)",
+               soft_max=8000),
+            Param("kind", "select", "kind", "uniform", widget="select",
+                  options=["uniform", "jet", "vortex"]),
+            _f("spread", 25.0, 1.0, 89.0, step=1, label="jet cone (deg)"),
+            _f("radius", 50.0, 1.0, 1000.0, step=5, label="radius (mm)",
+               soft_max=300),
+            _f("turbulence", 0.0, 0.0, 1.0, step=0.05, label="turbulence"),
+            _f("duration", 3.0, 0.05, 30.0, step=0.1, label="duration (s)"),
+            _f("delay", 0.0, 0.0, 20.0, step=0.1, label="delay (s)"),
+            Param("ramp", "select", "ramp", "smooth", widget="select",
+                  options=["smooth", "instant"])],
+    outputs=_data("wind"),
+    code_template={"algebra": "_wind({direction}, {origin}, {dx}, {dy}, {dz}, "
+                              "{speed}, {kind}, {spread}, {radius}, "
+                              "{turbulence}, {duration}, {delay}, {ramp})"},
+    description="A moving fluid, as a plan — wire it into a Drop's `wind` to blow "
+                "the scene around, or into a Wind Tunnel to solve the flow properly. "
+                "Three shapes cover what anyone actually wants. `uniform` is a steady "
+                "stream, the same everywhere: weather, a duct, a tunnel. `jet` is a "
+                "cone from `origin` along the direction, falling off as 1/r^2 past "
+                "`radius` and dying at the edge of `spread` — a fan, a nozzle, a leaf "
+                "blower; nothing behind it moves at all. `vortex` swirls about the "
+                "direction as an axis through `origin`, rotating solidly inside "
+                "`radius` and trailing off as 1/r outside it (a Rankine vortex: a "
+                "whirlwind, a stirred tank). Speeds are mm/s to match everything else "
+                "— 2000 mm/s is a stiff breeze, 10000 is a gale. The wind blows for "
+                "`duration` seconds after `delay`, easing in and out so it does not "
+                "slap, and stops afterwards so the scene can settle: that is how you "
+                "let a pile land first and THEN knock it over. `turbulence` adds "
+                "smooth gusts that vary in space and time; it is seeded, so the same "
+                "graph always gives the same run."))
+
+register(NodeDef("WindTunnel", "fluid", "Wind Tunnel",
+    aliases=["CFD", "Aero", "Aerodynamics", "Drag", "Cd", "Airflow", "Streamlines",
+             "Flow Simulation", "Galleria del vento", "Tunnel"],
+    inputs=[Socket("shape", WIRE_SOLID, accepts=[WIRE_SURFACE, WIRE_MESH]),
+            Socket("wind", WIRE_DATA, required=False)],
+    params=[Param("quality", "select", "quality", "normal", widget="select",
+                  options=["draft", "normal", "fine"]),
+            Param("medium", "select", "medium", "air", widget="select",
+                  options=["air", "water", "oil", "honey"]),
+            _i("seeds", 48, 4, 300, label="streamlines", soft_max=120),
+            _f("smooth", 1.0, 0.0, 3.0, step=0.1, label="smoothing")],
+    outputs=[Socket("streamlines", WIRE_CURVE), Socket("report", WIRE_DATA)],
+    code_template={"algebra": ""},   # handled by the transpiler (_emit_windtunnel)
+    description="Put the part in a wind tunnel and SOLVE the flow: a real "
+                "Lattice-Boltzmann simulation (D3Q19) on a voxel grid around it, run "
+                "in the worker with no GPU and no external solver. Two outputs. The "
+                "`streamlines` are curves you can see, wire onward, or sweep a profile "
+                "along — trace them and the difference between a blunt shape and a "
+                "faired one is immediately visible: one leaves a dead wake, the other "
+                "keeps the flow attached. The `report` goes to a Panel and carries the "
+                "numbers, INCLUDING the ones that say how much to trust it: Reynolds "
+                "number, the lattice velocity and relaxation time actually used, and "
+                "the blockage ratio — above about 5% the domain is squeezing the flow "
+                "and a drag coefficient measured in it is indicative, not a "
+                "measurement. `quality` buys accuracy with time: draft is a couple of "
+                "seconds and is for aiming the camera, normal is ~20s and is the one "
+                "to read, fine takes a minute or two. The result is cached, so "
+                "re-running an unchanged graph costs nothing. Not a certification "
+                "tool: no turbulence model, a voxel staircase for a wall, and a "
+                "domain small enough to fit in the time budget."))
 
 
 # ===========================================================================

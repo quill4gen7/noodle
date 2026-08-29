@@ -28,6 +28,15 @@ temperatura e materiale.
 
 ## B. Aero/idrodinamica (bounding box + ugello + fluido)
 
+> **Superato da `PLAN_FLUID.md` (2026-07-27), che lo corregge su un punto.**
+> Misurato: un D3Q19 in **numpy puro, dentro il worker attuale**, fa 19 ms/step su
+> 96×32×32 → galleria completa in ~17 s. Quindi per la v1 **niente FluidX3D, niente
+> GPU, niente immagine `noodle-sim` separata** (§C3 non si applica alla galleria) e
+> **niente coda asincrona** (§C1 resta un prerequisito della sola FEA). Il vero
+> vincolo è un altro e non era previsto qui: il costo scala in modo superlineare
+> oltre ~100k celle, e la *voxelizzazione* col winding number costerebbe più del
+> solver (8,65 s contro 0,017 s). Dettagli e misure in `PLAN_FLUID.md`.
+
 - **Tier 0 (giorni)** — `Fluid` (aria/acqua/olio → ρ, μ), `Flow` (velocità,
   direzione), `DragEstimate` (area frontale proiettata + Cd di classe →
   forza, Reynolds).

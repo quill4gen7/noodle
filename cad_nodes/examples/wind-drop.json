@@ -1,0 +1,283 @@
+{
+  "name": "wind-drop",
+  "nodes": [
+    {
+      "id": "t",
+      "type": "NumberSlider",
+      "title": "timeline",
+      "params": {
+        "value": 1.0,
+        "_ui": {
+          "value": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        }
+      },
+      "position": [
+        60,
+        1140
+      ]
+    },
+    {
+      "id": "gust",
+      "type": "NumberSlider",
+      "title": "wind speed",
+      "params": {
+        "value": 5000.0,
+        "_ui": {
+          "value": {
+            "min": 0,
+            "max": 12000,
+            "step": 100
+          }
+        }
+      },
+      "position": [
+        60,
+        940
+      ]
+    },
+    {
+      "id": "sail",
+      "type": "Box",
+      "params": {
+        "width": 2,
+        "height": 60,
+        "depth": 80
+      },
+      "position": [
+        60,
+        100
+      ]
+    },
+    {
+      "id": "sail_at",
+      "type": "Move",
+      "params": {
+        "x": -60,
+        "y": -70,
+        "z": 42
+      },
+      "position": [
+        330,
+        100
+      ]
+    },
+    {
+      "id": "cube",
+      "type": "Box",
+      "params": {
+        "width": 26,
+        "height": 26,
+        "depth": 26
+      },
+      "position": [
+        60,
+        300
+      ]
+    },
+    {
+      "id": "cube_at",
+      "type": "Move",
+      "params": {
+        "x": -60,
+        "y": 0,
+        "z": 15
+      },
+      "position": [
+        330,
+        300
+      ]
+    },
+    {
+      "id": "ball",
+      "type": "Sphere",
+      "params": {
+        "radius": 13
+      },
+      "position": [
+        60,
+        500
+      ]
+    },
+    {
+      "id": "ball_at",
+      "type": "Move",
+      "params": {
+        "x": -60,
+        "y": 60,
+        "z": 15
+      },
+      "position": [
+        330,
+        500
+      ]
+    },
+    {
+      "id": "vane",
+      "type": "Box",
+      "params": {
+        "width": 60,
+        "height": 2,
+        "depth": 80
+      },
+      "position": [
+        60,
+        700
+      ]
+    },
+    {
+      "id": "vane_at",
+      "type": "Move",
+      "params": {
+        "x": -60,
+        "y": 130,
+        "z": 42
+      },
+      "position": [
+        330,
+        700
+      ]
+    },
+    {
+      "id": "wind",
+      "type": "Wind",
+      "title": "the gust",
+      "params": {
+        "dx": 1.0,
+        "dy": 0.0,
+        "dz": 0.0,
+        "kind": "uniform",
+        "turbulence": 0.0,
+        "duration": 2.2,
+        "delay": 1.2,
+        "ramp": "smooth"
+      },
+      "position": [
+        330,
+        940
+      ]
+    },
+    {
+      "id": "drop",
+      "type": "Drop",
+      "title": "the gust arrives late",
+      "params": {
+        "material": "plastic",
+        "collide": true,
+        "medium": "air",
+        "grip": 0.8,
+        "drag": 1.0,
+        "level": 0.0
+      },
+      "position": [
+        660,
+        460
+      ],
+      "preview": true
+    }
+  ],
+  "connections": [
+    {
+      "id": "e1",
+      "from_node": "sail",
+      "from_socket": "result",
+      "to_node": "sail_at",
+      "to_socket": "shape"
+    },
+    {
+      "id": "e2",
+      "from_node": "cube",
+      "from_socket": "result",
+      "to_node": "cube_at",
+      "to_socket": "shape"
+    },
+    {
+      "id": "e3",
+      "from_node": "ball",
+      "from_socket": "result",
+      "to_node": "ball_at",
+      "to_socket": "shape"
+    },
+    {
+      "id": "e4",
+      "from_node": "vane",
+      "from_socket": "result",
+      "to_node": "vane_at",
+      "to_socket": "shape"
+    },
+    {
+      "id": "e5",
+      "from_node": "sail_at",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "shape"
+    },
+    {
+      "id": "e6",
+      "from_node": "cube_at",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "shape"
+    },
+    {
+      "id": "e7",
+      "from_node": "ball_at",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "shape"
+    },
+    {
+      "id": "e8",
+      "from_node": "vane_at",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "shape"
+    },
+    {
+      "id": "e9",
+      "from_node": "gust",
+      "from_socket": "result",
+      "to_node": "wind",
+      "to_socket": "speed"
+    },
+    {
+      "id": "e10",
+      "from_node": "wind",
+      "from_socket": "wind",
+      "to_node": "drop",
+      "to_socket": "wind"
+    },
+    {
+      "id": "e11",
+      "from_node": "t",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "t"
+    }
+  ],
+  "groups": [
+    {
+      "title": "the same plate twice: one facing the wind, one edge-on",
+      "bounding": [
+        20,
+        40,
+        540,
+        800
+      ],
+      "color": "#3f589e"
+    },
+    {
+      "title": "the gust \u2014 it arrives at 1.2s, on a scene already asleep",
+      "bounding": [
+        20,
+        880,
+        540,
+        380
+      ],
+      "color": "#4e7a4e"
+    }
+  ]
+}
