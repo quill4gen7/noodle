@@ -23,6 +23,16 @@ docker restart noodle         # after backend code changes (see §6)
 docker logs -f noodle         # tail logs
 ```
 
+**Rootless podman** (quill's NixOS box — `docker` IS podman there): use
+`noodle-compose up -d` (on PATH via the project devShell) instead of plain
+compose for anything that CREATES the container. It is podman-compose plus
+`--userns=keep-id:uid=1000,gid=1000`, without which the container's uid 1000
+lands in a subuid and the server cannot write the bind-mounted `projects/`
+(measured: every /execute 500s with PermissionError; `PODMAN_USERNS` is not
+enough — podman reads it, podman-compose does not pass it through).
+`docker restart` / `docker logs` work as-is. The compose file itself stays
+docker-pure; don't add podman-specific keys to it.
+
 - Node editor: <http://localhost:8090/nodes>   ·   code view: `/ui` (read-only
   build123d generated from the graph)   ·   health: `/health`
 - The container runs as the non-root user **noodle (uid 1000)**, Python 3.10,
