@@ -1,0 +1,2578 @@
+{
+  "name": "axle-cage",
+  "nodes": [
+    {
+      "id": "n1",
+      "type": "Rectangle",
+      "params": {
+        "width": 65,
+        "height": 57.5,
+        "_ui": {
+          "width": {
+            "min": 0.1,
+            "max": 100,
+            "step": 0.5
+          },
+          "height": {
+            "min": 0.1,
+            "max": 100,
+            "step": 0.5
+          }
+        }
+      },
+      "position": [
+        80,
+        3171
+      ]
+    },
+    {
+      "id": "n2",
+      "type": "TraceImage",
+      "params": {
+        "path": "assets/ss-20260709-003751.png",
+        "trace": {
+          "image": "assets/ss-20260709-003751.png",
+          "contours": [
+            {
+              "pts": [
+                [
+                  330,
+                  120.5
+                ],
+                [
+                  277.5,
+                  128
+                ],
+                [
+                  256.5,
+                  160
+                ],
+                [
+                  258.5,
+                  225
+                ],
+                [
+                  245,
+                  228.5
+                ],
+                [
+                  205.5,
+                  226
+                ],
+                [
+                  212.5,
+                  223
+                ],
+                [
+                  212.5,
+                  170
+                ],
+                [
+                  185,
+                  125.5
+                ],
+                [
+                  128,
+                  127.5
+                ],
+                [
+                  105.5,
+                  159
+                ],
+                [
+                  96.5,
+                  286
+                ],
+                [
+                  100.5,
+                  394
+                ],
+                [
+                  131,
+                  439.5
+                ],
+                [
+                  187.5,
+                  436
+                ],
+                [
+                  210.5,
+                  402
+                ],
+                [
+                  212.5,
+                  345
+                ],
+                [
+                  223,
+                  332.5
+                ],
+                [
+                  255.5,
+                  340
+                ],
+                [
+                  257.5,
+                  401
+                ],
+                [
+                  283,
+                  438.5
+                ],
+                [
+                  343,
+                  438.5
+                ],
+                [
+                  369.5,
+                  399
+                ],
+                [
+                  370.5,
+                  343
+                ],
+                [
+                  396,
+                  330.5
+                ],
+                [
+                  470,
+                  331.5
+                ],
+                [
+                  497,
+                  380.5
+                ],
+                [
+                  603,
+                  385.5
+                ],
+                [
+                  698.5,
+                  373
+                ],
+                [
+                  694.5,
+                  352
+                ],
+                [
+                  718.5,
+                  314
+                ],
+                [
+                  715.5,
+                  237
+                ],
+                [
+                  671,
+                  177.5
+                ],
+                [
+                  601,
+                  168.5
+                ],
+                [
+                  499,
+                  172.5
+                ],
+                [
+                  485.5,
+                  182
+                ],
+                [
+                  481.5,
+                  209
+                ],
+                [
+                  469,
+                  223.5
+                ],
+                [
+                  393,
+                  225.5
+                ],
+                [
+                  367.5,
+                  216
+                ],
+                [
+                  366.5,
+                  157
+                ],
+                [
+                  343.5,
+                  123
+                ],
+                [
+                  331,
+                  120.5
+                ]
+              ],
+              "closed": true,
+              "hole": false
+            },
+            {
+              "pts": [
+                [
+                  603,
+                  207.5
+                ],
+                [
+                  591,
+                  218.5
+                ],
+                [
+                  561,
+                  217.5
+                ],
+                [
+                  544.5,
+                  241
+                ],
+                [
+                  616,
+                  241.5
+                ],
+                [
+                  603.5,
+                  208
+                ]
+              ],
+              "closed": true,
+              "hole": true
+            },
+            {
+              "pts": [
+                [
+                  641,
+                  215.5
+                ],
+                [
+                  637.5,
+                  233
+                ],
+                [
+                  614.5,
+                  244
+                ],
+                [
+                  634,
+                  249.5
+                ],
+                [
+                  545,
+                  254.5
+                ],
+                [
+                  544.5,
+                  295
+                ],
+                [
+                  634,
+                  299.5
+                ],
+                [
+                  631,
+                  309.5
+                ],
+                [
+                  601.5,
+                  308
+                ],
+                [
+                  635,
+                  314.5
+                ],
+                [
+                  645,
+                  336.5
+                ],
+                [
+                  634.5,
+                  289
+                ],
+                [
+                  642,
+                  215.5
+                ]
+              ],
+              "closed": true,
+              "hole": true
+            },
+            {
+              "pts": [
+                [
+                  701,
+                  225.5
+                ],
+                [
+                  682.5,
+                  235
+                ],
+                [
+                  693,
+                  257.5
+                ],
+                [
+                  710,
+                  252.5
+                ],
+                [
+                  712,
+                  238.5
+                ],
+                [
+                  714.5,
+                  245
+                ],
+                [
+                  702,
+                  225.5
+                ]
+              ],
+              "closed": true,
+              "hole": true
+            },
+            {
+              "pts": [
+                [
+                  416,
+                  235.5
+                ],
+                [
+                  402.5,
+                  247
+                ],
+                [
+                  410,
+                  264.5
+                ],
+                [
+                  406.5,
+                  255
+                ],
+                [
+                  414,
+                  264.5
+                ],
+                [
+                  417,
+                  246.5
+                ],
+                [
+                  426,
+                  260.5
+                ],
+                [
+                  433.5,
+                  256
+                ],
+                [
+                  431.5,
+                  243
+                ],
+                [
+                  417,
+                  235.5
+                ]
+              ],
+              "closed": true,
+              "hole": true
+            },
+            {
+              "pts": [
+                [
+                  472,
+                  260.5
+                ],
+                [
+                  447.5,
+                  275
+                ],
+                [
+                  464,
+                  292.5
+                ],
+                [
+                  488.5,
+                  280
+                ],
+                [
+                  473,
+                  260.5
+                ]
+              ],
+              "closed": true,
+              "hole": true
+            },
+            {
+              "pts": [
+                [
+                  428,
+                  261.5
+                ],
+                [
+                  428.5,
+                  298
+                ],
+                [
+                  414,
+                  311.5
+                ],
+                [
+                  410,
+                  291.5
+                ],
+                [
+                  405.5,
+                  314
+                ],
+                [
+                  421,
+                  320.5
+                ],
+                [
+                  433.5,
+                  310
+                ],
+                [
+                  428.5,
+                  262
+                ]
+              ],
+              "closed": true,
+              "hole": true
+            },
+            {
+              "pts": [
+                [
+                  695,
+                  295.5
+                ],
+                [
+                  683.5,
+                  310
+                ],
+                [
+                  694,
+                  325.5
+                ],
+                [
+                  713.5,
+                  321
+                ],
+                [
+                  712.5,
+                  302
+                ],
+                [
+                  696,
+                  295.5
+                ]
+              ],
+              "closed": true,
+              "hole": true
+            },
+            {
+              "pts": [
+                [
+                  551,
+                  309.5
+                ],
+                [
+                  545.5,
+                  315
+                ],
+                [
+                  556,
+                  330.5
+                ],
+                [
+                  594,
+                  333.5
+                ],
+                [
+                  606,
+                  349.5
+                ],
+                [
+                  616.5,
+                  312
+                ],
+                [
+                  551.5,
+                  310
+                ]
+              ],
+              "closed": true,
+              "hole": true
+            }
+          ],
+          "scale": 0.26755576108091045,
+          "calib": {
+            "p0": [
+              101.35162903832605,
+              353.239339109327
+            ],
+            "p1": [
+              213.4696515192751,
+              354.59016393442624
+            ],
+            "mm": 30
+          },
+          "params": {
+            "tol": 118,
+            "simplify": 6,
+            "minArea": 313
+          }
+        }
+      },
+      "position": [
+        80,
+        4875
+      ]
+    },
+    {
+      "id": "n3",
+      "type": "Curve",
+      "params": {
+        "mode": "filter"
+      },
+      "position": [
+        380,
+        4665
+      ]
+    },
+    {
+      "id": "n4",
+      "type": "Move",
+      "params": {
+        "x": -92.5,
+        "y": -43,
+        "z": 0,
+        "_ui": {
+          "x": {
+            "min": -100,
+            "max": 100,
+            "step": 0.5
+          },
+          "y": {
+            "min": -100,
+            "max": 100,
+            "step": 0.5
+          }
+        }
+      },
+      "position": [
+        680,
+        4571
+      ]
+    },
+    {
+      "id": "n5",
+      "type": "Display",
+      "params": {},
+      "position": [
+        3430,
+        2399
+      ]
+    },
+    {
+      "id": "n6",
+      "type": "Union",
+      "params": {},
+      "position": [
+        3130,
+        2408
+      ],
+      "multi": [
+        "b",
+        "shapes"
+      ]
+    },
+    {
+      "id": "n7",
+      "type": "Polygon",
+      "params": {
+        "radius": 5,
+        "sides": 4,
+        "rotation": 0,
+        "major": true
+      },
+      "position": [
+        80,
+        984
+      ]
+    },
+    {
+      "id": "n8",
+      "type": "Move",
+      "params": {
+        "x": 3.687,
+        "y": 10.8103,
+        "z": 0
+      },
+      "position": [
+        680,
+        160
+      ]
+    },
+    {
+      "id": "n9",
+      "type": "Move",
+      "params": {
+        "x": 11.5032,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        980,
+        160
+      ]
+    },
+    {
+      "id": "n10",
+      "type": "Move",
+      "params": {
+        "x": 8.1345,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        1280,
+        160
+      ]
+    },
+    {
+      "id": "n11",
+      "type": "Move",
+      "params": {
+        "x": 9.7456,
+        "y": -5.3881,
+        "z": 0
+      },
+      "position": [
+        1580,
+        160
+      ]
+    },
+    {
+      "id": "n12",
+      "type": "Move",
+      "params": {
+        "x": 3.2965,
+        "y": 6.4619,
+        "z": 0
+      },
+      "position": [
+        1897,
+        160
+      ]
+    },
+    {
+      "id": "n13",
+      "type": "Move",
+      "params": {
+        "x": 6.3715,
+        "y": -1.2432,
+        "z": 0
+      },
+      "position": [
+        2197,
+        160
+      ]
+    },
+    {
+      "id": "n14",
+      "type": "Move",
+      "params": {
+        "x": 5.1801,
+        "y": -3.8333,
+        "z": 0
+      },
+      "position": [
+        2514,
+        160
+      ]
+    },
+    {
+      "id": "n15",
+      "type": "Move",
+      "params": {
+        "x": -5.3422,
+        "y": -6.8037,
+        "z": 0
+      },
+      "position": [
+        2814,
+        160
+      ]
+    },
+    {
+      "id": "n16",
+      "type": "CurveOnPlane",
+      "params": {
+        "plane": "XY",
+        "mode": "polyline",
+        "closed": true,
+        "points": [
+          [
+            67.45174133484768,
+            19.93545433570053
+          ],
+          [
+            68.35577744416811,
+            16.58423808087723
+          ],
+          [
+            67.6298145418385,
+            12.901453970603947
+          ],
+          [
+            69.76673378408418,
+            10.4083917109022
+          ],
+          [
+            72.79401906128868,
+            9.87416529686922
+          ],
+          [
+            74.84189490698105,
+            10.764544917943324
+          ],
+          [
+            76.53361075257507,
+            13.969910195198608
+          ],
+          [
+            77.0678439596652,
+            15.928746040867372
+          ],
+          [
+            78.75955980525922,
+            15.127403023289197
+          ],
+          [
+            77.0678439596652,
+            11.03165812495981
+          ],
+          [
+            76.08842094203825,
+            7.470139640663404
+          ],
+          [
+            75.55419452800552,
+            3.1963181388134574
+          ],
+          [
+            75.55419452800552,
+            -0.8994301560446356
+          ],
+          [
+            75.46515792450965,
+            -3.9267188297793605
+          ],
+          [
+            71.10230321569466,
+            -3.9267188297793605
+          ],
+          [
+            62.287536815396564,
+            -4.2828720368204864
+          ],
+          [
+            55.25354324336061,
+            -3.83768222628343
+          ],
+          [
+            51.87009796605775,
+            -3.4815290192423145
+          ],
+          [
+            51.87009796605775,
+            9.87416529686922
+          ],
+          [
+            53.73990060475836,
+            14.237023402215097
+          ],
+          [
+            58.815061727655234,
+            15.57259283382625
+          ],
+          [
+            64.52785995623644,
+            14.564931633378858
+          ]
+        ]
+      },
+      "position": [
+        80,
+        1397
+      ]
+    },
+    {
+      "id": "n17",
+      "type": "Fillet2D",
+      "params": {
+        "radius": 0.2
+      },
+      "position": [
+        380,
+        956
+      ]
+    },
+    {
+      "id": "n18",
+      "type": "Mirror",
+      "params": {
+        "plane": "XZ",
+        "copy": false
+      },
+      "position": [
+        680,
+        1447
+      ]
+    },
+    {
+      "id": "n19",
+      "type": "Extrude",
+      "params": {
+        "amount": 10,
+        "taper": 0,
+        "both": false,
+        "solid": true
+      },
+      "position": [
+        1280,
+        2328
+      ]
+    },
+    {
+      "id": "n20",
+      "type": "Rectangle",
+      "params": {
+        "width": 20,
+        "height": 21.5,
+        "_ui": {
+          "width": {
+            "min": 0.1,
+            "max": 30,
+            "step": 0.5
+          }
+        }
+      },
+      "position": [
+        80,
+        2830
+      ]
+    },
+    {
+      "id": "n21",
+      "type": "Move",
+      "params": {
+        "x": 61.5229,
+        "y": 4.7696,
+        "z": 0
+      },
+      "position": [
+        380,
+        2930
+      ]
+    },
+    {
+      "id": "n22",
+      "type": "Fillet2D",
+      "params": {
+        "radius": 7
+      },
+      "position": [
+        680,
+        3004
+      ]
+    },
+    {
+      "id": "n23",
+      "type": "Surface",
+      "params": {
+        "mode": "transform"
+      },
+      "position": [
+        980,
+        2591
+      ],
+      "multi": [
+        "value"
+      ]
+    },
+    {
+      "id": "n24",
+      "type": "Mirror",
+      "params": {
+        "plane": "XZ",
+        "copy": false
+      },
+      "position": [
+        680,
+        2779
+      ],
+      "multi": [
+        "shape"
+      ]
+    },
+    {
+      "id": "n25",
+      "type": "Move",
+      "params": {
+        "x": 18.3112,
+        "y": 6.8405,
+        "z": 0
+      },
+      "position": [
+        380,
+        1943
+      ]
+    },
+    {
+      "id": "n26",
+      "type": "Move",
+      "params": {
+        "x": 91.7606,
+        "y": 8.9722,
+        "z": 0
+      },
+      "position": [
+        380,
+        2312
+      ]
+    },
+    {
+      "id": "n27",
+      "type": "SelectShape",
+      "params": {
+        "selection": {
+          "kind": "shape",
+          "indices": [
+            20
+          ],
+          "sigs": [
+            [
+              91.7606,
+              -8.9722,
+              5,
+              502.65482457436707
+            ]
+          ]
+        }
+      },
+      "position": [
+        4630,
+        2185
+      ],
+      "preview": true
+    },
+    {
+      "id": "n28",
+      "type": "Circle",
+      "params": {
+        "radius": 3.2
+      },
+      "position": [
+        80,
+        2240
+      ]
+    },
+    {
+      "id": "n29",
+      "type": "Circle",
+      "params": {
+        "radius": 15,
+        "_ui": {
+          "radius": {
+            "min": 0.1,
+            "max": 50,
+            "step": 0.5
+          }
+        }
+      },
+      "position": [
+        80,
+        1991
+      ]
+    },
+    {
+      "id": "n30",
+      "type": "Move",
+      "params": {
+        "x": 79.5046,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        380,
+        1574
+      ]
+    },
+    {
+      "id": "n31",
+      "type": "Move",
+      "params": {
+        "x": -12.7363,
+        "y": 0.7561,
+        "z": 0
+      },
+      "position": [
+        4930,
+        2047
+      ]
+    },
+    {
+      "id": "n32",
+      "type": "Scale",
+      "params": {
+        "factor": 1,
+        "x": 1.5,
+        "y": 1,
+        "z": 1
+      },
+      "position": [
+        380,
+        539
+      ]
+    },
+    {
+      "id": "n33",
+      "type": "Fillet2D",
+      "params": {
+        "radius": 2
+      },
+      "position": [
+        680,
+        1198
+      ]
+    },
+    {
+      "id": "n34",
+      "type": "Move",
+      "params": {
+        "x": 31.6142,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        980,
+        1676
+      ]
+    },
+    {
+      "id": "n35",
+      "type": "Mirror",
+      "params": {
+        "plane": "XZ",
+        "copy": false
+      },
+      "position": [
+        5230,
+        2099
+      ]
+    },
+    {
+      "id": "n36",
+      "type": "Subtract",
+      "params": {},
+      "position": [
+        4630,
+        2451
+      ]
+    },
+    {
+      "id": "n37",
+      "type": "SelectShape",
+      "params": {
+        "selection": {
+          "kind": "shape",
+          "indices": [
+            20,
+            22,
+            0,
+            9
+          ],
+          "sigs": [
+            [
+              91.7606,
+              -8.9722,
+              5,
+              502.65482457436707
+            ],
+            [
+              91.7606,
+              8.9722,
+              5,
+              502.65482457436696
+            ],
+            [
+              86.9374,
+              -15.8076,
+              5,
+              196.349540849362
+            ],
+            [
+              86.9374,
+              15.8076,
+              5,
+              196.349540849362
+            ]
+          ]
+        }
+      },
+      "position": [
+        4630,
+        2318
+      ],
+      "preview": true
+    },
+    {
+      "id": "n38",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 1.5
+      },
+      "position": [
+        680,
+        2041
+      ]
+    },
+    {
+      "id": "n39",
+      "type": "Union",
+      "params": {},
+      "position": [
+        5230,
+        2737
+      ]
+    },
+    {
+      "id": "n40",
+      "type": "Extrude",
+      "params": {
+        "amount": 1.5,
+        "taper": 0,
+        "both": false,
+        "solid": true
+      },
+      "position": [
+        4930,
+        2537
+      ],
+      "multi": [
+        "sketch"
+      ]
+    },
+    {
+      "id": "n41",
+      "type": "Move",
+      "params": {
+        "x": -15,
+        "y": 0,
+        "z": 0,
+        "_ui": {
+          "x": {
+            "min": -20,
+            "max": 10,
+            "step": 0.5
+          }
+        }
+      },
+      "position": [
+        5530,
+        2312
+      ]
+    },
+    {
+      "id": "n42",
+      "type": "Extrude",
+      "params": {
+        "amount": 0.6,
+        "taper": 0,
+        "both": false,
+        "solid": true
+      },
+      "position": [
+        5830,
+        2302
+      ]
+    },
+    {
+      "id": "n43",
+      "type": "Subtract",
+      "params": {},
+      "position": [
+        6430,
+        2408
+      ]
+    },
+    {
+      "id": "n44",
+      "type": "Union",
+      "params": {},
+      "position": [
+        6730,
+        2408
+      ],
+      "preview": true,
+      "multi": [
+        "shapes"
+      ]
+    },
+    {
+      "id": "n45",
+      "type": "Surface",
+      "params": {
+        "mode": "filter"
+      },
+      "position": [
+        4630,
+        2628
+      ]
+    },
+    {
+      "id": "n46",
+      "type": "SelectFace",
+      "params": {
+        "selection": {
+          "kind": "face",
+          "indices": [
+            9
+          ],
+          "sigs": [
+            [
+              88.44020910049127,
+              3.4382146089544544e-09,
+              3,
+              741.9557760241305,
+              0,
+              0,
+              1
+            ]
+          ]
+        }
+      },
+      "position": [
+        4330,
+        2509
+      ],
+      "preview": true
+    },
+    {
+      "id": "n47",
+      "type": "RoundedRectangle",
+      "params": {
+        "width": 20,
+        "height": 35,
+        "radius": 3
+      },
+      "position": [
+        5230,
+        2304
+      ]
+    },
+    {
+      "id": "n48",
+      "type": "CenterOfMass",
+      "params": {},
+      "position": [
+        4930,
+        2416
+      ],
+      "preview": true
+    },
+    {
+      "id": "n49",
+      "type": "Geometry",
+      "params": {
+        "mode": "transform"
+      },
+      "position": [
+        6130,
+        2396
+      ],
+      "multi": [
+        "value"
+      ]
+    },
+    {
+      "id": "n50",
+      "type": "Intersect",
+      "params": {},
+      "position": [
+        4030,
+        2601
+      ]
+    },
+    {
+      "id": "n51",
+      "type": "Rectangle",
+      "params": {
+        "width": 27,
+        "height": 30,
+        "_ui": {
+          "width": {
+            "min": 0.1,
+            "max": 30,
+            "step": 0.5
+          },
+          "height": {
+            "min": 0.1,
+            "max": 40,
+            "step": 0.5
+          }
+        }
+      },
+      "position": [
+        80,
+        1650
+      ]
+    },
+    {
+      "id": "n52",
+      "type": "Move",
+      "params": {
+        "x": 91.6072,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        380,
+        1205
+      ]
+    },
+    {
+      "id": "n53",
+      "type": "Extrude",
+      "params": {
+        "amount": 10,
+        "taper": 0,
+        "both": false,
+        "solid": true
+      },
+      "position": [
+        680,
+        1652
+      ]
+    },
+    {
+      "id": "n54",
+      "type": "Extrude",
+      "params": {
+        "amount": 1.5,
+        "taper": 0,
+        "both": false,
+        "solid": true
+      },
+      "position": [
+        3730,
+        2393
+      ],
+      "multi": [
+        "sketch"
+      ]
+    },
+    {
+      "id": "n55",
+      "type": "Geometry",
+      "params": {
+        "mode": "filter"
+      },
+      "position": [
+        4330,
+        2308
+      ],
+      "multi": [
+        "value"
+      ]
+    },
+    {
+      "id": "n56",
+      "type": "MakeFace",
+      "params": {},
+      "position": [
+        680,
+        3253
+      ],
+      "multi": [
+        "edges"
+      ]
+    },
+    {
+      "id": "n57",
+      "type": "Surface",
+      "params": {
+        "mode": "filter"
+      },
+      "position": [
+        1280,
+        2717
+      ]
+    },
+    {
+      "id": "n58",
+      "type": "SelectVertex",
+      "params": {
+        "selection": {
+          "kind": "vertex",
+          "indices": [
+            2,
+            7,
+            3,
+            6
+          ],
+          "sigs": [
+            [
+              34.2487,
+              -13.5,
+              0
+            ],
+            [
+              34.2487,
+              13.5,
+              0
+            ],
+            [
+              34.2487,
+              -28.75,
+              0
+            ],
+            [
+              34.2487,
+              28.75,
+              0
+            ]
+          ]
+        }
+      },
+      "position": [
+        1280,
+        2898
+      ],
+      "preview": true
+    },
+    {
+      "id": "n59",
+      "type": "SelectVertex",
+      "params": {
+        "selection": {
+          "kind": "vertex",
+          "indices": [
+            7,
+            6
+          ],
+          "sigs": [
+            [
+              99.2487,
+              28.75,
+              0
+            ],
+            [
+              99.2487,
+              -28.75,
+              0
+            ]
+          ]
+        }
+      },
+      "position": [
+        1897,
+        2408
+      ],
+      "preview": true
+    },
+    {
+      "id": "n60",
+      "type": "SelectVertex",
+      "params": {
+        "selection": {
+          "kind": "vertex",
+          "indices": [
+            6,
+            7,
+            8,
+            9
+          ],
+          "sigs": [
+            [
+              84.2487,
+              -28.75,
+              0
+            ],
+            [
+              99.24869999999999,
+              -13.750000000000002,
+              0
+            ],
+            [
+              99.24869999999999,
+              13.75,
+              0
+            ],
+            [
+              84.2487,
+              28.75,
+              0
+            ]
+          ]
+        }
+      },
+      "position": [
+        2514,
+        2408
+      ],
+      "preview": true
+    },
+    {
+      "id": "n61",
+      "type": "FilletChamferSelected",
+      "params": {
+        "mode": "fillet",
+        "size": 6
+      },
+      "position": [
+        1580,
+        2372
+      ],
+      "preview": true
+    },
+    {
+      "id": "n62",
+      "type": "RefImage",
+      "params": {
+        "path": "assets/ss-20260709-003751.png",
+        "align_to_trace": false,
+        "plane": "XY",
+        "width": 212.5,
+        "x": 14,
+        "y": -8.5,
+        "z": 0,
+        "opacity": 0.6,
+        "_ui": {
+          "width": {
+            "min": 1,
+            "max": 400,
+            "step": 0.5
+          },
+          "x": {
+            "min": -10,
+            "max": 40,
+            "step": 0.5
+          }
+        }
+      },
+      "position": [
+        80,
+        4454
+      ]
+    },
+    {
+      "id": "n63",
+      "type": "Move",
+      "params": {
+        "x": 39.019,
+        "y": 9,
+        "z": 0,
+        "_ui": {
+          "x": {
+            "min": -100,
+            "max": 100,
+            "step": 0.5
+          },
+          "y": {
+            "min": -100,
+            "max": 100,
+            "step": 0.5
+          }
+        }
+      },
+      "position": [
+        380,
+        150
+      ],
+      "multi": [
+        "shape"
+      ]
+    },
+    {
+      "id": "n64",
+      "type": "Circle",
+      "params": {
+        "radius": 2.5
+      },
+      "position": [
+        80,
+        220
+      ]
+    },
+    {
+      "id": "n65",
+      "type": "Curve",
+      "params": {
+        "mode": "filter"
+      },
+      "position": [
+        3130,
+        244
+      ],
+      "multi": [
+        "value"
+      ]
+    },
+    {
+      "id": "n66",
+      "type": "Mirror",
+      "params": {
+        "plane": "XZ",
+        "copy": false
+      },
+      "position": [
+        3430,
+        232
+      ],
+      "multi": [
+        "shape"
+      ]
+    },
+    {
+      "id": "n67",
+      "type": "Extrude",
+      "params": {
+        "amount": 10,
+        "taper": 0,
+        "both": false,
+        "solid": true
+      },
+      "position": [
+        1280,
+        1919
+      ],
+      "multi": [
+        "sketch"
+      ]
+    },
+    {
+      "id": "n68",
+      "type": "Union",
+      "params": {},
+      "position": [
+        980,
+        2045
+      ],
+      "multi": [
+        "shapes"
+      ]
+    },
+    {
+      "id": "n69",
+      "type": "Extrude",
+      "params": {
+        "amount": 10,
+        "taper": 0,
+        "both": false,
+        "solid": true
+      },
+      "position": [
+        4030,
+        2192
+      ],
+      "multi": [
+        "sketch"
+      ]
+    },
+    {
+      "id": "n70",
+      "type": "Surface",
+      "params": {
+        "mode": "transform"
+      },
+      "position": [
+        3730,
+        2192
+      ],
+      "multi": [
+        "value"
+      ]
+    },
+    {
+      "id": "n71",
+      "type": "Rectangle",
+      "params": {
+        "width": 25,
+        "height": 84
+      },
+      "position": [
+        80,
+        2489
+      ]
+    },
+    {
+      "id": "n72",
+      "type": "Chamfer2D",
+      "params": {
+        "length": 0.01
+      },
+      "position": [
+        380,
+        2681
+      ],
+      "preview": true
+    },
+    {
+      "id": "n73",
+      "type": "FilletChamferSelected",
+      "params": {
+        "mode": "chamfer",
+        "size": 15,
+        "_ui": {
+          "size": {
+            "min": 0.05,
+            "max": 20,
+            "step": 0.5
+          }
+        }
+      },
+      "position": [
+        2197,
+        2372
+      ]
+    },
+    {
+      "id": "n74",
+      "type": "FilletChamferSelected",
+      "params": {
+        "mode": "fillet",
+        "size": 5
+      },
+      "position": [
+        2814,
+        2372
+      ]
+    },
+    {
+      "id": "n75",
+      "type": "Union",
+      "params": {},
+      "position": [
+        980,
+        2792
+      ]
+    },
+    {
+      "id": "n76",
+      "type": "Move",
+      "params": {
+        "x": 66.7487,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        380,
+        3299
+      ]
+    },
+    {
+      "id": "n77",
+      "type": "Move",
+      "params": {
+        "x": -9.4578,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        380,
+        3668
+      ]
+    },
+    {
+      "id": "n78",
+      "type": "Rectangle",
+      "params": {
+        "width": 110,
+        "height": 27,
+        "_ui": {
+          "width": {
+            "min": 0.1,
+            "max": 500,
+            "step": 0.5
+          },
+          "height": {
+            "min": 0.1,
+            "max": 27,
+            "step": 0.5
+          }
+        }
+      },
+      "position": [
+        80,
+        3512
+      ]
+    },
+    {
+      "id": "n79",
+      "type": "Move",
+      "params": {
+        "x": 41.5,
+        "y": 0,
+        "z": 0,
+        "_ui": {
+          "x": {
+            "min": -10,
+            "max": 100,
+            "step": 0.5
+          }
+        }
+      },
+      "position": [
+        980,
+        2222
+      ]
+    },
+    {
+      "id": "n80",
+      "type": "Move",
+      "params": {
+        "x": -53,
+        "y": 0,
+        "z": 0,
+        "_ui": {
+          "x": {
+            "min": -100,
+            "max": 10,
+            "step": 0.5
+          }
+        }
+      },
+      "position": [
+        680,
+        2410
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "l1",
+      "from_node": "n2",
+      "from_socket": "result",
+      "to_node": "n3",
+      "to_socket": "value"
+    },
+    {
+      "id": "l2",
+      "from_node": "n3",
+      "from_socket": "value",
+      "to_node": "n4",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l3",
+      "from_node": "n80",
+      "from_socket": "result",
+      "to_node": "n79",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l4",
+      "from_node": "n78",
+      "from_socket": "result",
+      "to_node": "n77",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l5",
+      "from_node": "n1",
+      "from_socket": "result",
+      "to_node": "n76",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l6",
+      "from_node": "n5",
+      "from_socket": "value",
+      "to_node": "n54",
+      "to_socket": "sketch"
+    },
+    {
+      "id": "l7",
+      "from_node": "n6",
+      "from_socket": "result",
+      "to_node": "n5",
+      "to_socket": "value"
+    },
+    {
+      "id": "l8",
+      "from_node": "n71",
+      "from_socket": "result",
+      "to_node": "n72",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l9",
+      "from_node": "n72",
+      "from_socket": "result",
+      "to_node": "n80",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l10",
+      "from_node": "n79",
+      "from_socket": "result",
+      "to_node": "n6",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l11",
+      "from_node": "n77",
+      "from_socket": "result",
+      "to_node": "n56",
+      "to_socket": "edges"
+    },
+    {
+      "id": "l12",
+      "from_node": "n76",
+      "from_socket": "result",
+      "to_node": "n56",
+      "to_socket": "edges"
+    },
+    {
+      "id": "l13",
+      "from_node": "n80",
+      "from_socket": "result",
+      "to_node": "n6",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l14",
+      "from_node": "n56",
+      "from_socket": "result",
+      "to_node": "n75",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l15",
+      "from_node": "n75",
+      "from_socket": "result",
+      "to_node": "n58",
+      "to_socket": "geometry"
+    },
+    {
+      "id": "l16",
+      "from_node": "n58",
+      "from_socket": "selection",
+      "to_node": "n61",
+      "to_socket": "selection"
+    },
+    {
+      "id": "l17",
+      "from_node": "n61",
+      "from_socket": "result",
+      "to_node": "n59",
+      "to_socket": "geometry"
+    },
+    {
+      "id": "l18",
+      "from_node": "n59",
+      "from_socket": "selection",
+      "to_node": "n73",
+      "to_socket": "selection"
+    },
+    {
+      "id": "l19",
+      "from_node": "n61",
+      "from_socket": "result",
+      "to_node": "n73",
+      "to_socket": "part"
+    },
+    {
+      "id": "l20",
+      "from_node": "n73",
+      "from_socket": "result",
+      "to_node": "n60",
+      "to_socket": "geometry"
+    },
+    {
+      "id": "l21",
+      "from_node": "n60",
+      "from_socket": "selection",
+      "to_node": "n74",
+      "to_socket": "selection"
+    },
+    {
+      "id": "l22",
+      "from_node": "n73",
+      "from_socket": "result",
+      "to_node": "n74",
+      "to_socket": "part"
+    },
+    {
+      "id": "l23",
+      "from_node": "n74",
+      "from_socket": "result",
+      "to_node": "n6",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l24",
+      "from_node": "n7",
+      "from_socket": "result",
+      "to_node": "n32",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l25",
+      "from_node": "n32",
+      "from_socket": "result",
+      "to_node": "n33",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l26",
+      "from_node": "n33",
+      "from_socket": "result",
+      "to_node": "n34",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l27",
+      "from_node": "n64",
+      "from_socket": "result",
+      "to_node": "n63",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l28",
+      "from_node": "n63",
+      "from_socket": "result",
+      "to_node": "n8",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l29",
+      "from_node": "n8",
+      "from_socket": "result",
+      "to_node": "n9",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l30",
+      "from_node": "n9",
+      "from_socket": "result",
+      "to_node": "n10",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l31",
+      "from_node": "n10",
+      "from_socket": "result",
+      "to_node": "n11",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l32",
+      "from_node": "n11",
+      "from_socket": "result",
+      "to_node": "n12",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l33",
+      "from_node": "n12",
+      "from_socket": "result",
+      "to_node": "n13",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l34",
+      "from_node": "n13",
+      "from_socket": "result",
+      "to_node": "n14",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l35",
+      "from_node": "n14",
+      "from_socket": "result",
+      "to_node": "n65",
+      "to_socket": "value"
+    },
+    {
+      "id": "l36",
+      "from_node": "n13",
+      "from_socket": "result",
+      "to_node": "n65",
+      "to_socket": "value"
+    },
+    {
+      "id": "l37",
+      "from_node": "n12",
+      "from_socket": "result",
+      "to_node": "n65",
+      "to_socket": "value"
+    },
+    {
+      "id": "l38",
+      "from_node": "n11",
+      "from_socket": "result",
+      "to_node": "n65",
+      "to_socket": "value"
+    },
+    {
+      "id": "l39",
+      "from_node": "n10",
+      "from_socket": "result",
+      "to_node": "n65",
+      "to_socket": "value"
+    },
+    {
+      "id": "l40",
+      "from_node": "n9",
+      "from_socket": "result",
+      "to_node": "n65",
+      "to_socket": "value"
+    },
+    {
+      "id": "l41",
+      "from_node": "n8",
+      "from_socket": "result",
+      "to_node": "n65",
+      "to_socket": "value"
+    },
+    {
+      "id": "l42",
+      "from_node": "n63",
+      "from_socket": "result",
+      "to_node": "n65",
+      "to_socket": "value"
+    },
+    {
+      "id": "l43",
+      "from_node": "n65",
+      "from_socket": "value",
+      "to_node": "n66",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l44",
+      "from_node": "n66",
+      "from_socket": "result",
+      "to_node": "n70",
+      "to_socket": "value"
+    },
+    {
+      "id": "l45",
+      "from_node": "n65",
+      "from_socket": "value",
+      "to_node": "n70",
+      "to_socket": "value"
+    },
+    {
+      "id": "l46",
+      "from_node": "n28",
+      "from_socket": "result",
+      "to_node": "n26",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l47",
+      "from_node": "n26",
+      "from_socket": "result",
+      "to_node": "n24",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l48",
+      "from_node": "n24",
+      "from_socket": "result",
+      "to_node": "n23",
+      "to_socket": "value"
+    },
+    {
+      "id": "l49",
+      "from_node": "n26",
+      "from_socket": "result",
+      "to_node": "n23",
+      "to_socket": "value"
+    },
+    {
+      "id": "l50",
+      "from_node": "n14",
+      "from_socket": "result",
+      "to_node": "n15",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l51",
+      "from_node": "n15",
+      "from_socket": "result",
+      "to_node": "n65",
+      "to_socket": "value"
+    },
+    {
+      "id": "l52",
+      "from_node": "n20",
+      "from_socket": "result",
+      "to_node": "n21",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l53",
+      "from_node": "n21",
+      "from_socket": "result",
+      "to_node": "n22",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l54",
+      "from_node": "n16",
+      "from_socket": "result",
+      "to_node": "n17",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l55",
+      "from_node": "n17",
+      "from_socket": "result",
+      "to_node": "n18",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l56",
+      "from_node": "n17",
+      "from_socket": "result",
+      "to_node": "n68",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l57",
+      "from_node": "n18",
+      "from_socket": "result",
+      "to_node": "n68",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l58",
+      "from_node": "n68",
+      "from_socket": "result",
+      "to_node": "n67",
+      "to_socket": "sketch"
+    },
+    {
+      "id": "l59",
+      "from_node": "n54",
+      "from_socket": "result",
+      "to_node": "n36",
+      "to_socket": "a"
+    },
+    {
+      "id": "l60",
+      "from_node": "n34",
+      "from_socket": "result",
+      "to_node": "n67",
+      "to_socket": "sketch"
+    },
+    {
+      "id": "l61",
+      "from_node": "n70",
+      "from_socket": "value",
+      "to_node": "n69",
+      "to_socket": "sketch"
+    },
+    {
+      "id": "l62",
+      "from_node": "n69",
+      "from_socket": "result",
+      "to_node": "n55",
+      "to_socket": "value"
+    },
+    {
+      "id": "l63",
+      "from_node": "n67",
+      "from_socket": "result",
+      "to_node": "n55",
+      "to_socket": "value"
+    },
+    {
+      "id": "l64",
+      "from_node": "n23",
+      "from_socket": "value",
+      "to_node": "n19",
+      "to_socket": "sketch"
+    },
+    {
+      "id": "l65",
+      "from_node": "n19",
+      "from_socket": "result",
+      "to_node": "n55",
+      "to_socket": "value"
+    },
+    {
+      "id": "l66",
+      "from_node": "n28",
+      "from_socket": "result",
+      "to_node": "n25",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l67",
+      "from_node": "n25",
+      "from_socket": "result",
+      "to_node": "n24",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l68",
+      "from_node": "n25",
+      "from_socket": "result",
+      "to_node": "n23",
+      "to_socket": "value"
+    },
+    {
+      "id": "l69",
+      "from_node": "n55",
+      "from_socket": "value",
+      "to_node": "n36",
+      "to_socket": "b"
+    },
+    {
+      "id": "l70",
+      "from_node": "n29",
+      "from_socket": "result",
+      "to_node": "n30",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l71",
+      "from_node": "n51",
+      "from_socket": "result",
+      "to_node": "n52",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l72",
+      "from_node": "n52",
+      "from_socket": "result",
+      "to_node": "n53",
+      "to_socket": "sketch"
+    },
+    {
+      "id": "l73",
+      "from_node": "n53",
+      "from_socket": "result",
+      "to_node": "n50",
+      "to_socket": "b"
+    },
+    {
+      "id": "l74",
+      "from_node": "n54",
+      "from_socket": "result",
+      "to_node": "n50",
+      "to_socket": "a"
+    },
+    {
+      "id": "l75",
+      "from_node": "n50",
+      "from_socket": "result",
+      "to_node": "n46",
+      "to_socket": "geometry"
+    },
+    {
+      "id": "l76",
+      "from_node": "n46",
+      "from_socket": "faces",
+      "to_node": "n45",
+      "to_socket": "value"
+    },
+    {
+      "id": "l77",
+      "from_node": "n30",
+      "from_socket": "result",
+      "to_node": "n38",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l78",
+      "from_node": "n38",
+      "from_socket": "result",
+      "to_node": "n40",
+      "to_socket": "sketch"
+    },
+    {
+      "id": "l79",
+      "from_node": "n45",
+      "from_socket": "value",
+      "to_node": "n40",
+      "to_socket": "sketch"
+    },
+    {
+      "id": "l80",
+      "from_node": "n40",
+      "from_socket": "result",
+      "to_node": "n39",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l81",
+      "from_node": "n55",
+      "from_socket": "value",
+      "to_node": "n37",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l82",
+      "from_node": "n55",
+      "from_socket": "value",
+      "to_node": "n27",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l83",
+      "from_node": "n27",
+      "from_socket": "shapes",
+      "to_node": "n31",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l84",
+      "from_node": "n31",
+      "from_socket": "result",
+      "to_node": "n35",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l85",
+      "from_node": "n31",
+      "from_socket": "result",
+      "to_node": "n49",
+      "to_socket": "value"
+    },
+    {
+      "id": "l86",
+      "from_node": "n31",
+      "from_socket": "result",
+      "to_node": "n49",
+      "to_socket": "value"
+    },
+    {
+      "id": "l87",
+      "from_node": "n37",
+      "from_socket": "shapes",
+      "to_node": "n49",
+      "to_socket": "value"
+    },
+    {
+      "id": "l88",
+      "from_node": "n49",
+      "from_socket": "value",
+      "to_node": "n43",
+      "to_socket": "b"
+    },
+    {
+      "id": "l89",
+      "from_node": "n35",
+      "from_socket": "result",
+      "to_node": "n49",
+      "to_socket": "value"
+    },
+    {
+      "id": "l90",
+      "from_node": "n45",
+      "from_socket": "value",
+      "to_node": "n48",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l91",
+      "from_node": "n41",
+      "from_socket": "result",
+      "to_node": "n42",
+      "to_socket": "sketch"
+    },
+    {
+      "id": "l92",
+      "from_node": "n47",
+      "from_socket": "result",
+      "to_node": "n41",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l93",
+      "from_node": "n42",
+      "from_socket": "result",
+      "to_node": "n49",
+      "to_socket": "value"
+    },
+    {
+      "id": "l94",
+      "from_node": "n39",
+      "from_socket": "result",
+      "to_node": "n43",
+      "to_socket": "a"
+    },
+    {
+      "id": "l95",
+      "from_node": "n36",
+      "from_socket": "result",
+      "to_node": "n44",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l96",
+      "from_node": "n43",
+      "from_socket": "result",
+      "to_node": "n44",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l97",
+      "from_node": "n48",
+      "from_socket": "center",
+      "to_node": "n47",
+      "to_socket": "origin"
+    },
+    {
+      "id": "l98",
+      "from_node": "n75",
+      "from_socket": "result",
+      "to_node": "n57",
+      "to_socket": "value"
+    },
+    {
+      "id": "l99",
+      "from_node": "n57",
+      "from_socket": "value",
+      "to_node": "n61",
+      "to_socket": "part"
+    }
+  ],
+  "groups": [
+    {
+      "title": "Group",
+      "bounding": [
+        56,
+        4404,
+        858,
+        601
+      ],
+      "color": "#3f789e",
+      "font_size": 24
+    },
+    {
+      "title": "Group",
+      "bounding": [
+        56,
+        100,
+        3608,
+        388
+      ],
+      "color": "#3f789e",
+      "font_size": 24
+    }
+  ]
+}

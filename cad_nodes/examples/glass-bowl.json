@@ -1,0 +1,407 @@
+{
+  "name": "glass-bowl",
+  "nodes": [
+    {
+      "id": "n1",
+      "type": "Sphere",
+      "params": {
+        "radius": 20,
+        "arc": 360
+      },
+      "position": [
+        60,
+        60
+      ]
+    },
+    {
+      "id": "n2",
+      "type": "Sphere",
+      "params": {
+        "radius": 18,
+        "arc": 360
+      },
+      "position": [
+        60,
+        180
+      ]
+    },
+    {
+      "id": "n3",
+      "type": "Subtract",
+      "params": {},
+      "position": [
+        300,
+        100
+      ]
+    },
+    {
+      "id": "n4",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 20
+      },
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "id": "n7",
+      "type": "Move",
+      "params": {
+        "x": 2,
+        "y": 0,
+        "z": 45
+      },
+      "position": [
+        300,
+        420
+      ],
+      "color": "#84cc16",
+      "finish": "glass"
+    },
+    {
+      "id": "n8",
+      "type": "Move",
+      "params": {
+        "x": -5,
+        "y": 3,
+        "z": 60
+      },
+      "position": [
+        300,
+        500
+      ],
+      "color": "#eab308",
+      "finish": "emissive"
+    },
+    {
+      "id": "n9",
+      "type": "Move",
+      "params": {
+        "x": 6,
+        "y": -4,
+        "z": 75
+      },
+      "position": [
+        300,
+        580
+      ],
+      "color": "#38bdf8",
+      "finish": "glass"
+    },
+    {
+      "id": "n11",
+      "type": "Sphere",
+      "params": {
+        "radius": 4,
+        "arc": 360
+      },
+      "position": [
+        -164,
+        808
+      ]
+    },
+    {
+      "id": "n12",
+      "type": "Sphere",
+      "params": {
+        "radius": 4,
+        "arc": 360
+      },
+      "position": [
+        -264,
+        502
+      ]
+    },
+    {
+      "id": "n13",
+      "type": "Sphere",
+      "params": {
+        "radius": 4,
+        "arc": 360
+      },
+      "position": [
+        -252,
+        470
+      ]
+    },
+    {
+      "id": "n14",
+      "type": "Box",
+      "params": {
+        "width": 60,
+        "height": 60,
+        "depth": 40,
+        "centered": true
+      },
+      "position": [
+        -290,
+        312
+      ]
+    },
+    {
+      "id": "n5",
+      "type": "Subtract",
+      "params": {},
+      "position": [
+        435,
+        63
+      ]
+    },
+    {
+      "id": "n17",
+      "type": "SelectEdge",
+      "params": {
+        "selection": {
+          "kind": "edge",
+          "indices": [
+            0,
+            2
+          ],
+          "sigs": [
+            [
+              -20,
+              2.4492935982947065e-15,
+              0,
+              125.66370614359172,
+              -1.2246467991473532e-16,
+              -1,
+              0
+            ],
+            [
+              -18,
+              2.204364238465236e-15,
+              0,
+              113.09733552923255,
+              -1.2246467991473532e-16,
+              -1,
+              0
+            ]
+          ]
+        }
+      },
+      "position": [
+        466,
+        -110
+      ]
+    },
+    {
+      "id": "n16",
+      "type": "FilletChamferSelected",
+      "params": {
+        "mode": "fillet",
+        "size": 0.4
+      },
+      "position": [
+        785,
+        -140
+      ]
+    },
+    {
+      "id": "n6",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 20
+      },
+      "position": [
+        772,
+        79
+      ],
+      "preview": true,
+      "color": "#3b82f6",
+      "finish": "glass"
+    },
+    {
+      "id": "n10",
+      "type": "Drop",
+      "params": {
+        "t": 1,
+        "material": "plastic",
+        "settle": true,
+        "collide": false,
+        "grip": 1,
+        "medium": "vacuum",
+        "drag": 1,
+        "level": 100
+      },
+      "position": [
+        822,
+        463
+      ],
+      "preview": true,
+      "multi": [
+        "shape"
+      ]
+    },
+    {
+      "id": "n15",
+      "type": "NumberSlider",
+      "params": {
+        "value": 0.493,
+        "_ui": {
+          "value": {
+            "min": 0,
+            "max": 0.5,
+            "step": 0.001,
+            "play": {
+              "speed": 0.5,
+              "mode": "loop"
+            }
+          }
+        }
+      },
+      "position": [
+        151,
+        970
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "l1",
+      "from_node": "n1",
+      "from_socket": "result",
+      "to_node": "n3",
+      "to_socket": "a"
+    },
+    {
+      "id": "l2",
+      "from_node": "n2",
+      "from_socket": "result",
+      "to_node": "n3",
+      "to_socket": "b"
+    },
+    {
+      "id": "l3",
+      "from_node": "n14",
+      "from_socket": "result",
+      "to_node": "n4",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l4",
+      "from_node": "n3",
+      "from_socket": "result",
+      "to_node": "n5",
+      "to_socket": "a"
+    },
+    {
+      "id": "l5",
+      "from_node": "n4",
+      "from_socket": "result",
+      "to_node": "n5",
+      "to_socket": "b"
+    },
+    {
+      "id": "l7",
+      "from_node": "n13",
+      "from_socket": "result",
+      "to_node": "n7",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l8",
+      "from_node": "n12",
+      "from_socket": "result",
+      "to_node": "n8",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l9",
+      "from_node": "n11",
+      "from_socket": "result",
+      "to_node": "n9",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l10",
+      "from_node": "n7",
+      "from_socket": "result",
+      "to_node": "n10",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l11",
+      "from_node": "n8",
+      "from_socket": "result",
+      "to_node": "n10",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l12",
+      "from_node": "n9",
+      "from_socket": "result",
+      "to_node": "n10",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l13",
+      "from_node": "n6",
+      "from_socket": "result",
+      "to_node": "n10",
+      "to_socket": "container"
+    },
+    {
+      "id": "l14",
+      "from_node": "n15",
+      "from_socket": "result",
+      "to_node": "n10",
+      "to_socket": "t"
+    },
+    {
+      "id": "l15",
+      "from_node": "n5",
+      "from_socket": "result",
+      "to_node": "n16",
+      "to_socket": "part"
+    },
+    {
+      "id": "l16",
+      "from_node": "n5",
+      "from_socket": "result",
+      "to_node": "n17",
+      "to_socket": "geometry"
+    },
+    {
+      "id": "l17",
+      "from_node": "n17",
+      "from_socket": "selection",
+      "to_node": "n16",
+      "to_socket": "selection"
+    },
+    {
+      "id": "l18",
+      "from_node": "n16",
+      "from_socket": "result",
+      "to_node": "n6",
+      "to_socket": "shape"
+    }
+  ],
+  "groups": [
+    {
+      "title": "The bowl (immovable collider)",
+      "bounding": [
+        20,
+        20,
+        900,
+        360
+      ],
+      "color": "#3f589e"
+    },
+    {
+      "title": "What falls in",
+      "bounding": [
+        20,
+        380,
+        900,
+        320
+      ],
+      "color": "#8a5f3d"
+    }
+  ]
+}

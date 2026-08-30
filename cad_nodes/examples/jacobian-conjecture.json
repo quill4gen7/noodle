@@ -1,0 +1,203 @@
+{
+  "name": "jacobian-conjecture",
+  "nodes": [
+    {
+      "id": "n1",
+      "type": "CodeBlock",
+      "params": {
+        "code": "# On the XZ plane so it faces the camera (an XY title reads mirrored from iso).\n# For F(x,y)=(x+a*y^2,y) the Jacobian is EXACTLY 1, whatever a is -> a static fact.\ndef T(s, x, z, fs):\n    return extrude(Pos(x, 0, z) * (Plane.XZ * Text(s, font_size=fs)), amount=0.4)\nresult = [T(\"J COSTANTE = NESSUNA PIEGA\", -16, 7.6, 1.7),\n          T(\"min J = 1.00     max J = 1.00\", -16, 5.9, 1.15),\n          T(\"J non cambia mai segno  ->  iniettiva\", -16, 4.7, 1.25)]\n"
+      },
+      "position": [
+        80,
+        150
+      ],
+      "preview": true,
+      "color": "#e8e8e8"
+    },
+    {
+      "id": "n2",
+      "type": "CodeBlock",
+      "params": {
+        "code": "# THE CREASE: where the Jacobian 3*z^2 - c*x is ZERO, i.e. z = +/- sqrt(c*x/3).\n# This is exactly the fold edge of the pleat. A \"normal\" fold pays for its\n# non-injectivity right here, with the map losing a dimension (det = 0).\n# Drawn as a row of red beads so the \"J=0\" locus is unmistakable.\nM = in_0\nc, S, OX = M[\"c\"], M[\"S\"], M[\"OX\"]\nimport numpy as np\ndef P(x, z):\n    return Vector((x*S)+OX, (z**3 - c*x*z)*S, z*S)\nout = []\nif c > 1e-6:\n    xs = np.linspace(0.0, 1.6, 26)\n    up   = [P(x,  np.sqrt(c*x/3.0)) for x in xs]\n    down = [P(x, -np.sqrt(c*x/3.0)) for x in xs]\n    out += [Polyline(*up), Polyline(*down)]\n    for p in up[::2] + down[::2]:\n        out.append(Pos(p.X, p.Y, p.Z) * Sphere(0.45))\nelse:\n    out = [Polyline(P(-1.2, 0.0), P(1.6, 0.0))]   # c=0: the crease is the z=0 axis\nresult = out\n"
+      },
+      "position": [
+        790,
+        587
+      ],
+      "preview": true,
+      "color": "#ef4444"
+    },
+    {
+      "id": "n3",
+      "type": "CodeBlock",
+      "params": {
+        "code": "# NON-INJECTIVITY, made concrete. Take control x* = 1.2 and output value 0.\n# Solve z^3 - c*x*z = 0  ->  z = 0 and z = +/- sqrt(c*x).  THREE inputs, ONE output.\n# The three yellow spheres share the same world_X and the same output (world_Y);\n# only their height (the input z) differs. The vertical bar is that one output column.\nM = in_0\nc, S, OX = M[\"c\"], M[\"S\"], M[\"OX\"]\nimport numpy as np\nxstar = 1.2; k = c*xstar\nroots = [0.0, np.sqrt(k), -np.sqrt(k)] if k > 1e-6 else [0.0]\nXw = xstar*S + OX; Yw = 0.0\nout = []\nfor z in roots:\n    out.append(Pos(Xw, Yw, z*S) * Sphere(0.9))\nzlo = min(roots)*S - 2.0; zhi = max(roots)*S + 2.0\nout.append(Polyline(Vector(Xw, Yw, zlo), Vector(Xw, Yw, zhi)))\nresult = out\n"
+      },
+      "position": [
+        790,
+        1012
+      ],
+      "preview": true,
+      "color": "#fde047"
+    },
+    {
+      "id": "n4",
+      "type": "CodeBlock",
+      "params": {
+        "code": "def T(s, x, z, fs):\n    return extrude(Pos(x, 0, z) * (Plane.XZ * Text(s, font_size=fs)), amount=0.4)\nresult = [T(\"UNA PIEGA COSTA  J = 0\", 14, 12.2, 1.7)]\n"
+      },
+      "position": [
+        80,
+        1024
+      ],
+      "preview": true,
+      "color": "#e8e8e8"
+    },
+    {
+      "id": "n5",
+      "type": "Note",
+      "params": {
+        "text": "LA CONGETTURA JACOBIANA  (e il presunto controesempio di Fable)\n\nUna mappa polinomiale F manda lo spazio in se'. Lo JACOBIANO in un punto e' il determinante della matrice delle derivate: dice DI QUANTO la mappa dilata il volume LOCALMENTE - come il determinante di una matrice, ma che cambia punto per punto.\n\nLA CONGETTURA (Keller, 1939): se lo Jacobiano e' una COSTANTE diversa da zero ovunque, allora F e' invertibile (nessun due punti finiscono sullo stesso posto). Facile in 1D, aperta in 2D da 87 anni.\n\nSINISTRA - il mondo che la congettura PREDICE.  F(x,y) = (x + a*y^2, y).\nLo Jacobiano vale 1 OVUNQUE. Muovi 'a': la griglia si incurva ma non si ripiega MAI, nessuna cella si sovrappone -> iniettiva. Con J costante, in 2D, non riesci a piegare.\n\nDESTRA - cosa COSTA una piega.  F(x,y,z) = (x, y, z^3 - c*x*z).\nQui lo Jacobiano e' 3*z^2 - c*x: NON e' costante. Sulla CRESTA ROSSA vale ZERO - li' la mappa schiaccia una dimensione, e proprio li' la superficie si ripiega su se stessa. Le TRE SFERE GIALLE sono tre punti diversi che finiscono sullo STESSO output (la stessa colonna verticale): la mappa NON e' iniettiva. Porta 'c' verso 0 e piega e cresta spariscono.\n\nIL PUNTO.  Una piega 'normale' si paga SEMPRE con J = 0 sulla cresta. La congettura chiede: si puo' piegare (perdere l'iniettivita') SENZA mai far toccare lo zero a J, tenendolo COSTANTE?  In 2D si crede di no.\nIl presunto risultato di Fable: in dimensione >= 3 SI' - una mappa C^3 -> C^3 con Jacobiano costante -2 dove tre punti collassano su (22, 34, -2). Non ancora peer-reviewed; il caso 2D resta aperto.\nIl miracolo sarebbe piegare il pannello DESTRO senza mai colorare di rosso la cresta."
+      },
+      "position": [
+        80,
+        1449
+      ],
+      "size": [
+        620,
+        780
+      ]
+    },
+    {
+      "id": "n7",
+      "type": "CodeBlock",
+      "params": {
+        "code": "# THE J-METER. Reads c, samples J = 3*z^2 - c*x on the right panel's domain,\n# and reports its range. The FOLD is born exactly when J changes sign (crosses\n# zero): min J goes negative while max J stays positive. Play c and watch it.\nM = in_0\nc, S, OX = M[\"c\"], M[\"S\"], M[\"OX\"]\nimport numpy as np\nxs = np.linspace(-1.2, 1.6, 80); zs = np.linspace(-1.4, 1.4, 80)\nX, Z = np.meshgrid(xs, zs)\nJ = 3.0*Z**2 - c*X\njmin = float(J.min()); jmax = float(J.max())\nfolds = (jmin < -1e-9) and (jmax > 1e-9)\nhead = \"J ATTRAVERSA LO ZERO  ->  PIEGA\" if folds else \"J non cambia segno  ->  iniettiva\"\ndef T(s, x, z, fs):\n    return extrude(Pos(x, 0, z) * (Plane.XZ * Text(s, font_size=fs)), amount=0.3)\nresult = [T(f\"min J = {jmin:.2f}     max J = {jmax:.2f}\", 14, 10.5, 1.15),\n          T(head, 14, 9.3, 1.3)]\n"
+      },
+      "position": [
+        790,
+        1889
+      ],
+      "preview": true,
+      "color": "#fbbf24"
+    },
+    {
+      "id": "n8",
+      "type": "CodeBlock",
+      "params": {
+        "code": "# The pleated \"cusp\" sheet: parameter (x,z) -> ( x , OUTPUT=z^3-c*x*z , z ).\n# world_X = control x, world_Y = the map's output, world_Z = the input z (height).\n# For c*x>0 the output is non-monotone in z, so the curtain FOLDS OVER itself:\n# a horizontal line pierces it 3 times = 3 inputs sharing one output.\nM = in_0\nc, S, OX = M[\"c\"], M[\"S\"], M[\"OX\"]\nimport numpy as np\nNX = 15; NZ = 13; NS = 41\nxs = np.linspace(-1.2, 1.6, NX); zs = np.linspace(-1.4, 1.4, NZ)\ntsx = np.linspace(-1.2, 1.6, NS); tsz = np.linspace(-1.4, 1.4, NS)\ndef P(x, z):\n    y = z**3 - c*x*z\n    return Vector(x*S+OX, y*S, z*S)\nlines = []\nfor x in xs:                                    # ribs along z: these show the fold\n    lines.append(Polyline(*[P(x, z) for z in tsz]))\nfor z in zs:                                    # lines along x\n    lines.append(Polyline(*[P(x, z) for x in tsx]))\nresult = lines\n"
+      },
+      "position": [
+        790,
+        150
+      ],
+      "preview": true,
+      "color": "#f59e0b"
+    },
+    {
+      "id": "n6",
+      "type": "CodeBlock",
+      "params": {
+        "code": "# LEFT PANEL - a CONSTANT-Jacobian map. F(x,y) = (x + a*y^2, y).\n# Jacobian matrix = [[1, 2*a*y],[0,1]] -> det = 1 EVERYWHERE. It bends the grid\n# but can never fold it: no two grid points ever coincide -> injective.\na = 0.6   #@param float min=-1.5 max=1.5 step=0.05\nimport numpy as np\nR = 3.0; S = 2.4; OX = -16.0\nNL = 13; NS = 41\ndef F(x, y):\n    return (x + a*y*y, y)\nxs = np.linspace(-R, R, NL); ys = np.linspace(-R, R, NL)\nts = np.linspace(-R, R, NS)\nlines = []\nfor y in ys:                                   # horizontal grid lines\n    lines.append(Polyline(*[Vector(F(x,y)[0]*S+OX, F(x,y)[1]*S, 0) for x in ts]))\nfor x in xs:                                    # vertical grid lines (these bend)\n    lines.append(Polyline(*[Vector(F(x,y)[0]*S+OX, F(x,y)[1]*S, 0) for y in ts]))\nresult = lines\n",
+        "_cb": {
+          "a": -1
+        },
+        "_ui": {
+          "cb.a": {
+            "min": -1.5,
+            "max": 1.5,
+            "step": 0.05,
+            "play": {
+              "speed": 0.25,
+              "mode": "pingpong"
+            }
+          }
+        }
+      },
+      "position": [
+        80,
+        2304
+      ],
+      "preview": true,
+      "color": "#38bdf8"
+    },
+    {
+      "id": "n9",
+      "type": "CodeBlock",
+      "params": {
+        "code": "# RIGHT PANEL parameters. c = coupling strength of the fold.\n# The map is F(x,y,z) = (x, y, z^3 - c*x*z). Its Jacobian is 3*z^2 - c*x.\nc = 1.0   #@param float min=0 max=1.6 step=0.05\nresult = {\"c\": c, \"S\": 6.0, \"OX\": 14.0}\n",
+        "_cb": {
+          "c": 0.4
+        },
+        "_ui": {
+          "cb.c": {
+            "min": 0,
+            "max": 1.6,
+            "step": 0.05,
+            "play": {
+              "speed": 0.25,
+              "mode": "pingpong"
+            }
+          }
+        }
+      },
+      "position": [
+        80,
+        575
+      ],
+      "preview": false
+    }
+  ],
+  "connections": [
+    {
+      "id": "l1",
+      "from_node": "n9",
+      "from_socket": "result",
+      "to_node": "n8",
+      "to_socket": "in_0"
+    },
+    {
+      "id": "l2",
+      "from_node": "n9",
+      "from_socket": "result",
+      "to_node": "n2",
+      "to_socket": "in_0"
+    },
+    {
+      "id": "l3",
+      "from_node": "n9",
+      "from_socket": "result",
+      "to_node": "n3",
+      "to_socket": "in_0"
+    },
+    {
+      "id": "l4",
+      "from_node": "n9",
+      "from_socket": "result",
+      "to_node": "n7",
+      "to_socket": "in_0"
+    }
+  ],
+  "groups": [
+    {
+      "title": "SINISTRA - J costante: nessuna piega (iniettiva)",
+      "bounding": [
+        56,
+        100,
+        968,
+        424
+      ],
+      "color": "#2c5a7a"
+    },
+    {
+      "title": "DESTRA - una piega vera costa J = 0",
+      "bounding": [
+        56,
+        525,
+        968,
+        873
+      ],
+      "color": "#7a442c"
+    }
+  ]
+}

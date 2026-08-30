@@ -1,0 +1,1145 @@
+{
+  "name": "retroeng-motor-mount",
+  "nodes": [
+    {
+      "id": "n1",
+      "type": "BooleanMulti",
+      "params": {},
+      "position": [
+        290,
+        80
+      ],
+      "multi": [
+        "shapes"
+      ]
+    },
+    {
+      "id": "n2",
+      "type": "Slot",
+      "params": {
+        "separation": 21,
+        "height": 27,
+        "rotation": 90
+      },
+      "position": [
+        500,
+        80
+      ]
+    },
+    {
+      "id": "n3",
+      "type": "ConstructPoint",
+      "params": {
+        "x": 0,
+        "y": 10.5,
+        "z": 0
+      },
+      "position": [
+        710,
+        80
+      ]
+    },
+    {
+      "id": "n4",
+      "type": "Extrude",
+      "params": {
+        "amount": 2,
+        "taper": 0,
+        "both": false,
+        "solid": true
+      },
+      "position": [
+        920,
+        80
+      ]
+    },
+    {
+      "id": "n5",
+      "type": "Slot",
+      "params": {
+        "separation": 6,
+        "height": 8,
+        "rotation": 0
+      },
+      "position": [
+        1130,
+        80
+      ]
+    },
+    {
+      "id": "n6",
+      "type": "ConstructPoint",
+      "params": {
+        "x": 15,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        80,
+        230
+      ]
+    },
+    {
+      "id": "n7",
+      "type": "Extrude",
+      "params": {
+        "amount": 2,
+        "taper": 0,
+        "both": false,
+        "solid": true
+      },
+      "position": [
+        290,
+        230
+      ]
+    },
+    {
+      "id": "n8",
+      "type": "Slot",
+      "params": {
+        "separation": 6,
+        "height": 8,
+        "rotation": 0
+      },
+      "position": [
+        500,
+        230
+      ]
+    },
+    {
+      "id": "n9",
+      "type": "ConstructPoint",
+      "params": {
+        "x": -15,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        710,
+        230
+      ]
+    },
+    {
+      "id": "n10",
+      "type": "Extrude",
+      "params": {
+        "amount": 2,
+        "taper": 0,
+        "both": false,
+        "solid": true
+      },
+      "position": [
+        920,
+        230
+      ]
+    },
+    {
+      "id": "n11",
+      "type": "Slot",
+      "params": {
+        "separation": 6,
+        "height": 8,
+        "rotation": 0
+      },
+      "position": [
+        1130,
+        230
+      ]
+    },
+    {
+      "id": "n12",
+      "type": "ConstructPoint",
+      "params": {
+        "x": 15,
+        "y": 21,
+        "z": 0
+      },
+      "position": [
+        80,
+        380
+      ]
+    },
+    {
+      "id": "n13",
+      "type": "Extrude",
+      "params": {
+        "amount": 2,
+        "taper": 0,
+        "both": false,
+        "solid": true
+      },
+      "position": [
+        290,
+        380
+      ]
+    },
+    {
+      "id": "n14",
+      "type": "Slot",
+      "params": {
+        "separation": 6,
+        "height": 8,
+        "rotation": 0
+      },
+      "position": [
+        500,
+        380
+      ]
+    },
+    {
+      "id": "n15",
+      "type": "ConstructPoint",
+      "params": {
+        "x": -15,
+        "y": 21,
+        "z": 0
+      },
+      "position": [
+        710,
+        380
+      ]
+    },
+    {
+      "id": "n16",
+      "type": "Extrude",
+      "params": {
+        "amount": 2,
+        "taper": 0,
+        "both": false,
+        "solid": true
+      },
+      "position": [
+        920,
+        380
+      ]
+    },
+    {
+      "id": "n17",
+      "type": "Slot",
+      "params": {
+        "separation": 6,
+        "height": 8,
+        "rotation": 90
+      },
+      "position": [
+        1130,
+        380
+      ]
+    },
+    {
+      "id": "n18",
+      "type": "ConstructPoint",
+      "params": {
+        "x": 0,
+        "y": -15,
+        "z": 0
+      },
+      "position": [
+        80,
+        530
+      ]
+    },
+    {
+      "id": "n19",
+      "type": "Extrude",
+      "params": {
+        "amount": 2,
+        "taper": 0,
+        "both": false,
+        "solid": true
+      },
+      "position": [
+        290,
+        530
+      ]
+    },
+    {
+      "id": "n20",
+      "type": "Slot",
+      "params": {
+        "separation": 6,
+        "height": 8,
+        "rotation": 90
+      },
+      "position": [
+        500,
+        530
+      ]
+    },
+    {
+      "id": "n21",
+      "type": "ConstructPoint",
+      "params": {
+        "x": 0,
+        "y": 36,
+        "z": 0
+      },
+      "position": [
+        710,
+        530
+      ]
+    },
+    {
+      "id": "n22",
+      "type": "Extrude",
+      "params": {
+        "amount": 2,
+        "taper": 0,
+        "both": false,
+        "solid": true
+      },
+      "position": [
+        920,
+        530
+      ]
+    },
+    {
+      "id": "n23",
+      "type": "Cylinder",
+      "params": {
+        "radius": 12,
+        "height": 21,
+        "arc": 360,
+        "centered": true
+      },
+      "position": [
+        1130,
+        530
+      ]
+    },
+    {
+      "id": "n24",
+      "type": "ConstructPoint",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 12.5
+      },
+      "position": [
+        80,
+        680
+      ]
+    },
+    {
+      "id": "n25",
+      "type": "Box",
+      "params": {
+        "width": 24,
+        "height": 19,
+        "depth": 21,
+        "centered": true
+      },
+      "position": [
+        290,
+        680
+      ]
+    },
+    {
+      "id": "n26",
+      "type": "ConstructPoint",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 12.5
+      },
+      "position": [
+        500,
+        680
+      ]
+    },
+    {
+      "id": "n27",
+      "type": "Intersect",
+      "params": {},
+      "position": [
+        710,
+        680
+      ]
+    },
+    {
+      "id": "n28",
+      "type": "Cylinder",
+      "params": {
+        "radius": 6,
+        "height": 7,
+        "arc": 360,
+        "centered": true
+      },
+      "position": [
+        920,
+        680
+      ]
+    },
+    {
+      "id": "n29",
+      "type": "ConstructPoint",
+      "params": {
+        "x": 0,
+        "y": 21,
+        "z": 3.5
+      },
+      "position": [
+        1130,
+        680
+      ]
+    },
+    {
+      "id": "n30",
+      "type": "BooleanMulti",
+      "params": {},
+      "position": [
+        80,
+        830
+      ],
+      "multi": [
+        "shapes"
+      ]
+    },
+    {
+      "id": "n31",
+      "type": "Cylinder",
+      "params": {
+        "radius": 10.2,
+        "height": 18.77,
+        "arc": 360,
+        "centered": true
+      },
+      "position": [
+        290,
+        830
+      ]
+    },
+    {
+      "id": "n32",
+      "type": "ConstructPoint",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 13.385
+      },
+      "position": [
+        500,
+        830
+      ]
+    },
+    {
+      "id": "n33",
+      "type": "Box",
+      "params": {
+        "width": 30,
+        "height": 15.4,
+        "depth": 18.77,
+        "centered": true
+      },
+      "position": [
+        710,
+        830
+      ]
+    },
+    {
+      "id": "n34",
+      "type": "ConstructPoint",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 13.385
+      },
+      "position": [
+        920,
+        830
+      ]
+    },
+    {
+      "id": "n35",
+      "type": "Intersect",
+      "params": {},
+      "position": [
+        1130,
+        830
+      ]
+    },
+    {
+      "id": "n36",
+      "type": "Cylinder",
+      "params": {
+        "radius": 4,
+        "height": 5,
+        "arc": 360,
+        "centered": true
+      },
+      "position": [
+        80,
+        980
+      ]
+    },
+    {
+      "id": "n37",
+      "type": "ConstructPoint",
+      "params": {
+        "x": 0,
+        "y": 21,
+        "z": 2.5
+      },
+      "position": [
+        290,
+        980
+      ]
+    },
+    {
+      "id": "n38",
+      "type": "Cylinder",
+      "params": {
+        "radius": 4,
+        "height": 1,
+        "arc": 360,
+        "centered": true
+      },
+      "position": [
+        500,
+        980
+      ]
+    },
+    {
+      "id": "n39",
+      "type": "ConstructPoint",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 0.5
+      },
+      "position": [
+        710,
+        980
+      ]
+    },
+    {
+      "id": "n40",
+      "type": "Cylinder",
+      "params": {
+        "radius": 3,
+        "height": 2,
+        "arc": 360,
+        "centered": true
+      },
+      "position": [
+        920,
+        980
+      ]
+    },
+    {
+      "id": "n41",
+      "type": "ConstructPoint",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 3
+      },
+      "position": [
+        1130,
+        980
+      ]
+    },
+    {
+      "id": "n42",
+      "type": "Cylinder",
+      "params": {
+        "radius": 1.57,
+        "height": 2,
+        "arc": 360,
+        "centered": true
+      },
+      "position": [
+        80,
+        1130
+      ]
+    },
+    {
+      "id": "n43",
+      "type": "ConstructPoint",
+      "params": {
+        "x": -18,
+        "y": 0,
+        "z": 1
+      },
+      "position": [
+        290,
+        1130
+      ]
+    },
+    {
+      "id": "n44",
+      "type": "ArrayLinear",
+      "params": {
+        "count": 2,
+        "dx": 36,
+        "dy": 0,
+        "dz": 0
+      },
+      "position": [
+        500,
+        1130
+      ]
+    },
+    {
+      "id": "n45",
+      "type": "ArrayLinear",
+      "params": {
+        "count": 2,
+        "dx": 0,
+        "dy": 21,
+        "dz": 0
+      },
+      "position": [
+        710,
+        1130
+      ]
+    },
+    {
+      "id": "n46",
+      "type": "ArrayLinear",
+      "params": {
+        "count": 2,
+        "dx": 0,
+        "dy": 57,
+        "dz": 0
+      },
+      "position": [
+        80,
+        1280
+      ]
+    },
+    {
+      "id": "n47",
+      "type": "Subtract",
+      "params": {},
+      "position": [
+        290,
+        1280
+      ]
+    },
+    {
+      "id": "n48",
+      "type": "Rotate",
+      "params": {
+        "angle": 90,
+        "axis": "X",
+        "about": "world"
+      },
+      "position": [
+        500,
+        1280
+      ]
+    },
+    {
+      "id": "n49",
+      "type": "Cylinder",
+      "params": {
+        "radius": 10.2,
+        "height": 0.55,
+        "arc": 360,
+        "centered": true
+      },
+      "position": [
+        290,
+        1200
+      ]
+    },
+    {
+      "id": "n50",
+      "type": "ConstructPoint",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 22.725
+      },
+      "position": [
+        500,
+        1200
+      ]
+    },
+    {
+      "id": "n51",
+      "type": "Box",
+      "params": {
+        "width": 30,
+        "height": 15.4,
+        "depth": 0.55,
+        "centered": true
+      },
+      "position": [
+        710,
+        1200
+      ]
+    },
+    {
+      "id": "n52",
+      "type": "ConstructPoint",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 22.725
+      },
+      "position": [
+        920,
+        1200
+      ]
+    },
+    {
+      "id": "n53",
+      "type": "Cylinder",
+      "params": {
+        "radius": 2,
+        "height": 1,
+        "arc": 360,
+        "centered": true
+      },
+      "position": [
+        500,
+        1350
+      ]
+    },
+    {
+      "id": "n54",
+      "type": "ConstructPoint",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 1.5
+      },
+      "position": [
+        710,
+        1350
+      ]
+    },
+    {
+      "id": "n55",
+      "type": "Intersect",
+      "params": {},
+      "position": [
+        1130,
+        1200
+      ]
+    },
+    {
+      "id": "n56",
+      "type": "ConstructPoint",
+      "params": {
+        "x": 0,
+        "y": -18,
+        "z": 1
+      },
+      "position": [
+        1130,
+        1130
+      ]
+    },
+    {
+      "id": "n57",
+      "type": "Cylinder",
+      "params": {
+        "radius": 1.57,
+        "height": 2,
+        "arc": 360,
+        "centered": true
+      },
+      "position": [
+        1156,
+        1416
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "l1",
+      "from_node": "n3",
+      "from_socket": "point",
+      "to_node": "n2",
+      "to_socket": "origin"
+    },
+    {
+      "id": "l2",
+      "from_node": "n2",
+      "from_socket": "result",
+      "to_node": "n4",
+      "to_socket": "sketch"
+    },
+    {
+      "id": "l3",
+      "from_node": "n4",
+      "from_socket": "result",
+      "to_node": "n1",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l4",
+      "from_node": "n6",
+      "from_socket": "point",
+      "to_node": "n5",
+      "to_socket": "origin"
+    },
+    {
+      "id": "l5",
+      "from_node": "n5",
+      "from_socket": "result",
+      "to_node": "n7",
+      "to_socket": "sketch"
+    },
+    {
+      "id": "l6",
+      "from_node": "n7",
+      "from_socket": "result",
+      "to_node": "n1",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l7",
+      "from_node": "n9",
+      "from_socket": "point",
+      "to_node": "n8",
+      "to_socket": "origin"
+    },
+    {
+      "id": "l8",
+      "from_node": "n8",
+      "from_socket": "result",
+      "to_node": "n10",
+      "to_socket": "sketch"
+    },
+    {
+      "id": "l9",
+      "from_node": "n10",
+      "from_socket": "result",
+      "to_node": "n1",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l10",
+      "from_node": "n12",
+      "from_socket": "point",
+      "to_node": "n11",
+      "to_socket": "origin"
+    },
+    {
+      "id": "l11",
+      "from_node": "n11",
+      "from_socket": "result",
+      "to_node": "n13",
+      "to_socket": "sketch"
+    },
+    {
+      "id": "l12",
+      "from_node": "n13",
+      "from_socket": "result",
+      "to_node": "n1",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l13",
+      "from_node": "n15",
+      "from_socket": "point",
+      "to_node": "n14",
+      "to_socket": "origin"
+    },
+    {
+      "id": "l14",
+      "from_node": "n14",
+      "from_socket": "result",
+      "to_node": "n16",
+      "to_socket": "sketch"
+    },
+    {
+      "id": "l15",
+      "from_node": "n16",
+      "from_socket": "result",
+      "to_node": "n1",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l16",
+      "from_node": "n18",
+      "from_socket": "point",
+      "to_node": "n17",
+      "to_socket": "origin"
+    },
+    {
+      "id": "l17",
+      "from_node": "n17",
+      "from_socket": "result",
+      "to_node": "n19",
+      "to_socket": "sketch"
+    },
+    {
+      "id": "l18",
+      "from_node": "n19",
+      "from_socket": "result",
+      "to_node": "n1",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l19",
+      "from_node": "n21",
+      "from_socket": "point",
+      "to_node": "n20",
+      "to_socket": "origin"
+    },
+    {
+      "id": "l20",
+      "from_node": "n20",
+      "from_socket": "result",
+      "to_node": "n22",
+      "to_socket": "sketch"
+    },
+    {
+      "id": "l21",
+      "from_node": "n22",
+      "from_socket": "result",
+      "to_node": "n1",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l22",
+      "from_node": "n24",
+      "from_socket": "point",
+      "to_node": "n23",
+      "to_socket": "origin"
+    },
+    {
+      "id": "l23",
+      "from_node": "n26",
+      "from_socket": "point",
+      "to_node": "n25",
+      "to_socket": "origin"
+    },
+    {
+      "id": "l24",
+      "from_node": "n23",
+      "from_socket": "result",
+      "to_node": "n27",
+      "to_socket": "a"
+    },
+    {
+      "id": "l25",
+      "from_node": "n25",
+      "from_socket": "result",
+      "to_node": "n27",
+      "to_socket": "b"
+    },
+    {
+      "id": "l26",
+      "from_node": "n27",
+      "from_socket": "result",
+      "to_node": "n1",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l27",
+      "from_node": "n29",
+      "from_socket": "point",
+      "to_node": "n28",
+      "to_socket": "origin"
+    },
+    {
+      "id": "l28",
+      "from_node": "n28",
+      "from_socket": "result",
+      "to_node": "n1",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l29",
+      "from_node": "n32",
+      "from_socket": "point",
+      "to_node": "n31",
+      "to_socket": "origin"
+    },
+    {
+      "id": "l30",
+      "from_node": "n34",
+      "from_socket": "point",
+      "to_node": "n33",
+      "to_socket": "origin"
+    },
+    {
+      "id": "l31",
+      "from_node": "n31",
+      "from_socket": "result",
+      "to_node": "n35",
+      "to_socket": "a"
+    },
+    {
+      "id": "l32",
+      "from_node": "n33",
+      "from_socket": "result",
+      "to_node": "n35",
+      "to_socket": "b"
+    },
+    {
+      "id": "l33",
+      "from_node": "n35",
+      "from_socket": "result",
+      "to_node": "n30",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l34",
+      "from_node": "n37",
+      "from_socket": "point",
+      "to_node": "n36",
+      "to_socket": "origin"
+    },
+    {
+      "id": "l35",
+      "from_node": "n36",
+      "from_socket": "result",
+      "to_node": "n30",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l36",
+      "from_node": "n39",
+      "from_socket": "point",
+      "to_node": "n38",
+      "to_socket": "origin"
+    },
+    {
+      "id": "l37",
+      "from_node": "n38",
+      "from_socket": "result",
+      "to_node": "n30",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l38",
+      "from_node": "n41",
+      "from_socket": "point",
+      "to_node": "n40",
+      "to_socket": "origin"
+    },
+    {
+      "id": "l39",
+      "from_node": "n40",
+      "from_socket": "result",
+      "to_node": "n30",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l40",
+      "from_node": "n43",
+      "from_socket": "point",
+      "to_node": "n42",
+      "to_socket": "origin"
+    },
+    {
+      "id": "l41",
+      "from_node": "n42",
+      "from_socket": "result",
+      "to_node": "n44",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l42",
+      "from_node": "n44",
+      "from_socket": "result",
+      "to_node": "n45",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l43",
+      "from_node": "n45",
+      "from_socket": "result",
+      "to_node": "n30",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l44",
+      "from_node": "n56",
+      "from_socket": "point",
+      "to_node": "n57",
+      "to_socket": "origin"
+    },
+    {
+      "id": "l45",
+      "from_node": "n57",
+      "from_socket": "result",
+      "to_node": "n46",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l46",
+      "from_node": "n46",
+      "from_socket": "result",
+      "to_node": "n30",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l47",
+      "from_node": "n1",
+      "from_socket": "result",
+      "to_node": "n47",
+      "to_socket": "a"
+    },
+    {
+      "id": "l48",
+      "from_node": "n30",
+      "from_socket": "result",
+      "to_node": "n47",
+      "to_socket": "b"
+    },
+    {
+      "id": "l49",
+      "from_node": "n47",
+      "from_socket": "result",
+      "to_node": "n48",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l50",
+      "from_node": "n50",
+      "from_socket": "point",
+      "to_node": "n49",
+      "to_socket": "origin"
+    },
+    {
+      "id": "l51",
+      "from_node": "n52",
+      "from_socket": "point",
+      "to_node": "n51",
+      "to_socket": "origin"
+    },
+    {
+      "id": "l52",
+      "from_node": "n49",
+      "from_socket": "result",
+      "to_node": "n55",
+      "to_socket": "a"
+    },
+    {
+      "id": "l53",
+      "from_node": "n51",
+      "from_socket": "result",
+      "to_node": "n55",
+      "to_socket": "b"
+    },
+    {
+      "id": "l54",
+      "from_node": "n55",
+      "from_socket": "result",
+      "to_node": "n1",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l55",
+      "from_node": "n54",
+      "from_socket": "point",
+      "to_node": "n53",
+      "to_socket": "origin"
+    },
+    {
+      "id": "l56",
+      "from_node": "n53",
+      "from_socket": "result",
+      "to_node": "n30",
+      "to_socket": "shapes"
+    }
+  ]
+}
