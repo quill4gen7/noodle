@@ -327,6 +327,11 @@ def _preview_of(value, linear_frac: float = 0.02, angular: float = 0.4) -> dict 
             if g is None:
                 continue
             g["anim"] = getattr(v, "_noodle_anim", None)
+            # Which node drew this body. Only the extras (a Drop container) carry
+            # one; the falling parts are the Drop's own output and stay None. The
+            # viewer resolves colour/finish per body from it, so a glass jar can
+            # pour steel bolts instead of the whole scene sharing one finish.
+            g["owner"] = getattr(v, "_noodle_owner", None)
             bodies.append(g)
             bb = g.get("bbox")
             if bb:

@@ -1,0 +1,39 @@
+{
+  "name": "bolt-and-nut",
+  "nodes": [
+    {"id": "v1", "type": "Vector", "params": {"x": 0, "y": 0, "z": -10},
+     "position": [40, 60]},
+    {"id": "n3", "type": "Cylinder", "params": {"radius": 7, "height": 6, "centered": true},
+     "position": [40, 200]},
+    {"id": "n4", "type": "Move", "params": {"x": 0, "y": 0, "z": -13},
+     "position": [330, 200]},
+    {"id": "n2", "type": "Thread",
+     "params": {"kind": "external", "size": "M8", "length": 20, "clearance": 0.0},
+     "position": [640, 120], "preview": true},
+
+    {"id": "v2", "type": "Vector", "params": {"x": 0, "y": 0, "z": -4},
+     "position": [40, 520]},
+    {"id": "n6", "type": "Cylinder", "params": {"radius": 8, "height": 8, "centered": true},
+     "position": [40, 650]},
+    {"id": "n7", "type": "Thread",
+     "params": {"kind": "internal", "size": "M8", "length": 8, "clearance": 0.3},
+     "position": [330, 580]},
+    {"id": "n8", "type": "Move", "params": {"x": 30, "y": 0, "z": 0},
+     "position": [640, 580], "preview": true}
+  ],
+  "connections": [
+    {"id": "l1", "from_node": "n3", "from_socket": "result", "to_node": "n4", "to_socket": "shape"},
+    {"id": "l2", "from_node": "v1", "from_socket": "vector", "to_node": "n2", "to_socket": "at"},
+    {"id": "l3", "from_node": "n4", "from_socket": "result", "to_node": "n2", "to_socket": "shape"},
+
+    {"id": "l4", "from_node": "v2", "from_socket": "vector", "to_node": "n7", "to_socket": "at"},
+    {"id": "l5", "from_node": "n6", "from_socket": "result", "to_node": "n7", "to_socket": "shape"},
+    {"id": "l6", "from_node": "n7", "from_socket": "result", "to_node": "n8", "to_socket": "shape"}
+  ],
+  "groups": [
+    {"title": "the bolt — ONE node: external brings its own core, the head is the shape it adds to",
+     "bounding": [20, 20, 820, 400], "color": "#3f589e"},
+    {"title": "the nut — the same thread, as a TAP that cuts",
+     "bounding": [20, 480, 820, 300], "color": "#8a3f5b"}
+  ]
+}

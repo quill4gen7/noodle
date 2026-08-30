@@ -31,7 +31,36 @@ here — the user is often watching it; they reload to see your changes.
    unless you truly need triangles (`cad_get_view fmt="mesh"`). The live
    `bbox` is approximate (`approx: true` — poles-based, up to ~1% oversized,
    never smaller); treat **volume/area** as the exact figures.
-5. **Iterate** param changes; **export** when done: `step | stl | gltf`.
+5. **Look at it**: `GET /api/graph/{name}/screenshot` (= `cad_screenshot`)
+   returns a PNG of the real viewport. Do this whenever you have built or
+   changed geometry — numbers do not catch everything. A part can have the
+   right volume, a watertight mesh and a green test suite and still be plainly
+   wrong: a boolean that filled the feature it was meant to cut, an array
+   pointing the wrong way, a part sunk through the bed. One picture settles it.
+6. **Iterate** param changes; **export** when done: `step | stl | gltf`.
+
+## Looking at the result
+
+`GET /api/graph/{name}/screenshot` → `image/png`. It drives the app's own
+viewer, so the image is exactly what the user sees.
+
+| arg | meaning |
+|---|---|
+| `view` | `iso` (default, front-right-top) · `front` `back` `left` `right` `top` `bottom` |
+| `azim`, `elev` | degrees, instead of a preset. Azimuth in the XY plane from +X, elevation from it. The scene is **Z-up** |
+| `zoom` | >1 pulls back, <1 closes in (default 1) |
+| `node`, `isolate` | frame ONE node's preview by id; `isolate=1` hides the rest |
+| `width`, `height`, `scale` | pixels (clamped to 4000) and device pixel ratio |
+| `projection` | `persp` or `ortho` — ortho reads better when checking alignment |
+| `chrome` | `1` keeps the legend/stat overlays (default: geometry only) |
+| `run` | `0` reuses what is already rendered — cheap for extra angles (~1.5s vs ~10s) |
+
+Response headers: `X-Noodle-Ran` (whether it re-executed) and
+`X-Noodle-Size-Mm` (the framed bounds). A `503` means the browser is missing
+from the deployment, not that your graph is wrong.
+
+Take **two angles** when a shape is ambiguous from one — and `top`/`front` in
+`ortho` when you are checking that things line up rather than how they look.
 
 ## HTTP endpoints
 
@@ -57,6 +86,7 @@ add_node/connect/delete tools exist on MCP: `cad_add_node`, `cad_connect`,
 | `GET /api/agent/tags` | ToAgent provenance index (`cad_agent_tags`) |
 | `GET /api/graph/{name}/slice_summary?path=&n=` | symbolic sections (`cad_slice_summary`) |
 | `GET /api/graph/{name}/section_outline?axis=&pos=&path=` | one exact section (`cad_section_outline`) |
+| `GET /api/graph/{name}/screenshot?view=&node=&…` | **PNG of the viewport** (`cad_screenshot`) — see below |
 
 Project names: one path segment, `[A-Za-z0-9][A-Za-z0-9._ -]{0,63}` — anything
 else is rejected (400).

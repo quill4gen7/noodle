@@ -213,6 +213,62 @@ Open: the motion is one rigid track for the whole container rig (several shapes 
 beyond one translation + one rotation; and nothing couples the motion back to the parts'
 sleep detection, so a long shake simulates every frame of itself.
 
+### 2b-ter. `Animate` — the motion on its own, with no physics
+
+The Motion node earned a second consumer. Half of what people want out of a moving part
+has no physics in it at all: a lid unscrewing off a jar, a drawer sliding out, a door
+swinging, a part lifted clear of an assembly to show how it comes apart. Nothing falls,
+nothing collides, nothing is carried by friction — the shape simply GOES where you said,
+and `t` scrubs it. **Drop asks what would happen; Animate says do this.**
+
+It reuses everything and invents nothing:
+
+- **The plan and the driver are the same.** `_animate` calls `_motion_driver` with an
+  identity bed frame (`B = I`, `o = 0`) and the shape's own tessellated bbox centre as the
+  pivot — tessellated for the same reason `PlaceOnBed` is, since the OCCT box is oversized
+  and an off-centre axis is the one thing an unscrewing lid cannot tolerate.
+- **A screw needed no new vocabulary.** Translation and rotation already ride ONE phase,
+  so `move z 12` + `rotate z 720` at `cycles 0` is a helix: the cap rises exactly as fast
+  as it turns. That is pinned by a test, because two clocks would look almost right.
+- **It bakes keyframes instead of staying analytic.** `pose(tau)` is sampled at 60 Hz (at
+  least 24 samples per oscillation cycle, capped at 2000) and shipped as a `kind:"keys"`
+  `_noodle_anim` — the format collide scenes already use, which the browser already
+  replays at 60 fps through `sceneBodyPose`. So the whole frontend cost was replacing two
+  `cadType === 'Drop'` tests with a `TIMELINE_NODES` set; without that Animate would be
+  correct on disk and silently un-scrubbable on screen. Measured in a real browser:
+  scrubbing its own `t` gives 60 fps replay plus exactly one exact re-bake when the drag
+  settles, and a Number Slider wired into `t` gives zero engine runs.
+- **It must not copy Drop's un-fan.** A Drop gathers its shapes into one scene because
+  they collide with each other. Nothing here interacts, so five lids wired in are five
+  independent movements — the ordinary fan-out rule, with a test pinning it. Likewise no
+  `container`, `collide`, `grip`, `material` or `settle`: everything that costs compute
+  stays in Drop, and the two share one Motion node and can share one `t` slider.
+
+**`hold`, and why it is not a Remap.** The point of sharing a Motion is sharing a
+*clock*: one slider that unscrews a cap and then tips the jar. That needs the two
+timelines to be the same LENGTH, and the obvious way — rescale `t` through a `Remap`
+between the slider and the Animate — silently costs the live scrub, because
+`applyDropTargets` follows only DIRECT links from the dragged value node into a `t`
+socket. It cannot evaluate an intermediate node, and teaching it to would mean
+reimplementing engine math in JavaScript, which is exactly the drift this codebase keeps
+paying to avoid. So Animate pads its own timeline instead: `hold` adds stillness after
+the motion ends, the wire stays direct, and past `end` the phase already parks (at the
+destination for a ramp, at the start for an oscillation) so the padding is free and
+exact. **Pad the short clock; never rescale the wire.**
+
+`ContainerMotion` is consequently labelled just **Motion** now. The type string is
+unchanged — saved graphs, `_container_motion` and every test keep working; only the label
+and the search aliases moved.
+
+Examples: `examples/jar-cap-unscrew.json` is the bare mechanism. `examples/threaded-jar-pour.json`
+is what it is for — one slider, two clocks: the golden cap unscrews (0.4 s delay + 0.8 s
+motion + 6.8 s hold = 8.0 s) and then the glass jar tips 150° (Drop + container motion,
+T = 7.9875 s) and pours six rainbow bolts onto the bed 60 mm below. Verified in a real
+browser: dragging that single slider moves the cap and all seven scene bodies at 60 fps
+with exactly one re-bake at settle. That example was also rebuilt in the process — its
+cylinders were `centered: false`, which is MIN-aligned on **all three** axes, so the jar's
+bore sat 6 mm off its own axis. Invisible until a threaded cap had to mate with it.
+
 ## 3. How each number is got
 
 - **Overhang** — a face needs support if its normal points down more steeply than the

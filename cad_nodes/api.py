@@ -306,3 +306,38 @@ def export(store: GraphStore, graph_id: str, fmt: str = "step") -> str:
     graph = store.load(graph_id)
     out = export_graph(graph, store.dir(graph_id), fmt)
     return str(out)
+
+
+async def screenshot(store: GraphStore, graph_id: str, **opts):
+    """Render the graph's viewport to a PNG. Returns (png_bytes, meta).
+
+    The one op here that is async, because it drives a browser rather than the
+    B-Rep kernel: it renders through the REAL viewer (headless Chromium over
+    /nodes), so what an agent sees is exactly what the user sees. See
+    cad_nodes/screenshot.py for why that matters more than it sounds.
+
+    Kept in api.py like everything else so the HTTP route and the MCP tool are
+    the same operation rather than two that drift.
+    """
+    from . import screenshot as _shot
+    store.load(graph_id)                 # 404 on an unknown/invalid project id
+    return await _shot.render(graph_id, **opts)
+
+
+def arrange(store: GraphStore, graph_id: str, **opts) -> dict:
+    """Tidy the graph's node positions, left-to-right by dependency depth.
+
+    Nodes are placed using their REAL on-canvas size (cad_nodes/layout.py mirrors
+    litegraph's own computeSize, pinned to a captured fixture), so the result is
+    guaranteed free of overlapping nodes rather than merely spread out — the
+    guarantee is asserted before the graph is saved. Group boxes are re-fitted
+    around the members they had BEFORE the move, and members are kept in one
+    y-band so two groups' boxes don't end up cutting across each other.
+
+    Returns the layout summary: nodes, columns, moved, overlaps, group_overlaps.
+    """
+    from . import layout as _layout
+    graph = store.load(graph_id)
+    summary = _layout.arrange(graph, **opts)
+    store.save(graph_id, graph)
+    return summary

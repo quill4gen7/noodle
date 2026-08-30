@@ -167,6 +167,11 @@ body{font-family:var(--font);background:var(--bg-0);color:var(--text);}
 .menu-item.danger{color:var(--err);} .menu-item.danger:hover{background:#3a1422;}
 .menu-item .k{margin-left:auto;font-size:10px;color:var(--text-dim);}
 .menu-item .ic{width:16px;text-align:center;color:var(--text-dim);}
+/* project thumbnail chip: says what the workflow IS, where the name can't */
+.menu-item .pthumb{width:40px;height:30px;flex:0 0 auto;border-radius:4px;object-fit:cover;
+  background:var(--bg-0);border:1px solid var(--border);}
+.menu-item .pthumb.ph{display:flex;align-items:center;justify-content:center;
+  font-size:13px;color:var(--border);}
 .menu-sep{height:1px;background:var(--border);margin:5px 4px;}
 .menu-head{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-dim);padding:4px 9px 2px;}
 .menu-search{width:100%;margin:2px 0 4px;background:var(--bg-3);border:1px solid var(--border);border-radius:5px;
@@ -306,6 +311,7 @@ body{font-family:var(--font);background:var(--bg-0);color:var(--text);}
       <button class="tb-btn primary" id="btn-run" onclick="runGraph()" title="Run the graph (Ctrl+Enter)">▶ Run</button>
       <button class="tb-btn toggle js-live-btn" id="btn-live" onclick="toggleLive()" title="Auto-run on every change — and drags (Move/Rotate/Scale, a Drop timeline) replay live in the viewport while you hold them. Settings ⚙ turns that anticipation off.">Live</button>
       <button class="tb-btn toggle js-cost-btn" id="btn-cost" onclick="toggleCost()" title="Show each node's cost from the last run (blue = served by the cache)">Costi</button>
+      <button class="tb-btn" id="btn-arrange" onclick="arrangeGraph()" title="Riordina i nodi: da sinistra a destra per profondità, senza sovrapposizioni, gruppi tenuti insieme (Ctrl+Shift+A)">⊞ Riordina</button>
       <div class="status-pill" id="status">Ready</div>
       <span class="health-dot" id="health" title="Backend health"></span>
     </div>
@@ -494,6 +500,8 @@ window._noodle = { get lgraph(){ return lgraph; }, get lcanvas(){ return lcanvas
   get execGlow(){ return execGlow; }, get lastCost(){ return lastCost; },
   get showCost(){ return showCost; },
   get THREE(){ return THREE; },
+  get liveMode(){ return liveMode; },
+  get previewMeshes(){ return previewMeshes; },
   paramChange(n){ return onParamChange(n); },
   togglePick(i){ return togglePick(i); } };
 let currentName = null;
@@ -783,12 +791,7 @@ function registerNodes(defs){
         const self = this;
         setTimeout(() => { normalizeMultiSlots(self); if (typeof scheduleLive==='function') scheduleLive(); }, 0);
       };
-      this.size = this.computeSize();
-      this.size[0] = Math.max(this.size[0], 150);
-      if (this._curvePreviewH){                 // reserve space for the curve mini-preview
-        this.size[0] = Math.max(this.size[0], 200);
-        this.size[1] += this._curvePreviewH;
-      }
+      resizeNode(this);
       // bypass overlay: dim + diagonal slash + label across the node body
       this.onDrawForeground = function(ctx){
         if (this.flags.collapsed) return;
@@ -817,32 +820,13 @@ function registerNodes(defs){
            callback: ()=> setBypass(self, !self.bypassed)},
           {content: '▣ Group selected  (Ctrl+G)', callback: ()=> groupSelected()},
           {content: '🔎 Search aliases…', callback: ()=> editAliases(self.cadType)},
+          {content: '✎ Rinomina…  (F2)', callback: ()=> renameNode(self)},
         ];
-        if (self.widgets && self.widgets.some(w=>w.isEye)){   // a node that renders geometry
-          opts.push({content: (self.wireframe?'✓ ':'')+'Wireframe',
-            callback: ()=>{ self.wireframe = !self.wireframe; refreshDisplay(); }});
-          opts.push({content: '✨ Finish', has_submenu: true,
-            callback: (v,o,e,menu)=>{
-              const set = f => ()=>{ self.previewFinish = f; refreshDisplay(); };
-              new LiteGraph.ContextMenu([
-                {content:'Solid (default)', callback:set(null)},
-                {content:'🔎 Glass — real transmission, see through it', callback:set('glass')},
-                {content:'💡 Emissive — it glows', callback:set('emissive')},
-                {content:'🪙 Metal', callback:set('metal')},
-              ], {event:e, parentMenu:menu, title:'Finish'});
-              return false;
-            }});
-          opts.push({content: '🎨 Preview colour', has_submenu: true,
-            callback: (v,o,e,menu)=>{
-              const sw = c=>`<span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${c};margin-right:6px;vertical-align:middle"></span>`;
-              const entries = [{content:'Auto (palette)', callback:()=>{ self.previewColor=null; refreshDisplay(); }},
-                {content:'🌈 Rainbow (one hue per piece)', callback:()=>{ self.previewColor='rainbow'; refreshDisplay(); }}];
-              for(const c of PALETTE) entries.push({content: sw(c)+c, callback:()=>{ self.previewColor=c; refreshDisplay(); }});
-              entries.push({content:'Custom…', callback:()=>{ const x=prompt('Hex colour (e.g. #44cc88):', self.previewColor||'#44cc88'); if(x){ self.previewColor=x.trim(); refreshDisplay(); } }});
-              new LiteGraph.ContextMenu(entries, {event:e, parentMenu:menu, title:'Preview colour'});
-              return false;
-            }});
-        }
+        // One modal for colour + finish + wireframe. It replaced three separate
+        // entries (a Wireframe toggle and two submenus) whose common flaw was
+        // that you could not SEE the result without closing them first.
+        if (self.widgets && self.widgets.some(w=>w.isEye))   // draws geometry
+          opts.push({content: '🎨 Aspetto…', callback: ()=> editAppearance(self)});
         return opts;
       };
     };
@@ -1292,6 +1276,22 @@ function openSliderCfg(node, w, ev){
   }, true), 0);
 }
 
+// Re-measure a node after its sockets or widgets changed. The ONE place that
+// applies our floors on top of litegraph's computeSize — every call site used to
+// inline them, and each inlining that forgot `_curvePreviewH` produced a node
+// whose curve mini-preview was drawn over its own widgets (visible on any saved
+// GraphMapper: correct when dropped, broken after reload). Mirrored in Python by
+// cad_nodes/layout.py::node_size, which tests/test_layout.py pins to reality.
+function resizeNode(node){
+  node.size = node.computeSize();
+  node.size[0] = Math.max(node.size[0], 150);
+  if (node._curvePreviewH){            // reserve space below the widgets
+    node.size[0] = Math.max(node.size[0], 200);
+    node.size[1] += node._curvePreviewH;
+  }
+  return node.size;
+}
+
 function addWidget(node, p){
   if (p.type === 'bool'){
     node.properties[p.name] = !!p.default;
@@ -1522,7 +1522,7 @@ function syncCodeblockParams(node){
       }
     }
   }
-  node.size = node.computeSize(); node.size[0] = Math.max(node.size[0], 180);
+  resizeNode(node);
   updateCbWired(node);
   node.setDirtyCanvas && node.setDirtyCanvas(true, true);
 }
@@ -2187,7 +2187,7 @@ function normalizeMultiSlots(node){
     }
   }
   if (changed){
-    node.size = node.computeSize(); node.size[0] = Math.max(node.size[0],150);
+    resizeNode(node);
     node.setDirtyCanvas && node.setDirtyCanvas(true,true);
   }
 }
@@ -2217,7 +2217,7 @@ function setMultiInput(node, name, on){
     }
   }
   if (widget) widget.value = on;
-  node.size = node.computeSize(); node.size[0] = Math.max(node.size[0],150);
+  resizeNode(node);
   node.setDirtyCanvas && node.setDirtyCanvas(true,true);
   if (typeof scheduleLive==='function') scheduleLive();
 }
@@ -2229,6 +2229,10 @@ function toGraphJSON(name){
     const id = 'n'+n.id; idMap[n.id] = id; nodeIndex[id] = n;
     const params = {};
     const nd = {id, type:n.cadType, params, position:[Math.round(n.pos[0]),Math.round(n.pos[1])]};
+    // A user-given name. Only stored when it differs from the type's own label,
+    // so an untouched node stays clean in graph.json — and so `layout.arrange`
+    // can tell a knob the user cares about from one they never named (§6d).
+    if (n.title && n.title !== defaultTitleOf(n.cadType)) nd.title = n.title;
     if (n.widgets) for (const w of n.widgets) if (w.cadParam) params[w.cadParam] = w.value;
     if (n._noteParam){
       params[n._noteParam] = n.properties[n._noteParam] ?? '';   // note text (no widget)
@@ -2284,6 +2288,7 @@ function createNodeFromData(nd){
   const def = catalog[nd.type]; if(!def){ log('unknown node type '+nd.type,'err'); return null; }
   const node = LiteGraph.createNode('cad/'+def.category+'/'+nd.type);
   node.pos = nd.position || [120, 120];
+  if (nd.title) node.title = nd.title;          // user-given name (see renameNode)
   node.previewMode = nd.preview === true ? 'on' : nd.preview === false ? 'off' : 'auto';
   if (nd.bypassed){ node.bypassed = true; node.mode = LiteGraph.NEVER; }
   if (nd.color) node.previewColor = nd.color;
@@ -2356,7 +2361,7 @@ function finalizeNodes(nodes){
     if (node.cadType === 'CodeBlock') updateCbWired(node);   // grey out wired params
     updateGizmoLockedWidgets(node);                          // grey gizmo binds when locked
     updateParamSocketWired(node);                             // grey any param whose socket is wired
-    node.size = node.computeSize(); node.size[0] = Math.max(node.size[0], 150);
+    resizeNode(node);
   }
 }
 
@@ -2495,6 +2500,7 @@ window.newGraph = async function(name){
   currentName = name;
   setCurrentName(name);
   lastSavedJSON = JSON.stringify(toGraphJSON(name));
+  lastRunJSON = null;              // nothing on screen belongs to this graph yet
   clearDraft(name); setDocState('saved');
   histInit();
   await refreshGraphList();
@@ -2516,6 +2522,7 @@ async function persistToServer(){
     log('save: '+JSON.stringify(e.detail||e),'err'); return false; }
   lastSavedJSON = json; clearDraft(currentName); setDocState('saved');
   nodeByGraphId = Object.assign({}, nodeIndex);   // saved disk ids now equal serialized ids
+  thumbWanted = true; maybeThumb();               // the library's picture of this graph
   return true;
 }
 
@@ -2524,6 +2531,44 @@ window.saveGraph = async function(){
   const ok = await persistToServer();
   if (ok){ await refreshGraphList(); setStatus('saved ✓','ok'); }
 };
+
+// ── workflow thumbnail: the picture the library lists you by ───────────────
+// Taken on SAVE, from the canvas the editor has already drawn — so it costs one
+// extra render and no execution at all. The condition is not "live mode" but
+// something stricter and truer: the geometry on screen must have been computed
+// from the graph that was just written to disk (`lastRunJSON === lastSavedJSON`).
+// In Live that is satisfied the moment the run lands — save, run, shoot, all
+// without asking. Save while a run is still going and the shot simply waits: the
+// run ends by saving again and calling back in here. Outside Live a plain save
+// makes no thumbnail, because there is nothing on screen that provably matches
+// what was saved, and a thumbnail that lies is worse than none.
+let thumbWanted = false, thumbTimer = null;
+let lastRunJSON = null;        // the graph the previews on screen were built from
+
+function maybeThumb(){
+  // The agent's screenshot API drives a headless page of THIS editor: if it
+  // shot thumbnails too, its camera would overwrite the user's. It doesn't.
+  if (window.__noodleShot) return;
+  if (!thumbWanted || !currentName || !viewer) return;
+  if (lastRunJSON === null || lastRunJSON !== lastSavedJSON) return;
+  clearTimeout(thumbTimer);
+  thumbTimer = setTimeout(postThumb, 900);   // a burst of live runs = one upload
+}
+
+async function postThumb(){
+  if (!currentName || !viewer) return;
+  const name = currentName;
+  // Must be read back in one go, before the browser composites the frame away.
+  const url = viewer.snapshot();
+  if (!url) return;      // empty viewport: keep the last good picture, don't blank it
+  thumbWanted = false;
+  try {
+    const blob = await (await fetch(url)).blob();
+    const res = await fetch(`${API}/api/projects/${name}/thumb`,
+      {method:'PUT', headers:{'Content-Type':'image/jpeg'}, body: blob});
+    if (res.ok) refreshGraphList();     // repaint the menu with the new picture
+  } catch(e){ /* a thumbnail is never worth failing a save over */ }
+}
 
 // ── live mode: debounced auto-run on any graph change ──
 function scheduleLive(){
@@ -2626,6 +2671,209 @@ function groupTitleAt(gp){
   }
   return null;
 }
+// ── naming a node ──────────────────────────────────────────────────────────
+// The title is documentation on any node, and on a pure parameter source
+// (category "input") it is also the PROMOTION: ⊞ Riordina gathers every named
+// slider into the panel on the left, sorted by name. Naming is the only mark —
+// every knob is called "Number Slider" until you name it, so the panel comes out
+// exactly as long as the labelling you bothered to do. See CLAUDE.md §6d.
+function defaultTitleOf(type){
+  const d = catalog[type];
+  return (d && (d.label || d.type)) || type;
+}
+
+async function renameNode(node){
+  if (!node) return;
+  const def = defaultTitleOf(node.cadType);
+  const name = await promptModal('Rinomina nodo',
+    `Nome (vuoto = torna a "${def}"):`, node.title === def ? '' : (node.title || ''));
+  if (name == null) return;                       // cancelled
+  node.title = name.trim() || def;
+  resizeNode(node);                               // the title drives node width
+  lcanvas.setDirty(true, true);
+  recordHistory();
+  checkDirty && checkDirty();                     // autosave the new name
+}
+
+// ── 🎨 Aspetto: colour + finish + wireframe, in one live modal ─────────────
+// These three are DISPLAY-ONLY — they never reach the transpiler (the generated
+// source is byte-identical with and without them), so every change is a pure
+// re-render of the last view: no execute, no engine round trip. That is what
+// lets the modal apply instantly instead of making you close a submenu to find
+// out what you picked. Cancel restores the state captured on open, and the whole
+// visit is ONE undo step rather than one per click.
+//
+// Per PIECE is expressed by the graph, not by this modal: since §5d-bis every
+// body of a collide scene resolves colour and finish from the node that DREW it
+// (`body.owner`), so you style the jar by opening this on the jar's node and the
+// bolts by opening it on the Drop. Giving ONE bolt of a fan-out its own material
+// is deliberately not here — they are one node by construction, and telling them
+// apart needs a per-body override model. `rainbow` remains that answer.
+const FINISHES = [
+  [null,       'Solid',    'il default'],
+  ['glass',    '🔎 Glass', 'trasmissione vera, ci vedi attraverso'],
+  ['emissive', '💡 Emissive', 'emette luce'],
+  ['metal',    '🪙 Metal', ''],
+];
+
+// The PIECES of a node's preview that can be styled apart. A collide Scene's
+// bodies each name the node that drew them (`body.owner`, §5d-bis) — a container
+// is a different node from the Drop that pours out of it — so "give the jar glass
+// and the bolts metal" is already expressible per node. What was missing is any
+// way to FIND that: you had to know to open this modal on the container's node,
+// whose own preview may well be switched off. So the modal lists them and
+// switches its target. No new state, no new serialization: it is a view onto the
+// per-node fields that already exist.
+function piecesOf(node){
+  const p = lastView && lastView.previews && lastView.previews['n' + node.id];
+  if (!p || !p.bodies || !p.bodies.length) return null;
+  const by = new Map();
+  for (const b of p.bodies){
+    const key = b.owner || '';
+    const e = by.get(key) || {owner: b.owner || null,
+                              node: b.owner ? nodeFor(b.owner) : node, n: 0};
+    e.n++; by.set(key, e);
+  }
+  const out = [...by.values()].filter(e => e.node);   // an owner we cannot resolve
+  return out.length > 1 ? out : null;                 // 1 piece = nothing to choose
+}
+
+async function editAppearance(node){
+  if (!node) return;
+  const drawsGeom = n => n.widgets && n.widgets.some(w => w.isEye);
+  // Several nodes selected (and this one among them) → style them together.
+  const sel = Object.values((lcanvas && lcanvas.selected_nodes) || {});
+  let targets = (sel.length > 1 && sel.includes(node))
+    ? sel.filter(drawsGeom) : [node];
+  if (!targets.length) return;
+
+  const pieces = targets.length === 1 ? piecesOf(node) : null;
+  // Every node the modal could touch is captured, so Cancel restores whichever
+  // pieces were visited — not just the one showing when it was closed.
+  const touch = pieces ? pieces.map(p => p.node) : targets;
+  const before = touch.map(n => ({n, color: n.previewColor,
+                                  finish: n.previewFinish, wire: n.wireframe}));
+  const st = {color: node.previewColor ?? null,
+              finish: node.previewFinish ?? null,
+              wire: !!node.wireframe};
+  const esc = s => String(s).replace(/[&<>"]/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const who = targets.length > 1 ? `${targets.length} nodi`
+                                 : esc(node.title || node.cadType);
+
+  const m = buildModal(
+    `<h3>Aspetto — <span id="__who">${who}</span></h3>` +
+    `<p>Solo visualizzazione: non tocca la geometria, quindi si applica subito.</p>` +
+    (pieces ? `<div style="margin:10px 0 4px"><b>Pezzo</b></div>` +
+              `<div id="__pc" class="chips"></div>` : '') +
+    `<div style="margin:10px 0 4px"><b>Finish</b></div><div id="__fin" class="chips"></div>` +
+    `<div style="margin:14px 0 4px"><b>Colore</b></div><div id="__col" class="chips"></div>` +
+    `<div class="chip-add"><input class="menu-search" id="__hex" placeholder="#44cc88"></div>` +
+    `<label style="display:flex;align-items:center;gap:7px;margin-top:12px;cursor:pointer">` +
+    `<input type="checkbox" id="__wf"> Wireframe</label>` +
+    `<div class="modal-actions"><button class="tb-btn" id="__ac">Annulla</button>` +
+    `<button class="tb-btn primary" id="__ok">Fatto</button></div>`);
+
+  const finBar = m.ov.querySelector('#__fin'), colBar = m.ov.querySelector('#__col');
+  const hex = m.ov.querySelector('#__hex'), wf = m.ov.querySelector('#__wf');
+
+  const apply = () => {
+    for (const t of targets){
+      t.previewColor = st.color; t.previewFinish = st.finish; t.wireframe = st.wire;
+    }
+    refreshDisplay();
+  };
+  const chip = (bar, label, on, onClick, style) => {
+    const b = document.createElement('button');
+    b.className = 'tb-btn' + (on ? ' primary' : '');
+    b.style.cssText = 'margin:0 5px 5px 0;' + (style || '');
+    b.innerHTML = label;
+    b.onclick = () => { onClick(); draw(); apply(); };
+    bar.appendChild(b);
+    return b;
+  };
+
+  // Switch which piece the finish/colour sections are editing.
+  const pcBar = m.ov.querySelector('#__pc'), whoEl = m.ov.querySelector('#__who');
+  let cur = pieces ? pieces.find(p => p.node === node) || pieces[0] : null;
+  // Several pieces of one scene are usually the same TYPE (five bolts = five
+  // Move nodes), so the bare label would print "Move" three times and pick
+  // nothing. Duplicates get their node id appended; renaming them (F2) replaces
+  // that with something you chose.
+  const _dupes = new Set();
+  if (pieces){
+    const seen = new Set();
+    for (const p of pieces){
+      const base = p.node.title || p.node.cadType;
+      if (seen.has(base)) _dupes.add(base); else seen.add(base);
+    }
+  }
+  const pieceName = p => {           // raw text; escape at the point of use
+    let base = p.node.title || p.node.cadType;
+    if (_dupes.has(base)) base += ` #${p.node.id}`;
+    return p.owner ? base : `${base} — cade${p.n > 1 ? ` ×${p.n}` : ''}`;
+  };
+  const selectPiece = p => {
+    cur = p; targets = [p.node];
+    st.color = p.node.previewColor ?? null;
+    st.finish = p.node.previewFinish ?? null;
+    st.wire = !!p.node.wireframe;
+    whoEl.textContent = pieceName(p);
+  };
+  if (pieces) selectPiece(cur);
+
+  function draw(){
+    finBar.innerHTML = ''; colBar.innerHTML = '';
+    if (pieces){
+      pcBar.innerHTML = '';
+      for (const p of pieces)
+        chip(pcBar, esc(pieceName(p)), p === cur, () => selectPiece(p))
+          .title = p.owner ? 'disegnato da un altro nodo (il contenitore)'
+                           : 'i corpi prodotti da questo nodo';
+    }
+    for (const [v, label, hint] of FINISHES)
+      chip(finBar, label, st.finish === v, () => { st.finish = v; })
+        .title = hint || '';
+    chip(colBar, 'Auto', st.color == null, () => { st.color = null; });
+    chip(colBar, '🌈 Rainbow', st.color === 'rainbow', () => { st.color = 'rainbow'; })
+      .title = 'una tinta per pezzo';
+    for (const c of PALETTE)
+      chip(colBar, '&nbsp;', st.color === c, () => { st.color = c; },
+           `background:${c};min-width:26px;border-color:${c}`);
+    wf.checked = st.wire;
+    if (document.activeElement !== hex)
+      hex.value = (st.color && st.color !== 'rainbow') ? st.color : '';
+  }
+
+  hex.addEventListener('input', () => {
+    const v = hex.value.trim();
+    if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)){ st.color = v; draw(); apply(); }
+  });
+  wf.addEventListener('change', () => { st.wire = wf.checked; apply(); });
+  m.ov.querySelector('#__ac').onclick = () => m.close(false);
+  m.ov.querySelector('#__ok').onclick = () => m.close(true);
+  // buildModal handles the overlay click but not the key; Esc must revert too.
+  const onKey = e => {
+    if (e.key === 'Escape'){ e.stopPropagation(); m.close(false); }
+    else if (e.key === 'Enter' && document.activeElement !== hex) m.close(true);
+  };
+  m.ov.addEventListener('keydown', onKey);
+  document.addEventListener('keydown', onKey, true);
+  draw();
+
+  const ok = await m.p;
+  document.removeEventListener('keydown', onKey, true);
+  if (ok === false || ok === 'cancel'){          // Esc / overlay click / Annulla
+    for (const b of before){
+      b.n.previewColor = b.color; b.n.previewFinish = b.finish; b.n.wireframe = b.wire;
+    }
+    refreshDisplay();
+    return;
+  }
+  recordHistory();                                // one undo step for the visit
+  if (typeof checkDirty === 'function') checkDirty();
+}
+
 async function renameGroup(g){
   const name = await promptModal('Rename group', 'Group title:', g.title || '');
   if (name != null && name !== g.title){ g.title = name; lcanvas.setDirty(true, true); }
@@ -2689,6 +2937,38 @@ function applyHistorySnapshot(json){
   updateUndoButtons();
   scheduleLive();                         // reflect the restored graph (respects Live)
 }
+// ── ⊞ Riordina: tidy the whole graph through the backend layout engine ──
+// The OPEN canvas is posted, not the saved file: what the user is looking at may
+// not be what is on disk, and arranging the stored copy would discard unsaved
+// edits. Only positions (and group boxes) come back, so no geometry is touched —
+// deliberately no scheduleLive(): moving a node cannot change the model, and a
+// re-run here would cost seconds for nothing.
+async function arrangeGraph(){
+  if (!currentName){ toast('info','Apri un progetto prima'); return; }
+  if (!lgraph._nodes.length){ toast('info','Il grafo è vuoto'); return; }
+  const btn = document.getElementById('btn-arrange');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(`/api/graph/${encodeURIComponent(currentName)}/arrange`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(toGraphJSON(currentName)),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'arrange failed');
+    histSuspend = true;
+    try { fromGraphJSON(data.graph); } finally { histSuspend = false; }
+    recordHistory();          // pushes the PRE-arrange state, so Ctrl+Z puts it back
+    const s = data.summary || {};
+    setStatus(`riordinati ${s.moved||0} nodi in ${s.columns||0} colonne`, 'ok');
+    if (s.group_overlaps)     // the nodes are fine; some group boxes still cross
+      toast('info', `${s.group_overlaps} riquadri di gruppo si intersecano ancora`);
+  } catch (e){
+    toast('error', 'Riordino fallito: ' + e.message);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 function undo(){
   clearTimeout(histTimer);
   if (!undoStack.length){ toast('info','Nothing to undo'); return; }
@@ -2760,6 +3040,7 @@ function pasteClipboard(){
 
 // expose the toolbar/palette-invoked ones (inline onclick resolves on window)
 window.undo = undo; window.redo = redo;
+window.arrangeGraph = arrangeGraph;   // module scope: the toolbar onclick needs it
 window.copySelected = copySelected; window.cutSelected = cutSelected; window.pasteClipboard = pasteClipboard;
 
 // ── keyboard shortcuts (ignored while typing in a field) ──
@@ -2774,6 +3055,11 @@ document.addEventListener('keydown', (e)=>{
   if (mod && !e.shiftKey && k === 'v'){ e.preventDefault(); pasteClipboard(); return; }
   if (mod && !e.shiftKey && k === 'x'){ e.preventDefault(); cutSelected(); return; }
   if (mod && !e.shiftKey && k === 'd'){ e.preventDefault(); cloneSelected(); recordHistory(); return; }
+  if (mod && e.shiftKey && k === 'a'){ e.preventDefault(); arrangeGraph(); return; }
+  if (k === 'f2'){                       // rename the selected node
+    const sel = Object.values(lcanvas.selected_nodes || {});
+    if (sel.length === 1){ e.preventDefault(); renameNode(sel[0]); return; }
+  }
   if (e.ctrlKey && !e.shiftKey && k === 'g'){ e.preventDefault(); groupSelected(); }
   else if (e.ctrlKey && !e.shiftKey && k === 'b'){ e.preventDefault(); toggleBypassSelected(); }
   else if ((k === 'delete' || k === 'backspace') && sketchNode && sketchSelIdx!=null){
@@ -2942,7 +3228,7 @@ function sceneBodyPose(anim, tNew, child){
 // single Drop is one mesh moved by M(tNew)·M(tBaked)⁻¹; a collide Scene is a
 // group whose bodies each carry their own keyframe plan.
 function applyDropAnim(node, tNew){
-  const m = previewMeshes['n'+node.id];
+  const m = previewMeshOf(node);
   if (!m) return false;
   if (m.userData && m.userData.isScene){
     let any = false;
@@ -2952,7 +3238,7 @@ function applyDropAnim(node, tNew){
     }
     return any;
   }
-  const anim = previewAnims['n'+node.id];
+  const anim = previewAnimOf(node);
   if (!anim) return false;
   // One part falling into a `container` is still a simulated scene — it just has
   // a single body, so it arrives as a plain preview carrying a keyframe plan.
@@ -2962,8 +3248,13 @@ function applyDropAnim(node, tNew){
   return true;
 }
 
-// A dragged value node (Number Slider…) wired straight into Drop `t` sockets:
-// replay each connected Drop live instead of waiting for the engine.
+// The nodes that ship a scrubbable timeline with their preview: Drop (a fall it
+// simulated) and Animate (a movement you dictated). One `t` slider commonly
+// drives several of both, and they replay through the same two plan kinds.
+const TIMELINE_NODES = new Set(['Drop', 'Animate']);
+
+// A dragged value node (Number Slider…) wired straight into a timeline node's
+// `t` socket: replay each connected one live instead of waiting for the engine.
 function applyDropTargets(node){
   if (!node || !node.outputs || !lgraph) return false;
   const v = node.properties && node.properties.value;
@@ -2973,7 +3264,7 @@ function applyDropTargets(node){
     for (const lid of (out.links || [])){
       const lk = lgraph.links[lid]; if (!lk) continue;
       const tn = lgraph.getNodeById(lk.target_id);
-      if (!tn || tn.cadType !== 'Drop') continue;
+      if (!tn || !TIMELINE_NODES.has(tn.cadType)) continue;
       const sock = (tn.inputs || [])[lk.target_slot];
       if (!sock || (sock.cadName || sock.name) !== 't') continue;
       if (applyDropAnim(tn, v)) hit = true;
@@ -2984,12 +3275,12 @@ function applyDropTargets(node){
 
 // Move/Rotate/Scale a node's own preview mesh in Three.js (60fps), as a delta
 // from the params baked into the current mesh. Returns false if not applicable.
-// Drop replays its shipped timeline the same way (dropMatrixAt).
+// A timeline node replays its shipped plan the same way (dropMatrixAt/keys).
 function applyLocalTransform(node){
   if (!node) return false;
-  if (node.cadType === 'Drop') return applyDropAnim(node, +node.properties.t);
+  if (TIMELINE_NODES.has(node.cadType)) return applyDropAnim(node, +node.properties.t);
   if (!['Move','Rotate','Scale'].includes(node.cadType)) return false;
-  const m = previewMeshes['n'+node.id];
+  const m = previewMeshOf(node);
   if (!m) return false;                 // this node's result isn't on screen
   const b = node._baked || {}, p = node.properties;
   if (node.cadType === 'Move'){
@@ -3054,7 +3345,7 @@ function gizmoAnchorPos(node){
   const g = node._gizmo, p = node.properties;
   if (g.anchor === 'origin') return new THREE.Vector3(0,0,0);   // rotate: about global axis
   if (g.anchor === 'preview' || g.kind === 'scale'){
-    const m = previewMeshes['n'+node.id];
+    const m = previewMeshOf(node);
     if (m){ const b=new THREE.Box3().setFromObject(m); const c=new THREE.Vector3(); b.getCenter(c); return c; }
   }
   // "params": the bound XYZ values ARE the point
@@ -3158,7 +3449,7 @@ function gizmoDragUpdate(){
     // catalog range in gizmoWriteParam.
     const dz = gizmoAnchor.position.z - gizmoStart.z;
     let span = Math.max(gizmoStart.z, 10);
-    const pm = previewMeshes['n'+node.id];
+    const pm = previewMeshOf(node);
     if (pm){ const b=new THREE.Box3().setFromObject(pm); span = Math.max(span, b.max.z-b.min.z); }
     gizmoWriteParam(node, g.binds[0], gizmoParamStart[g.binds[0]] - dz/span);
   } else {                                                  // translate
@@ -3173,7 +3464,7 @@ function gizmoDragUpdate(){
   // Timeline (Drop) rides the same fallback: the mesh follows the cursor until
   // the debounced exact run lands the bounce/topple frame (memo makes it cheap).
   if (!applyLocalTransform(node) && (g.kind === 'translate' || g.kind === 'timeline')){
-    const m = previewMeshes['n'+node.id];
+    const m = previewMeshOf(node);
     if (m) m.position.copy(gizmoAnchor.position.clone().sub(gizmoStart));
   }
   scheduleGizmoRun();
@@ -3216,25 +3507,64 @@ function showGizmoHint(node){
 }
 
 // Live per-node execution events for the run we're about to ask for. Feeds the glow.
-function openProgress(){
+// `runId` is passed to BOTH this stream and the /execute that follows, so the
+// server matches events to this exact run instead of inferring which run owns the
+// project's progress file — two warm runs write nearly identical bytes and it
+// used to guess wrong, silently, losing whole runs' worth of events.
+// How long to keep listening after the run's POST has already come back. The
+// browser can dispatch this GET ~90ms AFTER the POST and take another ~90ms to
+// connect (measured), while the run itself finishes in ~350ms — so closing the
+// stream the moment the POST resolved threw away the events of every fast run,
+// which is most of them once the memo cache is warm.
+const PROGRESS_GRACE_MS = 2000;
+
+function openProgress(runId, glowId){
   if (!window.EventSource) return null;
   try {
-    const es = new EventSource(`${API}/api/graph/${currentName}/progress`);
-    es._seen = 0;
-    es.onmessage = (m)=>{ es._seen++; try { glowEvent(JSON.parse(m.data)); } catch(e){} };
+    const es = new EventSource(`${API}/api/graph/${currentName}/progress?run=${encodeURIComponent(runId)}`);
+    es._seen = 0; es._glowId = glowId; es._done = false; es._closed = false;
+    es.onmessage = (m)=>{
+      es._seen++;
+      let ev = null;
+      try { ev = JSON.parse(m.data); } catch(e){ return; }
+      if (!ev) return;
+      if (ev.k === 'done'){ es._done = true; finishProgress(es); return; }
+      // Late events from a SUPERSEDED run must not paint the run that replaced
+      // it — the glow they belong to is gone.
+      if (!execGlow || execGlow.id !== es._glowId) return;
+      glowEvent(ev);
+    };
     es.onerror = ()=>{};    // a dropped stream costs us the glow, never the run
     return es;
   } catch(e){ return null; }
 }
-function closeProgress(es){
-  endExecGlow();
-  if (!es) return;
+
+// The stream reached the end of its run — or we stopped waiting for it.
+function finishProgress(es){
+  if (!es || es._closed) return;
+  es._closed = true;
+  if (es._grace) clearTimeout(es._grace);
   if (!es._seen) log('no live progress for this run (glow unavailable)', 'warn');
+  endExecGlow(es._glowId);
   es.close();
 }
 
+// The POST came back. That is NOT the same as the stream being finished: the run
+// marks its own end (executor writes a `done` line, the server hangs up on it),
+// so wait for that and keep this only as a backstop.
+function closeProgress(es, glowId){
+  if (!es){ endExecGlow(glowId); return; }
+  if (es._done || es._closed){ finishProgress(es); return; }
+  es._grace = setTimeout(()=>finishProgress(es), PROGRESS_GRACE_MS);
+}
+
 window.runGraph = async function(){
-  await window.saveGraph();
+  // The agent's screenshot page is a READER, never a writer. It saved like any
+  // user, so a shot taken with a stale in-memory graph wrote that stale copy
+  // over the file on disk — taking a picture destroyed the user's work, and
+  // silently. /execute runs the graph ON DISK, which is exactly what an agent
+  // wants rendered, so skipping the save is also the more correct behaviour.
+  if (!window.__noodleShot) await window.saveGraph();
   if(!currentName) return;
   if(runAbort) runAbort.abort();          // supersede any in-flight run
   runAbort = new AbortController();
@@ -3248,17 +3578,20 @@ window.runGraph = async function(){
   const _tick = setInterval(()=> setStatus(_verb+'… '+_elapsed()), 250);
   // Subscribe BEFORE asking for the run, so no node's start event is missed. The
   // worker appends one per node as it goes; the server tails the file to us.
-  beginExecGlow();
-  const es = openProgress();
+  const _runId = (crypto.randomUUID ? crypto.randomUUID()
+                                    : String(Date.now()) + Math.random().toString(16).slice(2));
+  const _glowId = beginExecGlow();
+  const es = openProgress(_runId, _glowId);
   let res;
   try {
-    res = await fetch(`${API}/api/graph/${currentName}/execute`, {method:'POST', signal});
+    res = await fetch(`${API}/api/graph/${currentName}/execute?run=${encodeURIComponent(_runId)}`,
+                      {method:'POST', signal});
   } catch(e){
-    clearInterval(_tick); closeProgress(es);
+    clearInterval(_tick); closeProgress(es, _glowId);
     if(e.name === 'AbortError') return;    // a newer change took over
     setStatus('execution failed','err'); log('execute: '+e.message,'err'); return;
   }
-  clearInterval(_tick); closeProgress(es);
+  clearInterval(_tick); closeProgress(es, _glowId);
   if(!res.ok){
     const e = await res.json();
     const d = e.detail || e;
@@ -3313,6 +3646,10 @@ window.runGraph = async function(){
   else if ((data.warnings||[]).length){ setStatus(`done ⚠ · ${_elapsed()}`,'err'); }
   else { setStatus(`done ✓ · ${_elapsed()}`,'ok'); }
   log('executed '+currentName,'ok');
+  // What is on screen now provably came from what is on disk now (runGraph saved
+  // before executing) — the one moment a thumbnail can be taken truthfully.
+  lastRunJSON = lastSavedJSON;
+  maybeThumb();
 };
 
 window.exportStep = function(){
@@ -3336,9 +3673,12 @@ function stripMesh(v){
 }
 
 let projectNames = [];   // cached for the project menu + palette
+let projectThumbs = {};  // name -> thumbnail mtime (0 = none), doubles as cache-buster
 async function refreshGraphList(){
   const res = await fetch(`${API}/api/projects`);
-  projectNames = (await res.json()).filter(p=>p.backend==='nodegraph').map(p=>p.name).sort();
+  const list = (await res.json()).filter(p=>p.backend==='nodegraph');
+  projectNames = list.map(p=>p.name).sort();
+  projectThumbs = Object.fromEntries(list.map(p=>[p.name, p.thumb||0]));
   renderProjectList();
 }
 window.renderProjectList = function(){
@@ -3349,7 +3689,11 @@ window.renderProjectList = function(){
   if (!names.length){ list.innerHTML = '<div class="menu-status">No projects</div>'; }
   for (const n of names){
     const b = document.createElement('button'); b.className = 'menu-item';
-    b.innerHTML = `<span class="ic">${n===currentName?'●':''}</span>${n}`;
+    const t = projectThumbs[n];
+    const pic = t ? `<img class="pthumb" alt="" loading="lazy" onerror="this.remove()"`+
+                    ` src="${API}/api/projects/${encodeURIComponent(n)}/thumb?v=${t}">`
+                  : `<span class="pthumb ph" title="Not rendered yet">⬡</span>`;
+    b.innerHTML = `<span class="ic">${n===currentName?'●':''}</span>${pic}${n}`;
     b.onclick = ()=>{ closeMenus(); openGraph(n); };
     list.appendChild(b);
   }
@@ -3366,6 +3710,7 @@ window.openGraph = async function(name){
   currentName = name; if (viewer) viewer.resetFraming();   // frame the freshly opened graph once
   setCurrentName(name);
   lastSavedJSON = JSON.stringify(toGraphJSON(name));   // normalized disk baseline
+  lastRunJSON = null;    // the viewport still shows the graph we just left
   setDocState('saved');
   histInit();                                          // fresh undo history for this graph
   localStorage.setItem('noodle:last', name);
@@ -3648,10 +3993,13 @@ function clearExecGlow(){
   if (lcanvas) lcanvas.setDirty(true, true);
 }
 
+let glowSeq = 0;
 function beginExecGlow(){
   clearExecGlow();
-  if (!lcanvas) return;
-  execGlow = {byId: new Map(), open: true};
+  if (!lcanvas) return 0;
+  // Each glow is stamped, so a superseded run can only ever close its OWN — see
+  // endExecGlow. Returned to the caller as its claim ticket.
+  execGlow = {byId: new Map(), open: true, id: ++glowSeq};
   const step = () => {
     if (!execGlow){ glowRAF = 0; return; }
     lcanvas.setDirty(true, true);
@@ -3666,6 +4014,7 @@ function beginExecGlow(){
     glowRAF = requestAnimationFrame(step);
   };
   glowRAF = requestAnimationFrame(step);
+  return execGlow.id;
 }
 
 // One progress event from the running worker: 's' = this node started, 'e' = it's
@@ -3685,8 +4034,15 @@ function glowEvent(ev){
 }
 
 // The run returned: stop expecting events, let the last rings fade out.
-function endExecGlow(){
+// `id` is the ticket beginExecGlow handed out. A superseded run rejects on a
+// microtask — i.e. AFTER its successor has already installed its own execGlow —
+// so without this check the loser closed the WINNER's glow, the RAF step saw an
+// empty non-open glow and tore it down, and every event of the run that actually
+// mattered was dropped. In Live mode a run is superseded on every 120ms debounce
+// tick, so the glow died precisely when the user was working fastest.
+function endExecGlow(id){
   if (!execGlow) return;
+  if (id !== undefined && execGlow.id !== id) return;   // not ours to close
   execGlow.open = false;
   const now = performance.now();
   for (const sp of execGlow.byId.values()) if (sp.tEnd === null) sp.tEnd = now;
@@ -3905,7 +4261,7 @@ function syncIsolateForce(){
     if(_isoForced.includes(n)) continue;
     _isoForced.push(n);
     n._isoPrevMode = n.previewMode;
-    const shown = !!previewMeshes['n'+n.id];    // already visible -> don't disturb its eye
+    const shown = !!previewMeshOf(n);           // already visible -> don't disturb its eye
     if(!shown && n.previewMode !== 'on'){ _setEye(n,'on'); changed = true; }
   }
   for(const n of _isoForced.slice()){
@@ -3935,10 +4291,34 @@ function resizeViewer(){ if (viewer) viewer.resize(); }
 
 // resolve a node's preview colour: explicit choice wins, else a stable palette
 // slot from its position among the rendered ids (so all terminals differ)
+// `id` is normally a preview key, but a Scene BODY resolves by its owner node's
+// ON-DISK id (§5d-bis) — a different namespace from nodeIndex's editor ids, which
+// only coincide by luck. nodeByGraphId is the bridge, and `order` may be absent
+// for a body since it is not one of the top-level preview slots.
+function nodeFor(id){ return nodeByGraphId[id] || nodeIndex[id] || null; }
+
+// The INVERSE of nodeFor, and it is load-bearing for every live-replay path.
+// `previewMeshes` is keyed by the ON-DISK graph id (viewer.js keys it by the
+// view.previews key), while a litegraph node carries its own runtime id — and
+// as the comment above says, those coincide only by luck. Building the key by
+// hand as `'n'+node.id` therefore worked on graphs the editor had saved and
+// reloaded in one go, and failed everywhere else. Failing was not the worst of
+// it: measured on jar-pour-film, the Drop (runtime 30) looked up `n30` and got
+// nothing while its mesh sat under `n29`, and a Number Slider (runtime 31) hit
+// `n31` — the TORUS's mesh. A miss loses the 60fps scrub; a false hit hands a
+// node someone else's geometry to transform.
+function graphIdOf(node){
+  if (!node) return null;
+  for (const gid in nodeByGraphId) if (nodeByGraphId[gid] === node) return gid;
+  return 'n' + node.id;      // never saved in this session: ids really are the editor's
+}
+function previewMeshOf(node){ const g = graphIdOf(node); return (g && previewMeshes[g]) || null; }
+function previewAnimOf(node){ const g = graphIdOf(node); return (g && previewAnims[g]) || null; }
+
 function resolveColor(id, order){
-  const n = nodeIndex[id];
+  const n = nodeFor(id);
   if (n && n.previewColor) return n.previewColor;
-  const i = order.indexOf(id);
+  const i = (order || []).indexOf(id);
   return PALETTE[(i<0?nodeNum(id):i) % PALETTE.length];
 }
 // the title-bar dot (LiteGraph node.boxcolor) mirrors the preview colour, so each
@@ -3954,8 +4334,8 @@ function renderPreviews(view){
   const setStats = (txt)=>{ const st=document.getElementById('viewer-stats'); st.innerHTML=txt; st.classList.add('visible'); };
   const r = viewer.renderPreviews((view && view.previews) || {}, {
     colorOf: (id, order)=> resolveColor(id, order),
-    wireOf:  (id)=> !!(nodeIndex[id] && nodeIndex[id].wireframe),
-    finishOf:(id)=> (nodeIndex[id] && nodeIndex[id].previewFinish) || null,
+    wireOf:  (id)=> { const n = nodeFor(id); return !!(n && n.wireframe); },
+    finishOf:(id)=> { const n = nodeFor(id); return (n && n.previewFinish) || null; },
     onEmpty: ()=>{ previewMeshes = {}; renderLegend([]); if(lcanvas) lcanvas.setDirty(true, true);
       viewer.loadSTL(`${API}/api/projects/${currentName}/download?t=`+Date.now(),
         { onSize:(s)=>{ if(s) setStats(`${s.x.toFixed(1)} × ${s.y.toFixed(1)} × ${s.z.toFixed(1)} mm`); } }); },

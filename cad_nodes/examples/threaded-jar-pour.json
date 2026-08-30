@@ -1,0 +1,681 @@
+{
+  "name": "threaded-jar-pour",
+  "nodes": [
+    {
+      "id": "jar_out",
+      "type": "Cylinder",
+      "params": {
+        "radius": 22,
+        "height": 70,
+        "centered": true
+      },
+      "position": [
+        40,
+        60
+      ]
+    },
+    {
+      "id": "out_mv",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 95
+      },
+      "position": [
+        300,
+        60
+      ]
+    },
+    {
+      "id": "cav",
+      "type": "Cylinder",
+      "params": {
+        "radius": 16,
+        "height": 68,
+        "centered": true
+      },
+      "position": [
+        40,
+        260
+      ]
+    },
+    {
+      "id": "cav_mv",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 98
+      },
+      "position": [
+        300,
+        260
+      ]
+    },
+    {
+      "id": "jar_body",
+      "type": "MeshSubtract",
+      "params": {},
+      "position": [
+        560,
+        120
+      ]
+    },
+    {
+      "id": "neck_at",
+      "type": "Vector",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 116
+      },
+      "position": [
+        560,
+        320
+      ]
+    },
+    {
+      "id": "jar",
+      "type": "Thread",
+      "params": {
+        "kind": "internal",
+        "size": "custom",
+        "profile": "ISO metric",
+        "diameter": 38,
+        "pitch": 3,
+        "length": 13,
+        "clearance": 0.3
+      },
+      "position": [
+        820,
+        120
+      ]
+    },
+    {
+      "id": "head",
+      "type": "Cylinder",
+      "params": {
+        "radius": 7,
+        "height": 5,
+        "centered": true
+      },
+      "position": [
+        40,
+        520
+      ]
+    },
+    {
+      "id": "head_mv",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": -11.5
+      },
+      "position": [
+        300,
+        520
+      ]
+    },
+    {
+      "id": "bolt_at",
+      "type": "Vector",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": -9
+      },
+      "position": [
+        300,
+        700
+      ]
+    },
+    {
+      "id": "bolt",
+      "type": "Thread",
+      "params": {
+        "kind": "external",
+        "size": "M8",
+        "length": 18,
+        "clearance": 0.0
+      },
+      "position": [
+        560,
+        520
+      ]
+    },
+    {
+      "id": "b1",
+      "type": "Move",
+      "params": {
+        "x": 8.5,
+        "y": 0,
+        "z": 78
+      },
+      "position": [
+        820,
+        420
+      ]
+    },
+    {
+      "id": "b2",
+      "type": "Move",
+      "params": {
+        "x": -4.25,
+        "y": 7.36,
+        "z": 78
+      },
+      "position": [
+        820,
+        560
+      ]
+    },
+    {
+      "id": "b3",
+      "type": "Move",
+      "params": {
+        "x": -4.25,
+        "y": -7.36,
+        "z": 78
+      },
+      "position": [
+        820,
+        700
+      ]
+    },
+    {
+      "id": "b4",
+      "type": "Move",
+      "params": {
+        "x": 4.25,
+        "y": 7.36,
+        "z": 104
+      },
+      "position": [
+        820,
+        840
+      ]
+    },
+    {
+      "id": "b5",
+      "type": "Move",
+      "params": {
+        "x": -8.5,
+        "y": 0,
+        "z": 104
+      },
+      "position": [
+        820,
+        980
+      ]
+    },
+    {
+      "id": "b6",
+      "type": "Move",
+      "params": {
+        "x": 4.25,
+        "y": -7.36,
+        "z": 104
+      },
+      "position": [
+        820,
+        1120
+      ]
+    },
+    {
+      "id": "cap_core",
+      "type": "Cylinder",
+      "params": {
+        "radius": 18.6,
+        "height": 12.5,
+        "centered": true
+      },
+      "position": [
+        40,
+        1320
+      ]
+    },
+    {
+      "id": "core_mv",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 123.25
+      },
+      "position": [
+        300,
+        1320
+      ]
+    },
+    {
+      "id": "cap_at",
+      "type": "Vector",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 117.2
+      },
+      "position": [
+        300,
+        1500
+      ]
+    },
+    {
+      "id": "cap_thread",
+      "type": "Thread",
+      "params": {
+        "kind": "external",
+        "size": "custom",
+        "profile": "ISO metric",
+        "diameter": 38,
+        "pitch": 3,
+        "length": 12,
+        "clearance": 0.0
+      },
+      "position": [
+        560,
+        1320
+      ]
+    },
+    {
+      "id": "cap_top",
+      "type": "Cylinder",
+      "params": {
+        "radius": 24,
+        "height": 6,
+        "centered": true
+      },
+      "position": [
+        560,
+        1560
+      ]
+    },
+    {
+      "id": "top_mv",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 133
+      },
+      "position": [
+        820,
+        1560
+      ]
+    },
+    {
+      "id": "cap",
+      "type": "MeshUnion",
+      "params": {},
+      "position": [
+        1080,
+        1400
+      ]
+    },
+    {
+      "id": "tl",
+      "type": "NumberSlider",
+      "title": "timeline",
+      "params": {
+        "value": 0.8,
+        "_ui": {
+          "value": {
+            "min": 0,
+            "max": 0.8,
+            "step": 0.01,
+            "play": {
+              "speed": 0.4,
+              "mode": "loop"
+            }
+          }
+        }
+      },
+      "position": [
+        1080,
+        40
+      ]
+    },
+    {
+      "id": "unscrew",
+      "type": "ContainerMotion",
+      "title": "1 - unscrew the cap (then hold, to match the pour's clock)",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 28,
+        "rx": 0,
+        "ry": 0,
+        "rz": -90,
+        "cycles": 0,
+        "duration": 0.8,
+        "delay": 0.4,
+        "easing": "smooth"
+      },
+      "position": [
+        1080,
+        1620
+      ]
+    },
+    {
+      "id": "cap_anim",
+      "type": "Animate",
+      "params": {
+        "t": 1.0,
+        "hold": 6.8
+      },
+      "position": [
+        1400,
+        1500
+      ],
+      "preview": true,
+      "color": "#ffb347",
+      "finish": "metal"
+    },
+    {
+      "id": "motion",
+      "type": "ContainerMotion",
+      "title": "2 - tip the jar",
+      "params": {
+        "rx": 0,
+        "ry": 150,
+        "rz": 0,
+        "cycles": 0,
+        "duration": 1.3,
+        "delay": 1.6,
+        "easing": "smooth"
+      },
+      "position": [
+        1080,
+        260
+      ]
+    },
+    {
+      "id": "drop",
+      "type": "Drop",
+      "params": {
+        "t": 1.0,
+        "material": "steel",
+        "settle": true,
+        "collide": true,
+        "grip": 0.4
+      },
+      "position": [
+        1400,
+        560
+      ],
+      "preview": true,
+      "finish": "glass",
+      "color": "rainbow"
+    },
+    {
+      "id": "ring_at",
+      "type": "Vector",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 1.5
+      },
+      "position": [
+        1080,
+        2100
+      ]
+    },
+    {
+      "id": "ring",
+      "type": "Torus",
+      "params": {
+        "major_radius": 30,
+        "minor_radius": 2
+      },
+      "position": [
+        1400,
+        2100
+      ],
+      "preview": true,
+      "finish": "emissive",
+      "color": "#ff9a3c"
+    }
+  ],
+  "connections": [
+    {
+      "id": "j1",
+      "from_node": "jar_out",
+      "from_socket": "result",
+      "to_node": "out_mv",
+      "to_socket": "shape"
+    },
+    {
+      "id": "j2",
+      "from_node": "cav",
+      "from_socket": "result",
+      "to_node": "cav_mv",
+      "to_socket": "shape"
+    },
+    {
+      "id": "j3",
+      "from_node": "out_mv",
+      "from_socket": "result",
+      "to_node": "jar_body",
+      "to_socket": "a"
+    },
+    {
+      "id": "j4",
+      "from_node": "cav_mv",
+      "from_socket": "result",
+      "to_node": "jar_body",
+      "to_socket": "b"
+    },
+    {
+      "id": "j5",
+      "from_node": "jar_body",
+      "from_socket": "result",
+      "to_node": "jar",
+      "to_socket": "shape"
+    },
+    {
+      "id": "j6",
+      "from_node": "neck_at",
+      "from_socket": "vector",
+      "to_node": "jar",
+      "to_socket": "at"
+    },
+    {
+      "id": "o1",
+      "from_node": "head",
+      "from_socket": "result",
+      "to_node": "head_mv",
+      "to_socket": "shape"
+    },
+    {
+      "id": "o2",
+      "from_node": "head_mv",
+      "from_socket": "result",
+      "to_node": "bolt",
+      "to_socket": "shape"
+    },
+    {
+      "id": "o3",
+      "from_node": "bolt_at",
+      "from_socket": "vector",
+      "to_node": "bolt",
+      "to_socket": "at"
+    },
+    {
+      "id": "o4",
+      "from_node": "bolt",
+      "from_socket": "result",
+      "to_node": "b1",
+      "to_socket": "shape"
+    },
+    {
+      "id": "o5",
+      "from_node": "bolt",
+      "from_socket": "result",
+      "to_node": "b2",
+      "to_socket": "shape"
+    },
+    {
+      "id": "o6",
+      "from_node": "bolt",
+      "from_socket": "result",
+      "to_node": "b3",
+      "to_socket": "shape"
+    },
+    {
+      "id": "o7",
+      "from_node": "bolt",
+      "from_socket": "result",
+      "to_node": "b4",
+      "to_socket": "shape"
+    },
+    {
+      "id": "o8",
+      "from_node": "bolt",
+      "from_socket": "result",
+      "to_node": "b5",
+      "to_socket": "shape"
+    },
+    {
+      "id": "o9",
+      "from_node": "bolt",
+      "from_socket": "result",
+      "to_node": "b6",
+      "to_socket": "shape"
+    },
+    {
+      "id": "d1",
+      "from_node": "b1",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "shape"
+    },
+    {
+      "id": "d2",
+      "from_node": "b2",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "shape"
+    },
+    {
+      "id": "d3",
+      "from_node": "b3",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "shape"
+    },
+    {
+      "id": "d4",
+      "from_node": "b4",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "shape"
+    },
+    {
+      "id": "d5",
+      "from_node": "b5",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "shape"
+    },
+    {
+      "id": "d6",
+      "from_node": "b6",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "shape"
+    },
+    {
+      "id": "d7",
+      "from_node": "jar",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "container"
+    },
+    {
+      "id": "d8",
+      "from_node": "motion",
+      "from_socket": "motion",
+      "to_node": "drop",
+      "to_socket": "motion"
+    },
+    {
+      "id": "d9",
+      "from_node": "tl",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "t"
+    },
+    {
+      "id": "k1",
+      "from_node": "cap_core",
+      "from_socket": "result",
+      "to_node": "core_mv",
+      "to_socket": "shape"
+    },
+    {
+      "id": "k2",
+      "from_node": "core_mv",
+      "from_socket": "result",
+      "to_node": "cap_thread",
+      "to_socket": "shape"
+    },
+    {
+      "id": "k3",
+      "from_node": "cap_at",
+      "from_socket": "vector",
+      "to_node": "cap_thread",
+      "to_socket": "at"
+    },
+    {
+      "id": "k4",
+      "from_node": "cap_top",
+      "from_socket": "result",
+      "to_node": "top_mv",
+      "to_socket": "shape"
+    },
+    {
+      "id": "k5",
+      "from_node": "cap_thread",
+      "from_socket": "result",
+      "to_node": "cap",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "k6",
+      "from_node": "top_mv",
+      "from_socket": "result",
+      "to_node": "cap",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "k7",
+      "from_node": "cap",
+      "from_socket": "result",
+      "to_node": "cap_anim",
+      "to_socket": "shape"
+    },
+    {
+      "id": "k8",
+      "from_node": "unscrew",
+      "from_socket": "motion",
+      "to_node": "cap_anim",
+      "to_socket": "motion"
+    },
+    {
+      "id": "r1",
+      "from_node": "ring_at",
+      "from_socket": "vector",
+      "to_node": "ring",
+      "to_socket": "origin"
+    },
+    {
+      "id": "k9",
+      "from_node": "tl",
+      "from_socket": "result",
+      "to_node": "cap_anim",
+      "to_socket": "t"
+    }
+  ]
+}

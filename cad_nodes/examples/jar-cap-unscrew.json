@@ -1,0 +1,340 @@
+{
+  "name": "jar-cap-unscrew",
+  "nodes": [
+    {
+      "id": "jar_out",
+      "type": "Cylinder",
+      "params": {
+        "radius": 22,
+        "height": 45,
+        "centered": true
+      },
+      "position": [
+        40,
+        60
+      ]
+    },
+    {
+      "id": "out_mv",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 22.5
+      },
+      "position": [
+        300,
+        60
+      ]
+    },
+    {
+      "id": "cav",
+      "type": "Cylinder",
+      "params": {
+        "radius": 16,
+        "height": 43,
+        "centered": true
+      },
+      "position": [
+        40,
+        260
+      ]
+    },
+    {
+      "id": "cav_mv",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 25.5
+      },
+      "position": [
+        300,
+        260
+      ]
+    },
+    {
+      "id": "jar_body",
+      "type": "MeshSubtract",
+      "params": {},
+      "position": [
+        560,
+        120
+      ]
+    },
+    {
+      "id": "neck_at",
+      "type": "Vector",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 31
+      },
+      "position": [
+        560,
+        340
+      ]
+    },
+    {
+      "id": "jar",
+      "type": "Thread",
+      "params": {
+        "kind": "internal",
+        "size": "custom",
+        "profile": "ISO metric",
+        "diameter": 38,
+        "pitch": 3,
+        "length": 13,
+        "clearance": 0.3
+      },
+      "position": [
+        820,
+        120
+      ],
+      "preview": true
+    },
+    {
+      "id": "cap_core",
+      "type": "Cylinder",
+      "params": {
+        "radius": 18.6,
+        "height": 12.5,
+        "centered": true
+      },
+      "position": [
+        40,
+        700
+      ]
+    },
+    {
+      "id": "core_mv",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 38.25
+      },
+      "position": [
+        300,
+        700
+      ]
+    },
+    {
+      "id": "cap_at",
+      "type": "Vector",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 32.2
+      },
+      "position": [
+        300,
+        900
+      ]
+    },
+    {
+      "id": "cap_thread",
+      "type": "Thread",
+      "params": {
+        "kind": "external",
+        "size": "custom",
+        "profile": "ISO metric",
+        "diameter": 38,
+        "pitch": 3,
+        "length": 12,
+        "clearance": 0.0
+      },
+      "position": [
+        560,
+        700
+      ]
+    },
+    {
+      "id": "cap_top",
+      "type": "Cylinder",
+      "params": {
+        "radius": 24,
+        "height": 6,
+        "centered": true
+      },
+      "position": [
+        560,
+        1000
+      ]
+    },
+    {
+      "id": "top_mv",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 48.0
+      },
+      "position": [
+        820,
+        1000
+      ]
+    },
+    {
+      "id": "cap",
+      "type": "MeshUnion",
+      "params": {},
+      "position": [
+        1080,
+        760
+      ]
+    },
+    {
+      "id": "unscrew",
+      "type": "ContainerMotion",
+      "title": "unscrew (rise + turn)",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 26,
+        "rx": 0,
+        "ry": 0,
+        "rz": -900,
+        "cycles": 0,
+        "duration": 1.0,
+        "delay": 0.0,
+        "easing": "smooth"
+      },
+      "position": [
+        1080,
+        1060
+      ]
+    },
+    {
+      "id": "t",
+      "type": "NumberSlider",
+      "title": "timeline",
+      "params": {
+        "value": 0.45
+      },
+      "position": [
+        1080,
+        1400
+      ]
+    },
+    {
+      "id": "anim",
+      "type": "Animate",
+      "params": {
+        "t": 1.0
+      },
+      "position": [
+        1360,
+        860
+      ],
+      "preview": true
+    }
+  ],
+  "connections": [
+    {
+      "id": "c0",
+      "from_node": "jar_out",
+      "from_socket": "result",
+      "to_node": "out_mv",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c1",
+      "from_node": "cav",
+      "from_socket": "result",
+      "to_node": "cav_mv",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c2",
+      "from_node": "out_mv",
+      "from_socket": "result",
+      "to_node": "jar_body",
+      "to_socket": "a"
+    },
+    {
+      "id": "c3",
+      "from_node": "cav_mv",
+      "from_socket": "result",
+      "to_node": "jar_body",
+      "to_socket": "b"
+    },
+    {
+      "id": "c4",
+      "from_node": "jar_body",
+      "from_socket": "result",
+      "to_node": "jar",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c5",
+      "from_node": "neck_at",
+      "from_socket": "vector",
+      "to_node": "jar",
+      "to_socket": "at"
+    },
+    {
+      "id": "c6",
+      "from_node": "cap_core",
+      "from_socket": "result",
+      "to_node": "core_mv",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c7",
+      "from_node": "core_mv",
+      "from_socket": "result",
+      "to_node": "cap_thread",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c8",
+      "from_node": "cap_at",
+      "from_socket": "vector",
+      "to_node": "cap_thread",
+      "to_socket": "at"
+    },
+    {
+      "id": "c9",
+      "from_node": "cap_top",
+      "from_socket": "result",
+      "to_node": "top_mv",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c10",
+      "from_node": "cap_thread",
+      "from_socket": "result",
+      "to_node": "cap",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c11",
+      "from_node": "top_mv",
+      "from_socket": "result",
+      "to_node": "cap",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c12",
+      "from_node": "cap",
+      "from_socket": "result",
+      "to_node": "anim",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c13",
+      "from_node": "unscrew",
+      "from_socket": "motion",
+      "to_node": "anim",
+      "to_socket": "motion"
+    },
+    {
+      "id": "c14",
+      "from_node": "t",
+      "from_socket": "result",
+      "to_node": "anim",
+      "to_socket": "t"
+    }
+  ]
+}

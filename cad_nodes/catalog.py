@@ -1939,18 +1939,26 @@ register(NodeDef("Drop", "print", "Drop",
             Socket("container", WIRE_SOLID, accepts=[WIRE_SURFACE, WIRE_MESH],
                    required=False),
             Socket("motion", WIRE_DATA, required=False),
+            Socket("wind", WIRE_DATA, required=False),
             Socket("plane", WIRE_PLANE, required=False)] + _pin("t"),
     params=[_f("t", 1.0, 0.0, 1.0, step=0.01, label="timeline"),
             Param("material", "select", "material", "plastic", widget="select",
                   options=["plastic", "rubber", "steel", "wood", "lead", "clay"]),
             Param("settle", "bool", "settle (topple)", True, widget="checkbox"),
             Param("collide", "bool", "collide (stack)", False, widget="checkbox"),
-            _f("grip", 1.0, 0.0, 2.0, step=0.05, label="grip (friction)")],
+            _f("grip", 1.0, 0.0, 2.0, step=0.05, label="grip (friction)"),
+            Param("medium", "select", "medium", "vacuum", widget="select",
+                  options=["vacuum", "air", "water", "oil", "honey"]),
+            _f("drag", 1.0, 0.0, 3.0, step=0.05, label="drag"),
+            _f("level", 100.0, 0.0, 2000.0, step=5, label="fluid level (mm)",
+               soft_max=400)],
     outputs=_geo(),
     output_follows="shape",
     gizmo={"kind": "timeline", "binds": ["t"], "anchor": "preview", "lock": ["t"]},
     code_template={"algebra": "_drop({shape}, {plane}, {t}, {material}, {settle}, "
-                              "{collide}, {container}, {grip}, {motion})"},
+                              "{collide}, {container}, {grip}, {motion}, "
+                              "{container_ids}, {shape_ids}, {wind}, {medium}, "
+                              "{drag}, {level})"},
     description="Place on Bed, but as a FALL you can scrub: drag `timeline` from 0 "
                 "(where the part is now) to 1 (at rest on the plane). The part drops "
                 "under gravity, BOUNCES — each impact keeps a fixed fraction of the "
@@ -1986,11 +1994,26 @@ register(NodeDef("Drop", "print", "Drop",
                 "friction grabs a part and flings it sideways instead of letting it slide "
                 "off, so a Galton board built at grip 1 throws its balls to the walls and "
                 "the bell collapses into two lumps; at 0.3 it comes out normal. Measured, "
-                "not guessed."))
+                "not guessed. `medium` puts the whole scene INSIDE a fluid — air, water, "
+                "oil, honey — which is not cosmetic: it decides both the drag and whether "
+                "the part floats, because buoyancy compares the fluid's density with the "
+                "one `material` already implies. Wood floats in water, steel sinks, and in "
+                "honey almost nothing falls at all. `level` is where the surface of that "
+                "fluid sits: parts above it are in open air, parts below it are held up, "
+                "and one crossing it floats with exactly the right fraction submerged "
+                "(wood in water settles 60% under). Wire a Wind into `wind` and that fluid "
+                "MOVES: a gust that blows a stack over, a fan that skids parts across the "
+                "bed. Drag is computed from the part's real silhouette in the direction "
+                "the flow arrives (it changes by 20x as a flat part tumbles) and applied "
+                "at the centre of pressure, so parts turn edge-on, weathervane and flip "
+                "instead of sliding along rigidly. Either one turns scene mode on by "
+                "itself. `drag` scales the whole thing if you want it livelier or calmer; "
+                "the honest Cd of a specific shape comes from a Wind Tunnel."))
 
-register(NodeDef("ContainerMotion", "print", "Container Motion",
+register(NodeDef("ContainerMotion", "print", "Motion",
     aliases=["Shake", "Tilt", "Pour", "Stir", "Agitate", "Spin", "Vibrate",
-             "Tumble", "Shaker"],
+             "Tumble", "Shaker", "Container Motion", "Unscrew", "Screw",
+             "Slide", "Swing", "Hinge", "Motion Path"],
     inputs=[Socket("offset", WIRE_VECTOR, required=False),
             Socket("pivot", WIRE_VECTOR, required=False)],
     params=[_f("x", 0, -500, 500, label="move x"),
@@ -2008,26 +2031,66 @@ register(NodeDef("ContainerMotion", "print", "Container Motion",
     code_template={"algebra": "_container_motion({offset}, {x}, {y}, {z}, "
                               "{rx}, {ry}, {rz}, {pivot}, {cycles}, {duration}, "
                               "{delay}, {easing})"},
-    description="MOVE the thing that was holding still: wire this into a Drop's "
-                "`motion` and its `container` — the bowl, the tray, the crate — "
-                "tilts, shakes or spins on the same timeline instead of just "
-                "sitting there. This is not gravity and not a fall. You dictate "
-                "the motion; the parts inside answer to it through contact and "
-                "friction alone, which is why they lag, slide, climb the wall and "
-                "spill rather than following it rigidly. `cycles` picks the shape "
+    description="A MOVEMENT, described once and reusable: where something goes, "
+                "how long it takes, and whether it goes there once or swings back "
+                "and forth. It is not geometry and does nothing on its own — wire "
+                "it into an ANIMATE node to move a shape along it (a lid "
+                "unscrewing, a drawer sliding, a hinge swinging), or into a Drop's "
+                "`motion` so that Drop's `container` — the bowl, the tray, the "
+                "crate — tilts, shakes or spins instead of just sitting there. The "
+                "two differ in what answers back: Animate is pure kinematics, the "
+                "shape simply goes; in a Drop the contents are NOT carried along, "
+                "they answer through contact and friction alone, which is why they "
+                "lag, slide, climb the wall and spill. `cycles` picks the shape "
                 "of the motion and everything else falls out of it: 0 is a RAMP — "
                 "go there once and stay, which is a tilt, a pour, a crate tipped "
                 "over; above 0 it OSCILLATES about the starting pose that many "
                 "times, which is a shake, a stir, a vibration, a tap. So: pour = "
                 "rotate x/y ~110 (past the wall, or nothing comes out) with cycles "
                 "0; shake = move 10 with cycles 8; settle a powder = move z 3, "
-                "cycles 20; centrifuge = rotate z 720. `delay` waits before it "
+                "cycles 20; centrifuge = rotate z 720. Move and rotate run on ONE "
+                "phase, so a SCREW motion falls straight out: move z 12 + rotate z "
+                "720 with cycles 0 and a cap rises as it turns off its thread. "
+                "`delay` waits before it "
                 "starts — fill the bowl first, THEN tilt it. Rotation is about the "
-                "container's own centre unless you wire a `pivot` (the hinge of a "
-                "hopper, the lip a crate tips over). Motion needs a container: on "
-                "its own it does nothing. Costs almost nothing to drive (~5ms per "
-                "simulated second), but it keeps the scene awake for its whole "
-                "duration — a shaker never settles, so it runs the full length."))
+                "moved shape's own centre unless you wire a `pivot` (the hinge of a "
+                "hopper, the lip a crate tips over). Costs almost nothing to drive "
+                "(~5ms per simulated second), but in a Drop it keeps the scene "
+                "awake for its whole duration — a shaker never settles, so it runs "
+                "the full length."))
+
+register(NodeDef("Animate", "print", "Animate",
+    aliases=["Move Along Motion", "Unscrew", "Kinematic", "Timeline", "Assemble",
+             "Explode", "Open", "Swing", "Slide"],
+    inputs=[Socket("shape", WIRE_SOLID, accepts=[WIRE_SURFACE, WIRE_MESH]),
+            Socket("motion", WIRE_DATA, required=False)] + _pin("t"),
+    params=[_f("t", 1.0, 0.0, 1.0, step=0.01, label="timeline"),
+            _f("hold", 0.0, 0.0, 60.0, step=0.1, label="hold after (s)")],
+    outputs=_geo(),
+    output_follows="shape",
+    gizmo={"kind": "timeline", "binds": ["t"], "anchor": "preview", "lock": ["t"]},
+    code_template={"algebra": "_animate({shape}, {motion}, {t}, {hold})"},
+    description="Move a shape along a Motion — no physics, no gravity, nothing to "
+                "simulate: it simply GOES where you said, and `timeline` scrubs it "
+                "from 0 (where the part is now) to 1 (arrived). This is the node "
+                "for a lid unscrewing off a jar, a drawer sliding out, a door "
+                "swinging on its hinge, a chuck spinning, or a part lifted clear of "
+                "an assembly to show how it comes apart. Wire a Motion node into "
+                "`motion` — with move z and rotate z together and cycles 0 you get "
+                "a real SCREW, rising as it turns. Both lanes: a solid stays a "
+                "solid, a mesh stays a mesh. Wire ONE Number Slider into the `t` of "
+                "several Animates (and of a Drop) and the whole assembly moves on "
+                "one clock; dragging that slider replays in the viewport at 60fps "
+                "without re-running the graph. For that to line up the timelines "
+                "must be the same LENGTH, which is what `hold` is for: it pads this "
+                "one with stillness after the motion ends (unscrew for 1.2s, hold "
+                "6.8s, and you match an 8s pour). Pad it — do not rescale `t` through "
+                "a Remap, because the live scrub only follows a wire that goes "
+                "straight into `t`. Several shapes wired in fan out — "
+                "each gets its own copy of the same movement. It is a DISPLACEMENT, "
+                "not a simulation: nothing collides, nothing falls, nothing is "
+                "carried along by friction. That is Drop's job, and the two share "
+                "the same Motion node."))
 
 register(NodeDef("PrintCheck", "print", "Print Check",
     inputs=[Socket("mesh", WIRE_MESH)],
@@ -2098,6 +2161,185 @@ register(NodeDef("OrientForPrint", "print", "Orient for Print",
                 "nothing, because ranking one pose by volume and the next by a proxy "
                 "would compare two different quantities and call it a decision. The "
                 "weights are a taste, not a law."))
+
+
+# ===========================================================================
+# 12d. Fasteners — threads that actually screw together
+# ===========================================================================
+# build123d 0.11 has no thread primitive, so noodle builds its own, and builds
+# it on the MESH lane. That is not a shortcut: fusing a helical rib to its core
+# through OCCT was measured at 2-8s AND WRONG WITHOUT RAISING (M6x1 came back as
+# the bare core with the thread silently gone; M20x2.5 came back with volume 0),
+# while manifold3d does it in 0.01s, watertight, with the major diameter exact.
+# The pair was verified the only way that means anything — by measuring the
+# boolean interference of a male thread inside its own nut. See PLAN_THREADS.md.
+
+_THREAD_SIZE_OPTIONS = [
+    "M1.6", "M2", "M2.5", "M3", "M3.5", "M4", "M5", "M6", "M8", "M10", "M12",
+    "M14", "M16", "M18", "M20", "M22", "M24", "M27", "M30", "M33", "M36",
+    "Tr8x1.5", "Tr10x2", "Tr12x3", "Tr14x3", "Tr16x4", "Tr18x4", "Tr20x4",
+    "Tr22x5", "Tr24x5", "Tr28x5", "Tr30x6", "Tr32x6", "Tr36x6", "Tr40x7",
+    "Tr44x7", "Tr48x8", "Tr50x8",
+    "#4-40 UNC", "#6-32 UNC", "#8-32 UNC", "#10-24 UNC", "1/4-20 UNC",
+    "5/16-18 UNC", "3/8-16 UNC", "7/16-14 UNC", "1/2-13 UNC", "5/8-11 UNC",
+    "3/4-10 UNC", "1-8 UNC",
+    "#4-48 UNF", "#6-40 UNF", "#8-36 UNF", "#10-32 UNF", "1/4-28 UNF",
+    "5/16-24 UNF", "3/8-24 UNF", "7/16-20 UNF", "1/2-20 UNF", "5/8-18 UNF",
+    "3/4-16 UNF", "1-12 UNF",
+    "1/4-16 ACME", "5/16-14 ACME", "3/8-12 ACME", "1/2-10 ACME", "5/8-8 ACME",
+    "3/4-6 ACME", "1-5 ACME", "1.1/4-5 ACME", "1.1/2-4 ACME",
+    "1/8 NPT", "1/4 NPT", "3/8 NPT", "1/2 NPT", "3/4 NPT", "1 NPT",
+    "1.1/4 NPT", "1.1/2 NPT", "2 NPT",
+    "custom",
+]
+
+register(NodeDef("Thread", "fastener", "Thread",
+    # `at`, not `origin`: an `origin` socket is wrapped around the node's whole
+    # result by the emitter, which with `shape` wired would move the finished
+    # assembly instead of putting the thread somewhere inside the part.
+    inputs=[Socket("at", WIRE_VECTOR, required=False),
+            Socket("shape", WIRE_SOLID, required=False,
+                   accepts=[WIRE_MESH, WIRE_SURFACE])]
+           + _pin("length", "clearance", "starts"),
+    params=[_choice("kind", "external", ["external", "internal"], label="kind"),
+            _choice("size", "M6", _THREAD_SIZE_OPTIONS, label="size"),
+            _f("length", 10.0, 0.5, 500, label="length (mm)", soft_max=100),
+            _f("clearance", 0.3, 0.0, 2.0, 0.05, label="clearance (mm)"),
+            _i("starts", 1, 1, 8, label="starts"),
+            _f("pitch", 0.0, 0.0, 20.0, 0.05, label="pitch (0 = standard)"),
+            _f("diameter", 0.0, 0.0, 200.0, 0.5, label="diameter (0 = standard)"),
+            _choice("profile", "ISO metric",
+                    ["ISO metric", "Trapezoidal", "ACME", "NPT"],
+                    label="profile (custom only)"),
+            Param("lefthand", "bool", "left-hand", False, widget="checkbox"),
+            Param("lead_in", "bool", "lead-in", True, widget="checkbox"),
+            _i("segments", 64, 12, 256, label="segments/turn", soft_max=128)],
+    outputs=_mesh(),
+    aliases=["filetto", "filettatura", "vite", "bullone", "madrevite", "dado",
+             "screw", "bolt", "nut", "tap", "helix thread", "iso", "metric",
+             "unc", "unf", "acme", "npt", "trapezoidal", "lead screw"],
+    code_template={"algebra":
+        "_thread({size}, {length}, {kind} == 'internal', {clearance}, {starts}, "
+        "{lefthand}, {lead_in}, {segments}, {profile}, {diameter}, {pitch}, "
+        "{shape}, {at})"},
+    description="A real screw thread — ISO metric (M), trapezoidal lead screw (Tr), "
+                "UNC/UNF, ACME, or tapered NPT pipe — as a mesh you can print. `kind` "
+                "external gives a threaded rod; internal gives the TAP: subtract it "
+                "from a body and it drills the hole and cuts the thread in one go, "
+                "which is why wiring `shape` is the easy path — the node picks the "
+                "boolean (external adds, internal cuts) so you cannot get the "
+                "direction backwards. Leave `shape` unwired to get the bare thread.\n"
+                "AN EXTERNAL THREAD ALREADY BRINGS ITS OWN CORE, so `shape` is for "
+                "what you are threading ONTO — a head, a flange, a boss. Wire a shank "
+                "as fat as the nominal diameter and it FILLS THE GROOVES: the union is "
+                "a plain cylinder, no error, and it looks fine until you zoom in. Any "
+                "body overlapping the threaded length must stay under the minor "
+                "diameter.\n"
+                "CLEARANCE is the whole game on a printer. It loosens THIS thread — "
+                "the male shrinks, the female grows — so set it on ONE half of a "
+                "mating pair, not both, or you get double the gap. Measured on M6x1: "
+                "at 0 the pair interferes by 0.011mm^3 (the theoretical line-to-line "
+                "fit, which will bind), at 0.2mm and above the interference is exactly "
+                "zero. 0.3 is a sane FDM default; go up for a coarse nozzle, down for "
+                "resin.\n"
+                "`pitch` overrides the table, which is how you ask for a fine pitch "
+                "(M8 + pitch 1.0). `starts` > 1 gives a multi-start thread — the "
+                "fast-action kind on a jar lid or a bottle cap. Internal threads print "
+                "best with the axis vertical; feed the result to Place on Bed or "
+                "Orient for Print.\n"
+                "`at` puts the thread somewhere other than the axis, BEFORE the "
+                "boolean — that is how a tapped hole goes where you want it. Wire a "
+                "LIST of points into it and one node drills the whole pattern."))
+
+
+# ===========================================================================
+# 12d. Fluids — moving air and water, and what they do to a part
+# ===========================================================================
+# Two nodes and one shared idea (PLAN_FLUID.md). `Wind` is a plan, not geometry:
+# a plain dict describing a flow, exactly as Motion describes a movement — which
+# is why it costs nothing and can be wired into two very different things.
+#
+# Drop reads it and answers "what happens to my part in this wind": rigid bodies
+# pushed around by a fluid they do not disturb. Wind Tunnel reads it and answers
+# the opposite question — "what does the part do to the fluid" — by actually
+# solving the flow (Lattice-Boltzmann, D3Q19, in numpy inside the worker).
+#
+# No GPU, no OpenCL, no second image, no job queue: a wind tunnel is ~20s at the
+# default quality and the memo cache pays for it once. What it is NOT is a
+# certification tool — the honest limits ride in the report the node emits, and
+# the blockage ratio is in there precisely so nobody quotes a Cd measured in a
+# box too small to measure it in.
+register(NodeDef("Wind", "fluid", "Wind",
+    aliases=["Flow", "Air", "Breeze", "Gust", "Fan", "Blower", "Jet", "Nozzle",
+             "Draft", "Vortex", "Whirlwind", "Airflow", "Stream"],
+    inputs=[Socket("direction", WIRE_VECTOR, required=False),
+            Socket("origin", WIRE_VECTOR, required=False)] + _pin("speed"),
+    params=[_f("dx", 1.0, -1.0, 1.0, step=0.05, label="dir x"),
+            _f("dy", 0.0, -1.0, 1.0, step=0.05, label="dir y"),
+            _f("dz", 0.0, -1.0, 1.0, step=0.05, label="dir z"),
+            _f("speed", 2000.0, 0.0, 20000.0, step=50, label="speed (mm/s)",
+               soft_max=8000),
+            Param("kind", "select", "kind", "uniform", widget="select",
+                  options=["uniform", "jet", "vortex"]),
+            _f("spread", 25.0, 1.0, 89.0, step=1, label="jet cone (deg)"),
+            _f("radius", 50.0, 1.0, 1000.0, step=5, label="radius (mm)",
+               soft_max=300),
+            _f("turbulence", 0.0, 0.0, 1.0, step=0.05, label="turbulence"),
+            _f("duration", 3.0, 0.05, 30.0, step=0.1, label="duration (s)"),
+            _f("delay", 0.0, 0.0, 20.0, step=0.1, label="delay (s)"),
+            Param("ramp", "select", "ramp", "smooth", widget="select",
+                  options=["smooth", "instant"])],
+    outputs=_data("wind"),
+    code_template={"algebra": "_wind({direction}, {origin}, {dx}, {dy}, {dz}, "
+                              "{speed}, {kind}, {spread}, {radius}, "
+                              "{turbulence}, {duration}, {delay}, {ramp})"},
+    description="A moving fluid, as a plan — wire it into a Drop's `wind` to blow "
+                "the scene around, or into a Wind Tunnel to solve the flow properly. "
+                "Three shapes cover what anyone actually wants. `uniform` is a steady "
+                "stream, the same everywhere: weather, a duct, a tunnel. `jet` is a "
+                "cone from `origin` along the direction, falling off as 1/r^2 past "
+                "`radius` and dying at the edge of `spread` — a fan, a nozzle, a leaf "
+                "blower; nothing behind it moves at all. `vortex` swirls about the "
+                "direction as an axis through `origin`, rotating solidly inside "
+                "`radius` and trailing off as 1/r outside it (a Rankine vortex: a "
+                "whirlwind, a stirred tank). Speeds are mm/s to match everything else "
+                "— 2000 mm/s is a stiff breeze, 10000 is a gale. The wind blows for "
+                "`duration` seconds after `delay`, easing in and out so it does not "
+                "slap, and stops afterwards so the scene can settle: that is how you "
+                "let a pile land first and THEN knock it over. `turbulence` adds "
+                "smooth gusts that vary in space and time; it is seeded, so the same "
+                "graph always gives the same run."))
+
+register(NodeDef("WindTunnel", "fluid", "Wind Tunnel",
+    aliases=["CFD", "Aero", "Aerodynamics", "Drag", "Cd", "Airflow", "Streamlines",
+             "Flow Simulation", "Galleria del vento", "Tunnel"],
+    inputs=[Socket("shape", WIRE_SOLID, accepts=[WIRE_SURFACE, WIRE_MESH]),
+            Socket("wind", WIRE_DATA, required=False)],
+    params=[Param("quality", "select", "quality", "normal", widget="select",
+                  options=["draft", "normal", "fine"]),
+            Param("medium", "select", "medium", "air", widget="select",
+                  options=["air", "water", "oil", "honey"]),
+            _i("seeds", 48, 4, 300, label="streamlines", soft_max=120),
+            _f("smooth", 1.0, 0.0, 3.0, step=0.1, label="smoothing")],
+    outputs=[Socket("streamlines", WIRE_CURVE), Socket("report", WIRE_DATA)],
+    code_template={"algebra": ""},   # handled by the transpiler (_emit_windtunnel)
+    description="Put the part in a wind tunnel and SOLVE the flow: a real "
+                "Lattice-Boltzmann simulation (D3Q19) on a voxel grid around it, run "
+                "in the worker with no GPU and no external solver. Two outputs. The "
+                "`streamlines` are curves you can see, wire onward, or sweep a profile "
+                "along — trace them and the difference between a blunt shape and a "
+                "faired one is immediately visible: one leaves a dead wake, the other "
+                "keeps the flow attached. The `report` goes to a Panel and carries the "
+                "numbers, INCLUDING the ones that say how much to trust it: Reynolds "
+                "number, the lattice velocity and relaxation time actually used, and "
+                "the blockage ratio — above about 5% the domain is squeezing the flow "
+                "and a drag coefficient measured in it is indicative, not a "
+                "measurement. `quality` buys accuracy with time: draft is a couple of "
+                "seconds and is for aiming the camera, normal is ~20s and is the one "
+                "to read, fine takes a minute or two. The result is cached, so "
+                "re-running an unchanged graph costs nothing. Not a certification "
+                "tool: no turbulence model, a voxel staircase for a wall, and a "
+                "domain small enough to fit in the time budget."))
 
 
 # ===========================================================================

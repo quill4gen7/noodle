@@ -22,6 +22,13 @@ build the same graphs — in practice the most capable way to drive it today.
 > is very welcome.
 
 <p align="center">
+  <img src="docs/asset/noodle-jar-pour.gif" alt="One timeline slider in the noodle editor: a threaded cap unscrews off a glass jar, the jar tips, and six bolts pour onto the bed" width="880">
+</p>
+<p align="center"><em>One slider, two timelines: the threaded cap <strong>unscrews</strong> (kinematics),
+then the jar <strong>tips and pours</strong> (rigid-body dynamics). Scrubbing replays it in the
+browser at 60fps — no re-run.</em></p>
+
+<p align="center">
   <img src="docs/asset/noodle-lego-brick-editor.png" alt="noodle node editor building a parametric LEGO brick with embossed NOODLE text" width="880">
 </p>
 

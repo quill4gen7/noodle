@@ -1,0 +1,317 @@
+{
+  "name": "wind-tunnel",
+  "nodes": [
+    {
+      "id": "speed",
+      "type": "NumberSlider",
+      "title": "wind speed",
+      "params": {
+        "value": 2000.0,
+        "_ui": {
+          "value": {
+            "min": 100,
+            "max": 8000,
+            "step": 100
+          }
+        }
+      },
+      "position": [
+        60,
+        60
+      ]
+    },
+    {
+      "id": "wind",
+      "type": "Wind",
+      "title": "the stream",
+      "params": {
+        "dx": 1.0,
+        "dy": 0.0,
+        "dz": 0.0,
+        "kind": "uniform",
+        "speed": 2000.0
+      },
+      "position": [
+        330,
+        60
+      ]
+    },
+    {
+      "id": "blunt",
+      "type": "Cylinder",
+      "params": {
+        "radius": 11,
+        "height": 40
+      },
+      "position": [
+        60,
+        640
+      ]
+    },
+    {
+      "id": "blunt_up",
+      "type": "Rotate",
+      "params": {
+        "axis": "Y",
+        "angle": 90
+      },
+      "position": [
+        330,
+        640
+      ]
+    },
+    {
+      "id": "blunt_at",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": -60,
+        "z": 0
+      },
+      "position": [
+        590,
+        640
+      ],
+      "preview": true
+    },
+    {
+      "id": "tunnel_blunt",
+      "type": "WindTunnel",
+      "title": "blunt \u2014 it sheds a wake",
+      "params": {
+        "quality": "draft",
+        "medium": "air",
+        "seeds": 36,
+        "smooth": 1.0
+      },
+      "position": [
+        860,
+        640
+      ],
+      "preview": true
+    },
+    {
+      "id": "nose",
+      "type": "Sphere",
+      "params": {
+        "radius": 11
+      },
+      "position": [
+        60,
+        1000
+      ]
+    },
+    {
+      "id": "nose_at",
+      "type": "Move",
+      "params": {
+        "x": -20,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        330,
+        1000
+      ]
+    },
+    {
+      "id": "tail",
+      "type": "Cone",
+      "params": {
+        "bottom_radius": 11,
+        "top_radius": 0,
+        "height": 44
+      },
+      "position": [
+        60,
+        1240
+      ]
+    },
+    {
+      "id": "tail_lay",
+      "type": "Rotate",
+      "params": {
+        "axis": "Y",
+        "angle": 90
+      },
+      "position": [
+        330,
+        1240
+      ]
+    },
+    {
+      "id": "drop_shape",
+      "type": "Union",
+      "params": {},
+      "position": [
+        590,
+        1100
+      ]
+    },
+    {
+      "id": "drop_at",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 60,
+        "z": 0
+      },
+      "position": [
+        590,
+        1290
+      ],
+      "preview": true
+    },
+    {
+      "id": "tunnel_drop",
+      "type": "WindTunnel",
+      "title": "faired \u2014 the flow stays attached",
+      "params": {
+        "quality": "draft",
+        "medium": "air",
+        "seeds": 36,
+        "smooth": 1.0
+      },
+      "position": [
+        860,
+        1100
+      ],
+      "preview": true
+    },
+    {
+      "id": "panel",
+      "type": "Display",
+      "title": "what the solver will and will not tell you",
+      "params": {},
+      "position": [
+        1160,
+        640
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "c1",
+      "from_node": "speed",
+      "from_socket": "result",
+      "to_node": "wind",
+      "to_socket": "speed"
+    },
+    {
+      "id": "c2",
+      "from_node": "blunt",
+      "from_socket": "result",
+      "to_node": "blunt_up",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c3",
+      "from_node": "blunt_up",
+      "from_socket": "result",
+      "to_node": "blunt_at",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c4",
+      "from_node": "blunt_at",
+      "from_socket": "result",
+      "to_node": "tunnel_blunt",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c5",
+      "from_node": "wind",
+      "from_socket": "wind",
+      "to_node": "tunnel_blunt",
+      "to_socket": "wind"
+    },
+    {
+      "id": "c6",
+      "from_node": "nose",
+      "from_socket": "result",
+      "to_node": "nose_at",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c7",
+      "from_node": "tail",
+      "from_socket": "result",
+      "to_node": "tail_lay",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c8",
+      "from_node": "nose_at",
+      "from_socket": "result",
+      "to_node": "drop_shape",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c9",
+      "from_node": "tail_lay",
+      "from_socket": "result",
+      "to_node": "drop_shape",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c10",
+      "from_node": "drop_shape",
+      "from_socket": "result",
+      "to_node": "drop_at",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c11",
+      "from_node": "drop_at",
+      "from_socket": "result",
+      "to_node": "tunnel_drop",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c12",
+      "from_node": "wind",
+      "from_socket": "wind",
+      "to_node": "tunnel_drop",
+      "to_socket": "wind"
+    },
+    {
+      "id": "c13",
+      "from_node": "tunnel_blunt",
+      "from_socket": "report",
+      "to_node": "panel",
+      "to_socket": "value"
+    }
+  ],
+  "groups": [
+    {
+      "title": "the wind",
+      "bounding": [
+        20,
+        10,
+        540,
+        200
+      ],
+      "color": "#4e7a4e"
+    },
+    {
+      "title": "a blunt body",
+      "bounding": [
+        20,
+        570,
+        1080,
+        260
+      ],
+      "color": "#8a4a4a"
+    },
+    {
+      "title": "the same frontal size, faired",
+      "bounding": [
+        20,
+        950,
+        1080,
+        420
+      ],
+      "color": "#3f589e"
+    }
+  ]
+}

@@ -157,8 +157,25 @@ function objFromPreview(p, color, opts, scale) {
     p.bodies.forEach((b, i) => {
       // Every body of a collide scene is already its own mesh with its own
       // material, so a colour per body is free — no extra draw calls at all.
-      const child = objFromPreview(b, color === 'rainbow' ? rainbowHue(i) : color,
-                                   opts, scale);
+      // A body that names its OWNER node (today: a Drop container) resolves its
+      // own colour and finish from that node, instead of inheriting the Drop's:
+      // that is what lets a glass jar pour steel bolts. Bodies without an owner
+      // are the Drop's own output and keep the node-level look.
+      const own = b.owner || null;
+      let bcolor = color === 'rainbow' ? rainbowHue(i) : color;
+      let bfinish = opts && opts.finish;
+      if (own && opts) {
+        // colorOf takes (id, order) — omitting `order` used to reach
+        // `order.indexOf` on undefined and kill the whole render.
+        // Only an EXPLICIT value on the owner overrides: every falling body now
+        // names its own source node, and treating "unset" as an override would
+        // silently stop the Drop's own finish from reaching the parts it pours —
+        // which is what every existing graph relies on.
+        if (opts.colorOf) { const c = opts.colorOf(own, opts.order); if (c) bcolor = c; }
+        if (opts.finishOf) { const f = opts.finishOf(own); if (f) bfinish = f; }
+      }
+      const child = objFromPreview(b, bcolor,
+                                   Object.assign({}, opts, {finish: bfinish}), scale);
       if (!child) return;
       child.userData.bodyIndex = i;
       child.userData.anim = b.anim || null;
@@ -202,6 +219,7 @@ export class CadViewer {
       new THREE.MeshBasicMaterial({ color: 0xe94560 })));
     const previewGroup = new THREE.Group(); scene.add(previewGroup);
     const ax = new THREE.AxesHelper(20); ax.material.transparent = true; ax.material.opacity = .6; scene.add(ax);
+    this.axes = ax;                      // scene furniture: hidden in thumbnails
     scene.add(new THREE.AmbientLight(0x404060, 1.1));
     const key = new THREE.DirectionalLight(0xffffff, 2); key.position.set(40, 60, 80); scene.add(key);
     const fill = new THREE.DirectionalLight(0x8888cc, .8); fill.position.set(-40, -20, 40); scene.add(fill);
@@ -308,28 +326,83 @@ export class CadViewer {
       }
       this._wasAnimating = anim;
       this.controls.update();
-      // Bloom is what makes an emissive surface look like a SOURCE rather than a
-      // brightly painted one — the glow has to spill onto its surroundings. The
-      // extra passes run only while something in the scene actually declares
-      // itself emissive, and never when HQ is off.
-      const glow = this._bloomOn && HQ && this._glowComposer;
-      if (glow) {
-        // pass 1 — the emitters ALONE, on black, blurred into the glow target.
-        const mask = this.camera.layers.mask, bg = this.scene.background;
-        this.camera.layers.set(GLOW_LAYER);
-        this.scene.background = null;            // or the clear colour blooms too
-        this._glowPass.camera = this.camera;     // the viewport swaps persp/ortho
-        this._glowComposer.render();
-        this.camera.layers.mask = mask;
-        this.scene.background = bg;
-      }
-      this.renderer.clear();
-      this.renderer.render(this.scene, this.camera);
-      // pass 2 — add the blur back over the finished frame, glass included.
-      if (glow) this.renderer.render(this._glowQuadScene, this._glowQuadCam);
-      this.viewHelper.render(this.renderer);
+      this._renderFrame(true);
     };
     tick();
+  }
+
+  // One frame, drawn exactly as the animate loop draws it. Extracted so that
+  // snapshot() can render off-clock and read the buffer back without
+  // duplicating the bloom sequence — a second copy of it would drift.
+  _renderFrame(withHelper = true) {
+    // Bloom is what makes an emissive surface look like a SOURCE rather than a
+    // brightly painted one — the glow has to spill onto its surroundings. The
+    // extra passes run only while something in the scene actually declares
+    // itself emissive, and never when HQ is off.
+    const glow = this._bloomOn && HQ && this._glowComposer;
+    if (glow) {
+      // pass 1 — the emitters ALONE, on black, blurred into the glow target.
+      const mask = this.camera.layers.mask, bg = this.scene.background;
+      this.camera.layers.set(GLOW_LAYER);
+      this.scene.background = null;              // or the clear colour blooms too
+      this._glowPass.camera = this.camera;       // the viewport swaps persp/ortho
+      this._glowComposer.render();
+      this.camera.layers.mask = mask;
+      this.scene.background = bg;
+    }
+    this.renderer.clear();
+    this.renderer.render(this.scene, this.camera);
+    // pass 2 — add the blur back over the finished frame, glass included.
+    if (glow) this.renderer.render(this._glowQuadScene, this._glowQuadCam);
+    if (withHelper) this.viewHelper.render(this.renderer);
+  }
+
+  // ── thumbnail: read the viewport back as a JPEG data URL ────────────────
+  // The picture is the one already on screen, so it costs one extra render of a
+  // scene that is drawn 60 times a second anyway — no re-execution, no second
+  // browser (that is the agent's screenshot API, cad_nodes/screenshot.py, and
+  // it drives a headless page of its own). Returns null when there is nothing
+  // to show, so a caller never stores a black frame that reads as a bug.
+  //
+  // The read-back has to happen in the SAME task as the render: without
+  // `preserveDrawingBuffer` the WebGL buffer is cleared once the browser
+  // composites, and an await in between comes back blank.
+  snapshot({ maxSize = 480, quality = 0.85, frame = true } = {}) {
+    if (!this.previewGroup.children.length && !this.currentMesh) return null;
+    const cam = this.camera;
+    const saved = {
+      pos: cam.position.clone(), quat: cam.quaternion.clone(), zoom: cam.zoom,
+      tgt: this.controls.target.clone(), grid: this.grid.visible,
+      axes: this.axes.visible,
+      frustum: this.isOrtho
+        ? { l: cam.left, r: cam.right, t: cam.top, b: cam.bottom } : null,
+    };
+    try {
+      if (frame) this.frame();       // whole part in shot, at the user's angle
+      this.grid.visible = false;     // a 200px card wants the part, not the floor
+      this.axes.visible = false;     // nor three stray lines crossing it
+      this._renderFrame(false);      // and not the nav gizmo either
+      const src = this.canvas;
+      const s = Math.min(1, maxSize / Math.max(src.width, src.height, 1));
+      const out = document.createElement('canvas');
+      out.width = Math.max(1, Math.round(src.width * s));
+      out.height = Math.max(1, Math.round(src.height * s));
+      out.getContext('2d').drawImage(src, 0, 0, out.width, out.height);
+      return out.toDataURL('image/jpeg', quality);
+    } catch (e) {
+      return null;                   // a thumbnail is never worth an exception
+    } finally {
+      cam.position.copy(saved.pos); cam.quaternion.copy(saved.quat);
+      cam.zoom = saved.zoom;
+      if (saved.frustum) {
+        cam.left = saved.frustum.l; cam.right = saved.frustum.r;
+        cam.top = saved.frustum.t; cam.bottom = saved.frustum.b;
+      }
+      cam.updateProjectionMatrix();
+      this.controls.target.copy(saved.tgt); this.controls.update();
+      this.grid.visible = saved.grid;
+      this.axes.visible = saved.axes;
+    }
   }
 
   resize() {
@@ -572,10 +645,16 @@ export class CadViewer {
     const colors = {}, meshes = {};
     for (const id of order) {
       const color = colorOf ? colorOf(id, order) : PALETTE[order.indexOf(id) % PALETTE.length];
+      const finish = finishOf ? finishOf(id) : null;
+      if (finish === 'emissive') glowing = true;
+      // A Scene body may name its own owner node (a Drop container), whose finish
+      // is resolved separately — so the glow layer has to look there too, or an
+      // emissive bowl would light nothing.
+      for (const b of (previews[id].bodies || []))
+        if (b.owner && finishOf && finishOf(b.owner) === 'emissive') glowing = true;
       const obj = objFromPreview(previews[id], color,
-      { wireframe: wireOf ? wireOf(id) : false,
-        finish: (fin => (fin === 'emissive' && (glowing = true), fin))(
-                  finishOf ? finishOf(id) : null) }, scale);
+      { wireframe: wireOf ? wireOf(id) : false, finish,
+        colorOf, finishOf, order }, scale);
       if (!obj) continue;
       obj.userData.nodeId = id;
       markGlow(obj);                      // put its emitters on the glow layer

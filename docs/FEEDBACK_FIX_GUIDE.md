@@ -80,7 +80,7 @@ modifiche. In sintesi, ciò che rompe più spesso se ignorato:
   da solo non basta). `CLAUDE.md` §1/§6.
 - **Frontend (`webui/*.html`):** hard-refresh del browser (Ctrl+Shift+R), file
   statico cache-ato. `CLAUDE.md` §6.
-- **Verifica veloce senza Docker:** usa il venv host `.venv-b123d` per transpilare
+- **Verifica veloce senza Docker:** usa il venv host il container (`docker exec -i noodle python`, CLAUDE.md §2) per transpilare
   ed eseguire un grafo prima di riavviare il container. `CLAUDE.md` §2.
 - **Wire types in due posti:** se tocchi i tipi di wire, tieni in sync
   `cad_nodes/catalog.py` `WIRE_COMPATIBLE` **e** `webui/nodes.html` `INPUT_ACCEPTS`.
@@ -105,7 +105,7 @@ Includi:
   i file del report; riferiscili soltanto (eventualmente cita il messaggio).
 - **Come riprodurre:** passi minimi; allega il grafo snapshot se serve a chi revisiona.
 - **Cosa è cambiato e perché:** il bug, la causa, il fix.
-- **Test eseguiti:** comandi e esito (`pytest`, verifica host `.venv-b123d`, restart).
+- **Test eseguiti:** comandi e esito (`pytest`, verifica host container, restart).
 - **Before/after:** se è un cambiamento di comportamento/geometria.
 
 ## 5. Disclosure AI — OBBLIGATORIA

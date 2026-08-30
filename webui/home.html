@@ -44,6 +44,11 @@
   .card:hover{border-color:var(--accent);background:var(--bg-2);transform:translateY(-1px);}
   .card .name{font-size:15px;font-weight:600;}
   .card .meta{font-size:12px;color:var(--text-dim);}
+  /* thumbnail: the editor's own viewport, saved on every run+save */
+  .card .thumb{display:block;width:calc(100% + 32px);margin:-16px -16px 4px;height:118px;
+    object-fit:cover;background:var(--bg-0);border-radius:9px 9px 0 0;border-bottom:1px solid var(--border);}
+  .card .thumb.ph{display:flex;align-items:center;justify-content:center;
+    font-size:22px;color:var(--border);}
   .card.new{align-items:center;justify-content:center;text-align:center;color:var(--text-dim);
     border-style:dashed;min-height:78px;}
   .card.new:hover{color:var(--text);}
@@ -105,8 +110,15 @@ async function loadProjects(){
   catch(_){ host.innerHTML='<div class="empty">Could not reach the backend.</div>'; return; }
   list.sort((a,b)=>a.name.localeCompare(b.name));
   const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  // The thumbnail doubles as a proof of execution: a workflow that never
+  // rendered has none, and says so rather than showing a black rectangle.
+  const thumb = p => p.thumb
+    ? `<img class="thumb" loading="lazy" alt="" onerror="this.remove()"`+
+      ` src="/api/projects/${encodeURIComponent(p.name)}/thumb?v=${p.thumb}">`
+    : `<span class="thumb ph" title="Not rendered yet — open it and run">⬡</span>`;
   let html = list.map(p=>
     `<a class="card" href="/nodes?p=${encodeURIComponent(p.name)}">`+
+      thumb(p)+
       `<span class="name">${esc(p.name)}</span>`+
       `<span class="meta">${p.description?esc(p.description):'open in editor →'}</span></a>`).join('');
   html += `<a class="card new" href="/nodes?new=1">＋ New project</a>`;

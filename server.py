@@ -16,19 +16,21 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Body, FastAPI, File, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import (
     FileResponse,
     HTMLResponse,
     PlainTextResponse,
+    Response,
     StreamingResponse,
 )
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # Node-based CAD engine (pure imports; build123d only used in the subprocess)
-from cad_nodes import api, catalog
+from cad_nodes import api, catalog, layout
 from cad_nodes.graph import Graph, ValidationError
+from cad_nodes.screenshot import ScreenshotUnavailable
 from cad_nodes.transpiler import transpile, transpile_with_map
 from cad_nodes.executor import execute_graph, export_graph, extract_subshapes_for_node
 from cad_nodes.store import GraphStore, stamp_agent_tags, validate_graph_id
@@ -196,6 +198,30 @@ def require_project(name: str) -> Path:
     return d
 
 
+async def off_loop(fn, *args, **kwargs):
+    """Run a CAD-engine call in a worker thread instead of on the event loop.
+
+    EVERY route that reaches cad_nodes.executor — execute, render, download,
+    export, slice_summary, section_outline, subshapes — must go through here.
+    Those calls are seconds of blocking CPU (a graph run, or a cold build123d
+    import at ~2.7s), and while one holds the loop NOTHING else is served: not
+    the next request, and not /api/graph/{name}/progress, the SSE stream that
+    reports on the very run in flight. Six of the seven used to be called
+    directly from `async def` and froze the server for their duration;
+    `subshapes` is the one that hurt most, since the selection picker calls it
+    on every click.
+
+    They serialise anyway inside the warm worker's own lock (executor.py), so
+    moving them off the loop makes concurrent calls queue rather than freeze.
+
+    NOT for /screenshot: the work happens in the browser process, so that
+    coroutine only awaits I/O (and the run it triggers goes through /execute,
+    which is already off the loop). Await, don't offload, when there is no
+    blocking CPU to move.
+    """
+    return await asyncio.to_thread(fn, *args, **kwargs)
+
+
 # ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
@@ -244,9 +270,18 @@ async def system_warm_get():
 async def system_warm_set(body: dict = Body(default={})):
     """Toggle the persistent (warm) worker. Off shuts it down to free memory
     while noodle is idle; on lets the next run spawn it (first run pays the
-    ~2.7s build123d import, later runs skip it)."""
+    ~2.7s build123d import, later runs skip it).
+
+    Off the loop like the engine routes, though for a different reason: this one
+    does no CPU work itself, it WAITS. Turning warm off calls WarmWorker.
+    shutdown(), which takes the same lock a run holds for its whole duration —
+    so clicking the toggle mid-run froze the server until that run finished
+    (measured: /health at 601ms during a render). The wait itself is correct and
+    stays: killing the worker out from under a running job would be worse. It is
+    also bounded, since a run cannot outlive its own timeout.
+    """
     from cad_nodes import executor
-    return executor.set_warm(bool(body.get("enabled", True)))
+    return await off_loop(executor.set_warm, bool(body.get("enabled", True)))
 
 
 @app.post("/api/system/restart")
@@ -457,10 +492,15 @@ async def list_projects():
             meta_path = d / "meta.json"
             if meta_path.exists():
                 meta = json.loads(meta_path.read_text())
+            thumb = d / THUMB_NAME
             projects.append({
                 "name": d.name,
                 "backend": meta.get("backend", "nodegraph"),
                 "description": meta.get("description", ""),
+                # the listing carries the thumbnail's mtime rather than a bare
+                # flag: it doubles as the cache-buster for <img src>, so a
+                # freshly re-shot workflow shows its new picture immediately.
+                "thumb": int(thumb.stat().st_mtime) if thumb.exists() else 0,
             })
     return projects
 
@@ -473,13 +513,58 @@ async def delete_project(name: str):
 
 
 # ---------------------------------------------------------------------------
+# Workflow thumbnails
+# ---------------------------------------------------------------------------
+# A name in a list does not say what the part is; a picture does. The picture is
+# the one the EDITOR already drew: nodes.html reads its own WebGL canvas back
+# after a run and PUTs the JPEG here (see `postThumb`). That is why this is an
+# upload endpoint and not a call into cad_nodes/screenshot.py — the agent's eyes
+# (§9) drive a SECOND, headless browser, so using them here would re-execute the
+# graph to re-draw a frame the user is already looking at. Reading the live
+# canvas costs one extra render of a scene that is already on screen: free, and
+# it is literally what the user sees, camera angle included.
+THUMB_NAME = "thumb.jpg"
+_THUMB_MAX_BYTES = 4 * 1024 * 1024
+
+
+@app.put("/api/projects/{name}/thumb")
+async def put_thumb(name: str, request: Request):
+    """Store the editor's canvas capture as this workflow's thumbnail."""
+    d = require_project(name)
+    data = await request.body()
+    if not data:
+        raise HTTPException(400, "Empty thumbnail body")
+    if len(data) > _THUMB_MAX_BYTES:
+        raise HTTPException(413, "Thumbnail too large "
+                                 f"({len(data)} > {_THUMB_MAX_BYTES} bytes)")
+    if not data.startswith(b"\xff\xd8\xff"):        # JPEG SOI, never a stray body
+        raise HTTPException(415, "Thumbnail must be a JPEG")
+    # atomic: the library reads this file while the editor writes it
+    tmp = d / (THUMB_NAME + ".tmp")
+    tmp.write_bytes(data)
+    tmp.replace(d / THUMB_NAME)
+    logger.info("thumbnail saved: %s (%d bytes)", name, len(data))
+    return {"status": "saved", "name": name, "bytes": len(data)}
+
+
+@app.get("/api/projects/{name}/thumb")
+async def get_thumb(name: str):
+    """The stored thumbnail, or 404 — the caller draws its own placeholder
+    rather than being handed a black PNG that reads as a bug."""
+    thumb = require_project(name) / THUMB_NAME
+    if not thumb.exists():
+        raise HTTPException(404, f"No thumbnail for '{name}' yet")
+    return FileResponse(thumb, media_type="image/jpeg")
+
+
+# ---------------------------------------------------------------------------
 # Render & Export
 # ---------------------------------------------------------------------------
 @app.post("/api/projects/{name}/render")
 async def render_project(name: str):
     """Transpile + execute a node graph to build123d, producing output.stl."""
     d = require_project(name)
-    result = execute_graph(_load_graph(name), d)
+    result = await off_loop(execute_graph, _load_graph(name), d)
     if not result["success"]:
         raise HTTPException(400, f"Graph execution failed:\n{result.get('errors')}")
     return {
@@ -501,7 +586,7 @@ async def download_stl(name: str):
         graph_json.exists() and stl.stat().st_mtime < graph_json.stat().st_mtime)
     if stale:
         try:
-            execute_graph(_load_graph(name), d, write_stl=True)
+            await off_loop(execute_graph, _load_graph(name), d, write_stl=True)
         except Exception as e:
             logger.error("download '%s' re-render failed: %s", name, e)
     if not stl.exists():
@@ -636,6 +721,46 @@ async def patch_graph_param(name: str, payload: ParamPatch):
     except (ValueError, KeyError) as e:
         raise HTTPException(400, str(e)) from e
     return {"status": "ok", "value": value}
+
+
+@app.post("/api/graph/{name}/arrange")
+async def arrange_graph(name: str, graph: Optional[dict] = Body(default=None)):
+    """Tidy node positions — left-to-right by dependency depth, on the nodes' REAL
+    on-canvas sizes, so the result cannot contain overlapping nodes (§6c).
+
+    Two modes, one layout engine:
+
+    - **with a graph body** — arrange THAT graph and return it, touching nothing on
+      disk. This is what the editor uses: the open canvas, not the saved file, is
+      what the user is looking at, so arranging the stored copy would both discard
+      unsaved edits and desync undo.
+    - **with no body** — load the stored project, arrange, save. For an agent or a
+      curl driving a project it is not holding in memory.
+
+    Returns `{status, summary, graph?}`. `summary.group_overlaps` > 0 means some
+    group boxes still cut across each other (their members interleave in the
+    dependency order); the nodes are still correctly placed.
+    """
+    require_project(name)
+    if graph is not None:
+        graph.setdefault("name", name)
+        try:
+            g = Graph.from_dict(graph)
+            g.validate()
+        except (ValidationError, KeyError, ValueError) as e:
+            raise HTTPException(400, f"Invalid graph: {e}") from e
+        try:
+            summary = layout.arrange(g)
+        except (ValueError, AssertionError) as e:
+            raise HTTPException(400, str(e)) from e
+        return {"status": "ok", "summary": summary, "graph": g.to_dict()}
+
+    store = GraphStore(PROJECTS_DIR)
+    try:
+        summary = api.arrange(store, name)
+    except (ValueError, AssertionError, KeyError) as e:
+        raise HTTPException(400, str(e)) from e
+    return {"status": "ok", "summary": summary}
 
 
 @app.post("/api/graph/{name}/codeblock/{node_id}/scan")
@@ -780,18 +905,69 @@ async def api_delete_font(filename: str):
     return {"status": "deleted", "file": filename}
 
 
+@app.get("/api/graph/{name}/screenshot")
+async def api_screenshot(
+    name: str,
+    view: str = "iso",
+    azim: float = None,
+    elev: float = None,
+    zoom: float = 1.0,
+    width: int = 900,
+    height: int = 700,
+    projection: str = "",
+    node: str = "",
+    isolate: bool = False,
+    hq: bool = True,
+    chrome: bool = False,
+    run: bool = True,
+    scale: int = 2,
+):
+    """Render the viewport to a PNG — the agent's eyes on its own geometry.
+
+    This drives headless Chromium over this very server's /nodes page, so the
+    image comes out of the REAL viewer (same materials, finishes, bloom). It is
+    NOT put through off_loop() like /execute, and deliberately: the work
+    happens in the browser process, so this coroutine is only awaiting I/O. The
+    graph run it triggers goes through /execute, which is already off the loop.
+
+    `X-Noodle-Ran` says whether the graph was actually re-executed — `run=0`
+    reuses what is already on screen, but falls back to running rather than
+    returning an empty frame.
+    """
+    require_project(name)
+    try:
+        png, meta = await api.screenshot(
+            GraphStore(PROJECTS_DIR), name, view=view, azim=azim, elev=elev,
+            zoom=zoom,
+            width=width, height=height, projection=projection, node=node,
+            isolate=isolate, hq=hq, chrome=chrome, run=run, scale=scale)
+    except ScreenshotUnavailable as e:
+        raise HTTPException(503, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    logger.info("screenshot '%s' %s %dx%d (%d bytes, ran=%s)",
+                name, view, meta["width"], meta["height"], meta["bytes"],
+                meta["ran"])
+    return Response(
+        content=png, media_type="image/png",
+        headers={"X-Noodle-Ran": "1" if meta["ran"] else "0",
+                 "X-Noodle-Size-Mm": ",".join(str(v) for v in
+                                              meta.get("size_mm", [])),
+                 "Cache-Control": "no-store"})
+
+
 @app.post("/api/graph/{name}/execute")
-async def execute_graph_project(name: str):
+async def execute_graph_project(name: str, run: str | None = None):
+    """`run` is a caller-chosen id for this run. The editor generates one, opens
+    /progress?run=<id> with it and then POSTs here, so the progress stream can
+    match its events to this exact run instead of inferring them from the file."""
     d = require_project(name)
     graph = _load_graph(name)
     logger.info("execute graph '%s' (%d nodes)", name, len(graph.nodes))
     try:
         # Live run: skip the STL export (regenerated on demand by /download).
-        # OFF THE EVENT LOOP: a graph run is seconds of blocking CPU, and while it
-        # held the loop nothing else could be served — including the progress stream
-        # that reports on this very run. The warm worker is already serialised by its
-        # own lock, so concurrent runs queue rather than collide.
-        result = await asyncio.to_thread(execute_graph, graph, d, write_stl=False)
+        # Off the event loop — see off_loop() for why every engine call is.
+        result = await off_loop(execute_graph, graph, d, write_stl=False, run_id=run)
     except ValidationError as e:
         logger.error("execute '%s' invalid graph: %s", name, e)
         raise HTTPException(400, str(e)) from e
@@ -822,53 +998,131 @@ async def execute_graph_project(name: str):
     }
 
 
-async def _tail_progress(path: Path):
+async def _tail_progress(path: Path, want_run: str | None = None, request: Request | None = None):
     """Yield SSE events from a run's progress.jsonl as the worker appends to it.
 
-    The editor opens this stream BEFORE it POSTs /execute, so we start at the file's
-    current end (a previous run's events are not ours to replay) and treat a size
-    drop as "the executor truncated it — a new run just started".
+    Runs are identified, not guessed. `executor.execute_code` opens the file with
+    a header line naming the run (`{"k":"run","r":<id>}`), and the client passes
+    the id it is about to POST as `?run=`, so this stream knows exactly whose
+    events it is reading and can start from the file's BEGINNING.
+
+    That indirection is the whole fix. The previous version watched the file size
+    and treated a shrink as "a new run started" — but progress.jsonl lives at a
+    fixed path per project, and two warm runs of one graph write nearly identical
+    bytes. When a run rewrote the file to the same length inside one 50ms poll,
+    the tailer saw `size == offset`, concluded nothing had happened, and dropped
+    the ENTIRE run (measured: 5/5 nodes on voronoi-3d-lattice, all of
+    galton-board; the bigger lego-brick survived because it wrote more). That is
+    what made the editor's glow stop "at random" — the small, fast graphs lost
+    everything and the slow ones did not.
+
+    Re-reading the whole file each poll is affordable: it is a few hundred short
+    lines, and we were already stat()ing it at the same rate.
     """
-    offset = path.stat().st_size if path.exists() else 0
+    seen_run: str | None = None
+    sent = 0
     quiet = 0.0
+    since_beat = 0.0
+    # With no run id to wait for (MCP, curl, an older editor), keep the old
+    # intent: ignore whatever is already on disk and report the NEXT run.
+    if want_run is None:
+        seen_run = _run_id_of(path)
+
     while quiet < _PROGRESS_MAX_IDLE:
         await asyncio.sleep(0.05)
+
+        # HANG UP WHEN THE CLIENT DOES, and prove the connection is still alive in
+        # between. Without this the generator kept polling a stream nobody was
+        # reading: it only ever wrote when a node reported, so a finished run left
+        # it parked here for the full idle timeout with uvicorn holding the
+        # connection open. Chrome allows 6 per host, so after a handful of runs the
+        # editor's next EventSource never connected AT ALL — its progress stream
+        # silently queued behind its own dead predecessors and the glow stopped.
+        # Measured before the fix: runs 2-5 of five received zero events and never
+        # fired `open`. The heartbeat is what makes a dead peer detectable — a write
+        # to a closed socket is what tells uvicorn to cancel us.
+        if request is not None and await request.is_disconnected():
+            return
+        since_beat += 0.05
+        if since_beat >= 1.0:
+            since_beat = 0.0
+            yield ": ping\n\n"
+
         try:
-            size = path.stat().st_size
+            lines = path.read_text().splitlines()
         except OSError:
             quiet += 0.05
             continue
-        if size < offset:      # truncated: this is the run we're here for
-            offset = 0
-        if size == offset:
+        if not lines:
+            quiet += 0.05
+            continue
+
+        try:
+            head = json.loads(lines[0])
+        except ValueError:
+            quiet += 0.05
+            continue
+        if head.get("k") != "run":
+            quiet += 0.05
+            continue
+        run = head.get("r")
+
+        if run != seen_run:          # a different run owns the file now
+            if want_run is not None and run != want_run:
+                # Someone else's run. Wait for ours rather than glowing their nodes.
+                quiet += 0.05
+                continue
+            seen_run = run
+            sent = 0
+
+        # A half-written final line is skipped and picked up whole next poll.
+        body = lines[1:]
+        if not path.read_text().endswith("\n") and body:
+            body = body[:-1]
+        if len(body) <= sent:
             quiet += 0.05
             continue
         quiet = 0.0
-        with path.open() as f:
-            f.seek(offset)
-            chunk = f.read()
-            offset = f.tell()
-        if not chunk.endswith("\n"):
-            # A half-written line: rewind past it and pick it up whole next poll.
-            head, _, tail = chunk.rpartition("\n")
-            offset -= len(tail)
-            chunk = head
-        for line in chunk.splitlines():
-            if line.strip():
-                yield f"data: {line}\n\n"
+        done = False
+        for line in body[sent:]:
+            if not line.strip():
+                continue
+            yield f"data: {line}\n\n"
+            done = done or '"k": "done"' in line or '"k":"done"' in line
+        sent = len(body)
+        if done:
+            # The run marked itself finished (executor, in a finally). Hang up:
+            # this stream has nothing left to report, and holding it open is what
+            # used to starve the browser of connections.
+            return
+
+
+def _run_id_of(path: Path) -> str | None:
+    """The id of the run currently recorded in a progress file, if any."""
+    try:
+        first = path.read_text().splitlines()[0]
+        head = json.loads(first)
+    except (OSError, IndexError, ValueError):
+        return None
+    return head.get("r") if head.get("k") == "run" else None
 
 
 @app.get("/api/graph/{name}/progress")
-async def graph_progress(name: str):
+async def graph_progress(request: Request, name: str, run: str | None = None):
     """Live per-node execution events (SSE) for the run in flight on this graph.
 
     Emitted by the generated code itself (transpiler `_ev`), so it works on the warm
     worker AND the cold subprocess. The client closes the stream when its POST to
     /execute resolves.
+
+    `run` is the id the caller is about to POST to /execute. Passing it makes the
+    subscription exact — no guessing which run the file holds, and no race with
+    the POST landing first (which it routinely does, since `new EventSource()`
+    returns before its GET is dispatched).
     """
     d = require_project(name)
     return StreamingResponse(
-        _tail_progress(d / "progress.jsonl"),
+        _tail_progress(d / "progress.jsonl", run, request),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -892,8 +1146,8 @@ async def graph_section_outline(name: str, axis: str = "z", pos: float = 0.0,
     """One exact section, edge by edge (the slice_summary 'microscope')."""
     require_project(name)
     try:
-        data = api.section_outline(GraphStore(PROJECTS_DIR), name, axis, pos,
-                                   path or None)
+        data = await off_loop(api.section_outline, GraphStore(PROJECTS_DIR),
+                              name, axis, pos, path or None)
     except (ValidationError, ValueError) as e:
         raise HTTPException(400, str(e)) from e
     if not data.get("success"):
@@ -910,7 +1164,7 @@ async def graph_slice_summary(name: str, path: str = "", n: int = 10):
     require_project(name)
     store = GraphStore(PROJECTS_DIR)
     try:
-        data = api.slice_summary(store, name, path or None, n)
+        data = await off_loop(api.slice_summary, store, name, path or None, n)
     except (ValidationError, ValueError) as e:
         raise HTTPException(400, str(e)) from e
     if not data.get("success"):
@@ -928,7 +1182,7 @@ async def graph_subshapes(name: str, node_id: str, kind: str = "edge"):
     d = require_project(name)
     graph = _load_graph(name)
     try:
-        data = extract_subshapes_for_node(graph, node_id, kind, d)
+        data = await off_loop(extract_subshapes_for_node, graph, node_id, kind, d)
     except ValidationError as e:
         raise HTTPException(400, str(e)) from e
     if not data.get("success"):
@@ -980,7 +1234,7 @@ async def export_graph_project(name: str, fmt: str):
     graph = _load_graph(name)
     media, ext = _EXPORT_MEDIA[fmt]
     try:
-        out_path = export_graph(graph, d, fmt)
+        out_path = await off_loop(export_graph, graph, d, fmt)
     except ValidationError as e:
         raise HTTPException(400, str(e)) from e
     except (RuntimeError, ValueError) as e:
@@ -1036,7 +1290,9 @@ async def library_list():
         if not d.is_dir() or d.name in _RESERVED_PROJECT_DIRS:
             continue
         files = _lib_entries(d, "exports") + _lib_entries(d, "assets")
-        projects.append({"project": d.name, "files": files})
+        thumb = d / THUMB_NAME
+        projects.append({"project": d.name, "files": files,
+                         "thumb": int(thumb.stat().st_mtime) if thumb.exists() else 0})
     return {"projects": projects}
 
 

@@ -14,6 +14,8 @@ import re
 import subprocess
 import sys
 import threading
+import time
+import uuid
 from pathlib import Path
 
 from .graph import Graph
@@ -335,12 +337,16 @@ def _finalize(code: str, script_text: str, stdout: str, stderr,
 
 
 def execute_code(code: str, workdir: Path, timeout: int = 120,
-                 quality: str = "live", write_stl: bool = True) -> dict:
+                 quality: str = "live", write_stl: bool = True,
+                 run_id: str | None = None) -> dict:
     """Execute already-transpiled code. Uses the warm worker (build123d kept
     loaded) with a fallback to a cold subprocess. Returns a result dict.
 
     write_stl=False skips the STL export (live preview runs don't need it — it is
-    regenerated on demand for download/export)."""
+    regenerated on demand for download/export).
+
+    run_id names THIS run inside progress.jsonl, so a tailer can tell whose
+    events it is reading — see the header line written below."""
     workdir.mkdir(parents=True, exist_ok=True)
     stl_path = workdir / "output.stl"
     view_path = workdir / "view.json"
@@ -349,48 +355,74 @@ def execute_code(code: str, workdir: Path, timeout: int = 120,
 
     if view_path.exists():
         view_path.unlink()
-    # Truncate rather than unlink: a tailer already attached (the editor opens the
-    # stream before it POSTs) sees the size drop below its offset and knows a new
-    # run started, instead of replaying the previous one's events.
-    progress_path.write_text("")
+    # Every run opens progress.jsonl with a header line naming itself. That id is
+    # the ONLY thing that distinguishes one run's events from the next one's:
+    # the file lives at a fixed path per project and two warm runs of the same
+    # graph write near-identical bytes, so size, mtime and offset can all agree
+    # across a run boundary. A tailer that watched the size alone missed entire
+    # runs (measured: 5/5 nodes lost on a small graph) — the glow simply never
+    # fired, at random, which is what this header exists to make impossible.
+    header = {"k": "run", "r": run_id or uuid.uuid4().hex, "t": time.time()}
+    progress_path.write_text(json.dumps(header) + "\n")
 
     script_text = build_script(code, stl_path, view_path, quality, write_stl,
                                progress_path=progress_path)
     script_path.write_text(script_text)
 
-    # --- warm path -------------------------------------------------------
-    if _warm_enabled:
-        try:
-            res = _WORKER.run(script_path, workdir, timeout)
-            if res.get("timeout"):
-                return _timeout_result(code, timeout)
-            stderr = (res.get("error") or "").strip() or None
-            return _finalize(code, script_text, res.get("stdout", ""),
-                             stderr, view_path, stl_path)
-        except Exception:
-            pass  # worker unavailable → fall back to a cold subprocess
-
-    # --- cold fallback ---------------------------------------------------
     try:
-        proc = subprocess.run(
-            [sys.executable, str(script_path)],
-            capture_output=True, text=True, timeout=timeout, cwd=str(workdir),
-        )
-    except subprocess.TimeoutExpired:
-        return _timeout_result(code, timeout)
+        # --- warm path ---------------------------------------------------
+        if _warm_enabled:
+            try:
+                res = _WORKER.run(script_path, workdir, timeout)
+                if res.get("timeout"):
+                    return _timeout_result(code, timeout)
+                stderr = (res.get("error") or "").strip() or None
+                return _finalize(code, script_text, res.get("stdout", ""),
+                                 stderr, view_path, stl_path)
+            except Exception:
+                pass  # worker unavailable → fall back to a cold subprocess
 
-    stderr = proc.stderr if proc.returncode != 0 else None
-    return _finalize(code, script_text, proc.stdout, stderr, view_path, stl_path)
+        # --- cold fallback -----------------------------------------------
+        try:
+            proc = subprocess.run(
+                [sys.executable, str(script_path)],
+                capture_output=True, text=True, timeout=timeout, cwd=str(workdir),
+            )
+        except subprocess.TimeoutExpired:
+            return _timeout_result(code, timeout)
+
+        stderr = proc.stderr if proc.returncode != 0 else None
+        return _finalize(code, script_text, proc.stdout, stderr, view_path, stl_path)
+    finally:
+        # THE RUN SAYS WHEN IT IS OVER, so the progress stream has a definite end
+        # and can hang up by itself. In a `finally` because a crashed or timed-out
+        # run must close its stream too — that is exactly when a node is left
+        # glowing amber with no end event.
+        #
+        # Without this the stream had no way to know it was finished: it waited
+        # for more events until 180s of silence, and detecting the client's
+        # departure did not work (Request.is_disconnected() never fired once
+        # inside a StreamingResponse — measured). So every run leaked a live
+        # connection for three minutes; Chrome allows 6 per host, so from the
+        # second run on, the editor's next EventSource never connected at all and
+        # the glow went dark. That was the real reason it "stopped at random".
+        try:
+            with progress_path.open("a") as f:
+                f.write(json.dumps({"k": "done", "r": header["r"]}) + "\n")
+                f.flush()
+        except OSError:
+            pass
 
 
 def execute_graph(graph: Graph, workdir: Path, timeout: int = 120,
-                  quality: str = "live", write_stl: bool = True) -> dict:
+                  quality: str = "live", write_stl: bool = True,
+                  run_id: str | None = None) -> dict:
     """Transpile + execute a graph end-to-end. memo=True: on the warm worker,
     nodes whose content hash is unchanged are restored from the persistent
     cache (shapes AND preview meshes) — only the dirty subtree re-runs."""
     code = transpile(graph, memo=True)
     return execute_code(code, workdir, timeout=timeout, quality=quality,
-                        write_stl=write_stl)
+                        write_stl=write_stl, run_id=run_id)
 
 
 _SUBSHAPE_EPILOGUE = """

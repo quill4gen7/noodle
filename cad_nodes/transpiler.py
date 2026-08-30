@@ -812,7 +812,7 @@ class Mesh:
     # collided simply never replayed in the browser, silently.
     # `_noodle_extra` rides the same way: the moving `container` bodies, which are
     # NOT outputs of the node but must still be drawn (and animated) in its preview.
-    __slots__ = ("tm", "_noodle_anim", "_noodle_extra")
+    __slots__ = ("tm", "_noodle_anim", "_noodle_extra", "_noodle_owner")
 
     def __init__(self, tm):
         self.tm = tm
@@ -1048,6 +1048,259 @@ def _mesh_bool(_mode, *_items):
     op = {"union": mf.OpType.Add, "subtract": mf.OpType.Subtract,
           "intersect": mf.OpType.Intersect}[_mode]
     return _from_manifold(mf.Manifold.batch_boolean(mans, op))
+
+
+# --- threads (§12d) --------------------------------------------------------
+# build123d 0.11 ships NO thread primitive (they live in bd_warehouse, which is
+# not a dependency), so the geometry is ours — and it belongs on the MESH lane.
+# Measured on a real ISO 68-1 profile: the helical sweep is fast on either lane
+# (~0.03s), but fusing the rib to its core through OCCT costs 2-8s and gets it
+# WRONG WITHOUT RAISING — M6x1 came back as the bare core (the thread silently
+# dropped, volume 227.9 = the cylinder alone) and M20x2.5 came back with volume
+# ZERO. Letting the section abut the core instead of overlapping it does not
+# even build: StdFail_NotDone, "BRep_API: command not done". manifold3d does the
+# same union in 0.01s, watertight, major diameter exact to 4 decimals. Same
+# family of trap as the rest of PLAN_MESH_LANE.md. See PLAN_THREADS.md.
+_IN_MM = 25.4
+
+
+def _unified_sizes(_rows):
+    \"\"\"Inch families tabulated the way they are actually quoted — nominal
+    diameter in inches, threads per inch — and converted ONCE, here, instead of
+    by hand into a table nobody can proofread.\"\"\"
+    return {n: (d * _IN_MM, _IN_MM / t) for n, (d, t) in _rows.items()}
+
+
+_THREAD_SIZES = {
+    "ISO metric": {                                  # coarse pitch; fine via `pitch`
+        "M1.6": (1.6, 0.35), "M2": (2.0, 0.4), "M2.5": (2.5, 0.45),
+        "M3": (3.0, 0.5), "M3.5": (3.5, 0.6), "M4": (4.0, 0.7),
+        "M5": (5.0, 0.8), "M6": (6.0, 1.0), "M8": (8.0, 1.25),
+        "M10": (10.0, 1.5), "M12": (12.0, 1.75), "M14": (14.0, 2.0),
+        "M16": (16.0, 2.0), "M18": (18.0, 2.5), "M20": (20.0, 2.5),
+        "M22": (22.0, 2.5), "M24": (24.0, 3.0), "M27": (27.0, 3.0),
+        "M30": (30.0, 3.5), "M33": (33.0, 3.5), "M36": (36.0, 4.0),
+    },
+    "Trapezoidal": {                                 # ISO 2904 lead screws
+        "Tr8x1.5": (8.0, 1.5), "Tr10x2": (10.0, 2.0), "Tr12x3": (12.0, 3.0),
+        "Tr14x3": (14.0, 3.0), "Tr16x4": (16.0, 4.0), "Tr18x4": (18.0, 4.0),
+        "Tr20x4": (20.0, 4.0), "Tr22x5": (22.0, 5.0), "Tr24x5": (24.0, 5.0),
+        "Tr28x5": (28.0, 5.0), "Tr30x6": (30.0, 6.0), "Tr32x6": (32.0, 6.0),
+        "Tr36x6": (36.0, 6.0), "Tr40x7": (40.0, 7.0), "Tr44x7": (44.0, 7.0),
+        "Tr48x8": (48.0, 8.0), "Tr50x8": (50.0, 8.0),
+    },
+    "UNC": _unified_sizes({
+        "#4-40 UNC": (0.112, 40), "#6-32 UNC": (0.138, 32),
+        "#8-32 UNC": (0.164, 32), "#10-24 UNC": (0.190, 24),
+        "1/4-20 UNC": (0.250, 20), "5/16-18 UNC": (0.3125, 18),
+        "3/8-16 UNC": (0.375, 16), "7/16-14 UNC": (0.4375, 14),
+        "1/2-13 UNC": (0.500, 13), "5/8-11 UNC": (0.625, 11),
+        "3/4-10 UNC": (0.750, 10), "1-8 UNC": (1.000, 8),
+    }),
+    "UNF": _unified_sizes({
+        "#4-48 UNF": (0.112, 48), "#6-40 UNF": (0.138, 40),
+        "#8-36 UNF": (0.164, 36), "#10-32 UNF": (0.190, 32),
+        "1/4-28 UNF": (0.250, 28), "5/16-24 UNF": (0.3125, 24),
+        "3/8-24 UNF": (0.375, 24), "7/16-20 UNF": (0.4375, 20),
+        "1/2-20 UNF": (0.500, 20), "5/8-18 UNF": (0.625, 18),
+        "3/4-16 UNF": (0.750, 16), "1-12 UNF": (1.000, 12),
+    }),
+    "ACME": _unified_sizes({
+        "1/4-16 ACME": (0.250, 16), "5/16-14 ACME": (0.3125, 14),
+        "3/8-12 ACME": (0.375, 12), "1/2-10 ACME": (0.500, 10),
+        "5/8-8 ACME": (0.625, 8), "3/4-6 ACME": (0.750, 6),
+        "1-5 ACME": (1.000, 5), "1.1/4-5 ACME": (1.250, 5),
+        "1.1/2-4 ACME": (1.500, 4),
+    }),
+    "NPT": _unified_sizes({                          # pipe OD at the gauge plane
+        "1/8 NPT": (0.405, 27), "1/4 NPT": (0.540, 18), "3/8 NPT": (0.675, 18),
+        "1/2 NPT": (0.840, 14), "3/4 NPT": (1.050, 14), "1 NPT": (1.315, 11.5),
+        "1.1/4 NPT": (1.660, 11.5), "1.1/2 NPT": (1.900, 11.5),
+        "2 NPT": (2.375, 11.5),
+    }),
+}
+
+# family -> (half of the included flank angle, crest flat / pitch, radial taper).
+# Every family is the SAME trapezoid with different numbers, which is why one
+# section builder covers all of them.
+_THREAD_FAMILY = {
+    "ISO metric": (30.0, 0.125, 0.0),
+    "UNC": (30.0, 0.125, 0.0),
+    "UNF": (30.0, 0.125, 0.0),
+    "Trapezoidal": (15.0, 0.366, 0.0),
+    "ACME": (14.5, 0.3707, 0.0),
+    "NPT": (30.0, 0.0381, 1.0 / 32.0),     # 1:16 on the diameter = 1:32 on radius
+}
+
+
+def _thread_spec(_size, _profile="ISO metric", _diameter=0.0, _pitch=0.0):
+    \"\"\"Resolve a size name to (major diameter mm, pitch mm, family).
+
+    The size list is flat and the family is read OFF the name ("M6", "Tr20x4",
+    "1/4-20 UNC") rather than selected separately: a param's options cannot
+    depend on another param's value, and one searchable list beats two combos
+    that can disagree. `diameter`/`pitch` override whatever the table said —
+    that is how a fine pitch is asked for (M8 + pitch 1.0) and how "custom"
+    works at all.\"\"\"
+    fam, d, p = None, 0.0, 0.0
+    for family, table in _THREAD_SIZES.items():
+        if _size in table:
+            d, p = table[_size]
+            fam = family
+            break
+    if fam is None:                                  # "custom"
+        fam = _profile if _profile in _THREAD_FAMILY else "ISO metric"
+    if _diameter:
+        d = float(_diameter)
+    if _pitch:
+        p = float(_pitch)
+    if d <= 0 or p <= 0:
+        raise ValueError(
+            "Thread: size 'custom' needs both `diameter` and `pitch` set — pick "
+            "a standard size instead, or say how big the custom thread is.")
+    return d, p, fam
+
+
+def _thread_section(_fam, _p, _internal):
+    \"\"\"One pitch of the axial profile: (thread depth, crest flat, half width at
+    the root). Male and female are NOT two generators — on the 60 degree
+    families they are the same trapezoid truncated at a different depth
+    (17H/24 external, giving the ISO minor d3 = d - 1.2269p; 15H/24 internal,
+    giving D1 = d - 1.0825p). That difference IS male vs female.\"\"\"
+    half, crest_f, _taper = _THREAD_FAMILY[_fam]
+    if _fam in ("ISO metric", "UNC", "UNF"):
+        h = (15.0 if _internal else 17.0) / 24.0 * (math.sqrt(3) / 2 * _p)
+    elif _fam == "Trapezoidal":                      # ISO 2904 clearance ac
+        h = 0.5 * _p + (0.15 if _p <= 5 else (0.25 if _p <= 12 else 0.5))
+    elif _fam == "ACME":
+        h = 0.5 * _p + 0.254                         # 0.010" general purpose
+    else:                                            # NPT
+        h = 0.8 * _p
+    c = crest_f * _p
+    hw = c / 2.0 + h * math.tan(math.radians(half))
+    if 2.0 * hw >= _p:
+        raise ValueError(
+            "Thread: a %s profile of pitch %.3fmm has no room left between "
+            "turns — the flanks meet before the root does. Use a coarser pitch."
+            % (_fam, _p))
+    return h, c, hw
+
+
+def _thread(_size="M6", _length=10.0, _internal=False, _clearance=0.3,
+            _starts=1, _lefthand=False, _lead_in=True, _segments=64,
+            _profile="ISO metric", _diameter=0.0, _pitch=0.0, _shape=None,
+            _at_pt=None):
+    \"\"\"A threaded rod (external) or the tap that cuts a nut (internal), as a Mesh.
+
+    The female thread is not modelled directly: the tool IS the male thread
+    grown by the clearance, and subtracting it from a body drills the hole and
+    cuts the thread in one go — exactly what a tap does. Verified by measuring
+    the boolean interference of a mating pair (M6x1): the profiles are tangent
+    by construction at clearance 0 and free from 0.1mm up (residual ~0.01mm^3,
+    which is manifold3d's numerical noise, not contact).
+
+    The placement socket is `at`, NOT `origin`, and that is deliberate. The
+    emitter wraps an `origin` socket around the node's WHOLE result (_at is
+    applied outside the template), which with `shape` wired would displace the
+    finished assembly — so a tapped hole could never be put anywhere but the
+    axis. Taking the point here instead places the THREAD inside the part,
+    before the boolean, which is the only useful reading. It also means a LIST
+    of points drills a whole pattern of tapped holes in one node.\"\"\"
+    import numpy as np
+    d, p, fam = _thread_spec(_size, _profile, _diameter, _pitch)
+    h, c, hw = _thread_section(fam, p, _internal)
+    taper = _THREAD_FAMILY[fam][2]
+    L = float(_length)
+    if L <= 0:
+        raise ValueError("Thread: `length` must be positive.")
+    n_st = max(1, int(_starts))
+    lead = p * n_st                                  # axial advance per turn
+    # `clearance` loosens THIS thread: the male shrinks, the female tool grows.
+    # Set it on ONE half of a mating pair — applying it to both doubles the gap.
+    crest = d / 2.0 + (0.5 if _internal else -0.5) * float(_clearance)
+    root = crest - h
+    if root <= 0.0:
+        raise ValueError(
+            "Thread: %s of pitch %.3fmm cuts deeper (%.3fmm) than the %.3fmm "
+            "radius — the thread would swallow its own axis." % (fam, p, h, crest))
+    base = root - 0.15 * p          # reach INTO the core: the union needs real
+                                    # overlap, never a tangency (OCCT's failure)
+
+    # The section, one pitch tall. Consecutive turns of a rib abut exactly at
+    # +-p/2, which is what lets them fuse into a continuous helical ridge.
+    S = np.array([(base, -p / 2), (root, -p / 2), (root, -hw), (crest, -c / 2),
+                  (crest, c / 2), (root, hw), (root, p / 2), (base, p / 2)])
+    n = len(S)
+    turns = L / lead + 1.0
+    K = max(8, int(_segments * turns)) + 1
+    t = np.linspace(0.0, turns, K)
+    Z = (lead * t - p / 2.0)[:, None] + S[:, 1][None, :]
+    R = S[:, 0][None, :] + taper * Z                 # NPT opens away from the axis
+
+    # Connectivity is the same for every start, so build it once.
+    kk = np.arange(K - 1)[:, None]
+    jj = np.arange(n)[None, :]
+    a0 = (kk * n + jj).ravel()
+    b0 = (kk * n + (jj + 1) % n).ravel()
+    side = np.concatenate([np.stack([a0, b0, b0 + n], 1),
+                           np.stack([a0, b0 + n, a0 + n], 1)])
+    last = (K - 1) * n
+    caps = []
+    for j in range(1, n - 1):                        # the section is convex: fan
+        caps.append([0, j + 1, j])
+        caps.append([last, last + j, last + j + 1])
+    # Reversed: built inward-facing, and manifold3d reads an inverted winding as
+    # NEGATIVE volume and SUBTRACTS the rib — silently, and still watertight.
+    F = np.concatenate([side, np.array(caps, dtype=side.dtype)])[:, ::-1]
+
+    mf = _mf()
+    seg = max(24, int(_segments))
+    # n starts = n identical ribs rotated by 2pi/n. No axial offset: rotating a
+    # helix of lead n*p by 2pi/n already shifts it by exactly one pitch.
+    mans = []
+    for s in range(n_st):
+        a = (2 * math.pi * t * (-1.0 if _lefthand else 1.0))[:, None] \
+            + 2 * math.pi * s / n_st
+        V = np.stack([R * np.cos(a), R * np.sin(a), Z], -1).reshape(-1, 3)
+        mans.append(mf.Manifold(mf.Mesh(V.astype(np.float32),
+                                        F.astype(np.uint32))))
+    core = mf.Manifold.cylinder(L + 2 * p, max(root - taper * p, 1e-3),
+                                max(root + taper * (L + p), 1e-3), seg,
+                                False).translate([0, 0, -p])
+    body = mf.Manifold.batch_boolean([core] + mans, mf.OpType.Add)
+    span = 4 * (crest + taper * L) + 4
+    body = body ^ mf.Manifold.cube([span, span, L], True).translate([0, 0, L / 2])
+
+    if _lead_in and L > 3 * h:
+        # A thread that starts as a knife edge is unprintable and will not
+        # catch. The male gets its ends chamfered away, the female tool gets
+        # them FLARED so the mouth of the hole guides the bolt in.
+        def _rc(z):
+            return crest + taper * z + 0.001
+        if _internal:
+            body = mf.Manifold.batch_boolean([
+                body,
+                mf.Manifold.cylinder(h, _rc(0) + h, _rc(h), seg, False),
+                mf.Manifold.cylinder(h, _rc(L - h), _rc(L) + h, seg,
+                                     False).translate([0, 0, L - h]),
+            ], mf.OpType.Add)
+        else:
+            body = body ^ mf.Manifold.batch_boolean([
+                mf.Manifold.cylinder(h, max(_rc(0) - h, 1e-3), _rc(h), seg, False),
+                mf.Manifold.cylinder(L - 2 * h, _rc(h), _rc(L - h), seg,
+                                     False).translate([0, 0, h]),
+                mf.Manifold.cylinder(h, _rc(L - h), max(_rc(L) - h, 1e-3), seg,
+                                     False).translate([0, 0, L - h]),
+            ], mf.OpType.Add)
+
+    out = _from_manifold(body)
+    if _at_pt is not None:
+        out = _at(out, _at_pt)              # place the thread, THEN cut with it
+    if _shape is None:
+        return out
+    # The boolean nobody should have to get right by hand: a male thread ADDS to
+    # the part, a female tool CUTS from it.
+    return _mesh_bool("subtract" if _internal else "union", _shape, out)
 
 
 def _voronoi3d(_points, _body=None, _scale=0.9):
@@ -1475,6 +1728,47 @@ def _bed_drop(_shape, _center=True, _clearance=0.0):
 _DROP_E = {"plastic": 0.55, "rubber": 0.85, "steel": 0.65, "wood": 0.45,
            "lead": 0.08, "clay": 0.0}
 
+# The fluid the scene is IMMERSED in (Drop's `medium` param): density kg/m^3,
+# dynamic viscosity Pa*s, and whether it is a LIQUID. That last flag is not
+# bookkeeping: a liquid has a surface and fills the scene only up to `level`,
+# while a gas surrounds everything there is. Conflate them and a wind in air
+# pushes on nothing at all, because every body sits "above the waterline".
+_MEDIUM = {"vacuum": (0.0, 0.0, False), "air": (1.2, 1.8e-5, False),
+           "water": (1000.0, 1.0e-3, True), "oil": (900.0, 0.08, True),
+           "honey": (1420.0, 10.0, True)}
+
+# Density of the PART, kg/m^3, keyed by the same `material` that picks the
+# restitution above. Until now `material` only chose how bouncy the landing was;
+# with a medium in the room it also decides whether the thing floats.
+_MATERIAL_RHO = {"plastic": 1240.0, "rubber": 1100.0, "steel": 7850.0,
+                 "wood": 600.0, "lead": 11340.0, "clay": 1900.0}
+
+
+def _medium_units(_medium, _material):
+    \"\"\"(rho_rel, mu_sim, is_liquid) — the medium expressed in the SOLVER's units,
+    and this conversion is the whole reason buoyancy comes out right.
+
+    _dyn_sim works in millimetres with g = 9810 mm/s^2 and baseMass = the hull
+    VOLUME in mm^3, i.e. every part has density 1 mass-unit/mm^3 BY CONSTRUCTION.
+    Gravity and contact never notice (both are invariant under a global mass
+    scaling), but buoyancy and drag depend on the ABSOLUTE ratio between the
+    fluid's density and the part's — get the units wrong and wood sinks in water
+    while every test still passes.
+
+    So nothing here touches baseMass. Everything is expressed RELATIVE to the
+    part: rho_rel = rho_fluid / rho_material makes the fluid's density come out
+    as rho_rel mass-units/mm^3, buoyancy is then rho_rel * m * g, and the drag
+    density is rho_rel directly. Viscosity carries a factor for the mm/kg mix:
+    mu [kg/(m s)] -> mass-unit/(mm s) is mu * 1e6 / rho_material.
+
+    A vacuum gives (0, 0), so every force added for a medium vanishes EXACTLY
+    and a scene with no medium behaves bit-for-bit as it did before.\"\"\"
+    rho_f, mu_f, liq = _MEDIUM.get(str(_medium), (0.0, 0.0, False))
+    rho_p = _MATERIAL_RHO.get(str(_material), 1240.0)
+    if rho_f <= 0.0:
+        return 0.0, 0.0, False
+    return rho_f / rho_p, mu_f * 1e6 / rho_p, liq
+
 
 def _drop_segs(_e):
     \"\"\"Normalised bounce segments (duration, up-speed): the first fall lasts 1
@@ -1694,7 +1988,8 @@ def _drop_apply(_shape, _B, _o, _ops):
 
 
 def _drop(_shape, _plane=None, _t=1.0, _material="plastic", _settle=True,
-          _collide=False, _container=None, _grip=1.0, _motion=None):
+          _collide=False, _container=None, _grip=1.0, _motion=None, _owner_ids=None,
+          _shape_ids=None, _wind=None, _medium="vacuum", _drag=1.0, _level=100.0):
     \"\"\"A real fall onto the plane, scrubbed by _t: 0 = where the part is now,
     1 = at rest. The part falls, BOUNCES (each impact keeps _DROP_E of its
     speed), and — with `settle` — TOPPLES: once the bounces die, the quasi-
@@ -1708,13 +2003,21 @@ def _drop(_shape, _plane=None, _t=1.0, _material="plastic", _settle=True,
     With a `motion` plan wired in, that container stops being furniture: it tilts,
     shakes or spins on the same timeline, and the parts answer to it through
     contact alone (_container_motion / _motion_driver).
+    A `wind` plan, or any `medium` other than vacuum, puts the whole scene in a
+    fluid: drag, buoyancy and a gust that can blow the pile over. Like a
+    container, either of them turns scene mode on by itself — the analytic path
+    below has nowhere to apply a force, so a wind reaching it would be ignored in
+    silence, which is the worst outcome available.
     Works on both lanes: it measures on the mesh and transforms the ORIGINAL, so
     a solid stays a solid. A part starting under the plane surfaces linearly —
     it cannot fall.\"\"\"
-    if _container is not None or (_collide and isinstance(_shape, (list, tuple))):
+    _fluid = _wind is not None or str(_medium) not in ("vacuum", "None")
+    if (_container is not None or _fluid
+            or (_collide and isinstance(_shape, (list, tuple)))):
         shapes = list(_shape) if isinstance(_shape, (list, tuple)) else [_shape]
         out = _drop_collide(shapes, _plane, _t, _material, _settle, _container,
-                            _grip, _motion)
+                            _grip, _motion, _owner_ids, _shape_ids,
+                            _wind, _medium, _drag, _level)
         return out if isinstance(_shape, (list, tuple)) else (out[0] if out else None)
     if _shape is None:
         return None
@@ -1916,8 +2219,618 @@ def _motion_driver(_plan, _B, _o, _pivot_bed):
     return pose, end
 
 
+def _wind(_direction=None, _origin=None, _dx=1.0, _dy=0.0, _dz=0.0,
+          _speed=2000.0, _kind="uniform", _spread=25.0, _radius=50.0,
+          _turbulence=0.0, _duration=3.0, _delay=0.0, _ramp="smooth"):
+    \"\"\"A moving fluid, as a plan. Pure data — no geometry, no engine, no side
+    effect — exactly like `_container_motion`, which is the node this one copies.
+    `_wind_driver` turns it into the velocity field the solver reads, and
+    `_wind_tunnel` reads the same plan to set its inlet.
+
+    Three shapes of flow, because they cover what anyone actually asks for:
+      uniform  a steady stream, the same everywhere (weather, a duct, a tunnel)
+      jet      a cone from a point, 1/r^2 (a fan, a nozzle, a leaf blower)
+      vortex   swirl about an axis, Rankine (a whirlwind, a stirred tank)
+
+    Speeds are mm/s, to match the rest of the solver: 2000 mm/s = 2 m/s is a
+    stiff breeze. The wind is ON for `duration` seconds after `delay`, ramps in
+    and out over a tenth of that, and is gone afterwards so the scene can settle.\"\"\"
+    def _v3(v, fb):
+        if v is None:
+            return [float(fb[0]), float(fb[1]), float(fb[2])]
+        if hasattr(v, "X"):
+            return [float(v.X), float(v.Y), float(v.Z)]
+        try:
+            s = list(v)[:3]
+            return [float(s[0]), float(s[1]), float(s[2])]
+        except Exception:
+            return [float(fb[0]), float(fb[1]), float(fb[2])]
+    return {"kind": str(_kind),
+            "dir": _v3(_direction, (_dx, _dy, _dz)),
+            "origin": None if _origin is None else _v3(_origin, (0.0, 0.0, 0.0)),
+            "speed": float(_speed),
+            "spread": max(1.0, min(float(_spread), 89.0)),
+            "radius": max(1e-3, float(_radius)),
+            "turbulence": max(0.0, min(float(_turbulence), 1.0)),
+            "duration": max(1e-3, float(_duration)),
+            "delay": max(0.0, float(_delay)),
+            "ramp": str(_ramp)}
+
+
+def _wind_driver(_plan, _B, _o):
+    \"\"\"Turn a wind plan into `u(pos_bed, tau) -> velocity_bed`, plus the time the
+    wind stops blowing.
+
+    Same frame problem as `_motion_driver`, same answer: the user dictates the
+    wind in WORLD xyz because that is how a wind is thought about, while the
+    colliders live in BED coordinates — so the direction is carried over as
+    `d @ B` and the source point as `(origin - o) @ B`. Get this wrong and the
+    fan blows sideways on a tilted bed, which looks plausible and is not.
+
+    Turbulence is a handful of random Fourier modes with a FIXED seed drawn
+    inside this function. That is deliberate: `_MEMO_NONDET` matches the emitted
+    line, so a seed living here keeps the node memo-cacheable, exactly as
+    PopulateGeometry's does. It also keeps a run reproducible, which a physics
+    result has to be.\"\"\"
+    import numpy as _np
+    if _plan is None:
+        return None, 0.0
+    kind = str(_plan.get("kind", "uniform"))
+    d = _np.asarray(_plan["dir"], dtype=float)
+    n = float(_np.linalg.norm(d))
+    d_b = (d / n) @ _B if n > 1e-12 else _np.array([1.0, 0.0, 0.0]) @ _B
+    org_b = ((_np.asarray(_plan["origin"], dtype=float) - _o) @ _B
+             if _plan.get("origin") is not None else _np.zeros(3))
+    spd = float(_plan["speed"])
+    cos_lim = math.cos(math.radians(float(_plan["spread"])))
+    rad = float(_plan["radius"])
+    turb = float(_plan["turbulence"])
+    dur, dly = float(_plan["duration"]), float(_plan["delay"])
+    ramp = str(_plan.get("ramp", "smooth"))
+    end = dly + dur
+
+    # Fixed-seed Fourier modes: smooth in space AND time, and reproducible.
+    rs = _np.random.RandomState(20260728)
+    modes = rs.normal(size=(4, 3)) / max(rad, 1e-3)
+    phase = rs.uniform(0.0, 2.0 * math.pi, size=(4, 3))
+    omega = rs.uniform(1.0, 4.0, size=4)
+    amps = rs.normal(size=(4, 3))
+
+    def _gust(tau):
+        \"\"\"0 -> 1 -> 0: in over a tenth of the run, out over the last tenth.\"\"\"
+        u = (float(tau) - dly) / dur
+        if u <= 0.0 or u >= 1.0:
+            return 0.0
+        if ramp != "smooth":
+            return 1.0
+        edge = 0.1
+        s = min(u / edge, (1.0 - u) / edge, 1.0)
+        return s * s * (3.0 - 2.0 * s)
+
+    def u(pos, tau):
+        g = _gust(tau)
+        if g <= 0.0:
+            return _np.zeros(3)
+        p = _np.asarray(pos, dtype=float)
+        if kind == "jet":
+            r = p - org_b
+            dist = float(_np.linalg.norm(r))
+            if dist < 1e-9:
+                return _np.zeros(3)
+            rh = r / dist
+            c = float(_np.dot(rh, d_b))
+            if c <= cos_lim:                       # outside the cone: still air
+                return _np.zeros(3)
+            # Cosine taper to the cone edge, 1/r^2 past the reference radius.
+            taper = (c - cos_lim) / max(1.0 - cos_lim, 1e-9)
+            fall = 1.0 / max(dist / rad, 1.0) ** 2
+            v = rh * (spd * taper * fall)
+        elif kind == "vortex":
+            r = p - org_b
+            axial = float(_np.dot(r, d_b))
+            perp = r - axial * d_b
+            rp = float(_np.linalg.norm(perp))
+            if rp < 1e-9:
+                return _np.zeros(3)
+            tang = _np.cross(d_b, perp / rp)
+            # Rankine: solid body inside the core, 1/r outside.
+            v = tang * (spd * (rp / rad if rp < rad else rad / rp))
+        else:
+            v = d_b * spd
+        if turb > 0.0:
+            k = modes @ p
+            f = _np.sin(k[:, None] + phase + omega[:, None] * float(tau))
+            v = v + (amps * f).sum(axis=0) * (spd * turb * 0.35)
+        return v * g
+
+    return u, end
+
+
+_D3Q19_C = ((0, 0, 0),
+            (1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1),
+            (1, 1, 0), (-1, -1, 0), (1, -1, 0), (-1, 1, 0),
+            (1, 0, 1), (-1, 0, -1), (1, 0, -1), (-1, 0, 1),
+            (0, 1, 1), (0, -1, -1), (0, 1, -1), (0, -1, 1))
+_D3Q19_W = ((1.0 / 3.0,)
+            + (1.0 / 18.0,) * 6 + (1.0 / 36.0,) * 12)
+_D3Q19_OPP = (0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15, 18, 17)
+
+# quality -> (cells along the flow, solve steps). The domain is 6L x 4L x 4L
+# with CUBIC cells (D3Q19 assumes dx = dy = dz — anisotropic cells quietly break
+# the lattice), so ny and nz follow from nx. Measured in this container:
+# ~8 / ~22 / ~70 ms per step, i.e. ~3s / ~20s / ~105s.
+# The cost is SUPERLINEAR past ~100k cells (measured 3.4x the cells -> 3.7x the
+# time, then 2.4x -> 3.2x), so "fine" is genuinely the last rung, not a hint to
+# go bigger.
+_LBM_QUALITY = {"draft": (48, 400), "normal": (64, 900), "fine": (84, 1300)}
+
+
+def _voxelize(_mesh, _nx, _ny, _nz, _lo, _hi):
+    \"\"\"Solid mask of a mesh on a grid: rasterise the SHELL, then flood-fill the
+    outside and keep everything the flood could not reach.
+
+    The obvious route — asking the winding number for every cell — is the wrong
+    one by two orders of magnitude. Measured on the same grids: 8.65s against
+    0.017s at 64x32x32, 62.45s against 0.079s at 128x64x64. The solver itself
+    costs less than that bridge would. The two agree on 100% of cells; the
+    flood-fill result is a superset by about one voxel, which is exactly what
+    bounce-back wants, because the wall sits ON the solid cells.
+
+    `_winding_inside` stays what it was written for — the point-in-mesh oracle
+    of PopulateGeometry, a few thousand scattered points. It is not a
+    voxeliser.\"\"\"
+    import numpy as _np
+    from scipy import ndimage as _ndi
+    lo = _np.asarray(_lo, dtype=float)
+    d = (_np.asarray(_hi, dtype=float) - lo) / _np.array([_nx, _ny, _nz], dtype=float)
+    tm = _mesh.tm if hasattr(_mesh, "tm") else _mesh
+    # Subdivide until no triangle can straddle a cell without touching it.
+    try:
+        sub = tm.subdivide_to_size(max_edge=0.7 * float(d.min()))
+        V = _np.asarray(sub.vertices, dtype=float)
+    except Exception:
+        V = _np.asarray(tm.vertices, dtype=float)
+    idx = _np.floor((V - lo) / d).astype(int)
+    keep = (idx >= 0).all(axis=1) & (idx < _np.array([_nx, _ny, _nz])).all(axis=1)
+    idx = idx[keep]
+    shell = _np.zeros((_nx, _ny, _nz), dtype=bool)
+    if len(idx):
+        shell[idx[:, 0], idx[:, 1], idx[:, 2]] = True
+    free = ~shell
+    lab, _n = _ndi.label(free)
+    outside = set()
+    for face in (lab[0], lab[-1], lab[:, 0], lab[:, -1], lab[:, :, 0], lab[:, :, -1]):
+        outside.update(_np.unique(face).tolist())
+    outside.discard(0)
+    if not outside:
+        return shell
+    return shell | (free & ~_np.isin(lab, list(outside)))
+
+
+def _lbm(_solid, _u0, _tau, _steps, _report_every=100):
+    \"\"\"D3Q19 BGK Lattice-Boltzmann, float32, pure numpy. Inlet held at
+    equilibrium, outlet copied from its neighbour, HALFWAY bounce-back on the
+    solid (the scheme the momentum-exchange force below assumes — full-way
+    bounce-back stores populations inside the body and the force comes out
+    meaningless).
+
+    Returns (u, rho, force, steps_run, converged). `force` is the momentum the
+    fluid hands to the body per step, by momentum exchange over the boundary
+    links: for halfway bounce-back the transfer along a link is 2*c_q*f_q, read
+    on the FLUID side. Averaged over the tail of the run, not sampled once.\"\"\"
+    import numpy as _np
+    nx, ny, nz = _solid.shape
+    Q = 19
+    c = _np.array(_D3Q19_C, dtype=_np.int32)
+    cf = c.astype(_np.float32)
+    w = _np.array(_D3Q19_W, dtype=_np.float32)
+    opp = _np.array(_D3Q19_OPP)
+    om = _np.float32(1.0 / _tau)
+    u0 = _np.float32(_u0)
+
+    def eq(rho, u):
+        usq = (u * u).sum(0)
+        cu = _np.einsum("qd,dxyz->qxyz", cf, u)
+        return w[:, None, None, None] * rho * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * usq)
+
+    fluid = ~_solid
+    # Boundary links, precomputed once: fluid cells whose neighbour at x + c[q]
+    # is solid. The SIGN is the whole thing — np.roll(A, s)[x] is A[x - s], so
+    # the neighbour at x + c[q] is roll(solid, -c[q]). With +c[q] the link set
+    # is mirrored, the reflected populations are written to the wrong cells and
+    # mass is destroyed instead of bounced: density drained from step one and
+    # went negative by step six, and the drag came back nan.
+    links = [(q, fluid & _np.roll(_solid, tuple(-c[q]), axis=(0, 1, 2)))
+             for q in range(1, Q)]
+    rho = _np.ones((nx, ny, nz), dtype=_np.float32)
+    u = _np.zeros((3, nx, ny, nz), dtype=_np.float32)
+    u[0] = u0
+    f = eq(rho, u)
+    inlet = eq(_np.ones((1, ny, nz), dtype=_np.float32),
+               _np.concatenate([_np.full((1, 1, ny, nz), u0, dtype=_np.float32),
+                                _np.zeros((2, 1, ny, nz), dtype=_np.float32)]))[:, 0]
+    hist, tail, converged, ran = [], [], False, _steps
+    for s in range(_steps):
+        rho = f.sum(0)
+        rsafe = _np.where(rho > 1e-6, rho, _np.float32(1.0))
+        u = _np.einsum("qxyz,qd->dxyz", f, cf) / rsafe
+        f += om * (eq(rho, u) - f)
+        post = f.copy()
+        if s >= _steps - 200 or (s % _report_every == 0 and s > 0):
+            F = _np.zeros(3)
+            for q, lk in links:
+                F += 2.0 * cf[q] * float(post[q][lk].sum())
+            (tail if s >= _steps - 200 else hist).append(F)
+            if len(hist) >= 3 and s < _steps - 200:
+                a, b = _np.linalg.norm(hist[-2]), _np.linalg.norm(hist[-1])
+                if a > 0 and abs(b - a) / a < 0.005:
+                    converged, ran = True, s + 1
+                    tail = [hist[-1]]
+                    break
+        for q in range(Q):
+            f[q] = _np.roll(f[q], tuple(c[q]), axis=(0, 1, 2))
+        for q, lk in links:
+            f[opp[q]][lk] = post[q][lk]            # halfway bounce-back
+        f[:, _solid] = 0.0
+        f[:, 0] = inlet
+        f[:, -1] = f[:, -2]
+    rho = f.sum(0)
+    rsafe = _np.where(rho > 1e-6, rho, _np.float32(1.0))
+    u = _np.einsum("qxyz,qd->dxyz", f, cf) / rsafe
+    u[:, _solid] = 0.0
+    force = _np.mean(tail, axis=0) if tail else _np.zeros(3)
+    return u, rho, force, ran, converged
+
+
+def _streamlines(_u, _solid, _lo, _d, _n_seeds, _u0, _smooth=1.0, _max_pts=32):
+    \"\"\"Trace the flow from a grid of seeds on the inlet plane, RK2 at a fixed
+    step, and hand back polylines in WORLD millimetres.
+
+    They come back decimated to at most `_max_pts` points by arc length because
+    of how the viewer draws curves: `_polylines_of` samples EVERY EDGE at 33
+    points, so a Polyline of 120 points is 119 edges and 3927 points on the wire
+    — 236k for sixty streamlines. One Spline per line is one edge, 33 samples,
+    about 2k points for the lot.\"\"\"
+    import numpy as _np
+    nx, ny, nz = _solid.shape
+    lo = _np.asarray(_lo, dtype=float)
+    d = _np.asarray(_d, dtype=float)
+    # Seeded near the axis, not across the whole inlet: the domain is 4 body
+    # widths across, so a grid spanning it puts most lines where nothing
+    # happens and the picture comes out as a page of straight rules.
+    k = max(1, int(round(_n_seeds ** 0.5)))
+    ys = _np.linspace(0.30, 0.70, k) * ny
+    zs = _np.linspace(0.30, 0.70, k) * nz
+
+    def sample(p):
+        i = _np.clip(p.astype(int), [0, 0, 0], [nx - 1, ny - 1, nz - 1])
+        return _u[:, i[0], i[1], i[2]].astype(float)
+
+    step = 0.6
+    lines = []
+    for yy in ys:
+        for zz in zs:
+            p = _np.array([1.5, yy, zz], dtype=float)
+            pts = [p.copy()]
+            for _ in range(int(nx / step) + 40):
+                v = sample(p)
+                sp = float(_np.linalg.norm(v))
+                if sp < 1e-4 * _u0:
+                    break                          # stalled: a wake or the wall
+                mid = p + v / sp * (step * 0.5)
+                v2 = sample(mid)
+                s2 = float(_np.linalg.norm(v2))
+                if s2 < 1e-9:
+                    break
+                p = p + v2 / s2 * step
+                if not (0 <= p[0] < nx and 0 <= p[1] < ny and 0 <= p[2] < nz):
+                    break
+                ip = p.astype(int)
+                if _solid[ip[0], ip[1], ip[2]]:
+                    break
+                pts.append(p.copy())
+            if len(pts) < 8:
+                continue
+            P = _np.asarray(pts) * d + lo          # lattice -> world mm
+            if _smooth > 0 and len(P) > 6:
+                n = max(1, int(round(2 * _smooth)))
+                for _ in range(n):                 # a light box blur, ends pinned
+                    P[1:-1] = (P[:-2] + 2.0 * P[1:-1] + P[2:]) / 4.0
+            seg = _np.linalg.norm(_np.diff(P, axis=0), axis=1)
+            arc = _np.concatenate([[0.0], _np.cumsum(seg)])
+            if arc[-1] <= 0:
+                continue
+            want = _np.linspace(0.0, arc[-1], min(_max_pts, len(P)))
+            dec = _np.column_stack([_np.interp(want, arc, P[:, j]) for j in range(3)])
+            lines.append(dec)
+    return lines
+
+
+def _wind_tunnel(_shape, _wind=None, _quality="normal", _medium="air",
+                 _seeds=48, _smooth=1.0):
+    \"\"\"Solve the flow around a part and give back streamlines plus the numbers.
+
+    The units are where this is won or lost, and they do NOT couple to the
+    physical speed — they couple to the REYNOLDS NUMBER. Fix Re = U L / nu from
+    the medium and the part, pick a lattice velocity safely below the
+    compressibility limit (this is a weakly compressible method, not an
+    incompressible one: above u ~ 0.1 the error swamps the answer), and the
+    relaxation time follows. A tau too close to 0.5 diverges, so it is clamped —
+    and the clamp is REPORTED as an effective Reynolds number rather than
+    hidden, because a solver quietly running a different flow from the one asked
+    for is worse than one that refuses.\"\"\"
+    import numpy as _np
+    import time as _time
+    t0 = _time.perf_counter()
+    m = _as_mesh(_shape)
+    if m is None:
+        raise ValueError("Wind Tunnel needs a solid or a mesh to put in the flow")
+    V = _np.asarray(m.tm.vertices, dtype=float)
+    lo_b, hi_b = V.min(axis=0), V.max(axis=0)
+    L = float((hi_b - lo_b).max())
+    if L <= 0:
+        raise ValueError("Wind Tunnel: the shape has no extent")
+    ctr = 0.5 * (lo_b + hi_b)
+    # Domain: 1.5L of run-up, 3.5L of wake, 1.75L to each side. The lateral size
+    # is what sets the BLOCKAGE ratio, and blockage is the honest limit on any
+    # drag number this node reports.
+    lo = _np.array([lo_b[0] - 1.5 * L, ctr[1] - 2.0 * L, ctr[2] - 2.0 * L])
+    hi = _np.array([hi_b[0] + 3.5 * L, ctr[1] + 2.0 * L, ctr[2] + 2.0 * L])
+    nx, steps = _LBM_QUALITY.get(str(_quality), _LBM_QUALITY["normal"])
+    dx = (hi[0] - lo[0]) / nx
+    ny = max(8, int(round((hi[1] - lo[1]) / dx)))
+    nz = max(8, int(round((hi[2] - lo[2]) / dx)))
+    hi = lo + _np.array([nx, ny, nz], dtype=float) * dx      # exactly cubic cells
+    solid = _voxelize(m, nx, ny, nz, lo, hi)
+    n_solid = int(solid.sum())
+    if n_solid == 0:
+        raise ValueError("Wind Tunnel: the shape vanished at this resolution — "
+                         "try a finer quality, or a part that is not paper-thin")
+    rho_f, mu_f, _liq = _MEDIUM.get(str(_medium), _MEDIUM["air"])
+    nu_phys = (mu_f / rho_f) * 1e6                 # m^2/s -> mm^2/s
+    speed = float(_wind["speed"]) if _wind else 2000.0
+    speed = max(abs(speed), 1e-6)
+    frontal = float(solid.any(axis=0).sum()) * dx * dx
+    L_ref = float(_np.sqrt(4.0 * frontal / math.pi))          # equivalent diameter
+    re_want = speed * L_ref / nu_phys
+    u_lat = 0.06
+    L_lat = L_ref / dx
+    nu_lat = u_lat * L_lat / max(re_want, 1e-9)
+    tau = 3.0 * nu_lat + 0.5
+    clamped = tau < 0.51
+    if clamped:
+        tau = 0.51
+    re_eff = u_lat * L_lat / ((tau - 0.5) / 3.0)
+    u, _rho, force, ran, converged = _lbm(solid, u_lat, tau, steps)
+    lines = _streamlines(u, solid, lo, _np.array([dx, dx, dx]), int(_seeds),
+                         u_lat, float(_smooth))
+    curves = []
+    for P in lines:
+        try:
+            curves.append(Spline(*[(float(a), float(b), float(cc)) for a, b, cc in P]))
+        except Exception:
+            continue
+    blockage = frontal / ((ny * dx) * (nz * dx))
+    cd = 2.0 * float(force[0]) / max(u_lat * u_lat * frontal / (dx * dx), 1e-12)
+    dt = _time.perf_counter() - t0
+    rep = [
+        "WIND TUNNEL  (Lattice-Boltzmann D3Q19, %s)" % _quality,
+        "  medium            %s   speed %.0f mm/s" % (_medium, speed),
+        "  grid              %d x %d x %d  (%.0fk cells, %.3f mm each)"
+        % (nx, ny, nz, nx * ny * nz / 1000.0, dx),
+        "  part              %d solid cells, frontal area %.1f mm2" % (n_solid, frontal),
+        "  steps             %d%s   %.1fs" % (ran, "  (converged)" if converged else "", dt),
+        "  lattice           u=%.3f  tau=%.4f" % (u_lat, tau),
+        "  Reynolds          %.0f asked" % re_want,
+    ]
+    if clamped:
+        rep.append("                    %.0f ACTUALLY SOLVED — tau hit its floor."
+                   % re_eff)
+        rep.append("                    Read the wake, not the number: this is a"
+                   " lower-Re flow")
+        rep.append("                    than you asked for. It is what a BGK"
+                   " lattice can hold.")
+    rep.append("  blockage          %.1f%%%s" % (blockage * 100.0,
+               "" if blockage < 0.05 else "  — above 5%, the walls are squeezing"
+               " the flow"))
+    rep.append("  drag coefficient  %.2f  at Re %.0f" % (cd, re_eff))
+    rep.append("    Cd IS ONLY COMPARABLE AT THE SAME REYNOLDS. At these Re it")
+    rep.append("    runs roughly as 24/Re, so a body that ends up at a different")
+    rep.append("    Re scores differently for that reason alone and not because")
+    rep.append("    of its shape. To rank two shapes, give them the same overall")
+    rep.append("    length and frontal size so both land on the same Re — turning")
+    rep.append("    ONE body around is the cleanest comparison there is.")
+    if not converged:
+        rep.append("  NOTE the force had not settled when the run ended; a finer"
+                   " quality")
+        rep.append("       runs longer and is the first thing to try.")
+    return {"curves": curves, "report": "\\n".join(rep),
+            "cd": cd, "re": re_eff, "blockage": blockage}
+
+
+def _animate(_shape, _motion=None, _t=1.0, _hold=0.0):
+    \"\"\"A prescribed motion with NO physics: the shape simply GOES where the plan
+    says, on a timeline you scrub. A lid unscrewing off a jar, a drawer sliding
+    out, a hinge swinging, a lathe chuck spinning, a part lifted clear of an
+    assembly to show how it comes apart.
+
+    It is the SAME motion vocabulary that drives a Drop's container
+    (`_container_motion` / `_motion_driver`), so one Motion node can tilt a jar
+    and unscrew its cap on one clock. The difference is that nothing here is
+    simulated and nothing answers back: no solver, no contact, no friction, no
+    cost — and equally, no falling, no collision. Screw motions fall straight
+    out of the shared plan because translation and rotation run on ONE phase:
+    move z 12 + rotate z 720, cycles 0, and the cap rises as it turns.
+
+    Baked to keyframes rather than left analytic on purpose: the browser already
+    replays a "keys" plan at 60fps (sceneBodyPose — the collide-scene machinery),
+    so scrubbing costs no engine run and no frontend format was invented.\"\"\"
+    if _shape is None or _motion is None:
+        return _shape
+    import numpy as _np
+    t = max(0.0, min(float(_t), 1.0))
+    B, o = _np.eye(3), _np.zeros(3)
+    # Rotation is about the part's OWN centre unless the plan names a pivot, and
+    # that centre is measured on the tessellation for the same reason PlaceOnBed
+    # is: the fast OCCT bounding box is oversized, and an off-centre axis is
+    # exactly what an unscrewing lid cannot afford.
+    m = _as_mesh(_shape)
+    if m is None:
+        return _shape
+    bb = _np.asarray(m.tm.bounds, dtype=float)
+    pose, end = _motion_driver(_motion, B, o, 0.5 * (bb[0] + bb[1]))
+    if pose is None or end <= 1e-9:
+        return _shape
+    # `hold` pads the timeline AFTER the motion is over, and its only job is to
+    # let one slider drive this node and something else — a Drop, another
+    # Animate — on ONE clock. The wire from a slider must go STRAIGHT into `t`
+    # for the live 60fps replay to see it (applyDropTargets follows direct links
+    # only), so rescaling t through a Remap in between costs you the scrub.
+    # Padding the shorter timeline instead keeps the wire direct. Past `end` the
+    # phase already parks — at the destination for a ramp, at the start for an
+    # oscillation — so holding is free and exact.
+    T = float(end) + max(0.0, float(_hold))
+    cyc = float(_motion.get("cycles", 0.0) or 0.0)
+    n = int(max(T * 60.0, cyc * 24.0, 2.0))            # >=24 samples per cycle
+    n = min(n, 2000)
+    times = [T * i / n for i in range(n + 1)]
+    poss, quats = [], []
+    for tau in times:
+        p_i, q_i = pose(tau)
+        poss.append([float(x) for x in p_i])
+        quats.append([float(x) for x in q_i])
+    plan = {"kind": "keys", "t": float(t), "T": T,
+            "c0": [0.0, 0.0, 0.0], "times": times, "pos": poss, "quat": quats}
+    p_t, q_t = pose(t * T)
+    ax, ang = _axis_angle(q_t)
+    ops = []
+    if ang > 1e-9:
+        ops.append(("r", (0.0, 0.0, 0.0), tuple(ax), math.degrees(ang)))
+    ops.append(("t3", tuple(float(x) for x in p_t)))
+    res = _drop_apply(_shape, B, o, ops)
+    try:
+        res._noodle_anim = plan
+    except Exception:
+        pass
+    return res
+
+
+def _aero_dirs():
+    \"\"\"42 directions, evenly spread: an icosahedron's 12 vertices plus its 30
+    edge midpoints, all pushed out to the unit sphere — the vertex set of a
+    once-subdivided icosphere, built here from the golden ratio rather than
+    fetched from trimesh so this stays pure numpy. ~36 degrees apart, which is
+    enough to follow a silhouette as a part tumbles, and few enough that the
+    whole table costs a few milliseconds per body.\"\"\"
+    import numpy as _np
+    p = (1.0 + 5.0 ** 0.5) / 2.0
+    v = _np.array([[0, s1, s2 * p] for s1 in (-1, 1) for s2 in (-1, 1)]
+                  + [[s1, s2 * p, 0] for s1 in (-1, 1) for s2 in (-1, 1)]
+                  + [[s2 * p, 0, s1] for s1 in (-1, 1) for s2 in (-1, 1)], dtype=float)
+    v /= _np.linalg.norm(v, axis=1)[:, None]
+    # An icosahedron's edges are exactly the vertex pairs at the minimum
+    # separation, so they need no connectivity table.
+    d2 = ((v[:, None, :] - v[None, :, :]) ** 2).sum(-1)
+    lo = d2[d2 > 1e-12].min()
+    mids = [0.5 * (v[i] + v[j]) for i in range(12) for j in range(i + 1, 12)
+            if d2[i, j] < lo * 1.1]
+    m = _np.asarray(mids, dtype=float)
+    m /= _np.linalg.norm(m, axis=1)[:, None]
+    return _np.vstack([v, m])
+
+
+def _body_aero(_hull_local):
+    \"\"\"Per-body drag table: for each of the 42 directions, WHAT the flow pushes
+    on, WHICH WAY it pushes, and WHERE it pushes.
+
+    Two things had to be right here, and the obvious model only gets the first.
+
+    The area first. It changes while a part tumbles, and taking it constant is
+    not a small error: measured on the hulls themselves, the ratio between the
+    largest and smallest silhouette is 1.00 for a sphere but 20.0 for a plate and
+    20.7 for a rod. A constant area makes a sheet of plastic fly like a marble.
+
+    But a silhouette CANNOT make anything turn. Its centroid is the projected
+    centre of mass for any centrally symmetric body — measured, exactly zero
+    offset for a sphere, a plate and a rod alike — so a table built from
+    outlines produces no torque at all and the plate never flips. The outline
+    does not know how the surfaces are tilted, and that is the whole of it.
+
+    So the table is integrated over the hull's FACES instead (Newtonian panel
+    drag: each windward face catches a pressure proportional to how squarely it
+    faces the flow, and is pushed along its own NORMAL). That single change buys
+    all three columns at once:
+      - `areas`  sum of the windward projections, which for a convex body is
+                 exactly the silhouette area — so nothing is lost;
+      - `fvecs`  the force DIRECTION, which is no longer parallel to the wind.
+                 An inclined surface gets shoved sideways, and that is what makes
+                 a card fly and a leaf skid rather than sliding downwind;
+      - `cops`   the area-weighted centroid of the windward faces, off the centre
+                 of mass exactly when the body is not symmetric about the flow.
+    Normalised so a flat plate square to the flow gives |fvec| = its area; a
+    sphere comes out near half that, which is the textbook ratio between the two.
+
+    Honest about what it is: a pressure model with no wake and no viscosity, so
+    it will not shed vortices and a perfectly symmetric plate held square to the
+    flow sits in (unstable) equilibrium instead of fluttering. It gets the
+    tumbling, the weathervaning and the sideways push, which is what a falling
+    part in a gust actually does.
+
+    `_hull_local` is centred on the centre of mass, so the offsets are relative
+    to it. Cost: ~8 ms per body, once.\"\"\"
+    import numpy as _np
+    from scipy.spatial import ConvexHull as _CH
+    V = _np.asarray(_hull_local, dtype=float)
+    dirs = _aero_dirs()
+    areas = _np.zeros(len(dirs))
+    fvecs = _np.zeros((len(dirs), 3))
+    cops = _np.zeros((len(dirs), 3))
+    try:
+        h = _CH(V)
+        tri = V[h.simplices]                       # (F, 3, 3)
+        n = _np.asarray(h.equations)[:, :3]        # outward unit normals
+        cr = _np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+        fa = 0.5 * _np.linalg.norm(cr, axis=1)     # face areas
+        fc = tri.mean(axis=1)                      # face centroids
+    except Exception:                              # degenerate hull: fall back flat
+        ext = _np.prod(V.max(0) - V.min(0)) ** (2.0 / 3.0) if len(V) else 1.0
+        areas[:] = float(ext)
+        fvecs[:] = dirs * float(ext)
+        return dirs, areas, fvecs, cops
+    for i, d in enumerate(dirs):
+        w = _np.clip(-(n @ d), 0.0, None) * fa     # windward projected area
+        tot = float(w.sum())
+        areas[i] = tot
+        if tot <= 1e-12:
+            continue
+        fvecs[i] = -(w[:, None] * n).sum(axis=0)   # each face pushed along its normal
+        cops[i] = (w[:, None] * fc).sum(axis=0) / tot
+    return dirs, areas, fvecs, cops
+
+
+def _aero_at(_table, _dhat):
+    \"\"\"(force vector, centre-of-pressure offset) for a flow arriving along _dhat,
+    in body coordinates. The force already carries the area, so the caller only
+    multiplies by the dynamic pressure.
+
+    Smooth cosine weighting over the facing hemisphere — no search, 42 dot
+    products, and continuous as the body turns. A nearest-neighbour lookup would
+    make the drag jump every time the silhouette changed bucket, which reads as
+    the part twitching for no reason.\"\"\"
+    import numpy as _np
+    dirs, areas, fvecs, cops = _table
+    w = dirs @ _np.asarray(_dhat, dtype=float)
+    w = _np.clip(w, 0.0, None) ** 8
+    s = float(w.sum())
+    if s <= 1e-12:
+        return _np.asarray(_dhat, dtype=float) * float(areas.mean()), _np.zeros(3)
+    w = w / s
+    return w @ fvecs, w @ cops
+
+
 def _dyn_sim(_hulls, _coms, _e, _t_max=8.0, _statics=(), _grip=1.0,
-             _pose=None, _drive_until=0.0):
+             _pose=None, _drive_until=0.0, _wind=None, _medium=None, _cd=1.0,
+             _level=0.0):
     \"\"\"The rigid-body simulation behind collide: pybullet, DIRECT mode, fixed
     timestep (deterministic for a given scene on a given build), every part a
     CONVEX HULL of its mesh. All parts fall TOGETHER — they hit each other in
@@ -1951,7 +2864,16 @@ def _dyn_sim(_hulls, _coms, _e, _t_max=8.0, _statics=(), _grip=1.0,
     lost — and continuous collision (a swept sphere per body) covers the fast,
     thin cases anyway. Mass is the hull VOLUME (so ratios are physical: a heavy
     part settles a light one, not the reverse). Returns (times, [pos per body],
-    [quat per body]).\"\"\"
+    [quat per body]).
+
+    `_medium` (Drop's medium param) puts the scene INSIDE a fluid and `_wind` —
+    `u(pos, tau)` from `_wind_driver` — makes that fluid move. Three forces come
+    with them, all of which vanish exactly in a vacuum so an existing scene is
+    untouched: buoyancy, quadratic pressure drag from `_body_aero`'s panel table,
+    and Stokes drag, which is what makes honey honey. See `_medium_units` for why
+    everything is expressed relative to the PART's density rather than in SI —
+    the solver's mass unit is one cubic millimetre of part, and buoyancy is the
+    one force that notices.\"\"\"
     import numpy as _np
     import pybullet as _pb
     from scipy.spatial import ConvexHull as _CH
@@ -1973,7 +2895,7 @@ def _dyn_sim(_hulls, _coms, _e, _t_max=8.0, _statics=(), _grip=1.0,
         _pb.changeDynamics(pbody, -1, restitution=1.0, lateralFriction=0.8 * _grip,
                            physicsClientId=cl)
         sids = []
-        for (sv, sf, _src) in _statics:
+        for (sv, sf, _src, _own) in _statics:
             scs = _pb.createCollisionShape(
                 _pb.GEOM_MESH, vertices=_np.asarray(sv, dtype=float).tolist(),
                 indices=[int(i) for i in _np.asarray(sf).reshape(-1)],
@@ -1996,7 +2918,10 @@ def _dyn_sim(_hulls, _coms, _e, _t_max=8.0, _statics=(), _grip=1.0,
                 _pb.resetBasePositionAndOrientation(
                     sid, [float(x) for x in p0], [float(x) for x in q0],
                     physicsClientId=cl)
-        ids = []
+        rho_rel, mu_sim, liquid = (_medium if _medium is not None
+                                   else (0.0, 0.0, False))
+        fluid = rho_rel > 0.0 or _wind is not None
+        ids, aero = [], []
         for hv, c0 in zip(_hulls, _coms):
             local = _np.asarray(hv, dtype=float) - c0
             cs = _pb.createCollisionShape(_pb.GEOM_MESH, vertices=local.tolist(),
@@ -2006,9 +2931,23 @@ def _dyn_sim(_hulls, _coms, _e, _t_max=8.0, _statics=(), _grip=1.0,
             except Exception:
                 vol = float(_np.prod(local.max(0) - local.min(0)))
             r = float(_np.linalg.norm(local, axis=1).min())    # inscribed-ish radius
+            # useMaximalCoordinates makes this a btRigidBody instead of a
+            # btMultiBody, and that is NOT a detail: btMultiBody carries a
+            # hard-wired m_maxCoordinateVelocity of 100 units/s, which in
+            # millimetres is 100 mm/s. Everything fell at a tenth of a metre per
+            # second — measured, a body released in vacuum held exactly -100.0
+            # mm/s for the whole drop instead of accelerating, so gravity was
+            # effectively switched off and every fall was a constant-speed
+            # glide. It reads as plausible because the timeline is normalised
+            # and the whole journey is shown either way. With this flag the
+            # same body gives -3270 / -6540 / -9810 mm/s at t = 1/3, 2/3, 1,
+            # i.e. free fall to the digit. Drag needs it more than anything:
+            # it goes as v^2, and under the clamp it could never reach a
+            # thousandth of the part's weight.
             bid = _pb.createMultiBody(baseMass=max(vol, 1.0),
                                       baseCollisionShapeIndex=cs,
                                       basePosition=[float(x) for x in c0],
+                                      useMaximalCoordinates=True,
                                       physicsClientId=cl)
             _pb.changeDynamics(bid, -1, restitution=float(_e), lateralFriction=0.6 * _grip,
                                rollingFriction=0.06 * _grip, spinningFriction=0.06 * _grip,
@@ -2016,6 +2955,10 @@ def _dyn_sim(_hulls, _coms, _e, _t_max=8.0, _statics=(), _grip=1.0,
                                ccdSweptSphereRadius=max(r * 0.4, 0.1),
                                physicsClientId=cl)
             ids.append(bid)
+            # The drag table is built ONCE per body (~8ms) and read every step.
+            # `req` is the equivalent-sphere radius Stokes needs.
+            aero.append((_body_aero(local) if fluid else None,
+                         max(vol, 1.0), (3.0 * max(vol, 1.0) / (4.0 * math.pi)) ** (1.0 / 3.0)))
         times, poss, quats = [], [[] for _ in ids], [[] for _ in ids]
         spos, squat = [], []
         still = 0
@@ -2035,6 +2978,61 @@ def _dyn_sim(_hulls, _coms, _e, _t_max=8.0, _statics=(), _grip=1.0,
                         physicsClientId=cl)
                     _pb.resetBaseVelocity(sid, linearVelocity=lin,
                                           angularVelocity=ang, physicsClientId=cl)
+            if fluid:
+                # EVERY step, not every fourth: pybullet clears external forces
+                # after each stepSimulation, so a force applied on the recording
+                # stride would be three quarters absent.
+                for j, bid in enumerate(ids):
+                    table, vol, req = aero[j]
+                    pos, q = _pb.getBasePositionAndOrientation(bid, physicsClientId=cl)
+                    v, _w = _pb.getBaseVelocity(bid, physicsClientId=cl)
+                    p = _np.asarray(pos, dtype=float)
+                    # How much of the body is under the surface. A LIQUID with no
+                    # free surface is not a pool, it is an ocean with no top: the
+                    # buoyancy never stops and a floating part accelerates out of
+                    # the scene (measured, a wooden cube reached z=858). The
+                    # fraction is linear over the body's equivalent sphere —
+                    # rotation-invariant and free — which puts the equilibrium at
+                    # exactly rho_part/rho_fluid submerged, i.e. wood floats 60%
+                    # under (measured 63%, the sphere approximating a box).
+                    # A GAS has no surface and fills the scene, which is why this
+                    # asks: scaling drag by a waterline that air does not have
+                    # made a 12 m/s wind push a plate sideways by one millimetre.
+                    if liquid:
+                        sub = (_level - (p[2] - req)) / (2.0 * req)
+                        sub = 0.0 if sub < 0.0 else (1.0 if sub > 1.0 else sub)
+                    else:
+                        sub = 1.0
+                    if sub <= 0.0 and _wind is None:
+                        continue                               # in the open air
+                    # Buoyancy: rho_rel * m * g, and m IS the volume here.
+                    f = _np.array([0.0, 0.0, rho_rel * vol * 9810.0 * sub])
+                    uw = _wind(p, tau) if _wind is not None else _np.zeros(3)
+                    vr = uw - _np.asarray(v, dtype=float)      # flow RELATIVE to body
+                    sp = float(_np.linalg.norm(vr))
+                    rho_rel_eff = rho_rel * sub
+                    if sp > 1e-9 and rho_rel_eff > 0.0:
+                        R = _quat_mat(q)
+                        dh = vr / sp
+                        # The table is in body coordinates, the flow is in world.
+                        fv, cop = _aero_at(table, R.T @ dh)
+                        f = f + 0.5 * rho_rel_eff * float(_cd) * sp * sp * (R @ fv)
+                        # Stokes, the term that makes honey honey. Negligible in
+                        # air (7e-6 of weight), dominant at high viscosity.
+                        if mu_sim > 0.0:
+                            f = f + 6.0 * math.pi * mu_sim * sub * req * vr
+                        # Applied at the centre of pressure, NOT the centre of
+                        # mass — that offset is the entire reason a part tumbles
+                        # in the wind instead of sliding along with it.
+                        _pb.applyExternalForce(bid, -1, [float(x) for x in f],
+                                               [float(x) for x in (p + R @ cop)],
+                                               _pb.WORLD_FRAME, physicsClientId=cl)
+                        continue
+                    if mu_sim > 0.0 and sp > 1e-9:
+                        f = f + 6.0 * math.pi * mu_sim * sub * req * vr
+                    _pb.applyExternalForce(bid, -1, [float(x) for x in f],
+                                           [float(x) for x in p],
+                                           _pb.WORLD_FRAME, physicsClientId=cl)
             _pb.stepSimulation(physicsClientId=cl)
             if k % 4:
                 continue                               # record at 60Hz (scrub lerps)
@@ -2044,10 +3042,14 @@ def _dyn_sim(_hulls, _coms, _e, _t_max=8.0, _statics=(), _grip=1.0,
                 spos.append([float(x) for x in p_r])
                 squat.append([float(x) for x in q_r])
             calm = True
-            # A driven rig must never let the scene "settle": a tray that tilts
-            # slowly would otherwise put everything to sleep BEFORE the tilt even
-            # begins, and the pile would ride along frozen.
-            if _pose is not None and tau <= _drive_until:
+            # Anything DRIVEN must never let the scene "settle": a tray that
+            # tilts slowly would otherwise put everything to sleep BEFORE the
+            # tilt even begins, and the pile would ride along frozen. A wind
+            # that starts late, or blows on an already-resting pile, is the
+            # same story — which is why this no longer asks whether there is a
+            # _pose. With the default _drive_until of 0.0 it is true only at
+            # k=0, where `still` is 0 anyway, so nothing else changes.
+            if tau <= _drive_until:
                 calm = False
             for j, bid in enumerate(ids):
                 pos, q = _pb.getBasePositionAndOrientation(bid, physicsClientId=cl)
@@ -2105,9 +3107,10 @@ def _keys_pose(_times, _pos, _quat, _tau):
     return p, _quat_slerp(_quat[i - 1], _quat[i], f)
 
 
-def _static_colliders(_container, _o, _B):
+def _static_colliders(_container, _o, _B, _owner_ids=None):
     \"\"\"The `container` input as pybullet-ready triangle soups in bed coordinates:
-    (vertices, faces, source shape) per body, NOT hulled — that is the whole point
+    (vertices, faces, source shape, owner node id) per body, NOT hulled — that is
+    the whole point
     of the socket. Accepts one shape or several wired into it. The source shape
     rides along because a MOVING container has to be drawn as well as simulated,
     and the preview wants the original (either lane), not the soup.\"\"\"
@@ -2126,20 +3129,27 @@ def _static_colliders(_container, _o, _B):
             out.append(v)
         return out
 
-    items = _flat(_container, [])
-    for c in items:
-        if c is None:
-            continue
-        m = _as_mesh(c)
-        if m is None or len(m.tm.faces) == 0:
-            continue
-        V = (_np.asarray(m.tm.vertices, dtype=float) - _o) @ _B
-        out.append((V, _np.asarray(m.tm.faces, dtype=int), c))
+    # Owner ids are per TOP-LEVEL container input, so flatten each separately and
+    # carry its id down: it is what lets the viewer give the bowl its own finish
+    # instead of the falling parts' (CLAUDE.md §5d-bis).
+    tops = list(_container) if isinstance(_container, (list, tuple)) else [_container]
+    ids = list(_owner_ids or [])
+    for k, top in enumerate(tops):
+        owner = ids[k] if k < len(ids) else (ids[0] if len(ids) == 1 else None)
+        for c in _flat(top, []):
+            if c is None:
+                continue
+            m = _as_mesh(c)
+            if m is None or len(m.tm.faces) == 0:
+                continue
+            V = (_np.asarray(m.tm.vertices, dtype=float) - _o) @ _B
+            out.append((V, _np.asarray(m.tm.faces, dtype=int), c, owner))
     return out
 
 
 def _drop_collide(_shapes, _plane=None, _t=1.0, _material="plastic", _settle=True,
-                  _container=None, _grip=1.0, _motion=None):
+                  _container=None, _grip=1.0, _motion=None, _owner_ids=None,
+                  _shape_ids=None, _wind=None, _medium="vacuum", _drag=1.0, _level=100.0):
     \"\"\"The multi-body drop, done with real dynamics: every shape wired into the
     node becomes a rigid body (its convex hull) in ONE pybullet scene, and they
     all fall TOGETHER — colliding in the air, pushing each other, tumbling,
@@ -2173,16 +3183,28 @@ def _drop_collide(_shapes, _plane=None, _t=1.0, _material="plastic", _settle=Tru
     results = [bb["shape"] for bb in bodies]           # non-meshables pass through
     if not live:
         return results
-    statics = _static_colliders(_container, o, B)
+    statics = _static_colliders(_container, o, B, _owner_ids)
     pose, drive_until = None, 0.0
     if _motion is not None and statics:
-        allV = _np.vstack([sv for (sv, _sf, _s) in statics])
+        allV = _np.vstack([sv for (sv, _sf, _s, _o2) in statics])
         pose, drive_until = _motion_driver(
             _motion, B, o, 0.5 * (allV.min(axis=0) + allV.max(axis=0)))
+    # The wind keeps the scene awake for as long as it blows, exactly as a moving
+    # container does — and _t_max follows from the same expression, so a long
+    # gust lengthens the run without anything else being told about it.
+    wind_u, wind_end = _wind_driver(_wind, B, o)
+    drive_until = max(drive_until, wind_end)
+    # Wiring a Wind into a scene whose medium is still the default vacuum would
+    # blow precisely nothing — there is nothing to push WITH. Nobody means that,
+    # so a wind implies air unless a denser medium was chosen on purpose.
+    med = "air" if (_wind is not None and str(_medium) in ("vacuum", "None")) \
+        else _medium
     times, poss, quats, spos, squat = _dyn_sim(
         [b["hull"] for b in live], [b["c0"] for b in live], e,
         _t_max=max(8.0, drive_until + 2.0), _statics=statics,
-        _grip=float(_grip), _pose=pose, _drive_until=drive_until)
+        _grip=float(_grip), _pose=pose, _drive_until=drive_until,
+        _wind=wind_u, _medium=_medium_units(med, _material),
+        _cd=1.05 * float(_drag), _level=float(_level))
     if not times:
         return results
     T = times[-1]
@@ -2207,6 +3229,13 @@ def _drop_collide(_shapes, _plane=None, _t=1.0, _material="plastic", _settle=Tru
                 "quat": [[float(x) for x in qq] for qq in quats[j]]}
         try:
             res._noodle_anim = plan
+            # Which node drew THIS falling body. Several shapes wired into one
+            # Drop usually come from several nodes (five bolts, five Moves), so
+            # they can be styled apart exactly like the container. Only a single
+            # node fanning out into many pieces genuinely shares an owner.
+            if _shape_ids:
+                _k = b["i"]
+                res._noodle_owner = _shape_ids[_k] if _k < len(_shape_ids) else None
         except Exception:
             pass
         results[b["i"]] = res
@@ -2229,10 +3258,13 @@ def _drop_collide(_shapes, _plane=None, _t=1.0, _material="plastic", _settle=Tru
                           for pp in spos],
                   "quat": [[float(x) for x in qq] for qq in squat]}
         extras = []
-        for (_sv, _sf, src) in statics:
+        for (_sv, _sf, src, owner) in statics:
             try:
                 g = _drop_apply(src, B, o, ops_s)
                 g._noodle_anim = plan_s
+                # Whose node drew this? The viewer resolves colour AND finish per
+                # body from it, so a glass jar can pour steel bolts (§5d-bis).
+                g._noodle_owner = owner
                 extras.append(g)
             except Exception:
                 pass
@@ -4204,6 +5236,25 @@ class Transpiler:
                 out[sock.name] = vars_[0] if vars_ else "None"
         return out
 
+    def _merge_inputs(self, node_id: str, ndef: catalog.NodeDef,
+                      values: dict[str, str]) -> dict[str, str]:
+        """Overlay wired inputs onto param values, honouring params-as-inputs.
+
+        An input socket that shares a param's name overrides the widget when
+        WIRED and falls back to it when not (§5b). `_input_values` cannot say
+        that — it reports "None" for every unwired socket — so merging it blindly
+        wipes the widget's value. `_emit_simple` has always had the rule inline;
+        the group path did not, and so emitted `Box(None, None, None)` for every
+        CHILD of a BuildPart: a group child silently lost all of its parameters
+        and the group failed with a constructor TypeError. Both paths merge here
+        now, so the rule lives in exactly one place.
+        """
+        for name, expr in self._input_values(node_id, ndef).items():
+            if expr == "None" and ndef.param(name) is not None:
+                continue                    # nothing wired: keep the widget value
+            values[name] = expr
+        return values
+
     def _param_values(self, node, ndef: catalog.NodeDef) -> dict[str, str]:
         out: dict[str, str] = {}
         for p in ndef.params:
@@ -4287,7 +5338,7 @@ class Transpiler:
         return key, wrapped
 
     def _guard(self, lines: list[str], body: list[str], node,
-               key_src: str = "") -> None:
+               key_src: str = "", sub_ids: list[str] | None = None) -> None:
         """Wrap a node's statement(s) in try/except so one node's runtime error
         is recorded in __errors__ and doesn't abort the rest of the workflow.
         In memo mode, also wrap the body in a cache lookup: on a hit the node's
@@ -4315,6 +5366,13 @@ class Transpiler:
             lines.append("    else:")
             lines.append(f"        ({tup}) = _m")
             lines.append(f"        __cached__[{node.id!r}] = True")
+            # The body was skipped, so anything nested in it (a group's children)
+            # never got to speak for itself. Report it as what it is: cached.
+            for sid in (sub_ids or []):
+                lines.append(f"        __cached__[{sid!r}] = True")
+                lines.append(f"        __timings__[{sid!r}] = 0.0")
+                lines.append(f"        _ev('s', {sid!r})")
+                lines.append(f"        _ev('e', {sid!r}, 0.0, True)")
             for bl in tail:
                 lines.append("    " + bl)
         else:
@@ -4453,6 +5511,30 @@ class Transpiler:
             body.append(f"__previews__[{node.id!r}] = {var}")
         self._guard(lines, body, node)
 
+    def _emit_windtunnel(self, node, lines: list[str]) -> None:
+        """WindTunnel: one solve, two outputs — the streamlines you can see and
+        the report that says how far to trust them. Same shape as _emit_orient,
+        and for the same reason: solving the flow twice because a Panel happens
+        to be wired in would cost twenty seconds for nothing."""
+        ndef = catalog.get(node.type)
+        var = self._new_var(node.id)                 # var_of[node] = the curves
+        vals = self._input_values(node.id, ndef)
+        p = self._param_values(node, ndef)
+        args = ", ".join([vals.get("shape", "None"), vals.get("wind", "None"),
+                          p["quality"], p["medium"], p["seeds"], p["smooth"]])
+        plan, rep = var + "_plan", var + "_rep"
+        lines.append(f"{rep} = None")                # defined even if the body throws
+        body = [f"{plan} = _wind_tunnel({args}){_annot(node)}",
+                f"{var} = {plan}['curves']",
+                f"{rep} = {plan}['report']"]
+        self.out_var_of[(node.id, "streamlines")] = var
+        self.out_var_of[(node.id, "report")] = rep
+        # A list of curves: downstream fans over them like any other list.
+        self._produces_list.add(node.id)
+        if self._previewed(node, ndef):
+            body.append(f"__previews__[{node.id!r}] = {var}")
+        self._guard(lines, body, node)
+
     def _emit_codeblock(self, node, lines: list[str]) -> None:
         """A CodeBlock transpiles like TWO connected nodes: a params node and a
         code node. Declared `#@param`s become the function's named ARGUMENTS — so
@@ -4588,8 +5670,19 @@ class Transpiler:
         if node.type == "Drop":
             if "container" in fan:                  # several statics = one rig
                 subs["container"] = fan.pop("container")
+            # Which node DREW the container. Only the emitter knows — the runtime
+            # sees a shape, not a graph — and the viewer needs it to give the bowl
+            # its own colour and finish instead of the falling parts' (§5d-bis).
+            subs["container_ids"] = repr([fn for (fn, _fs)
+                                          in feeds.get("container", [])])
+            subs["shape_ids"] = repr([fn for (fn, _fs) in feeds.get("shape", [])])
+            # A wind or a non-vacuum medium means a solver run, exactly as a
+            # container does: the analytic path cannot apply a force, so the
+            # shapes have to become one scene rather than a fan.
             scene = (subs.get("collide") == "True"
-                     or subs.get("container") not in (None, "None"))
+                     or subs.get("container") not in (None, "None")
+                     or subs.get("wind") not in (None, "None")
+                     or subs.get("medium") not in (None, "None", "'vacuum'"))
             if scene and "shape" in fan:
                 subs["shape"] = fan.pop("shape")
                 self._produces_list.add(node.id)
@@ -4640,8 +5733,7 @@ class Transpiler:
         ctx = f"__ctx_{self._counter}"
         var = f"__out_{self._counter}"
         self.var_of[node.id] = var
-        values = self._param_values(node, ndef)
-        values.update(self._input_values(node.id, ndef))
+        values = self._merge_inputs(node.id, ndef, self._param_values(node, ndef))
         values["ctx"] = ctx
         header = _substitute(ndef.code_template["builder"], values)
 
@@ -4655,10 +5747,33 @@ class Transpiler:
         for cid in child_order:
             child = self.graph.node(cid)
             cdef = catalog.get(child.type)
-            cvals = self._param_values(child, cdef)
-            cvals.update(self._input_values(child.id, cdef))
+            cvals = self._merge_inputs(child.id, cdef, self._param_values(child, cdef))
             tmpl = cdef.code_template.get("builder") or cdef.code_template.get("algebra", "")
-            body.append("    " + _substitute(tmpl, cvals) + _annot(child))
+            stmt = _substitute(tmpl, cvals) + _annot(child)
+            if not self._memo:
+                body.append("    " + stmt)
+                continue
+            # A child is substituted INLINE into the parent's `with` block, so it
+            # cannot be _guard()ed on its own — and for a long time that meant it
+            # reported nothing at all: a BuildPart of twenty nodes lit ONE glow and
+            # the twenty stayed dark for the whole run, however long they took.
+            # They bracket themselves instead.
+            #
+            # The inner try/except only REPORTS: it re-raises, so a failing child
+            # still fails its group exactly as before. Without it the exception
+            # would unwind straight past the child's 's' event to the group's
+            # handler, leaving that node breathing amber to the end of the run —
+            # the same lie that an un-closed span always tells.
+            body.append(f"    _ev('s', {cid!r})")
+            body.append("    _tc = _perf()")
+            body.append("    try:")
+            body.append("        " + stmt)
+            body.append("    except Exception:")
+            body.append(f"        __timings__[{cid!r}] = _perf() - _tc")
+            body.append(f"        _ev('e', {cid!r}, __timings__[{cid!r}], False, True)")
+            body.append("        raise")
+            body.append(f"    __timings__[{cid!r}] = _perf() - _tc")
+            body.append(f"    _ev('e', {cid!r}, __timings__[{cid!r}], False)")
         if not children:
             body.append("    pass")
 
@@ -4666,7 +5781,11 @@ class Transpiler:
         body.append(f"{var} = {ctx}.{attr}{_annot(node)}")
         if self._previewed(node, ndef):
             body.append(f"__previews__[{node.id!r}] = {var}")
-        self._guard(lines, body, node)
+        # On a cache hit the whole block is skipped, children included — so tell
+        # _guard who they are and it reports them cached too. Otherwise a group's
+        # children would light up on a cold run and go dark on every warm one,
+        # which looks exactly like the glow failing at random.
+        self._guard(lines, body, node, sub_ids=list(child_order))
 
     def _pick_result(self, order: list[str]) -> str | None:
         # A connection into a pure sink (a node with no outputs — every Export
@@ -4761,6 +5880,8 @@ class Transpiler:
                 self._emit_center(node, body)
             elif node.type == "OrientForPrint":
                 self._emit_orient(node, body)
+            elif node.type == "WindTunnel":
+                self._emit_windtunnel(node, body)
             else:
                 self._emit_simple(node, body)
 
