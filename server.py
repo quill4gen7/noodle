@@ -942,9 +942,9 @@ async def api_screenshot(
             width=width, height=height, projection=projection, node=node,
             isolate=isolate, hq=hq, chrome=chrome, run=run, scale=scale)
     except ScreenshotUnavailable as e:
-        raise HTTPException(503, str(e))
+        raise HTTPException(503, str(e)) from e
     except ValueError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, str(e)) from e
     logger.info("screenshot '%s' %s %dx%d (%d bytes, ran=%s)",
                 name, view, meta["width"], meta["height"], meta["bytes"],
                 meta["ran"])

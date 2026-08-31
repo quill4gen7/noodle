@@ -26,7 +26,7 @@ around the members they had before the move.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Optional
+from typing import Optional
 
 from . import catalog
 from .catalog import NodeDef, WIRE_CURVE, WIRE_SOLID, WIRE_SURFACE
