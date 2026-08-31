@@ -16,7 +16,7 @@ import math
 import pytest
 
 from cad_nodes import catalog
-from cad_nodes.casts import WIRE_CURVE, WIRE_DATA, WIRE_MESH, WIRE_SOLID, WIRE_VECTOR
+from cad_nodes.casts import WIRE_CURVE, WIRE_DATA, WIRE_VECTOR
 from cad_nodes.graph import Graph, ValidationError
 from cad_nodes.transpiler import PREAMBLE, transpile
 

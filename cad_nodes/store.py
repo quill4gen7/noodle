@@ -54,6 +54,16 @@ _EXAMPLE_DESCRIPTIONS = {
     "drop-in-bowl": "Drop with a container: three balls poured into a bowl that "
                     "never moves. The bowl is the one body kept CONCAVE, so it "
                     "cradles them instead of shedding them.",
+    "glass-bowl": "The finishes, earning their keep — a glass bowl with a glowing "
+                  "marble dropped inside. The glass is real transmission (the scene "
+                  "refracts through it) and the glow really crosses it, which takes "
+                  "a dedicated bloom pass. Restyle it all you like: looks live "
+                  "outside the graph, so not one node re-runs.",
+    "polyhedron-tumbler": "A polyhedron hollowed the one way that works — shell the "
+                          "CLOSED solid and pick the opening on it (never delete the "
+                          "face first) — then handed to Drop as a container and "
+                          "tumbled by a Motion, marbles rattling inside the cavity "
+                          "that concave colliders preserve.",
     "wind-drop": "A gust across the bed: four shapes of the same material "
                  "dropped into moving air. The plate and the card tumble, catch "
                  "the wind and skid; the ball barely notices. Drag is measured "
@@ -215,6 +225,36 @@ _EXAMPLE_DESCRIPTIONS = {
                  "tolerance and inspected. Note the Sphere rides the SAME Move node "
                  "the B-Rep lane uses. build123d cannot model meshes at all — see "
                  "PLAN_MESH_LANE.md.",
+    "bolt-and-nut": "The Thread node, both ways round — a bolt whose thread ADDS to "
+                    "its shank and a nut whose internal thread (really the TAP) CUTS "
+                    "the hole and the thread in one boolean. Set `clearance` on ONE "
+                    "half of the pair, or you print double the gap.",
+    "pipe-fitting": "Threads from first principles — a male and a female pipe "
+                    "fitting whose ribs are built by hand: Helix, a swept profile, "
+                    "a boolean. The Thread node does this in one node now; this is "
+                    "the graph to open when the profile you need is not one of its "
+                    "four families.",
+    "axle-cage": "The biggest graph in the gallery, and a real part — the plates "
+                 "of an axle cage drawn as curves on planes, extruded, and finished "
+                 "by rule: selectors pick the edges, Fillet/Chamfer act on what "
+                 "they picked, and Center of Mass reads the result. Eighty nodes "
+                 "of production CAD, not a demo.",
+    "retroeng-motor-mount": "Retro-engineering, the finished article — a motor mount "
+                            "rebuilt as a PARAMETRIC graph from a 59k-triangle scan "
+                            "the agent could only slice and measure (volume within "
+                            "2.2%). Arrays where the scan had repetition, sliders "
+                            "where it had dimensions: procedure, not tracing.",
+    "jacobian-conjecture": "The Jacobian conjecture (Keller, 1939), as geometry — a "
+                           "polynomial map deforms space while its Jacobian, the "
+                           "LOCAL volume zoom, stays one constant everywhere. The "
+                           "conjecture says such a map can never fold two points "
+                           "onto one. Open the sequel to see how that ended.",
+    "jacobian-counterexample": "How it ended (Alpoge-Fable, July 2026): 216 "
+                               "characters whose Jacobian is EXACTLY -2 at every "
+                               "point of space — and three points that land on the "
+                               "same destination anyway. Eighty-seven years of "
+                               "conjecture, disproved in one picture: three curves "
+                               "meeting where none was allowed to.",
 }
 
 # A graph id is a single directory name under the store root. Rejecting

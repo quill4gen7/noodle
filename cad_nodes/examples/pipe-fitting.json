@@ -1,0 +1,983 @@
+{
+  "name": "pipe-fitting",
+  "nodes": [
+    {
+      "id": "n2",
+      "type": "NumberInput",
+      "params": {
+        "value": 16
+      },
+      "position": [
+        800,
+        0
+      ]
+    },
+    {
+      "id": "n3",
+      "type": "NumberInput",
+      "params": {
+        "value": 40.674
+      },
+      "position": [
+        800,
+        80
+      ]
+    },
+    {
+      "id": "n4",
+      "type": "NumberInput",
+      "params": {
+        "value": 13.6
+      },
+      "position": [
+        800,
+        160
+      ]
+    },
+    {
+      "id": "n5",
+      "type": "NumberInput",
+      "params": {
+        "value": 10.7
+      },
+      "position": [
+        800,
+        320
+      ]
+    },
+    {
+      "id": "n6",
+      "type": "NumberInput",
+      "params": {
+        "value": 17
+      },
+      "position": [
+        800,
+        400
+      ]
+    },
+    {
+      "id": "n7",
+      "type": "NumberInput",
+      "params": {
+        "value": 10.7
+      },
+      "position": [
+        800,
+        480
+      ]
+    },
+    {
+      "id": "n8",
+      "type": "NumberInput",
+      "params": {
+        "value": 11.873
+      },
+      "position": [
+        800,
+        640
+      ]
+    },
+    {
+      "id": "n9",
+      "type": "NumberInput",
+      "params": {
+        "value": 1.814
+      },
+      "position": [
+        800,
+        720
+      ]
+    },
+    {
+      "id": "n10",
+      "type": "NumberInput",
+      "params": {
+        "value": 14
+      },
+      "position": [
+        800,
+        800
+      ]
+    },
+    {
+      "id": "n11",
+      "type": "Helix",
+      "params": {
+        "pitch": 1.814,
+        "height": 6,
+        "radius": 12.322166666666666,
+        "cone_angle": 0,
+        "lefthand": false
+      },
+      "position": [
+        1050,
+        900
+      ]
+    },
+    {
+      "id": "n12",
+      "type": "Polygon",
+      "params": {
+        "radius": 0.8983333333333334,
+        "sides": 3,
+        "rotation": 180,
+        "major": true
+      },
+      "position": [
+        1050,
+        980
+      ]
+    },
+    {
+      "id": "n13",
+      "type": "MakeFace",
+      "params": {},
+      "position": [
+        1300,
+        980
+      ]
+    },
+    {
+      "id": "n14",
+      "type": "Cylinder",
+      "params": {
+        "radius": 13.6,
+        "height": 14,
+        "arc": 360,
+        "centered": true
+      },
+      "position": [
+        1050,
+        0
+      ]
+    },
+    {
+      "id": "n15",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 7
+      },
+      "position": [
+        1300,
+        0
+      ]
+    },
+    {
+      "id": "n16",
+      "type": "Cylinder",
+      "params": {
+        "radius": 16,
+        "height": 40.674,
+        "arc": 360,
+        "centered": true
+      },
+      "position": [
+        1050,
+        100
+      ]
+    },
+    {
+      "id": "n17",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 34.337
+      },
+      "position": [
+        1300,
+        100
+      ]
+    },
+    {
+      "id": "n18",
+      "type": "Cylinder",
+      "params": {
+        "radius": 11.823,
+        "height": 14,
+        "arc": 360,
+        "centered": true
+      },
+      "position": [
+        1050,
+        200
+      ]
+    },
+    {
+      "id": "n19",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 61.674
+      },
+      "position": [
+        1300,
+        200
+      ]
+    },
+    {
+      "id": "n20",
+      "type": "Union",
+      "params": {},
+      "position": [
+        1550,
+        50
+      ],
+      "multi": [
+        "shapes"
+      ]
+    },
+    {
+      "id": "n21",
+      "type": "Cylinder",
+      "params": {
+        "radius": 17,
+        "height": 22,
+        "arc": 360,
+        "centered": true
+      },
+      "position": [
+        1050,
+        1100
+      ]
+    },
+    {
+      "id": "n22",
+      "type": "Rotate",
+      "params": {
+        "angle": 90,
+        "axis": "X",
+        "about": "world"
+      },
+      "position": [
+        1300,
+        1100
+      ]
+    },
+    {
+      "id": "n23",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 5.8,
+        "z": 34.337
+      },
+      "position": [
+        1550,
+        1100
+      ]
+    },
+    {
+      "id": "n24",
+      "type": "Cylinder",
+      "params": {
+        "radius": 11.823,
+        "height": 14,
+        "arc": 360,
+        "centered": true
+      },
+      "position": [
+        1050,
+        1200
+      ]
+    },
+    {
+      "id": "n25",
+      "type": "Rotate",
+      "params": {
+        "angle": 90,
+        "axis": "X",
+        "about": "world"
+      },
+      "position": [
+        1300,
+        1200
+      ]
+    },
+    {
+      "id": "n26",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 23.8,
+        "z": 34.337
+      },
+      "position": [
+        1550,
+        1200
+      ]
+    },
+    {
+      "id": "n27",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 34.337
+      },
+      "position": [
+        1300,
+        1450
+      ]
+    },
+    {
+      "id": "n28",
+      "type": "Cylinder",
+      "params": {
+        "radius": 10.7,
+        "height": 15,
+        "arc": 360,
+        "centered": true
+      },
+      "position": [
+        1050,
+        1550
+      ]
+    },
+    {
+      "id": "n29",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 61.674
+      },
+      "position": [
+        1300,
+        1550
+      ]
+    },
+    {
+      "id": "n30",
+      "type": "Cylinder",
+      "params": {
+        "radius": 12.6,
+        "height": 40,
+        "arc": 360,
+        "centered": true
+      },
+      "position": [
+        1050,
+        1650
+      ]
+    },
+    {
+      "id": "n31",
+      "type": "Rotate",
+      "params": {
+        "angle": 90,
+        "axis": "X",
+        "about": "world"
+      },
+      "position": [
+        1300,
+        1650
+      ]
+    },
+    {
+      "id": "n32",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 15,
+        "z": 34.337
+      },
+      "position": [
+        1550,
+        1650
+      ]
+    },
+    {
+      "id": "n33",
+      "type": "Union",
+      "params": {},
+      "position": [
+        1800,
+        1500
+      ],
+      "multi": [
+        "shapes"
+      ]
+    },
+    {
+      "id": "n34",
+      "type": "Fillet",
+      "params": {
+        "radius": 1.2
+      },
+      "position": [
+        2050,
+        1500
+      ]
+    },
+    {
+      "id": "n35",
+      "type": "Union",
+      "params": {},
+      "position": [
+        1800,
+        1650
+      ],
+      "multi": [
+        "shapes"
+      ]
+    },
+    {
+      "id": "n36",
+      "type": "Cylinder",
+      "params": {
+        "radius": 10.7,
+        "height": 10,
+        "arc": 360,
+        "centered": true
+      },
+      "position": [
+        1050,
+        900
+      ]
+    },
+    {
+      "id": "n37",
+      "type": "Union",
+      "params": {},
+      "position": [
+        1950,
+        1500
+      ],
+      "multi": [
+        "shapes"
+      ]
+    },
+    {
+      "id": "n38",
+      "type": "NumberInput",
+      "params": {
+        "value": 13.6
+      },
+      "position": [
+        800,
+        240
+      ]
+    },
+    {
+      "id": "n40",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 54.674
+      },
+      "position": [
+        1800,
+        940
+      ],
+      "preview": true
+    },
+    {
+      "id": "n41",
+      "type": "Sweep",
+      "params": {
+        "is_frenet": true,
+        "solid": true
+      },
+      "position": [
+        1550,
+        940
+      ]
+    },
+    {
+      "id": "n42",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 9
+      },
+      "position": [
+        1300,
+        900
+      ]
+    },
+    {
+      "id": "n43",
+      "type": "Cylinder",
+      "params": {
+        "radius": 13.6,
+        "height": 44.674,
+        "arc": 360,
+        "centered": true
+      },
+      "position": [
+        1050,
+        1450
+      ]
+    },
+    {
+      "id": "n44",
+      "type": "Rotate",
+      "params": {
+        "angle": 90,
+        "axis": "X",
+        "about": "world"
+      },
+      "position": [
+        1800,
+        1300
+      ]
+    },
+    {
+      "id": "n45",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 30.8,
+        "z": 34.337
+      },
+      "position": [
+        2050,
+        1300
+      ]
+    },
+    {
+      "id": "n46",
+      "type": "Union",
+      "params": {},
+      "position": [
+        2550,
+        1150
+      ],
+      "multi": [
+        "shapes"
+      ]
+    },
+    {
+      "id": "n47",
+      "type": "Subtract",
+      "params": {},
+      "position": [
+        3050,
+        700
+      ]
+    },
+    {
+      "id": "n48",
+      "type": "Move",
+      "params": {
+        "x": 127.785,
+        "y": 120.75,
+        "z": 0
+      },
+      "position": [
+        3550,
+        700
+      ],
+      "preview": true
+    },
+    {
+      "id": "n49",
+      "type": "Union",
+      "params": {},
+      "position": [
+        2000,
+        100
+      ],
+      "multi": [
+        "shapes"
+      ]
+    },
+    {
+      "id": "n50",
+      "type": "Union",
+      "params": {},
+      "position": [
+        2200,
+        100
+      ],
+      "multi": [
+        "shapes"
+      ]
+    },
+    {
+      "id": "n51",
+      "type": "Union",
+      "params": {},
+      "position": [
+        2600,
+        100
+      ],
+      "multi": [
+        "shapes"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "l2",
+      "from_node": "n9",
+      "from_socket": "result",
+      "to_node": "n11",
+      "to_socket": "pitch"
+    },
+    {
+      "id": "l3",
+      "from_node": "n10",
+      "from_socket": "result",
+      "to_node": "n11",
+      "to_socket": "height"
+    },
+    {
+      "id": "l4",
+      "from_node": "n12",
+      "from_socket": "result",
+      "to_node": "n13",
+      "to_socket": "edges"
+    },
+    {
+      "id": "l5",
+      "from_node": "n13",
+      "from_socket": "result",
+      "to_node": "n41",
+      "to_socket": "section"
+    },
+    {
+      "id": "l6",
+      "from_node": "n11",
+      "from_socket": "result",
+      "to_node": "n41",
+      "to_socket": "path"
+    },
+    {
+      "id": "l7",
+      "from_node": "n4",
+      "from_socket": "result",
+      "to_node": "n14",
+      "to_socket": "radius"
+    },
+    {
+      "id": "l8",
+      "from_node": "n10",
+      "from_socket": "result",
+      "to_node": "n14",
+      "to_socket": "height"
+    },
+    {
+      "id": "l9",
+      "from_node": "n14",
+      "from_socket": "result",
+      "to_node": "n15",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l10",
+      "from_node": "n2",
+      "from_socket": "result",
+      "to_node": "n16",
+      "to_socket": "radius"
+    },
+    {
+      "id": "l11",
+      "from_node": "n3",
+      "from_socket": "result",
+      "to_node": "n16",
+      "to_socket": "height"
+    },
+    {
+      "id": "l12",
+      "from_node": "n16",
+      "from_socket": "result",
+      "to_node": "n17",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l13",
+      "from_node": "n8",
+      "from_socket": "result",
+      "to_node": "n18",
+      "to_socket": "radius"
+    },
+    {
+      "id": "l14",
+      "from_node": "n10",
+      "from_socket": "result",
+      "to_node": "n18",
+      "to_socket": "height"
+    },
+    {
+      "id": "l15",
+      "from_node": "n18",
+      "from_socket": "result",
+      "to_node": "n19",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l16",
+      "from_node": "n41",
+      "from_socket": "result",
+      "to_node": "n40",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l17",
+      "from_node": "n15",
+      "from_socket": "result",
+      "to_node": "n20",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l18",
+      "from_node": "n17",
+      "from_socket": "result",
+      "to_node": "n20",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l19",
+      "from_node": "n6",
+      "from_socket": "result",
+      "to_node": "n21",
+      "to_socket": "radius"
+    },
+    {
+      "id": "l20",
+      "from_node": "n21",
+      "from_socket": "result",
+      "to_node": "n22",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l21",
+      "from_node": "n22",
+      "from_socket": "result",
+      "to_node": "n23",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l22",
+      "from_node": "n8",
+      "from_socket": "result",
+      "to_node": "n24",
+      "to_socket": "radius"
+    },
+    {
+      "id": "l23",
+      "from_node": "n10",
+      "from_socket": "result",
+      "to_node": "n24",
+      "to_socket": "height"
+    },
+    {
+      "id": "l24",
+      "from_node": "n24",
+      "from_socket": "result",
+      "to_node": "n25",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l25",
+      "from_node": "n25",
+      "from_socket": "result",
+      "to_node": "n26",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l26",
+      "from_node": "n41",
+      "from_socket": "result",
+      "to_node": "n44",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l27",
+      "from_node": "n44",
+      "from_socket": "result",
+      "to_node": "n45",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l28",
+      "from_node": "n23",
+      "from_socket": "result",
+      "to_node": "n46",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l29",
+      "from_node": "n38",
+      "from_socket": "result",
+      "to_node": "n43",
+      "to_socket": "radius"
+    },
+    {
+      "id": "l30",
+      "from_node": "n43",
+      "from_socket": "result",
+      "to_node": "n27",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l31",
+      "from_node": "n5",
+      "from_socket": "result",
+      "to_node": "n28",
+      "to_socket": "radius"
+    },
+    {
+      "id": "l32",
+      "from_node": "n28",
+      "from_socket": "result",
+      "to_node": "n29",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l33",
+      "from_node": "n7",
+      "from_socket": "result",
+      "to_node": "n30",
+      "to_socket": "radius"
+    },
+    {
+      "id": "l34",
+      "from_node": "n30",
+      "from_socket": "result",
+      "to_node": "n31",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l35",
+      "from_node": "n31",
+      "from_socket": "result",
+      "to_node": "n32",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l36",
+      "from_node": "n27",
+      "from_socket": "result",
+      "to_node": "n33",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l37",
+      "from_node": "n29",
+      "from_socket": "result",
+      "to_node": "n33",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l38",
+      "from_node": "n32",
+      "from_socket": "result",
+      "to_node": "n35",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l39",
+      "from_node": "n36",
+      "from_socket": "result",
+      "to_node": "n42",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l40",
+      "from_node": "n33",
+      "from_socket": "result",
+      "to_node": "n37",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l41",
+      "from_node": "n42",
+      "from_socket": "result",
+      "to_node": "n37",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l42",
+      "from_node": "n26",
+      "from_socket": "result",
+      "to_node": "n46",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l43",
+      "from_node": "n37",
+      "from_socket": "result",
+      "to_node": "n35",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l44",
+      "from_node": "n35",
+      "from_socket": "result",
+      "to_node": "n34",
+      "to_socket": "part"
+    },
+    {
+      "id": "l45",
+      "from_node": "n34",
+      "from_socket": "result",
+      "to_node": "n47",
+      "to_socket": "b"
+    },
+    {
+      "id": "l46",
+      "from_node": "n20",
+      "from_socket": "result",
+      "to_node": "n49",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l47",
+      "from_node": "n19",
+      "from_socket": "result",
+      "to_node": "n49",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l48",
+      "from_node": "n49",
+      "from_socket": "result",
+      "to_node": "n50",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l49",
+      "from_node": "n46",
+      "from_socket": "result",
+      "to_node": "n50",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l50",
+      "from_node": "n50",
+      "from_socket": "result",
+      "to_node": "n47",
+      "to_socket": "a"
+    },
+    {
+      "id": "l51",
+      "from_node": "n47",
+      "from_socket": "result",
+      "to_node": "n51",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l52",
+      "from_node": "n40",
+      "from_socket": "result",
+      "to_node": "n51",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "l53",
+      "from_node": "n51",
+      "from_socket": "result",
+      "to_node": "n48",
+      "to_socket": "shape"
+    }
+  ]
+}
