@@ -1269,9 +1269,21 @@ thought to measure; a picture shows what you did not.**
   bloom, same camera code. A numpy rasterizer was considered and rejected — it
   would be free to drift from the thing users actually look at, and blind to
   precisely the work that went into glass/emissive/rainbow/bloom.
-- **No GPU**: SwiftShader, verified pixel-identical to hardware GL.
-- **The browser is kept WARM**, like the execution worker: ~10s cold, **~1.5s**
+- **No GPU needed**: SwiftShader, verified pixel-identical to hardware GL. A GPU
+  is opt-in: `NOODLE_BROWSER_GPU=vulkan|gl` + the `docker-compose.gpu.yml`
+  overlay (CDI device AND the Vulkan/EGL manifests — the device alone silently
+  stays on SwiftShader). On podman: `podman-compose -f docker-compose.yml -f
+  docker-compose.gpu.yml --podman-run-args="--userns=keep-id:uid=1000,gid=1000"
+  up -d --force-recreate`.
+- **The browser is kept WARM**, like the execution worker: ~5-10s cold, **~0.7s**
   warm with `run=0`. Take extra angles freely; re-run only when geometry changed.
+- **…and the page is FROZEN between shots** (`_freeze`: a CDP debugger pause).
+  It is the real editor, whose animate loop redraws 60×/s forever; left warm
+  and running after one shot it held ~11 cores on SwiftShader for ten hours.
+  `Page.setWebLifecycleState frozen` does NOT work (headless pages are always
+  visible, and Chromium only freezes hidden ones — it answers OK anyway). A
+  FAILED shot closes the page instead of parking it: a half-booted page used to
+  fail every later shot until a restart.
 - **The warm page must not show you the PREVIOUS graph.** It only re-navigated
   when the URL changed, so shooting the same project twice reused whatever was on
   screen — edit a graph, shoot it with `run=0`, and you were handed the geometry
