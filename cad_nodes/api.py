@@ -98,17 +98,15 @@ class StaleGraphError(ValueError):
 def graph_version(store: GraphStore, graph_id: str):
     """The stored graph's version, when the store keeps one; else None.
 
-    TODO(versioning): the store gains a version/etag on the graph-versioning
-    branch; this hook picks it up by duck-typing (`store.version(graph_id)`) so
-    the agent write paths below need no change when the two are merged."""
+    Duck-typed (`store.version(graph_id)`, the content hash of graph_version.py)
+    so a store without versions still works: then writes are never refused."""
     fn = getattr(store, "version", None)
     return fn(graph_id) if callable(fn) else None
 
 
 def _check_base_version(store: GraphStore, graph_id: str, base_version) -> None:
     """Refuse a write whose `base_version` is not the current one (optimistic
-    concurrency). A no-op while the store has no versions — see graph_version.
-    TODO(versioning): may move into store.save() once versions exist."""
+    concurrency, same hash the editor's saves carry — see graph_version.py)."""
     if base_version is None:
         return
     current = graph_version(store, graph_id)
@@ -1194,3 +1192,33 @@ def arrange(store: GraphStore, graph_id: str, **opts) -> dict:
     summary = _layout.arrange(graph, **opts)
     store.save(graph_id, graph)
     return summary
+
+
+# --- graph version (optimistic concurrency, see graph_version.py) ---------
+def read_versioned_graph(store: GraphStore, graph_id: str) -> dict:
+    """`{version, graph}` read in one go. Pass `version` back as `base_version`
+    to `write_graph` so a write never silently overwrites someone else's edit
+    (the editor, a human) made in between."""
+    from .graph_version import read_versioned
+    version, data = read_versioned(store.dir(graph_id) / "graph.json")
+    if version is None:
+        raise KeyError(f"No graph {graph_id!r}")
+    return {"version": version, "graph": Graph.from_dict(data or {}).to_dict()}
+
+
+def write_graph(store: GraphStore, graph_id: str, graph: dict,
+                base_version: Optional[str] = None) -> dict:
+    """Validate and save a whole graph. With `base_version`, a graph changed
+    since that version raises `graph_version.StaleGraphError` (its `.detail()` has
+    the current version + graph to merge with) instead of being overwritten."""
+    g = Graph.from_dict({**graph, "name": graph_id})
+    g.validate()
+    return {"version": store.save(graph_id, g, base_version=base_version)}
+
+
+def propose_groups(store: GraphStore, graph_id: str) -> list[dict]:
+    """Group boxes that would make the graph readable (Parametri, shared hubs,
+    one per output chain), for nodes not already grouped. Read-only; apply them
+    with `arrange(store, graph_id, groups="auto")`."""
+    from . import layout as _layout
+    return _layout.propose_groups(store.load(graph_id))

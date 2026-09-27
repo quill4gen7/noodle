@@ -471,3 +471,14 @@ def test_isolating_an_already_drawn_node_does_not_touch_the_graph(store, monkeyp
 
 def test_summarize_execute_passes_an_api_error_through():
     assert api.summarize_execute({"error": "KeyError: 'nope'"}) == {"error": "KeyError: 'nope'"}
+
+
+def test_agent_writes_are_versioned_like_the_editors_saves(store):
+    # The agent tools and the editor share ONE version: graph.json's hash.
+    api.add_node(store, "g", "Box", title="Scocca")
+    v0 = store.version("g")
+    out = api.set_param(store, "g", "Scocca", {"width": 30}, base_version=v0)
+    assert out["version"] == store.version("g") != v0
+    with pytest.raises(api.StaleGraphError):          # someone wrote meanwhile
+        api.set_param(store, "g", "Scocca", {"width": 31}, base_version=v0)
+    assert store.load("g").node("box_1").params["width"] == 30

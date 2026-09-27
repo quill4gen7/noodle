@@ -2260,7 +2260,7 @@ function toGraphJSON(name){
   const nodes = [], connections = [], idMap = {};
   nodeIndex = {};
   for (const n of lgraph._nodes){
-    const id = 'n'+n.id; idMap[n.id] = id; nodeIndex[id] = n;
+    const id = graphIdOf(n); idMap[n.id] = id; nodeIndex[id] = n;
     const params = {};
     const nd = {id, type:n.cadType, params, position:[Math.round(n.pos[0]),Math.round(n.pos[1])]};
     // A user-given name. Only stored when it differs from the type's own label,
@@ -2291,6 +2291,7 @@ function toGraphJSON(name){
     if (n.previewFinish) nd.finish = n.previewFinish;
     if (n.wireframe) nd.wireframe = true;
     if (n.multiInputs && n.multiInputs.size) nd.multi = [...n.multiInputs];
+    if (n.flags && n.flags.collapsed) nd.collapsed = true;   // folded to its title bar
     nodes.push(nd);
   }
   for (const k in lgraph.links){
@@ -2329,6 +2330,7 @@ function createNodeFromData(nd){
   if (nd.finish) node.previewFinish = nd.finish;
   if (nd.wireframe) node.wireframe = true;
   if (nd.multi) for (const nm of nd.multi) node.multiInputs.add(nm);
+  if (nd.collapsed) node.flags.collapsed = true;   // set, not collapse(): that one toggles
   if (nd.params && nd.params.selection){ node.selectionData = nd.params.selection; updateSelectBtn(node); }
   if (nd.params && nd.params.trace){ node.traceData = nd.params.trace; updateTraceBtn(node); }
   if (nd.params && nd.params._ui) node.properties._ui = Object.assign({}, nd.params._ui);   // slider ⚙ config
@@ -2419,12 +2421,23 @@ function fromGraphJSON(data){
   const _unionIds = new Set((data.nodes||[]).filter(n=>n.type==='Union').map(n=>n.id));
   for (const c of (data.connections||[]))
     if (_unionIds.has(c.to_node) && (c.to_socket==='a' || c.to_socket==='b')) c.to_socket = 'shapes';
+  // Keep every node's ON-DISK id. litegraph numbers nodes 1..N in load order,
+  // and the save wrote those numbers back — so a file whose ids were not already
+  // 1..N in order came back renumbered (n51 -> n49 -> n48 across saves), and an
+  // agent holding "n51" edited the wrong node or none. A numeric id `nK` becomes
+  // runtime id K (so 'n'+node.id still names it); any other id (`drop`) is kept
+  // on node._gid and the node gets a fresh runtime number above all of them.
+  let _maxId = 0;
+  for (const nd of (data.nodes||[])){ const m = /^n([1-9]\d*)$/.exec(nd.id||''); if (m) _maxId = Math.max(_maxId, +m[1]); }
   for (const nd of (data.nodes||[])){
     if (nd.type === 'Panel'){
       if (hasIncoming.has(nd.id)){ nd.type = 'Display'; if (nd.params){ delete nd.params.text; delete nd.params.mode; } }
       else nd.type = 'Input';
     }
     const node = createNodeFromData(nd); if(!node) continue;
+    const m = /^n([1-9]\d*)$/.exec(nd.id||'');
+    if (m) node.id = +m[1];
+    else { node.id = ++_maxId; if (nd.id) node._gid = nd.id; }
     lgraph.add(node);
     map[nd.id] = node;
   }
@@ -2529,8 +2542,9 @@ window.newGraph = async function(name){
   if(!name){ setStatus('enter a name','err'); return; }
   if (!(await guardUnsaved())) return;
   lgraph.clear(); if (viewer) viewer.resetFraming();
-  await fetch(`${API}/api/graph/${name}`, {method:'POST',headers:{'Content-Type':'application/json'},
+  const _nr = await fetch(`${API}/api/graph/${name}`, {method:'POST',headers:{'Content-Type':'application/json'},
     body: JSON.stringify({name, nodes:[], connections:[]})});
+  syncLoaded(name, (await _nr.json().catch(()=>({}))).version, {name, nodes:[], connections:[]});   // live sync
   currentName = name;
   setCurrentName(name);
   lastSavedJSON = JSON.stringify(toGraphJSON(name));
@@ -2542,18 +2556,26 @@ window.newGraph = async function(name){
 };
 
 // Single writer to the server, shared by manual Save + autosave.
-async function persistToServer(){
+// Every save names the version it was edited from (live sync block): if an
+// agent wrote the graph meanwhile the server answers 409 and we MERGE, never
+// overwrite. `_retry` bounds the merge-then-save-again loop.
+async function persistToServer(_retry){
   if (!currentName) return false;
+  if (!syncMaySave()) return false;           // merging, or conflicts to resolve
   const payload = toGraphJSON(currentName);
   const json = JSON.stringify(payload);
+  if (syncCanSkipEcho(json)){ setDocState('saved'); return true; }   // disk already has it
   setDocState('saving');
+  syncSaveStarted();
   let res;
   try{
-    res = await fetch(`${API}/api/graph/${currentName}`, {method:'POST',
+    res = await fetch(`${API}/api/graph/${currentName}${syncBaseQuery()}`, {method:'POST',
       headers:{'Content-Type':'application/json'}, body: json});
   }catch(e){ setDocState('failed'); log('save: '+e.message,'err'); return false; }
+  if (res.status === 409) return syncOnStaleSave(res, _retry || 0);
   if(!res.ok){ const e=await res.json().catch(()=>({})); setDocState('failed');
     log('save: '+JSON.stringify(e.detail||e),'err'); return false; }
+  syncSaved(payload, (await res.json().catch(()=>({}))).version);
   lastSavedJSON = json; clearDraft(currentName); setDocState('saved');
   nodeByGraphId = Object.assign({}, nodeIndex);   // saved disk ids now equal serialized ids
   thumbWanted = true; maybeThumb();               // the library's picture of this graph
@@ -2759,7 +2781,7 @@ const FINISHES = [
 // switches its target. No new state, no new serialization: it is a view onto the
 // per-node fields that already exist.
 function piecesOf(node){
-  const p = lastView && lastView.previews && lastView.previews['n' + node.id];
+  const p = lastView && lastView.previews && lastView.previews[graphIdOf(node)];
   if (!p || !p.bodies || !p.bodies.length) return null;
   const by = new Map();
   for (const b of p.bodies){
@@ -2977,13 +2999,13 @@ function applyHistorySnapshot(json){
 // edits. Only positions (and group boxes) come back, so no geometry is touched —
 // deliberately no scheduleLive(): moving a node cannot change the model, and a
 // re-run here would cost seconds for nothing.
-async function arrangeGraph(){
+async function arrangeGraph(groups){   // groups === 'auto': also propose group boxes
   if (!currentName){ toast('info','Apri un progetto prima'); return; }
   if (!lgraph._nodes.length){ toast('info','Il grafo è vuoto'); return; }
   const btn = document.getElementById('btn-arrange');
   if (btn) btn.disabled = true;
   try {
-    const res = await fetch(`/api/graph/${encodeURIComponent(currentName)}/arrange`, {
+    const res = await fetch(`/api/graph/${encodeURIComponent(currentName)}/arrange${groups === 'auto' ? '?groups=auto' : ''}`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify(toGraphJSON(currentName)),
     });
@@ -2994,6 +3016,9 @@ async function arrangeGraph(){
     recordHistory();          // pushes the PRE-arrange state, so Ctrl+Z puts it back
     const s = data.summary || {};
     setStatus(`riordinati ${s.moved||0} nodi in ${s.columns||0} colonne`, 'ok');
+    if (s.groups_created) toast('info', s.groups_created.length
+      ? `${s.groups_created.length} gruppi proposti: ${s.groups_created.slice(0, 6).join(', ')}${s.groups_created.length > 6 ? '…' : ''}`
+      : 'Tutti i nodi sono già in un gruppo');
     if (s.group_overlaps)     // the nodes are fine; some group boxes still cross
       toast('info', `${s.group_overlaps} riquadri di gruppo si intersecano ancora`);
   } catch (e){
@@ -3030,7 +3055,7 @@ const CLIP_KEY = 'noodle:nodeclip';
 function copySelected(){
   const ns = selectedNodes(); if (!ns.length) return;
   const full = toGraphJSON(currentName || 'clip');
-  const ids = new Set(ns.map(n => 'n'+n.id));
+  const ids = new Set(ns.map(n => graphIdOf(n)));
   const nodes = full.nodes.filter(nd => ids.has(nd.id));
   const connections = (full.connections||[]).filter(c => ids.has(c.from_node) && ids.has(c.to_node));
   graphClipboard = {nodes, connections};
@@ -3737,9 +3762,10 @@ window.renderProjectList = function(){
 window.openGraph = async function(name){
   if(!name || name===currentName) { closeMenus(); return; }
   if (!(await guardUnsaved())) return;
-  const res = await fetch(`${API}/api/graph/${name}`);
+  const res = await fetch(`${API}/api/graph/${name}/version?graph=1`, {cache:'no-store'});
   if(!res.ok){ setStatus('open failed','err'); return; }
-  const data = await res.json();
+  const _vd = await res.json(), data = _vd.graph;
+  syncLoaded(name, _vd.version, data);   // BEFORE fromGraphJSON, which migrates `data` in place
   fromGraphJSON(data);
   currentName = name; if (viewer) viewer.resetFraming();   // frame the freshly opened graph once
   setCurrentName(name);
@@ -3806,7 +3832,7 @@ window.sendCopilot = async function(){
   aiAppend('assistant', reply);
   copilotHistory.push({role:'assistant', content:reply});
   if(res.changed){
-    await openGraph(currentName);   // reload the copilot's edits onto the canvas
+    await syncPullNow();            // merge the copilot's edits onto the canvas
     await runGraph();               // re-render the geometry
     log('copilot updated the graph','ok');
   }
@@ -3869,7 +3895,7 @@ function fmtPanel(v){ return panelLines(v).join('\n'); }
 let lastPanels = {};   // id -> typed panel value, from the most recent view.json
 function drawDisplayBody(ctx, node){
   const pad = 8, lh = 14, top = noteTextTop(node), w = node.size[0] - pad*2;
-  const val = lastPanels['n' + node.id];
+  const val = lastPanels[graphIdOf(node)];
   ctx.save();
   ctx.font = '11px var(--mono, monospace)';
   ctx.textBaseline = 'top';
@@ -4273,7 +4299,7 @@ function applyIsolate(){
     if(_isoDirty){ for(const id in previewMeshes){ const m=previewMeshes[id]; if(m) m.visible=true; } _isoDirty=false; }
     return;
   }
-  const sel = new Set(selectedNodes().map(n=>'n'+n.id));
+  const sel = new Set(selectedNodes().map(n=>graphIdOf(n)));
   const hasSel = sel.size > 0;                 // nothing picked -> nothing to isolate to
   for(const id in previewMeshes){
     const m = previewMeshes[id]; if(!m) continue;
@@ -4341,10 +4367,12 @@ function nodeFor(id){ return nodeByGraphId[id] || nodeIndex[id] || null; }
 // nothing while its mesh sat under `n29`, and a Number Slider (runtime 31) hit
 // `n31` — the TORUS's mesh. A miss loses the 60fps scrub; a false hit hands a
 // node someone else's geometry to transform.
+// Since fromGraphJSON keeps on-disk ids (a numeric `nK` IS runtime id K, any
+// other id rides on node._gid), the two namespaces no longer drift apart and
+// this is O(1) — toGraphJSON calls it once per node, every second.
 function graphIdOf(node){
   if (!node) return null;
-  for (const gid in nodeByGraphId) if (nodeByGraphId[gid] === node) return gid;
-  return 'n' + node.id;      // never saved in this session: ids really are the editor's
+  return node._gid || ('n' + node.id);
 }
 function previewMeshOf(node){ const g = graphIdOf(node); return (g && previewMeshes[g]) || null; }
 function previewAnimOf(node){ const g = graphIdOf(node); return (g && previewAnims[g]) || null; }
@@ -4420,7 +4448,7 @@ function syncRefImages(){
     if (n.cadType !== 'RefImage') continue;
     const p = n.properties || {}, path = p.path;
     if (!path || path === '(no file)' || !currentName) continue;
-    const id = 'n' + n.id; seen.add(id);
+    const id = graphIdOf(n); seen.add(id);
     let m = refMeshes[id];
     if (!m){
       m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
@@ -4527,7 +4555,7 @@ function flashNode(n){
 }
 function broadcastReveal(node){
   if (!xlink || !node || _xlinkEcho) return;
-  xlink.postMessage({cmd:'reveal', graph: currentName, node_id: 'n' + node.id});
+  xlink.postMessage({cmd:'reveal', graph: currentName, node_id: graphIdOf(node)});
 }
 
 // ── sub-shape selection picker (modal 3D viewer) ───────────────────────────
@@ -4817,7 +4845,7 @@ window.openSelectionPicker = async function(node, kind){
   try {
     await saveGraph();
     if (!currentName) return;
-    const srcId = 'n'+src.id;
+    const srcId = graphIdOf(src);
     setStatus(`loading ${pluralKind(kind)}…`);
     let data;
     try {
@@ -5387,6 +5415,7 @@ function initGraph(){
   lgraph.start();
   initCrossView();
   initGroupRename();      // dbl-click a group title -> rename
+  initGraphClarity();     // lineage, derived titles, minimap, stale notice (own block)
   resizeGraph();
 }
 function resizeGraph(){
@@ -5479,6 +5508,7 @@ function maybeRestoreDraft(name){
   showRestoreModal(name, d);                                       // disk changed under the draft
 }
 // dirty-detection + autosave loop (covers param edits, no per-widget hook)
+let _dirtySeen = null;
 function checkDirty(){
   if (loadingGraph || !currentName || lastSavedJSON===null) return;
   let cur; try{ cur = JSON.stringify(toGraphJSON(currentName)); }catch(_){ return; }
@@ -5486,8 +5516,13 @@ function checkDirty(){
     if (docState==='dirty') setDocState('saved');
   } else if (docState!=='saving') {
     if (docState!=='dirty') setDocState('dirty');
-    saveDraft(currentName, cur);          // instant local safety net
-    scheduleServerSave();                  // debounced server autosave
+    // Only on a NEW change: this runs every second, and re-arming the 2.5s
+    // debounce each time meant an idle dirty graph was never autosaved.
+    if (cur !== _dirtySeen){
+      _dirtySeen = cur;
+      saveDraft(currentName, cur);          // instant local safety net
+      scheduleServerSave();                  // debounced server autosave
+    }
   }
 }
 function scheduleServerSave(){
@@ -5740,7 +5775,7 @@ window.importModel = function(){
         const r=await fetch(`${API}/api/graph/${encodeURIComponent(currentName)}/import`,{method:'POST',body:fd});
         if(!r.ok) throw new Error((await r.json().catch(()=>({}))).detail||r.statusText);
         const d=await r.json();
-        await openGraph(currentName);     // reload so the new Import node shows on the canvas
+        await syncPullNow();              // merge so the new Import node shows on the canvas
         toast(`Imported <code>${d.file}</code> as ${d.node_type}.`,'success');
         runGraph();
       }catch(e){ setStatus('import failed','err'); toast('Import failed: '+(e.message||e),'error'); }
@@ -5933,6 +5968,7 @@ function paletteCommands(){
     {ic:'＋',label:'New project…', k:'Ctrl+N', run:()=>promptNewGraph()},
     {ic:'⬆',label:'Import model (STEP/STL/SVG/DXF)…', k:'', run:()=>importModel()},
     {ic:'⛶', label:'Fit to view', k:'F', run:()=>frameView()},
+    ...clarityCommands(),
     {ic:'▦', label:'Toggle grid', k:'', run:()=>toggleGrid()},
     {ic:'⧉', label:'Toggle perspective / orthographic', k:'O', run:()=>toggleProjection()},
     {ic:'◎', label:'Isolate selected shapes', k:'I', run:()=>toggleIsolate()},
@@ -5980,6 +6016,669 @@ function renderPalette(keepSel){
   document.querySelectorAll('.cmdk-item').forEach(el=>el.onclick=()=>runPalette(+el.dataset.i));
 }
 function runPalette(i){ const c=palItems[i]; closePalette(); if(c) c.run(); }
+
+/* ============================================================ *
+ *  Graph clarity — BEGIN                                       *
+ *  Readability aids for a big graph. Self-contained: the only  *
+ *  hooks outside this block are one call in initGraph(), the   *
+ *  collapsed flag in toGraphJSON/createNodeFromData, one       *
+ *  spread in paletteCommands() and arrangeGraph('auto').       *
+ *  1 lineage highlight · 4 derived titles · 6 minimap          *
+ * ============================================================ */
+// Toggles, each remembered per browser (a convenience, not graph state).
+const CLARITY_KEYS = {lineage: 'noodle:settings:lineage', minimap: 'noodle:settings:minimap', autoTitle: 'noodle:settings:autoTitle'};
+const clarity = {lineage: true, minimap: true, autoTitle: true, mm: null, mmDrag: false};
+for (const k in CLARITY_KEYS){
+  try { const v = localStorage.getItem(CLARITY_KEYS[k]); if (v != null) clarity[k] = v === '1'; } catch(_){}
+}
+function toggleClarity(k){
+  clarity[k] = !clarity[k];
+  try { localStorage.setItem(CLARITY_KEYS[k], clarity[k] ? '1' : '0'); } catch(_){}
+  _derived.t = 0;
+  lcanvas && lcanvas.setDirty(true, true);
+  setStatus(({lineage:'lignaggio', minimap:'minimappa', autoTitle:'titoli derivati'})[k] + (clarity[k] ? ' on' : ' off'), 'ok');
+}
+function clarityCommands(){
+  const on = k => clarity[k] ? ' ✓' : '';
+  return [
+    {ic:'⊞', label:'Riordina + gruppi automatici', k:'', run:()=>arrangeGraph('auto')},
+    {ic:'⇄', label:'Evidenzia lignaggio della selezione' + on('lineage'), k:'', run:()=>toggleClarity('lineage')},
+    {ic:'▣', label:'Minimappa' + on('minimap'), k:'', run:()=>toggleClarity('minimap')},
+    {ic:'≡', label:'Titoli derivati (ListItem…)' + on('autoTitle'), k:'', run:()=>toggleClarity('autoTitle')},
+  ];
+}
+
+// ── 1. lineage: everything the selection depends on and everything it feeds ──
+const _lin = {key: null, up: new Set(), down: new Set(), all: new Set()};
+function lineageOf(sel){
+  const key = sel.map(n => n.id).sort().join(',') + '|' + (lgraph._version || 0) + '|' + Object.keys(lgraph.links || {}).length;
+  if (key === _lin.key) return _lin;
+  const walk = (start, dir) => {
+    const seen = new Set(), stack = start.slice();
+    while (stack.length){
+      const n = stack.pop();
+      const slots = dir === 'up' ? (n.inputs || []).map(s => s.link).filter(l => l != null)
+                                 : (n.outputs || []).flatMap(s => s.links || []);
+      for (const lid of slots){
+        const l = lgraph.links[lid]; if (!l) continue;
+        const m = lgraph.getNodeById(dir === 'up' ? l.origin_id : l.target_id);
+        if (m && !seen.has(m)){ seen.add(m); stack.push(m); }
+      }
+    }
+    return seen;
+  };
+  _lin.key = key; _lin.up = walk(sel, 'up'); _lin.down = walk(sel, 'down');
+  _lin.all = new Set([...sel, ..._lin.up, ..._lin.down]);
+  return _lin;
+}
+function _nodeRect(n){
+  const th = LiteGraph.NODE_TITLE_HEIGHT || 30;
+  const w = n.flags.collapsed ? (n._collapsed_width || LiteGraph.NODE_COLLAPSED_WIDTH || n.size[0]) : n.size[0];
+  const h = n.flags.collapsed ? th : n.size[1] + th;
+  return [n.pos[0] - 4, n.pos[1] - th - 4, w + 8, h + 8];
+}
+function drawLineage(ctx, c){
+  if (!clarity.lineage) return;
+  const sel = Object.values(c.selected_nodes || {});
+  if (!sel.length || c.node_dragged) return;
+  const lin = lineageOf(sel);
+  if (lin.all.size >= lgraph._nodes.length) return;      // everything is lineage: nothing to dim
+  const s = c.ds.scale || 1, va = c.visible_area;
+  ctx.save();
+  // One veil over the view with a hole per lineage node (even-odd), so the
+  // rest recedes without a draw call per dimmed node.
+  ctx.beginPath();
+  ctx.rect(va[0], va[1], va[2], va[3]);
+  for (const n of lin.all){ const r = _nodeRect(n); ctx.rect(r[0], r[1], r[2], r[3]); }
+  ctx.fillStyle = 'rgba(8,10,16,0.62)';
+  ctx.fill('evenodd');
+  // Re-draw the lineage's own wires on top of the veil: upstream cyan, downstream amber.
+  ctx.lineWidth = 3 / Math.min(s, 1.5);
+  for (const id in lgraph.links){
+    const l = lgraph.links[id]; if (!l) continue;
+    const a = lgraph.getNodeById(l.origin_id), b = lgraph.getNodeById(l.target_id);
+    if (!a || !b || !lin.all.has(a) || !lin.all.has(b)) continue;
+    const p = a.getConnectionPos(false, l.origin_slot), q = b.getConnectionPos(true, l.target_slot);
+    const d = Math.hypot(q[0] - p[0], q[1] - p[1]) * 0.25;
+    ctx.strokeStyle = lin.down.has(b) ? 'rgba(245,158,11,0.95)' : 'rgba(56,189,248,0.95)';
+    ctx.beginPath(); ctx.moveTo(p[0], p[1]);
+    ctx.bezierCurveTo(p[0] + d, p[1], q[0] - d, q[1], q[0], q[1]);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ── 4. derived titles: a nameless ListItem says what it picks and for whom ──
+const _derived = {t: 0, map: new Map()};
+const _measure = document.createElement('canvas').getContext('2d');
+function _userTitle(n){ return n && n.cadType && n.title && n.title !== defaultTitleOf(n.cadType) ? n.title : ''; }
+function _fit(text, width){
+  _measure.font = (LiteGraph.NODE_TEXT_SIZE || 14) + 'px Arial';
+  if (_measure.measureText(text).width <= width) return text;
+  while (text.length > 4 && _measure.measureText(text + '…').width > width) text = text.slice(0, -1);
+  return text.trimEnd() + '…';
+}
+function _srcOf(n, name){
+  const i = (n.inputs || []).findIndex(s => (s.cadName || s.name) === name && s.link != null);
+  const inp = i >= 0 ? n.inputs[i] : (n.inputs || []).find(s => s.link != null);
+  const l = inp && lgraph.links[inp.link];
+  return l ? lgraph.getNodeById(l.origin_id) : null;
+}
+// Nearest user-named node downstream: [names at the smallest depth].
+function _namedBelow(n, maxDepth){
+  let front = [n]; const seen = new Set([n]);
+  for (let d = 0; d < maxDepth && front.length; d++){
+    const next = [], names = [];
+    for (const m of front) for (const o of (m.outputs || [])) for (const lid of (o.links || [])){
+      const l = lgraph.links[lid], t = l && lgraph.getNodeById(l.target_id);
+      if (!t || seen.has(t)) continue;
+      seen.add(t); next.push(t);
+      const u = _userTitle(t); if (u && !names.includes(u)) names.push(u);
+    }
+    if (names.length) return names;
+    front = next;
+  }
+  return [];
+}
+function _namedAbove(n, maxDepth){
+  let m = n;
+  for (let d = 0; d < maxDepth; d++){
+    m = _srcOf(m, null); if (!m) return '';
+    const u = _userTitle(m); if (u) return u;
+    // A nameless feeder (a ListItem) is often shared with ONE named sibling:
+    // ExportSTL and ToMesh -> PrintCheck "Stampa frontale" off the same pick.
+    const sib = _namedBelow(m, 3); if (sib.length === 1) return sib[0];
+  }
+  return '';
+}
+function _short(t){ return t.length > 14 ? t.split(/\s+/)[0] : t; }
+function derivedTitle(n){
+  if (!clarity.autoTitle || !n.cadType || _userTitle(n) || n.cadType === 'Note') return '';
+  const now = performance.now();
+  if (now - _derived.t > 400){ _derived.t = now; _derived.map = new Map(); }
+  if (_derived.map.has(n)) return _derived.map.get(n);
+  let out = '';
+  const def = catalog[n.cadType];
+  const idxW = (n.widgets || []).find(w => w.cadParam === 'index');
+  const isPick = idxW && (n.inputs || []).some(s => (s.cadName || s.name) === 'list');
+  if (isPick){
+    const up = _srcOf(n, 'list');
+    const below = _namedBelow(n, 4);
+    const head = `${_short(_userTitle(up) || (up ? defaultTitleOf(up.cadType) : '?'))}[${idxW.value}]`;
+    out = below.length ? `${head} → ${below[0]}${below.length > 1 ? ' +' + (below.length - 1) : ''}` : head;
+  } else if (def && def.category !== 'input' && (n.inputs || []).some(s => s.link != null)){
+    const below = _namedBelow(n, 3);
+    const ctx = below.length === 1 ? below[0] : _namedAbove(n, 3);
+    if (ctx) out = `${defaultTitleOf(n.cadType)} · ${ctx}`;
+  }
+  if (out) out = _fit(out, n.size[0] - (LiteGraph.NODE_TITLE_HEIGHT || 30) - 10);
+  _derived.map.set(n, out);
+  return out;
+}
+
+// ── 6. minimap: the whole graph in a corner, click or drag to go there ──
+function drawMinimap(ctx){
+  const c = lcanvas, nodes = lgraph && lgraph._nodes;
+  clarity.mm = null;
+  if (!clarity.minimap || !nodes || nodes.length < 2) return;
+  const cv = c.canvas, dpr = cv.width / (cv.clientWidth || cv.width);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const n of nodes){ const r = _nodeRect(n); x0 = Math.min(x0, r[0]); y0 = Math.min(y0, r[1]); x1 = Math.max(x1, r[0] + r[2]); y1 = Math.max(y1, r[1] + r[3]); }
+  const W = 190 * dpr, H = 130 * dpr, pad = 10 * dpr, inner = 6 * dpr;
+  const mx = cv.width - W - pad, my = cv.height - H - pad;
+  const s = Math.min((W - 2 * inner) / (x1 - x0 || 1), (H - 2 * inner) / (y1 - y0 || 1));
+  const ox = mx + (W - (x1 - x0) * s) / 2 - x0 * s, oy = my + (H - (y1 - y0) * s) / 2 - y0 * s;
+  clarity.mm = {mx, my, W, H, s, ox, oy, dpr};
+  const sel = c.selected_nodes || {};
+  const lin = clarity.lineage && Object.keys(sel).length ? lineageOf(Object.values(sel)).all : null;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = 'rgba(11,14,20,0.85)'; ctx.strokeStyle = '#2a3446'; ctx.lineWidth = dpr;
+  ctx.fillRect(mx, my, W, H); ctx.strokeRect(mx + .5, my + .5, W - 1, H - 1);
+  for (const g of (lgraph._groups || [])){
+    const b = g._bounding; if (!b) continue;
+    ctx.fillStyle = (g.color || '#335') + '55';
+    ctx.fillRect(ox + b[0] * s, oy + b[1] * s, b[2] * s, b[3] * s);
+  }
+  for (const n of nodes){
+    const r = _nodeRect(n);
+    ctx.fillStyle = sel[n.id] ? '#22d3ee' : (sync.flash[graphIdOf(n)] ? '#f59e0b' : (lin && !lin.has(n) ? '#2b3240' : '#6b7a92'));
+    ctx.fillRect(ox + r[0] * s, oy + r[1] * s, Math.max(r[2] * s, 1.5 * dpr), Math.max(r[3] * s, 1.5 * dpr));
+  }
+  const va = c.visible_area;
+  ctx.save(); ctx.beginPath(); ctx.rect(mx, my, W, H); ctx.clip();
+  ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 1.2 * dpr;
+  ctx.strokeRect(ox + va[0] * s, oy + va[1] * s, va[2] * s, va[3] * s);
+  ctx.restore();
+  ctx.restore();
+}
+function _mmHit(e){
+  const m = clarity.mm, cv = lcanvas && lcanvas.canvas; if (!m || !cv) return null;
+  const r = cv.getBoundingClientRect();
+  const px = (e.clientX - r.left) * m.dpr, py = (e.clientY - r.top) * m.dpr;
+  if (px < m.mx || py < m.my || px > m.mx + m.W || py > m.my + m.H) return null;
+  return [(px - m.ox) / m.s, (py - m.oy) / m.s];
+}
+function _mmGo(g){
+  const c = lcanvas, va = c.visible_area;
+  c.ds.offset[0] += (va[0] + va[2] / 2) - g[0];
+  c.ds.offset[1] += (va[1] + va[3] / 2) - g[1];
+  c.setDirty(true, true);
+}
+function initMinimap(){
+  const pane = lcanvas.canvas.parentElement;
+  const down = e => {
+    const g = _mmHit(e); if (!g) return;
+    e.stopPropagation(); e.preventDefault();
+    if (e.type === 'mousedown' && clarity.mmDrag) return;   // the pointerdown twin
+    clarity.mmDrag = true; _mmGo(g);
+  };
+  // Capture on the PARENT: it runs before litegraph's own listeners on the canvas.
+  pane.addEventListener('pointerdown', down, true);
+  pane.addEventListener('mousedown', down, true);
+  window.addEventListener('pointermove', e => {
+    if (!clarity.mmDrag || !clarity.mm) return;
+    const m = clarity.mm, r = lcanvas.canvas.getBoundingClientRect();
+    _mmGo([((e.clientX - r.left) * m.dpr - m.ox) / m.s, ((e.clientY - r.top) * m.dpr - m.oy) / m.s]);
+  }, true);
+  const up = () => { clarity.mmDrag = false; };
+  window.addEventListener('pointerup', up, true); window.addEventListener('mouseup', up, true);
+  const _ov = lcanvas.onDrawOverlay;
+  lcanvas.onDrawOverlay = function(ctx){ if (_ov) _ov.call(this, ctx); drawMinimap(ctx); };
+}
+
+function initGraphClarity(){
+  // Collapsing from the node menu happens in a DOM menu, not on the canvas, so
+  // the canvas pointerup that normally snapshots history never sees it.
+  const _collapse = LGraphNode.prototype.collapse;
+  LGraphNode.prototype.collapse = function(force){
+    const r = _collapse.call(this, force);
+    if (!loadingGraph) scheduleHistory();
+    return r;
+  };
+  // Our overlays sit UNDER the selection ring drawn by the original hook.
+  const _fg = lcanvas.onDrawForeground;
+  lcanvas.onDrawForeground = function(ctx, rect){
+    const s = this.ds.scale || 1;
+    drawLineage(ctx, this);
+    drawSyncFlash(ctx, s);
+    if (_fg) _fg.call(this, ctx, rect);
+  };
+  // Derived titles are DISPLAY only: toGraphJSON reads node.title, never this.
+  const _gt = LGraphNode.prototype.getTitle;
+  LGraphNode.prototype.getTitle = function(){ return derivedTitle(this) || _gt.call(this); };
+  // Canvas right-click: the same toggles as the ⌘K palette.
+  lcanvas.getExtraMenuOptions = () => [null, ...clarityCommands().map(c => ({content: c.ic + ' ' + c.label, callback: c.run}))];
+  initMinimap();
+  initLiveSync();
+}
+/* ============================ Graph clarity — END ============ */
+
+/* ============================================================ *
+ *  Live sync — BEGIN                                           *
+ *  The editor and an agent (API / MCP / copilot) writing the   *
+ *  same graph.json. Every save names its base version; the     *
+ *  server refuses a stale one (409). A 1.5s poll of            *
+ *  /version notices outside writes and MERGES them into the    *
+ *  canvas (server-side merge3: cad_nodes/graph_merge.py):      *
+ *  one-sided changes apply, true conflicts keep the human's    *
+ *  value and are asked about per node. Undo snapshots are      *
+ *  rebased so Ctrl+Z never takes an agent's edit back out.     *
+ * ============================================================ */
+const sync = {
+  name: null, version: null, baseRaw: null,   // the disk version the canvas is based on
+  epoch: 0,             // bumped by every save: a poll that straddles one is stale
+  merging: false, polling: false,
+  needsWrite: false,    // the loaded file needed an editor-side migration
+  conflicts: [],        // unresolved, per node; saving is held until they are
+  flash: {},            // graph id -> time the "changed by agent" glow ends
+  extTimes: [],         // when outside edits arrived (the "AI is editing" pill)
+};
+const _clone = o => o == null ? o : JSON.parse(JSON.stringify(o));
+
+function syncNeedsMigration(raw){
+  const ns = (raw && raw.nodes) || [];
+  if (ns.some(n => n.type === 'Panel')) return true;
+  const unions = new Set(ns.filter(n => n.type === 'Union').map(n => n.id));
+  return ((raw && raw.connections) || []).some(c => unions.has(c.to_node) && (c.to_socket === 'a' || c.to_socket === 'b'));
+}
+function syncLoaded(name, version, raw){
+  sync.name = name; sync.version = version || null; sync.baseRaw = _clone(raw);
+  sync.needsWrite = syncNeedsMigration(raw); sync.epoch++;
+  sync.conflicts = []; sync.flash = {}; renderConflicts();
+}
+function syncBaseQuery(){
+  return (sync.version && sync.name === currentName) ? `?base_version=${encodeURIComponent(sync.version)}` : '';
+}
+// A save of exactly what the disk already holds would only bump the version
+// (and 409 an agent that is holding it) — e.g. every Live run saves first.
+function syncCanSkipEcho(json){
+  return json === lastSavedJSON && !!sync.version && sync.name === currentName && !sync.needsWrite;
+}
+function syncMaySave(){
+  if (sync.merging) return false;
+  if (sync.conflicts.length){ renderConflicts(); setDocState('dirty'); return false; }
+  return true;
+}
+function syncSaveStarted(){ sync.epoch++; }
+function syncSaved(payload, version){
+  sync.epoch++;
+  if (version){ sync.version = version; sync.baseRaw = _clone(payload); sync.name = currentName; }
+  sync.needsWrite = false;
+}
+async function syncOnStaleSave(res, retry){
+  const body = await res.json().catch(()=>({}));
+  const d = body.detail || {};
+  setDocState('dirty');
+  const ok = d.graph ? await syncPull(currentName, {version: d.version, graph: d.graph}) : false;
+  if (ok && !sync.conflicts.length && retry < 2) return persistToServer(retry + 1);
+  if (!ok) scheduleServerSave();              // busy right now: try again shortly
+  return false;
+}
+
+// Is the human in the middle of something a canvas update would disrupt?
+let _syncPointer = false;
+function syncBusy(){
+  const c = lcanvas; if (!c) return true;
+  if (_syncPointer || c.node_dragged || c.dragging_canvas || c.connecting_node ||
+      c.resizing_node || c.dragging_rectangle || c.node_widget || c.node_capturing_input) return true;
+  if (gizmoNode || sketchNode) return true;
+  return !!document.querySelector('.modal-overlay, #picker.open, #tracer.open, .graphdialog, .litesearchbox');
+}
+
+async function syncPoll(){
+  if (window.__noodleShot || !currentName || sync.name !== currentName) return;
+  if (sync.polling || sync.merging || docState === 'saving') return;
+  const name = currentName, epoch = sync.epoch;
+  sync.polling = true;
+  try {
+    const r = await fetch(`${API}/api/graph/${encodeURIComponent(name)}/version`, {cache:'no-store'});
+    if (!r.ok) return;
+    const {version} = await r.json();
+    if (name !== currentName || epoch !== sync.epoch || docState === 'saving') return;
+    if (version && version !== sync.version) await syncPull(name);
+  } catch(_){ /* offline: the health pill already says so */ }
+  finally { sync.polling = false; }
+}
+window.syncPullNow = async function(){ if (currentName) await syncPull(currentName); };
+
+// Bring the canvas up to date with `given` ({version, graph}) or the disk.
+// Returns true once the canvas is based on that version.
+async function syncPull(name, given){
+  if (sync.merging) return false;
+  sync.merging = true;
+  try {
+    let v, theirs;
+    if (given){ v = given.version; theirs = given.graph; }
+    else {
+      const r = await fetch(`${API}/api/graph/${encodeURIComponent(name)}/version?graph=1`, {cache:'no-store'});
+      if (!r.ok) return false;
+      ({version: v, graph: theirs} = await r.json());
+    }
+    if (name !== currentName || !theirs) return false;
+    if (v === sync.version) return true;
+    if (syncBusy()) return false;             // the next poll tries again
+    const mine = toGraphJSON(name), mineStr = JSON.stringify(mine);
+    const wasDirty = mineStr !== lastSavedJSON;
+    let m;
+    if (!sync.baseRaw || !lastSavedJSON){      // nothing to merge against: take theirs if clean
+      if (wasDirty) return false;
+      m = {graph: theirs, conflicts: [], changed: [], ops: null, base_next: theirs};
+    } else {
+      const r = await fetch(`${API}/api/graph/${encodeURIComponent(name)}/merge`, {method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({base_mine: JSON.parse(lastSavedJSON), mine, base_theirs: sync.baseRaw, theirs})});
+      if (!r.ok) return false;
+      m = await r.json();
+    }
+    // The human changed something while we were away: start over next tick.
+    if (name !== currentName || syncBusy() || JSON.stringify(toGraphJSON(name)) !== mineStr) return false;
+
+    applyMergedGraph(m.graph);
+    sync.version = v; sync.baseRaw = _clone(theirs); sync.epoch++;
+    sync.needsWrite = syncNeedsMigration(theirs);
+    rebaseHistory(m.ops);
+    if (wasDirty || m.conflicts.length){
+      lastSavedJSON = JSON.stringify(m.base_next);   // what is on disk, in our spelling
+      _dirtySeen = null;                             // let checkDirty re-arm the autosave
+    } else {
+      lastSavedJSON = JSON.stringify(toGraphJSON(name));
+      clearDraft(name); setDocState('saved');
+    }
+    sync.conflicts = m.conflicts || [];
+    renderConflicts();
+    announceExternal(m.changed || [], sync.conflicts.length);
+    if (!sync.conflicts.length && (m.changed || []).length) scheduleLive();
+    return true;
+  } catch(e){ log('live sync: '+(e.message||e), 'err'); return false; }
+  finally { sync.merging = false; }
+}
+
+// ── put a merged graph on the canvas: patch in place when only values moved,
+//    rebuild (keeping viewport + selection) when the structure changed ──
+const SYNC_FIELDS = ['title','position','collapsed','bypassed','preview','color','finish','wireframe'];
+const SYNC_NOPATCH = new Set(['code','_cb','_ui','selection','trace']);
+const _jeq = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+function _connKeys(g){
+  return (g.connections||[]).map(c => [c.from_node,c.from_socket,c.to_node,c.to_socket].join('|')).sort();
+}
+function _liveByGid(){ const o = {}; for (const n of lgraph._nodes) o[graphIdOf(n)] = n; return o; }
+
+function patchPlan(cur, next, live){
+  if (!_jeq(_connKeys(cur), _connKeys(next)) || !_jeq(cur.groups||[], next.groups||[])) return null;
+  const a = {}; for (const n of cur.nodes) a[n.id] = n;
+  if (cur.nodes.length !== next.nodes.length) return null;
+  const plan = [];
+  for (const y of next.nodes){
+    const x = a[y.id], node = live[y.id];
+    if (!x || !node || x.type !== y.type || !_jeq(x.multi||[], y.multi||[]) || !_jeq(x.size, y.size)) return null;
+    const px = x.params||{}, py = y.params||{}, params = [];
+    for (const k of new Set([...Object.keys(px), ...Object.keys(py)])){
+      if (_jeq(px[k], py[k])) continue;
+      if (SYNC_NOPATCH.has(k) || !(k in py)) return null;
+      const hasW = (node.widgets||[]).some(w => w.cadParam === k) || node._noteParam === k;
+      if (!hasW) return null;
+      params.push(k);
+    }
+    const fields = SYNC_FIELDS.filter(f => !_jeq(x[f], y[f]));
+    if (params.length || fields.length) plan.push({node, nd: y, params, fields});
+  }
+  return plan;
+}
+function patchNode({node, nd, params, fields}){
+  for (const k of params){
+    const v = nd.params[k];
+    // ALL of them: a bounded number is two widgets (the slider and its ✎ field).
+    for (const w of (node.widgets||[])) if (w.cadParam === k) w.value = v;
+    node.properties[k] = v;
+  }
+  for (const f of fields){
+    const v = nd[f];
+    if (f === 'title'){ node.title = v || defaultTitleOf(node.cadType); resizeNode(node); }
+    else if (f === 'position') node.pos = [v[0], v[1]];
+    else if (f === 'collapsed') node.flags.collapsed = !!v;
+    else if (f === 'bypassed'){ node.bypassed = !!v; node.mode = v ? LiteGraph.NEVER : LiteGraph.ALWAYS; }
+    else if (f === 'preview'){
+      node.previewMode = v === true ? 'on' : v === false ? 'off' : 'auto';
+      for (const w of (node.widgets||[])) if (w.isEye) w.name = eyeLabel(node.previewMode);
+    }
+    else if (f === 'color') node.previewColor = v || undefined;
+    else if (f === 'finish') node.previewFinish = v || undefined;
+    else if (f === 'wireframe') node.wireframe = !!v;
+  }
+}
+function applyMergedGraph(merged){
+  const cur = toGraphJSON(currentName);
+  const plan = patchPlan(cur, merged, _liveByGid());
+  if (plan){
+    for (const p of plan) patchNode(p);
+    if (plan.some(p => p.fields.some(f => f === 'color' || f === 'finish' || f === 'wireframe'))) refreshDisplay();
+    refreshAllSubtypes();
+    lgraph.setDirtyCanvas(true, true);
+    return 'patch';
+  }
+  const sel = selectedNodes().map(graphIdOf);
+  histSuspend = true;
+  try { fromGraphJSON(_clone(merged)); } finally { histSuspend = false; }
+  const live = _liveByGid(), back = sel.map(i => live[i]).filter(Boolean);
+  if (back.length && lcanvas.selectNodes) lcanvas.selectNodes(back);
+  return 'rebuild';
+}
+
+// Replay theirs' changes onto every undo/redo snapshot, so stepping back
+// through the human's own history never un-does the agent's edit.
+function applyOps(g, ops){
+  const find = id => (g.nodes||[]).find(n => n.id === id);
+  for (const o of ops || []){
+    if (o.op === 'rename'){
+      for (const n of g.nodes||[]) if (n.id === o.from) n.id = o.to;
+      for (const c of g.connections||[]){ if (c.from_node === o.from) c.from_node = o.to; if (c.to_node === o.from) c.to_node = o.to; }
+    } else if (o.op === 'node_set'){
+      const n = find(o.id); if (!n) continue;
+      if (o.field.startsWith('params.')){
+        const k = o.field.slice(7); n.params = n.params || {};
+        if (o.absent) delete n.params[k]; else n.params[k] = _clone(o.value);
+      } else if (o.value == null) delete n[o.field]; else n[o.field] = _clone(o.value);
+    } else if (o.op === 'node_add'){
+      if (!find(o.node.id)) (g.nodes = g.nodes || []).push(_clone(o.node));
+    } else if (o.op === 'node_del'){
+      g.nodes = (g.nodes||[]).filter(n => n.id !== o.id);
+      g.connections = (g.connections||[]).filter(c => c.from_node !== o.id && c.to_node !== o.id);
+    } else if (o.op === 'conn_add'){
+      const c = o.conn, k = [c.from_node,c.from_socket,c.to_node,c.to_socket].join('|');
+      if (find(c.from_node) && find(c.to_node) && !_connKeys(g).includes(k)) (g.connections = g.connections || []).push(_clone(c));
+    } else if (o.op === 'conn_del'){
+      const k = o.key.join('|');
+      g.connections = (g.connections||[]).filter(c => [c.from_node,c.from_socket,c.to_node,c.to_socket].join('|') !== k);
+    } else if (o.op === 'groups'){
+      if (o.value && o.value.length) g.groups = _clone(o.value); else delete g.groups;
+    }
+  }
+  return g;
+}
+function rebaseHistory(ops){
+  if (ops === null){ histInit(); return; }     // no merge was possible: history restarts
+  const re = s => { try { return JSON.stringify(applyOps(JSON.parse(s), ops)); } catch(_){ return s; } };
+  for (let i = 0; i < undoStack.length; i++) undoStack[i] = re(undoStack[i]);
+  for (let i = 0; i < redoStack.length; i++) redoStack[i] = re(redoStack[i]);
+  histBase = histSnapshot();                   // the merged canvas is the present
+  updateUndoButtons();
+}
+
+// ── telling the human, without getting in their way ──
+function announceExternal(changed, nConflicts){
+  const now = performance.now();
+  for (const id of changed) sync.flash[id] = now + 2600;
+  sync.extTimes = sync.extTimes.filter(t => now - t < 20000).concat(now);
+  const burst = sync.extTimes.length >= 2;
+  const pill = document.getElementById('sync-pill');
+  if (pill){
+    pill.classList.toggle('on', burst);
+    clearTimeout(pill._t); pill._t = setTimeout(()=> pill.classList.remove('on'), 12000);
+  }
+  if (!burst && changed.length && !nConflicts)
+    toast('info', `${changed.length} ${changed.length === 1 ? 'nodo aggiornato' : 'nodi aggiornati'} dall'esterno (agente/API)`);
+  if (changed.length) syncFlashLoop();
+}
+function syncFlashLoop(){
+  const live = Object.values(sync.flash).some(t => t > performance.now());
+  lcanvas && lcanvas.setDirty(true, false);
+  if (live) requestAnimationFrame(syncFlashLoop); else sync.flash = {};
+}
+function drawSyncFlash(ctx, scale){
+  const now = performance.now(), th = LiteGraph.NODE_TITLE_HEIGHT || 30;
+  let live = null;
+  for (const id in sync.flash){
+    const left = sync.flash[id] - now; if (left <= 0) continue;
+    live = live || _liveByGid();
+    const n = live[id]; if (!n) continue;
+    const a = Math.min(1, left / 900);
+    const w = n.flags.collapsed ? (n._collapsed_width || n.size[0]) : n.size[0];
+    const h = n.flags.collapsed ? th : n.size[1] + th;
+    ctx.save();
+    ctx.globalAlpha = a; ctx.strokeStyle = '#f59e0b'; ctx.shadowColor = '#f59e0b';
+    ctx.lineWidth = 3 / scale; ctx.shadowBlur = 16 / scale;
+    ctx.beginPath();
+    const x = n.pos[0] - 5, y = n.pos[1] - th - 5;
+    if (ctx.roundRect) ctx.roundRect(x, y, w + 10, h + 10, 10); else ctx.rect(x, y, w + 10, h + 10);
+    ctx.stroke(); ctx.restore();
+  }
+}
+
+// ── conflicts: one row per node, keep mine / take theirs ──
+function _fmt(v){ const s = typeof v === 'string' ? v : JSON.stringify(v); return s == null ? '—' : (s.length > 28 ? s.slice(0, 27) + '…' : s); }
+function _esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function renderConflicts(){
+  const box = document.getElementById('sync-conflicts'); if (!box) return;
+  const cs = sync.conflicts;
+  box.classList.toggle('on', cs.length > 0);
+  if (!cs.length){ box.innerHTML = ''; return; }
+  const row = (c, i) => {
+    let what, mineL = 'Tieni il mio', theirsL = 'Prendi il loro';
+    if (c.kind === 'fields') what = c.fields.map(f => `<div class="f"><b>${_esc(f.field.replace(/^params\./,''))}</b> tuo ${_esc(_fmt(f.mine))} · loro ${_esc(_fmt(f.theirs))}</div>`).join('');
+    else if (c.kind === 'deleted_by_them'){ what = '<div class="f">eliminato dall\'agente, ma tu l\'hai modificato</div>'; theirsL = 'Elimina'; }
+    else if (c.kind === 'deleted_by_you'){ what = '<div class="f">l\'hai eliminato, l\'agente l\'ha modificato</div>'; mineL = 'Resta eliminato'; theirsL = 'Ripristina'; }
+    else what = c.fields.map(f => `<div class="f"><b>${_esc(f.field)}</b>: collegato da entrambi</div>`).join('');
+    return `<div class="c"><div class="t">«${_esc(c.label || c.id)}» <span>${_esc(c.id)}</span></div>${what}` +
+      `<div class="b"><button data-i="${i}" data-k="mine">${mineL}</button><button data-i="${i}" data-k="theirs">${theirsL}</button></div></div>`;
+  };
+  box.innerHTML = `<div class="h">⚠ Modifiche in conflitto con l'agente — il salvataggio attende la tua scelta</div>` +
+    cs.map(row).join('') +
+    `<div class="b all"><button data-k="all-mine">Tieni tutti i miei</button><button data-k="all-theirs">Prendi tutti i loro</button></div>`;
+  box.querySelectorAll('button').forEach(b => b.onclick = () => {
+    const k = b.dataset.k;
+    if (k === 'all-mine' || k === 'all-theirs') resolveConflicts(sync.conflicts.slice(), k === 'all-theirs');
+    else resolveConflicts([sync.conflicts[+b.dataset.i]], k === 'theirs');
+  });
+}
+function resolveConflicts(list, takeTheirs){
+  if (takeTheirs){
+    const g = toGraphJSON(currentName);
+    const find = id => g.nodes.find(n => n.id === id);
+    for (const c of list){
+      if (c.kind === 'fields'){
+        const n = find(c.id), t = c.theirs_node; if (!n || !t) continue;
+        for (const f of c.fields){
+          if (f.field.startsWith('params.')){
+            const k = f.field.slice(7); n.params = n.params || {};
+            if (t.params && k in t.params) n.params[k] = _clone(t.params[k]); else delete n.params[k];
+          } else if (t[f.field] == null) delete n[f.field]; else n[f.field] = _clone(t[f.field]);
+        }
+      } else if (c.kind === 'deleted_by_them'){
+        g.nodes = g.nodes.filter(n => n.id !== c.id);
+        g.connections = g.connections.filter(k => k.from_node !== c.id && k.to_node !== c.id);
+      } else if (c.kind === 'deleted_by_you' && c.theirs_node && !find(c.id)){
+        g.nodes.push(_clone(c.theirs_node));
+        for (const k of (sync.baseRaw && sync.baseRaw.connections) || [])
+          if ((k.from_node === c.id || k.to_node === c.id) && find(k.from_node) && find(k.to_node)) g.connections.push(_clone(k));
+      } else if (c.kind === 'wire' && c.theirs_connection){
+        const tc = c.theirs_connection;
+        g.connections = g.connections.filter(k => !(k.to_node === tc.to_node && k.to_socket === tc.to_socket));
+        g.connections.push(_clone(tc));
+      }
+    }
+    applyMergedGraph(g);
+    recordHistory();                 // choosing is the human's own, undoable step
+  }
+  sync.conflicts = sync.conflicts.filter(c => !list.includes(c));
+  renderConflicts();
+  if (!sync.conflicts.length){ _dirtySeen = null; scheduleServerSave(); scheduleLive(); }
+}
+
+
+// Styles for the live-sync pill + conflict box (injected, so the stylesheet
+// — and the touch/media-query work in it — is left alone).
+const SYNC_CSS = `
+#sync-pill{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:20;display:none;
+  background:rgba(245,158,11,.14);border:1px solid #f59e0b;color:#fbbf24;border-radius:14px;
+  padding:4px 12px;font-size:12px;pointer-events:none;animation:syncPulse 1.6s ease-in-out infinite;}
+#sync-pill.on{display:block;}
+@keyframes syncPulse{50%{opacity:.55;}}
+#sync-conflicts{position:absolute;left:10px;bottom:10px;z-index:21;display:none;max-width:min(420px,calc(100% - 20px));
+  max-height:60%;overflow:auto;background:var(--bg-2);border:1px solid #f59e0b;border-radius:8px;padding:8px 10px;
+  font-size:12px;color:var(--text);box-shadow:0 6px 24px rgba(0,0,0,.45);}
+#sync-conflicts.on{display:block;}
+#sync-conflicts .h{color:#fbbf24;font-weight:600;margin-bottom:6px;}
+#sync-conflicts .c{border-top:1px solid var(--border);padding:6px 0;}
+#sync-conflicts .t span{color:var(--text-dim);font-family:var(--mono);font-size:11px;margin-left:4px;}
+#sync-conflicts .f{color:var(--text-dim);margin:2px 0 0 8px;font-family:var(--mono);font-size:11px;}
+#sync-conflicts .f b{color:var(--text);font-weight:500;}
+#sync-conflicts .b{display:flex;gap:6px;margin-top:5px;}
+#sync-conflicts .b.all{border-top:1px solid var(--border);padding-top:7px;}
+#sync-conflicts button{background:var(--bg-3);color:var(--text);border:1px solid var(--border);border-radius:5px;
+  padding:3px 9px;font-size:11px;cursor:pointer;}
+#sync-conflicts button:hover{border-color:#f59e0b;}
+`;
+function initLiveSync(){
+  if (!document.getElementById('sync-css')){
+    const st = document.createElement('style'); st.id = 'sync-css'; st.textContent = SYNC_CSS; document.head.appendChild(st);
+  }
+  const pane = document.querySelector('.graph-pane');
+  if (pane && !document.getElementById('sync-pill')){
+    const pill = document.createElement('div'); pill.id = 'sync-pill';
+    pill.textContent = '🤖 L\'agente sta modificando il grafo…';
+    const box = document.createElement('div'); box.id = 'sync-conflicts';
+    pane.appendChild(pill); pane.appendChild(box);
+  }
+  const canvas = lcanvas && lcanvas.canvas;
+  if (canvas){
+    canvas.addEventListener('pointerdown', ()=>{ _syncPointer = true; }, true);
+    canvas.addEventListener('mousedown', ()=>{ _syncPointer = true; }, true);
+  }
+  const up = ()=>{ _syncPointer = false; };
+  window.addEventListener('pointerup', up, true); window.addEventListener('mouseup', up, true);
+  window.addEventListener('pointercancel', up, true);
+  // Introspection for headless tests (scratch playwright scripts): module
+  // scope is otherwise unreachable from page.evaluate.
+  window.__noodleSync = { state: sync, persist: persistToServer, recordHistory, graphIdOf,
+    get lgraph(){ return lgraph; }, get lcanvas(){ return lcanvas; }, get docState(){ return docState; } };
+  if (!window.__noodleShot){
+    setInterval(syncPoll, 1500);
+    window.addEventListener('focus', syncPoll);
+    document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) syncPoll(); });
+  }
+}
+/* ============================== Live sync — END ============== */
 
 /* ============================================================ *
  *  Global shortcuts (work even with focus in inputs)           *

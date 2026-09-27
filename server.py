@@ -683,8 +683,16 @@ async def wire_types():
 
 
 @app.post("/api/graph/{name}")
-async def save_graph(name: str, graph: dict):
-    """Create/overwrite a node graph project."""
+async def save_graph(name: str, graph: dict, base_version: Optional[str] = None):
+    """Create/overwrite a node graph project.
+
+    `base_version` (query, or a top-level body key) is the version the writer
+    edited: if graph.json has changed since, the write is REFUSED with 409 and
+    the current `{version, graph}` so the writer can merge. Omitted = overwrite,
+    as always. The response carries the new `version`. See graph_version.py.
+    """
+    from cad_nodes.graph_version import StaleGraphError, check_base, write_graph
+    base_version = graph.pop("base_version", None) or base_version
     graph.setdefault("name", name)
     try:
         g = Graph.from_dict(graph)
@@ -696,14 +704,18 @@ async def save_graph(name: str, graph: dict):
     param_issues = api.check_params(g)
 
     d = project_dir(name)
+    try:
+        check_base(d / "graph.json", base_version)
+    except StaleGraphError as e:
+        raise HTTPException(409, _stale_detail(e)) from e
     d.mkdir(parents=True, exist_ok=True)
     stamp_agent_tags(graph.get("nodes", []))  # date the 'To Agent' tags
-    (d / "graph.json").write_text(json.dumps(graph, indent=2))
+    version = write_graph(d / "graph.json", json.dumps(graph, indent=2))
     (d / "meta.json").write_text(json.dumps({
         "backend": "nodegraph",
         "description": graph.get("description", ""),
     }, indent=2))
-    out = {"status": "saved", "name": name,
+    out = {"status": "saved", "name": name, "version": version,
            "nodes": len(graph.get("nodes", [])),
            "connections": len(graph.get("connections", [])),
            "warnings": warnings}
@@ -746,7 +758,8 @@ async def patch_graph_param(name: str, payload: ParamPatch):
 
 
 @app.post("/api/graph/{name}/arrange")
-async def arrange_graph(name: str, graph: Optional[dict] = Body(default=None)):
+async def arrange_graph(name: str, graph: Optional[dict] = Body(default=None),
+                        groups: Optional[str] = None):
     """Tidy node positions — left-to-right by dependency depth, on the nodes' REAL
     on-canvas sizes, so the result cannot contain overlapping nodes (§6c).
 
@@ -762,8 +775,13 @@ async def arrange_graph(name: str, graph: Optional[dict] = Body(default=None)):
     Returns `{status, summary, graph?}`. `summary.group_overlaps` > 0 means some
     group boxes still cut across each other (their members interleave in the
     dependency order); the nodes are still correctly placed.
+
+    `?groups=auto` also proposes and adds group boxes (Parametri, shared hubs,
+    one per output chain) for nodes not already grouped — see
+    layout.propose_groups. Without it nothing is invented.
     """
     require_project(name)
+    opts = {"groups": groups} if groups else {}
     if graph is not None:
         graph.setdefault("name", name)
         try:
@@ -772,14 +790,14 @@ async def arrange_graph(name: str, graph: Optional[dict] = Body(default=None)):
         except (ValidationError, KeyError, ValueError) as e:
             raise HTTPException(400, f"Invalid graph: {e}") from e
         try:
-            summary = layout.arrange(g)
+            summary = layout.arrange(g, **opts)
         except (ValueError, AssertionError) as e:
             raise HTTPException(400, str(e)) from e
         return {"status": "ok", "summary": summary, "graph": g.to_dict()}
 
     store = GraphStore(PROJECTS_DIR)
     try:
-        summary = api.arrange(store, name)
+        summary = api.arrange(store, name, **opts)
     except (ValueError, AssertionError, KeyError) as e:
         raise HTTPException(400, str(e)) from e
     return {"status": "ok", "summary": summary}
@@ -790,7 +808,7 @@ async def arrange_graph(name: str, graph: Optional[dict] = Body(default=None)):
 # same names (cad_get_graph, cad_set_param, cad_edit_code, cad_apply_ops,
 # cad_validate). Each write loads, applies, validates and saves ONCE, so an agent
 # never has to hand-edit graph.json. `base_version` is optional (optimistic
-# concurrency; a no-op until the store keeps versions — see api.graph_version).
+# concurrency: a stale base is refused with 409 — see cad_nodes/graph_version.py).
 def _agent_call(fn, *args, **kwargs):
     """Run an api op, mapping its errors to HTTP: stale -> 409, bad input -> 400."""
     try:
@@ -1489,3 +1507,55 @@ async def list_backends():
     return [
         {"id": "nodegraph", "name": "Node CAD (build123d)", "type": "Visual graph -> build123d"},
     ]
+
+
+# ---------------------------------------------------------------------------
+# Graph version (optimistic concurrency) — BEGIN
+# The editor polls this to notice a graph changed under it (an agent, the API,
+# the copilot) and merges it live; a save carrying a stale base_version is
+# refused with 409 (see save_graph and cad_nodes/graph_version.py).
+# ---------------------------------------------------------------------------
+def _stale_detail(e) -> dict:
+    """The 409 body, with the graph in the same normalised form GET returns."""
+    d = e.detail()
+    if d.get("graph") is not None:
+        try:
+            d["graph"] = Graph.from_dict(d["graph"]).to_dict()
+        except Exception:  # an unparsable file on disk: the version alone still helps
+            d["graph"] = None
+    return d
+
+
+@app.get("/api/graph/{name}/version")
+async def graph_version(name: str, graph: int = 0):
+    """`{version}` of graph.json — a content hash, cheap to poll. With `?graph=1`
+    also the graph itself, read in the SAME read as the hash so they agree."""
+    from cad_nodes.graph_version import read_versioned
+    d = require_project(name)
+    version, data = read_versioned(d / "graph.json")
+    if version is None:
+        raise HTTPException(404, f"Project '{name}' has no graph.json")
+    out = {"version": version}
+    if graph:
+        out["graph"] = Graph.from_dict(data or {}).to_dict()
+    return out
+
+
+@app.post("/api/graph/{name}/merge")
+async def graph_merge(name: str, body: dict = Body(...)):
+    """Stateless three-way merge (cad_nodes/graph_merge.py) of the editor's
+    unsaved canvas with a graph someone else wrote: body `{base_mine, mine,
+    base_theirs, theirs}` -> `{graph, conflicts, changed, ops, renamed,
+    base_next}`. Touches nothing on disk."""
+    from cad_nodes.graph_merge import merge3, rebase
+    validate_graph_id(name)
+    try:
+        parts = [body[k] or {} for k in ("base_mine", "mine", "base_theirs", "theirs")]
+    except KeyError as e:
+        raise HTTPException(400, f"missing {e}") from e
+    out = merge3(*parts)
+    out["base_next"] = rebase(parts[0], parts[2], parts[3])
+    return out
+# ---------------------------------------------------------------------------
+# Graph version — END
+# ---------------------------------------------------------------------------

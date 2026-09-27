@@ -1190,6 +1190,29 @@ it in a panel at the left, one click away.
   the result stays tall and narrow (`retromy`: 2010×8179). Naming them is the fix,
   and now it is available.
 
+**Straighter wires, auto groups** (`layout.py`, measured over the 52 examples +
+59 saved projects + tars-pet-sg92r): ordering now routes a long wire through one
+dummy per column it crosses and keeps the best of 12 sweeps by crossing count;
+placement (`_align`) pulls each node to the weighted centre of its neighbours
+(weight = 1/source fan-out, so a hub does not drag chains apart) and re-packs each
+column in order with pool-adjacent-violators. Groups are rigid rectangles packed
+first-fit (two band orders tried, shorter kept) so boxes never cut across. Totals:
+crossings 1038 → 763, wire length −6.5 %, height +7 %; sg92r 75 → 49 crossings.
+Uniform weights in the ORDERING step measured better (763 vs 844) — keep them.
+`arrange(groups="auto")` (`?groups=auto`, `api.propose_groups`, ⌘K "Riordina +
+gruppi automatici") adds `propose_groups()`: "Parametri" (every input source,
+lifted into the panel — a group titled Parametri/Parameters/Params made only of
+sources IS the panel), connected hubs (fan-out ≥ 3), one box per remaining chain
+titled by its most downstream user name, else `<hub>[index]`. Opt-in only.
+
+**Editor readability** ("Graph clarity" block in nodes.html): selecting nodes
+dims everything outside their lineage (one even-odd veil + the lineage wires
+redrawn, upstream cyan / downstream amber); nameless ListItems and chain nodes
+DISPLAY a derived title (`Progetto[5] → Batteria`, `Export STL · Stampa frontale`)
+via `getTitle` — never saved; a minimap in the canvas corner (click/drag to
+navigate). All three toggle from ⌘K or the canvas right-click, remembered in
+localStorage. `flags.collapsed` is now persisted as `collapsed: true`.
+
 **Apply / reload rules:**
 - Backend Python change → `docker restart noodle` (process caches imports;
   the read-only mount alone isn't enough).
@@ -1225,10 +1248,10 @@ MCP (one contiguous section of `mcp_server.py`) and HTTP twins.
   CodeBlock `#@param` (bare name → the `_cb` override), `_`-prefixed editor
   state and `selection`/`trace` pass through; everything else is an error that
   LISTS the valid names. Out-of-range numbers clamp (as the editor's typed field
-  does) and say so in `notes`. Stored graphs are never rejected for it — saves
-  and `validate` only REPORT (`check_params`), because real graphs hold values
-  past the catalog range that the engine runs fine (tars-pet: a 0-100 slider at
-  180).
+  does) and say so in `notes` — except an input slider's `value`, whose catalog
+  range is only the default drag window: there the `_ui` window WIDENS to fit
+  (tars-pet keeps a 0-100 slider at 180). Stored graphs are never rejected —
+  saves and `validate` only REPORT (`check_params`).
 - **Nodes are addressed by id OR exact title** (`resolve_node`); id wins, an
   ambiguous title is an error naming the ids.
 - **One implementation of every edit**: the `_op_*` functions mutate an
@@ -1243,11 +1266,45 @@ MCP (one contiguous section of `mcp_server.py`) and HTTP twins.
   `compact_catalog` (the copilot's prompt uses it too). The HTTP `/execute`
   default payload is UNCHANGED — `nodes.html` reads `data.code` for its Code
   tab — the lean shape is `?lean=1`.
-- **Versions are a hook**: write calls take an optional `base_version` and
-  return `version`, via `graph_version()` which duck-types `store.version()`.
-  A no-op until the store keeps versions (the graph-versioning branch).
+- **Versions**: every write call takes an optional `base_version` (stale → 409,
+  `api.StaleGraphError`) and returns the new `version` — `graph_version()` reads
+  `store.version()`, the content hash of §6f.
 - Tests: `tests/test_agent_api.py`, `tests/test_mcp_agent.py`,
   `tests/test_server_agent_routes.py`.
+
+### 6f. Live sync — the editor and an agent on the same graph
+
+graph.json has two writers: the editor's saves and an agent (API/MCP/copilot).
+The incident: an agent wrote the graph while the editor was open, the editor's
+next save put its older canvas back, and the agent kept telling the user "reload
+before saving". Three pieces fix it:
+
+- **Versions** (`cad_nodes/graph_version.py`): version = hash of graph.json's
+  bytes (covers every writer, needs no state, cannot miss a same-size edit the
+  way mtime can). `POST /api/graph/{name}` and `GraphStore.save` take an optional
+  `base_version`; a stale one is refused with **409** + the current
+  `{version, graph}`. No base = overwrite, as before. `GET …/version[?graph=1]`.
+- **Merge** (`cad_nodes/graph_merge.py`, `POST …/merge`, stateless): three-way,
+  field by field, each side diffed against ITS OWN spelling of the base (the
+  editor writes every widget value, an agent may omit defaults). A true conflict
+  keeps the human's value and is reported; position/collapse/size are quiet.
+- **Editor** (nodes.html, "Live sync" block): every save carries its base; a
+  1.5s poll of `/version` merges outside writes into the canvas — patched in
+  place when only values moved, rebuilt (viewport + selection kept) otherwise;
+  deferred while the human is dragging or has a modal open. Changed nodes glow
+  amber, a pill shows while edits keep arriving, conflicts get a keep-mine /
+  take-theirs box and hold saving until answered. Undo snapshots are rebased
+  with the merge's `ops`, so Ctrl+Z never takes an agent's edit back out. A save
+  of what disk already holds is skipped (every Live run saves first, and the
+  echo would only bump the version under an agent).
+- **Stable ids**: litegraph numbers nodes 1..N in load order and the save used
+  to write those back (n51 → n49 → n48). `fromGraphJSON` now pins runtime id K
+  to disk id `nK` (other ids ride on `node._gid`); `graphIdOf()` is the only way
+  from a node to its id.
+- Found on the way: `openGraph(currentName)` returns early for the open graph,
+  so the copilot's and Import's "reload" were no-ops (then reverted by the next
+  save) — they now `syncPullNow()`; and `checkDirty` re-armed the 2.5s autosave
+  debounce every second, so an idle dirty graph never autosaved.
 
 ## 7. The AI copilot — scope & guardrails
 
