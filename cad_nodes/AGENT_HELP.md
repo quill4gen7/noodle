@@ -259,7 +259,7 @@ what the user sees — materials, glass, glow and all.
 | `view` | `iso` (default, front-right-top) · `front` `back` `left` `right` `top` `bottom` |
 | `azim`, `elev` | degrees, instead of a preset. Azimuth in the XY plane from +X, elevation from it. The scene is **Z-up** |
 | `zoom` | >1 pulls back, <1 closes in (default 1) |
-| `node`, `isolate` | frame ONE node (id or title); `isolate=1` hides the rest. Any geometry node works, including an intermediate step that is not normally drawn — its eye is turned on for the shot and restored after |
+| `node`, `isolate` | frame ONE node (id or title); `isolate=1` hides the rest. Any geometry node works, including an intermediate step that is not normally drawn — its eye is turned on for the shot and restored after (such a shot always re-runs) |
 | `width`, `height`, `scale` | pixels (clamped to 4000) and device pixel ratio. Below ~600px wide the editor switches to its narrow layout — keep the default 900×700 |
 | `projection` | `persp` or `ortho` — ortho reads better when checking alignment |
 | `hq` | `0` turns off the high-quality path (glass/bloom): use it when a scene with several glass bodies times out |

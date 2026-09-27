@@ -438,3 +438,20 @@ def test_every_tool_the_guide_names_exists():
     named = set(re.findall(r"\b(cad_[a-z_]+)\(?", text))
     missing = [t for t in named if f"def {t}(" not in mcp_src]
     assert not missing, missing
+
+
+def test_isolating_an_already_drawn_node_does_not_touch_the_graph(store, monkeypatch):
+    """A terminal node is drawn already: no eye flip, no save — so the cheap
+    run=0 path for extra angles stays cheap."""
+    from cad_nodes import screenshot as shot
+    api.add_node(store, "g", "Box")
+    before = _raw(store)
+    calls = []
+    monkeypatch.setattr(shot, "render", _fake_render(calls))
+    asyncio.run(api.screenshot(store, "g", node="box_1", run=False))
+    assert calls[0]["run"] is False
+    assert _raw(store) == before
+
+
+def test_summarize_execute_passes_an_api_error_through():
+    assert api.summarize_execute({"error": "KeyError: 'nope'"}) == {"error": "KeyError: 'nope'"}

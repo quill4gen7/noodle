@@ -621,6 +621,7 @@ def set_node(store: GraphStore, graph_id: str, node_id: str,
     _check_base_version(store, graph_id, base_version)
     graph = store.load(graph_id)
     out = _op_set_node(graph, node_id, **props)
+    validate_graph(graph)                 # a bad `parent` must not be saved
     store.save(graph_id, graph)
     return {**out, "version": graph_version(store, graph_id)}
 
@@ -919,6 +920,8 @@ def summarize_execute(result: dict, include_code: bool = False,
     (~hundreds of KB on a real graph) and stdout only on request."""
     if not isinstance(result, dict):
         return result
+    if "error" in result and "success" not in result:
+        return result                     # an api-level failure (_safe), as is
     out = {"success": bool(result.get("success"))}
     for k in ("errors", "error_detail", "node_errors", "warnings", "overrides",
               "override_notes"):
@@ -1094,7 +1097,7 @@ async def screenshot(store: GraphStore, graph_id: str, **opts):
         except KeyError as e:
             raise ValueError(e.args[0] if e.args else str(e)) from None
         opts["node"] = node.id
-        if node.preview is not True:
+        if not _drawn(graph, node):
             if not _drawable(node):
                 raise ValueError(
                     f"node {node.id} ({node.type}) has no drawable output — "
@@ -1136,6 +1139,14 @@ def _check_png(png, graph_id: str) -> None:
     if len(png) < _MIN_PNG_BYTES:
         raise ScreenshotFailed(f"screenshot of {graph_id!r} is only {len(png)} "
                                "bytes — the capture failed")
+
+
+def _drawn(graph: Graph, node: Node) -> bool:
+    """Is this node drawn in the viewport as the graph stands? The
+    transpiler's own rule (eye on/off, or auto = terminal geometry only),
+    asked of it rather than copied."""
+    from .transpiler import Transpiler
+    return Transpiler(graph)._previewed(node, catalog.get(node.type))
 
 
 def _drawable(node: Node) -> bool:
