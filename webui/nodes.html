@@ -1522,9 +1522,43 @@ function syncCodeblockParams(node){
       }
     }
   }
+  syncCodeblockOutputs(node, code);
   resizeNode(node);
   updateCbWired(node);
   node.setDirtyCanvas && node.setDirtyCanvas(true, true);
+}
+
+// `#@out name: type` -> an extra named OUTPUT socket (after `result`, which is
+// always slot 0). Mirrors transpiler.parse_codeblock_outputs — keep in sync.
+const CB_OUT_ALIASES = {shape:'solid', part:'solid', brep:'solid', compound:'solid',
+  sketch:'surface', face:'surface', wire:'curve', edge:'curve', line:'curve',
+  number:'data', float:'data', int:'data', bool:'data', str:'data', list:'data', any:'data',
+  point:'vector', location:'plane'};
+const CB_OUT_TYPES = ['solid','surface','curve','plane','vector','selection','mesh','data','tree'];
+function parseCbOutputs(code){
+  const out = [], seen = new Set(['result']);
+  for (const line of String(code||'').split('\n')){
+    const m = line.match(/^\s*#@out\s+([A-Za-z_]\w*)\s*(?::\s*|\s+)?(\w+)?/);
+    if (!m || seen.has(m[1])) continue;
+    let t = (m[2] || 'data').toLowerCase();
+    t = CB_OUT_ALIASES[t] || t;
+    if (!CB_OUT_TYPES.includes(t)) t = 'data';
+    seen.add(m[1]); out.push({name:m[1], type:t});
+  }
+  return out;
+}
+function syncCodeblockOutputs(node, code){
+  const decls = parseCbOutputs(code);
+  const want = new Map(decls.map(d => [d.name, d.type]));
+  for (let i = (node.outputs||[]).length - 1; i >= 0; i--){
+    const s = node.outputs[i];
+    if (s.cbOut && want.get(s.name) !== s.type) node.removeOutput(i);   // gone or retyped
+  }
+  for (const d of decls){
+    if ((node.outputs||[]).some(s => s.cbOut && s.name === d.name)) continue;
+    node.addOutput(d.name, d.type);
+    node.outputs[node.outputs.length - 1].cbOut = true;
+  }
 }
 
 function makeCbWidget(node, d, val){

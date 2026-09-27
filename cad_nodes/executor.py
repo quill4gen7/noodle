@@ -51,11 +51,31 @@ def _humanize(exc_line: str) -> tuple[str, str]:
     if "is not closed" in low or "wire is not closed" in low:
         return ("Il contorno non è chiuso.",
                 "MakeFace/Extrude richiedono uno sketch o un wire chiuso.")
+    if low.startswith("syntaxerror") or low.startswith("indentationerror"):
+        return ("Errore di sintassi nel codice del CodeBlock.",
+                "Correggi la riga indicata (line/col sono relativi al blocco).")
     if "nameerror" in low:
         return ("Nome non definito nel codice generato.",
                 "Probabile errore in un nodo CodeBlock o Expression.")
     # Fallback: surface the raw exception.
     return (exc_line or "Errore di esecuzione.", "")
+
+
+# Suffix the transpiler appends to a CodeBlock's error (runtime _cb_where, or the
+# SyntaxError stub): " (CodeBlock line 12)" / " (CodeBlock line 3, col 7)".
+_CB_WHERE = re.compile(r"\(CodeBlock line (\d+)(?:, col (\d+))?\)\s*$")
+
+
+def _codeblock_where(raw: str) -> dict:
+    """{"line": N[, "col": C]} — block-relative, 1-based — when a node error
+    carries a CodeBlock location; {} otherwise."""
+    m = _CB_WHERE.search(raw or "")
+    if not m:
+        return {}
+    out = {"line": int(m.group(1))}
+    if m.group(2):
+        out["col"] = int(m.group(2))
+    return out
 
 
 def _diagnose(stderr: str, script_text: str) -> dict:
@@ -298,7 +318,9 @@ def _finalize(code: str, script_text: str, stdout: str, stderr,
     # Per-node errors: humanise, surface as warnings, but don't block.
     for nid, raw in raw_errors.items():
         msg, hint = _humanize(raw)
-        result["node_errors"][nid] = {"exception": raw, "message": msg, "hint": hint}
+        entry = {"exception": raw, "message": msg, "hint": hint}
+        entry.update(_codeblock_where(raw))
+        result["node_errors"][nid] = entry
     if raw_errors:
         result["warnings"].append(
             f"{len(raw_errors)} nodo/i in errore (workflow continuato): "

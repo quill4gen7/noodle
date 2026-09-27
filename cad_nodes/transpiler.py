@@ -109,6 +109,82 @@ def parse_codeblock_params(code: str) -> list[dict]:
     return out
 
 
+# A `#@out` declaration: a standalone comment line naming an extra OUTPUT socket
+# of a CodeBlock, e.g.
+#   #@out body: solid
+#   #@out lid solid        (the colon is optional; the type defaults to data)
+# The block then returns those variables (or a `result` dict carrying them) on
+# same-named sockets. `result` always stays the first output (back-compat).
+_CB_OUT = re.compile(r"^\s*#@out\s+([A-Za-z_]\w*)\s*(?::\s*|\s+)?(\w+)?")
+_CB_OUT_ALIASES = {
+    "shape": "solid", "part": "solid", "brep": "solid", "compound": "solid",
+    "sketch": "surface", "face": "surface",
+    "wire": "curve", "edge": "curve", "line": "curve",
+    "number": "data", "float": "data", "int": "data", "bool": "data",
+    "str": "data", "list": "data", "any": "data",
+    "point": "vector", "location": "plane",
+}
+
+
+def parse_codeblock_outputs(code: str) -> list[dict]:
+    """Every `#@out name[: type]` declaration in a CodeBlock's source, in order:
+    [{"name", "type"}]. `type` is a wire type (casts.WIRE_TYPES; common aliases
+    like shape/part/sketch/number are folded, unknown -> data). `result` is
+    reserved (it is always the block's first output) and ignored here."""
+    from .casts import WIRE_TYPES
+    out, seen = [], {"result"}
+    for line in (code or "").splitlines():
+        m = _CB_OUT.match(line)
+        if not m or m.group(1) in seen:
+            continue
+        kind = (m.group(2) or "data").lower()
+        kind = _CB_OUT_ALIASES.get(kind, kind)
+        if kind not in WIRE_TYPES:
+            kind = "data"
+        seen.add(m.group(1))
+        out.append({"name": m.group(1), "type": kind})
+    return out
+
+
+def _codeblock_body(code: str) -> tuple[list[str], list[int]]:
+    """The user lines that land in the generated function (every line except a
+    `#@param` declaration, which becomes an argument) and, for each, its 1-based
+    line number in the ORIGINAL block — so an error on generated body line k
+    maps back to the line the user actually wrote."""
+    body, orig = [], []
+    for i, raw in enumerate((code or "").splitlines() or ["result = None"], 1):
+        if _parse_cb_line(raw) is not None:
+            continue
+        body.append(raw)
+        orig.append(i)
+    return body, orig
+
+
+def check_codeblock(code: str) -> dict | None:
+    """Compile a CodeBlock's body exactly as it will be emitted. None when it
+    compiles; else {"line", "col", "message", "text"} with a block-relative
+    (1-based) line/col — the location in the code the user wrote."""
+    body, orig = _codeblock_body(code)
+    src = ("def __cb_check__():\n" + "\n".join("    " + b for b in body)
+           + "\n    return result\n")
+    try:
+        compile(src, "<codeblock>", "exec")
+    except SyntaxError as e:
+        idx = (e.lineno or 2) - 2                  # 0-based into `body`
+        line = orig[max(0, min(idx, len(orig) - 1))] if orig else 1
+        col = max(1, e.offset - 4) if e.offset else None
+        return {"line": line, "col": col, "message": e.msg or "invalid syntax",
+                "text": (e.text or "").strip()}
+    return None
+
+
+def _dropped_lines(orig: list[int]) -> tuple:
+    """Original line numbers NOT emitted (the #@param declarations), sorted —
+    handed to the runtime _cb_where() so it can undo the renumbering."""
+    have = set(orig)
+    return tuple(i for i in range(1, (orig[-1] if orig else 0) + 1) if i not in have)
+
+
 def _cb_literal(value, kind: str) -> str:
     """Render a CodeBlock param override value as a Python source literal."""
     try:
@@ -3593,6 +3669,61 @@ def _is_seq(_v):
     return isinstance(_v, (list, tuple, ShapeList))
 
 
+class _CbOuts(dict):
+    \"\"\"What a CodeBlock with `#@out` declarations returns: {socket: value}.
+    A distinct type so _cb_pick can tell it from a plain dict the user built.\"\"\"
+
+
+def _cb_pack(_loc, _names):
+    \"\"\"Collect a CodeBlock's named outputs from its locals: a variable of that
+    name wins, else a key of a `result` dict, else None.\"\"\"
+    _r = _loc.get('result')
+    _d = _CbOuts(result=_r)
+    for _n in _names:
+        if _n in _loc:
+            _d[_n] = _loc[_n]
+        elif isinstance(_r, dict) and _n in _r:
+            _d[_n] = _r[_n]
+        else:
+            _d[_n] = None
+    return _d
+
+
+def _cb_pick(_v, _n):
+    \"\"\"One named output of a CodeBlock's return value (a list when fanned).\"\"\"
+    if isinstance(_v, dict):
+        return _v.get(_n)
+    if isinstance(_v, list):
+        return [_cb_pick(_x, _n) for _x in _v]
+    return _v if _n == 'result' else None
+
+
+def _cb_where(_e, _fn, _dropped=(), _nbody=0):
+    \"\"\"' (CodeBlock line N)' for an exception raised inside CodeBlock function
+    `_fn`: the deepest traceback frame inside the block's body, mapped back to
+    the line the user wrote (undoing the dropped param-declaration lines). ''
+    when the error did not come from inside the block.\"\"\"
+    try:
+        _co = globals()[_fn].__code__
+    except Exception:
+        return ''
+    _first = _co.co_firstlineno
+    _k = None
+    _tb = _e.__traceback__
+    while _tb is not None:
+        _f = _tb.tb_frame.f_code
+        if (_f.co_filename == _co.co_filename
+                and _first < _tb.tb_lineno <= _first + _nbody):
+            _k = _tb.tb_lineno - _first
+        _tb = _tb.tb_next
+    if _k is None:
+        return ''
+    for _d in _dropped:
+        if _d <= _k:
+            _k += 1
+    return f' (CodeBlock line {_k})'
+
+
 def _fanout(_fn, _kw):
     \"\"\"Grasshopper-style data matching. _kw maps each item-access input name to
     its value. Any value that is a sequence makes the node run once per item;
@@ -5338,7 +5469,8 @@ class Transpiler:
         return key, wrapped
 
     def _guard(self, lines: list[str], body: list[str], node,
-               key_src: str = "", sub_ids: list[str] | None = None) -> None:
+               key_src: str = "", sub_ids: list[str] | None = None,
+               err_suffix: str = "") -> None:
         """Wrap a node's statement(s) in try/except so one node's runtime error
         is recorded in __errors__ and doesn't abort the rest of the workflow.
         In memo mode, also wrap the body in a cache lookup: on a hit the node's
@@ -5394,7 +5526,10 @@ class Transpiler:
         var = self.var_of.get(node.id)
         if var:
             lines.append(f"    {var} = None")
-        lines.append(f"    __errors__[{node.id!r}] = f\"{{type(_e).__name__}}: {{_e}}\"")
+        # err_suffix: an expression appended to the message (a CodeBlock's
+        # _cb_where(...) -> " (CodeBlock line N)").
+        lines.append(f"    __errors__[{node.id!r}] = f\"{{type(_e).__name__}}: {{_e}}\""
+                     + (f" + {err_suffix}" if err_suffix else ""))
 
     def _emit_bypass(self, node, lines: list[str]) -> None:
         """Bypassed node: skip its operation and pass an upstream value straight
@@ -5592,16 +5727,31 @@ class Transpiler:
                 "min": None, "max": None, "step": None, "options": None,
             }, fn)
         sig = [s.name for s in ndef.inputs] + names
+        outs = parse_codeblock_outputs(user_code)
+        out_names = tuple(o["name"] for o in outs)
+        ret = f"_cb_pack(locals(), {out_names!r})" if outs else "result"
+        # #@param declaration lines are dropped (they are now arguments);
+        # `orig` remembers where every emitted line came from.
+        body_lines, orig = _codeblock_body(user_code)
         lines.append(f"def {fn_tok}({', '.join(sig)}):")
-        emitted = False
-        for raw in user_code.splitlines() or ["result = None"]:
-            if _parse_cb_line(raw) is not None:
-                continue                 # a #@param declaration -> now an argument
-            lines.append("    " + raw)
-            emitted = True
-        if not emitted:
-            lines.append("    pass")
-        lines.append("    return result")
+        bad = check_codeblock(user_code)
+        if bad is not None:
+            # A SyntaxError in ONE block must not take the whole program down
+            # (it used to: the def sits outside every guard, so compiling _run.py
+            # failed, node_errors came back {} and the traceback said "_run.py
+            # line 4939"). The block becomes a stub that raises at call time,
+            # inside its guard, so it lands in __errors__[node] carrying the
+            # line/col the user wrote — and every other node still runs.
+            where = f"line {bad['line']}" + (f", col {bad['col']}" if bad["col"] else "")
+            msg = f"{bad['message']} (CodeBlock {where})"
+            lines.append(f"    raise SyntaxError({msg!r})")
+            body_lines, orig = [], []
+        else:
+            for raw in body_lines:
+                lines.append("    " + raw)
+            if not body_lines:
+                lines.append("    pass")
+            lines.append(f"    return {ret}")
 
         in_kw = ", ".join(f"{s.name}={inputs.get(s.name, 'None')}" for s in ndef.inputs)
         param_kw = "".join(f", {n}={call_arg[n]}" for n in names)
@@ -5614,11 +5764,30 @@ class Transpiler:
             call = f"{fn}({in_kw}{param_kw})"
 
         body = [f"{var} = {call}{_annot(node)}"]
+        preview = var
+        if outs:
+            # Named outputs: each socket gets its own var, picked from the
+            # returned {socket: value} (a list of them when fanned). `result`
+            # stays socket 0. Pre-bound to None so a failing block leaves None
+            # downstream, never an unbound name.
+            geo = []
+            types = {o["name"]: o["type"] for o in outs}
+            for sock in ("result",) + out_names:
+                self._counter += 1
+                ov = f"__out_{self._counter}"
+                lines.append(f"{ov} = None")
+                body.append(f"{ov} = _cb_pick({var}, {sock!r})")
+                self.out_var_of[(node.id, sock)] = ov
+                if types.get(sock) in _PREVIEWABLE:
+                    geo.append(ov)
+            if geo:                     # draw the geometry sockets, not the dict
+                preview = f"[{', '.join(geo)}]"
         if self._previewed(node, ndef):
-            body.append(f"__previews__[{node.id!r}] = {var}")
+            body.append(f"__previews__[{node.id!r}] = {preview}")
         # The def lines live outside the guarded body: hash the user code too,
         # so editing the block's code invalidates its cache entry.
-        self._guard(lines, body, node, key_src=user_code)
+        where = f"_cb_where(_e, {fn!r}, {_dropped_lines(orig)!r}, {len(body_lines)})"
+        self._guard(lines, body, node, key_src=user_code, err_suffix=where)
 
     def _cast(self, src, sock, var: str) -> str:
         """Auto-apply a boundary cast when the effective upstream type needs one to
