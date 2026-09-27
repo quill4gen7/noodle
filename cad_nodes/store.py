@@ -21,6 +21,7 @@ import shutil
 from pathlib import Path
 
 from .graph import Graph
+from .graph_version import check_base, current_version, write_graph
 
 DEFAULT_ROOT = os.environ.get("CAD_PROJECTS_DIR", "/app/projects")
 
@@ -312,11 +313,22 @@ class GraphStore:
             raise KeyError(f"No graph {graph_id!r}")
         return Graph.from_dict(json.loads(gpath.read_text()))
 
-    def save(self, graph_id: str, graph: Graph, description: str = "") -> None:
-        stamp_agent_tags(graph.nodes)
+    def version(self, graph_id: str) -> str | None:
+        """The on-disk version of graph.json (a content hash; None if absent)."""
+        return current_version(self.dir(graph_id) / "graph.json")
+
+    def save(self, graph_id: str, graph: Graph, description: str = "",
+             base_version: str | None = None) -> str:
+        """Write the graph; return its new version.
+
+        With `base_version`, refuse (StaleGraphError) if the file on disk is no
+        longer that version — someone else wrote it meanwhile. See graph_version.
+        """
         d = self.dir(graph_id)
+        check_base(d / "graph.json", base_version)
+        stamp_agent_tags(graph.nodes)
         d.mkdir(parents=True, exist_ok=True)
-        (d / "graph.json").write_text(json.dumps(graph.to_dict(), indent=2))
+        version = write_graph(d / "graph.json", json.dumps(graph.to_dict(), indent=2))
         meta = {}
         mpath = d / "meta.json"
         if mpath.exists():
@@ -328,6 +340,7 @@ class GraphStore:
         if description:
             meta["description"] = description
         mpath.write_text(json.dumps(meta, indent=2))
+        return version
 
     def delete(self, graph_id: str) -> None:
         d = self.dir(graph_id)

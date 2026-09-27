@@ -341,3 +341,25 @@ def arrange(store: GraphStore, graph_id: str, **opts) -> dict:
     summary = _layout.arrange(graph, **opts)
     store.save(graph_id, graph)
     return summary
+
+
+# --- graph version (optimistic concurrency, see graph_version.py) ---------
+def graph_version(store: GraphStore, graph_id: str) -> dict:
+    """`{version, graph}` read in one go. Pass `version` back as `base_version`
+    to `write_graph` so a write never silently overwrites someone else's edit
+    (the editor, a human) made in between."""
+    from .graph_version import read_versioned
+    version, data = read_versioned(store.dir(graph_id) / "graph.json")
+    if version is None:
+        raise KeyError(f"No graph {graph_id!r}")
+    return {"version": version, "graph": Graph.from_dict(data or {}).to_dict()}
+
+
+def write_graph(store: GraphStore, graph_id: str, graph: dict,
+                base_version: Optional[str] = None) -> dict:
+    """Validate and save a whole graph. With `base_version`, a graph changed
+    since that version raises `graph_version.StaleGraphError` (its `.detail()` has
+    the current version + graph to merge with) instead of being overwritten."""
+    g = Graph.from_dict({**graph, "name": graph_id})
+    g.validate()
+    return {"version": store.save(graph_id, g, base_version=base_version)}
