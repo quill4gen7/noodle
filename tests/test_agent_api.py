@@ -393,3 +393,23 @@ def test_screenshot_of_a_non_geometry_node_says_why(store, monkeypatch):
     monkeypatch.setattr(shot, "render", _fake_render([]))
     with pytest.raises(ValueError, match="no drawable output"):
         asyncio.run(api.screenshot(store, "g", node="numberslider_1"))
+
+
+# --- offline CLI -------------------------------------------------------------
+def test_cli_validate_and_arrange_work_offline(store, tmp_path, capsys):
+    from cad_nodes import cli
+    api.add_node(store, "g", "Box", position=(0, 0))
+    api.add_node(store, "g", "Box", position=(0, 0))       # stacked on purpose
+    path = store.dir("g") / "graph.json"
+    assert cli.main(["validate", str(path)]) == 0
+    assert json.loads(capsys.readouterr().out)["ok"] is True
+    out = tmp_path / "arranged.json"
+    assert cli.main(["arrange", str(path), "-o", str(out)]) == 0
+    assert json.loads(capsys.readouterr().out)["overlaps"] == 0
+    assert layout.overlapping_pairs(api.Graph.from_dict(json.loads(out.read_text()))) == []
+    data = json.loads(path.read_text())
+    data["nodes"][0]["params"]["bogus"] = 1
+    path.write_text(json.dumps(data))
+    assert cli.main(["validate", str(path)]) == 1
+    assert cli.main(["catalog", "--query", "polar"]) == 0
+    assert "ArrayPolar [" in capsys.readouterr().out

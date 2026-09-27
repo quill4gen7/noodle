@@ -262,12 +262,16 @@ def validation_report(graph: Graph) -> dict:
     """Everything checkable without running: {ok, error?, warnings,
     param_issues}. `error` is a hard wiring/type problem; `param_issues` are
     stored params that are unknown, badly typed or out of range."""
+    # Out-of-range values still run (the engine does not clamp stored params;
+    # only edits do), so they warn instead of failing the report.
+    all_issues = check_params(graph)
+    issues = [i for i in all_issues if not i.startswith("out of range")]
+    ranged = [i for i in all_issues if i.startswith("out of range")]
     try:
-        warnings = validate_graph(graph)
+        warnings = validate_graph(graph) + ranged
     except (ValidationError, KeyError, ValueError) as e:
-        return {"ok": False, "error": str(e), "warnings": [],
-                "param_issues": check_params(graph)}
-    issues = check_params(graph)
+        return {"ok": False, "error": str(e), "warnings": ranged,
+                "param_issues": issues}
     return {"ok": not issues, "warnings": warnings, "param_issues": issues}
 
 
