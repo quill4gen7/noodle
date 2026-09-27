@@ -3134,6 +3134,7 @@ document.addEventListener('keydown', (e)=>{
   const bar = document.createElement('div'); bar.id = 'sel-toolbar';
   bar.innerHTML =
     '<span class="count"></span>'+
+    '<button data-act="rename" title="Rename (F2)">✎ Rename</button>'+
     '<button data-act="view" title="Group view — cycle the render of the selected nodes: auto (terminals only) → on (force-show) → off (hide)">👁 Auto</button>'+
     '<span class="sep"></span>'+
     '<button data-act="bypass" title="Toggle bypass (Ctrl+B)">⊘ Bypass</button>'+
@@ -3151,34 +3152,48 @@ document.addEventListener('keydown', (e)=>{
     else if (act === 'group')  groupSelected();
     else if (act === 'clone')  cloneSelected();
     else if (act === 'delete') deleteSelected();
+    else if (act === 'rename'){ const ns = selectedNodes(); if (ns.length === 1) renameNode(ns[0]); }
   });
   const countEl = bar.querySelector('.count');
   const viewBtn = bar.querySelector('[data-act="view"]');
   const bypassBtn = bar.querySelector('[data-act="bypass"]');
+  const renameBtn = bar.querySelector('[data-act="rename"]');
+  const groupBtn = bar.querySelector('[data-act="group"]');
   (function loop(){
     requestAnimationFrame(loop);
     if (!lcanvas){ bar.style.display = 'none'; return; }
     syncIsolate();    // isolate: force-preview the selection on change + refresh filter
-    // only for a real multi-selection (2+ nodes) or a selected group
+    // only for a real multi-selection (2+ nodes) or a selected group — on touch
+    // also for ONE node: there is no Del/F2/Ctrl+B to reach for (── touch ──)
     const selNodes = Object.values(lcanvas.selected_nodes || {});
     const grp = lcanvas.selected_group;
-    if (selNodes.length < 2 && !grp){ bar.style.display = 'none'; return; }
+    const minSel = touchUI() ? 1 : 2;
+    if (selNodes.length < minSel && !grp){ bar.style.display = 'none'; return; }
     // bounding rectangle of the selection (group box, or the nodes)
-    let x0, x1, yTop;
-    if (selNodes.length >= 2){
-      x0=Infinity; x1=-Infinity; yTop=Infinity;
+    let x0, x1, yTop, yBot;
+    if (selNodes.length >= minSel){
+      x0=Infinity; x1=-Infinity; yTop=Infinity; yBot=-Infinity;
       for (const n of selNodes){
         x0 = Math.min(x0, n.pos[0]); x1 = Math.max(x1, n.pos[0]+n.size[0]);
         yTop = Math.min(yTop, n.pos[1] - LiteGraph.NODE_TITLE_HEIGHT);
+        yBot = Math.max(yBot, n.pos[1] + n.size[1]);
       }
     } else {
-      x0 = grp.pos[0]; x1 = grp.pos[0] + grp.size[0]; yTop = grp.pos[1];
+      x0 = grp.pos[0]; x1 = grp.pos[0] + grp.size[0]; yTop = grp.pos[1]; yBot = grp.pos[1] + grp.size[1];
     }
     const ds = lcanvas.ds, r = lcanvas.canvas.getBoundingClientRect();
     let cx = ((x0+x1)/2 + ds.offset[0]) * ds.scale + r.left;   // top-centre
     let cy = (yTop + ds.offset[1]) * ds.scale + r.top - 8;
-    cx = Math.max(r.left+60, Math.min(r.right-60, cx));
+    const hw = Math.max(60, (bar.offsetWidth || 0) / 2 + 4);   // keep the whole bar on screen
+    cx = Math.max(r.left+hw, Math.min(r.right-hw, cx));
     cy = Math.max(r.top+34, cy);
+    if (touchUI()){        // a finger drags nodes by the title: sit ABOVE it, else below the selection
+      const bh = bar.offsetHeight || 44;
+      cy = (yTop + ds.offset[1]) * ds.scale + r.top - 8 - bh;
+      if (cy < r.top + 4) cy = Math.min((yBot + ds.offset[1]) * ds.scale + r.top + 8, r.bottom - bh - 4);
+    }
+    renameBtn.style.display = selNodes.length === 1 ? '' : 'none';
+    groupBtn.style.display = (touchUI() && selNodes.length === 1) ? 'none' : '';
     bar.style.display = 'flex';
     bar.style.left = cx + 'px';
     bar.style.top  = cy + 'px';
