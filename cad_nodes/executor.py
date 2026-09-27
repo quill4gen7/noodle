@@ -19,7 +19,7 @@ import uuid
 from pathlib import Path
 
 from .graph import Graph
-from .transpiler import transpile
+from .transpiler import Transpiler, transpile
 
 # Marker the transpiler appends to each statement (see transpiler._annot).
 _NODE_MARK = re.compile(r"# @node:(\S+) \(([^)]*)\)")
@@ -527,23 +527,21 @@ try:
     _data = _tool(__result__, {kwargs})
 except Exception as _e:
     _data = {{"success": False, "error": f"{{type(_e).__name__}}: {{_e}}"}}
-with open({out!r}, "w") as _f:
+with open({out}, "w") as _f:
     _json.dump(_data, _f)
 """
 
 
-def _run_slice(code: str, workdir: Path, func: str, kwargs: str,
-               timeout: int) -> dict:
-    """Run `code` (which must define __result__) + a slice_summary-tool
-    epilogue calling `func(__result__, kwargs)`; return the JSON it writes.
+def _run_json(script: str, workdir: Path, stem: str, timeout: int) -> dict:
+    """Run a script that ends by writing its answer to `<workdir>/_<stem>.json`
+    (the name is passed in as the format field `out`) and return that JSON.
     Warm worker with a cold-subprocess fallback."""
     workdir.mkdir(parents=True, exist_ok=True)
-    out_path = workdir / f"_{func}.json"
-    script_path = workdir / f"_{func}.py"
+    out_path = workdir / f"_{stem}.json"
+    script_path = workdir / f"_{stem}.py"
     if out_path.exists():
         out_path.unlink()
-    script_path.write_text(code + _TOOL_EPILOGUE.format(
-        repo_root=_REPO_ROOT, func=func, kwargs=kwargs, out=str(out_path)))
+    script_path.write_text(script.replace("@@OUT@@", repr(str(out_path))))
 
     def _read():
         if out_path.exists():
@@ -577,6 +575,120 @@ def _run_slice(code: str, workdir: Path, func: str, kwargs: str,
     return {"success": False, "error": (proc.stderr or "no output")[:600]}
 
 
+def _run_slice(code: str, workdir: Path, func: str, kwargs: str,
+               timeout: int) -> dict:
+    """Run `code` (which must define __result__) + a slice_summary-tool
+    epilogue calling `func(__result__, kwargs)`; return the JSON it writes."""
+    return _run_json(code + _TOOL_EPILOGUE.format(
+        repo_root=_REPO_ROOT, func=func, kwargs=kwargs, out="@@OUT@@"),
+        workdir, func, timeout)
+
+
+def _graph_code(graph: Graph, node: str | None = None) -> str:
+    """The graph's program; with `node` (a reference: n5, n5.out, n5[2]) the
+    tools read THAT node's value instead of the combined preview result."""
+    if not node:
+        return transpile(graph, memo=True)
+    from .measure import _base_ref, parse_ref
+    t = Transpiler(graph, memo=True)
+    code = t.run()
+    expr = _ref_exprs(graph, t, [node])[_base_ref(node)]
+    idx = parse_ref(node)["idx"]
+    if idx is not None:
+        expr = f"list({expr} or [])[{idx}]"
+    return code + f"\n__result__ = {expr}\n"
+
+
+def _ref_exprs(graph: Graph, t: Transpiler, refs: list[str]) -> dict[str, str]:
+    """{base reference: python expression} for node references (measure.parse_ref
+    grammar; an index `[i]` is dropped — the caller applies it) against a
+    transpiled program. Resolution mirrors Transpiler._src_expr (a per-socket var
+    if the node has one, else its single var). The expression reads the var via
+    globals().get, so a var that was never bound reads None, not NameError."""
+    from . import catalog
+    from .graph import codeblock_output
+    from .measure import _base_ref, parse_ref
+    out = {}
+    for ref in refs:
+        p = parse_ref(ref)
+        try:
+            node = graph.node(p["node"])
+        except KeyError:
+            raise ValueError(f"{ref}: no node {p['node']!r} in the graph") from None
+        sock = p["out"]
+        if sock and catalog.get(node.type).output(sock) is None \
+                and codeblock_output(node, sock) is None:
+            raise ValueError(f"{ref}: {node.type} {node.id} has no output {sock!r}")
+        var = t.out_var_of.get((node.id, sock or "result")) or t.var_of.get(node.id)
+        if var is None:
+            raise ValueError(f"{ref}: node {node.id} ({node.type}) has no value of "
+                             "its own (inside a group, bypassed or a sink)")
+        out[_base_ref(ref)] = f"globals().get({var!r})"
+    return out
+
+
+_MEASURE_EPILOGUE = """
+
+# --- measure (injected by executor) ---
+import sys as _sys, json as _json
+_sys.path.insert(0, {repo_root!r})
+from cad_nodes.measure import run_queries as _rq
+_vals = {{{vals}}}
+try:
+    _data = _rq(_vals, _json.loads({queries!r}), __errors__)
+except Exception as _e:
+    _data = {{"success": False, "error": f"{{type(_e).__name__}}: {{_e}}"}}
+_data["node_errors"] = {{k: v for k, v in __errors__.items() if k in {nodes!r}}}
+with open(@@OUT@@, "w") as _f:
+    _json.dump(_data, _f, separators=(",", ":"))
+"""
+
+
+def measure_graph(graph: Graph, workdir: Path, queries: list[dict],
+                  timeout: int = 120) -> dict:
+    """Geometry facts about node outputs (see cad_nodes/measure.py): run the
+    graph (memo: nearly free right after an execute) and answer `queries`
+    ({"op": props|interference|distance|section|probe|summary, …}) against the
+    runtime values of the nodes they name. Bad queries fail alone."""
+    from .measure import _base_ref, refs_of
+    if not isinstance(queries, list) or not queries:
+        raise ValueError("queries: a non-empty list of {op, node|a+b|nodes, …}")
+    if len(queries) > 50:
+        raise ValueError("at most 50 queries per call")
+    t = Transpiler(graph, memo=True)
+    code = t.run()
+    exprs: dict[str, str] = {}
+    bad: dict[int, str] = {}
+    for i, q in enumerate(queries):
+        try:
+            refs = refs_of(q)
+            exprs.update(_ref_exprs(graph, t, [_base_ref(r) for r in refs]))
+        except ValueError as e:
+            bad[i] = str(e)
+    ok = [q for i, q in enumerate(queries) if i not in bad]
+    nodes = sorted({k.split(".")[0] for k in exprs})
+    if ok:
+        vals = ", ".join(f"{k!r}: {v}" for k, v in exprs.items())
+        data = _run_json(code + _MEASURE_EPILOGUE.format(
+            repo_root=_REPO_ROOT, vals=vals, queries=json.dumps(ok), nodes=nodes),
+            workdir, "measure", timeout)
+    else:
+        data = {"success": True, "results": []}
+    if not data.get("success"):
+        return data
+    # stitch the pre-flight failures back in their original positions
+    it = iter(data.get("results", []))
+    results = []
+    for i, q in enumerate(queries):
+        if i in bad:
+            head = {k: q[k] for k in ("op", "node", "a", "b", "nodes") if k in q}
+            results.append({**head, "error": f"ValueError: {bad[i]}"})
+        else:
+            results.append(next(it, {"op": q.get("op"), "error": "no result"}))
+    data["results"] = results
+    return data
+
+
 def _import_code(path: Path) -> str:
     # STL: __result__ stays the PATH — the slice tools slice meshes themselves
     # (triangle/plane intersection + arc-fitting); OCCT's section() segfaults
@@ -588,10 +700,11 @@ def _import_code(path: Path) -> str:
 
 
 def slice_summary_graph(graph: Graph, workdir: Path, n_per_axis: int = 10,
-                        timeout: int = 120) -> dict:
+                        timeout: int = 120, node: str | None = None) -> dict:
     """Symbolic slice summary of the graph's own result (the verify half of
-    the retro-engineering loop — see cad_nodes/slice_summary.py)."""
-    return _run_slice(transpile(graph, memo=True), workdir, "summarize",
+    the retro-engineering loop — see cad_nodes/slice_summary.py). `node` (n5,
+    n51.body, n51[3]) slices that node's output instead of the combined one."""
+    return _run_slice(_graph_code(graph, node), workdir, "summarize",
                       f"n_per_axis={int(n_per_axis)}", timeout)
 
 
@@ -603,9 +716,11 @@ def slice_summary_file(path: Path, workdir: Path, n_per_axis: int = 10,
 
 
 def section_outline_graph(graph: Graph, workdir: Path, axis: str = "z",
-                          position: float = 0.0, timeout: int = 120) -> dict:
-    """Exact edge-by-edge outline of ONE section of the graph's result."""
-    return _run_slice(transpile(graph, memo=True), workdir, "outline",
+                          position: float = 0.0, timeout: int = 120,
+                          node: str | None = None) -> dict:
+    """Exact edge-by-edge outline of ONE section of the graph's result (or of
+    one node's output, `node` as in slice_summary_graph)."""
+    return _run_slice(_graph_code(graph, node), workdir, "outline",
                       f"axis={str(axis)!r}, position={float(position)}", timeout)
 
 
