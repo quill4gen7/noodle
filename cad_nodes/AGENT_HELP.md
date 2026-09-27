@@ -91,6 +91,16 @@ add_node/connect/delete tools exist on MCP: `cad_add_node`, `cad_connect`,
 Project names: one path segment, `[A-Za-z0-9][A-Za-z0-9._ -]{0,63}` — anything
 else is rejected (400).
 
+**Editing while a human has the graph open.** The editor applies your writes
+live (it polls `GET /api/graph/{name}/version` and merges; changed nodes glow
+amber) — no "reload before saving" is needed. To never overwrite the human's
+edits, read `GET /api/graph/{name}/version?graph=1` → `{version, graph}` and
+POST with `?base_version=<version>` (or a top-level `"base_version"` key): if
+the graph changed since, you get **409** with the current `{version, graph}`
+— re-apply your change to that and POST again. The response of a save carries
+the new `version`. Without `base_version` a POST overwrites, as always. Node
+ids are stable across editor saves.
+
 ## Graph JSON
 
 ```jsonc

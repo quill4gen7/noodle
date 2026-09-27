@@ -68,3 +68,52 @@ def test_no_caller_rebuilds_a_graph_id_by_hand():
     import re
     code = "\n".join(line for line in NODES.splitlines() if not line.lstrip().startswith("//"))
     assert not re.search(r"'n'\s*\+\s*\w+\.id\b(?!\))", code.replace("('n' + node.id)", ""))
+
+
+# ── live sync (editor side; the server half is test_graph_version/merge) ──
+
+
+def _fn(name, until):
+    i = NODES.index(name)
+    return NODES[i:NODES.index(until, i)]
+
+
+def test_every_save_names_its_base_and_a_409_merges():
+    save = _fn("async function persistToServer(", "window.saveGraph")
+    assert "${syncBaseQuery()}" in save
+    assert "if (res.status === 409) return syncOnStaleSave(res, _retry || 0);" in save
+    assert "syncSaved(payload," in save
+    assert "if (!syncMaySave()) return false;" in save     # held while conflicts are open
+
+
+def test_open_reads_graph_and_version_in_one_go():
+    op = _fn("window.openGraph = async function", "window.showTab")
+    assert "/version?graph=1" in op
+    assert op.index("syncLoaded(") < op.index("fromGraphJSON(data)")
+
+
+def test_copilot_and_import_merge_instead_of_a_noop_reload():
+    """openGraph(currentName) returns early for the open graph, so the copilot's
+    edits never reached the canvas and the next save reverted them."""
+    assert "await openGraph(currentName)" not in NODES
+    assert NODES.count("await syncPullNow();") == 2
+
+
+def test_autosave_is_armed_once_per_change():
+    """checkDirty runs every second; re-arming the 2.5s debounce each time meant
+    an idle dirty graph never autosaved."""
+    cd = _fn("function checkDirty(){", "function scheduleServerSave(){")
+    assert "if (cur !== _dirtySeen){" in cd
+
+
+def test_external_edits_never_become_undo_steps():
+    sync = _fn("Live sync — BEGIN", "Live sync — END")
+    assert "rebaseHistory(m.ops);" in sync
+    assert "histBase = histSnapshot();" in sync
+    # a bounded number is two widgets: patch both or the ✎ field wins on save
+    assert "for (const w of (node.widgets||[])) if (w.cadParam === k) w.value = v;" in sync
+
+
+def test_the_screenshot_page_never_polls():
+    sync = _fn("Live sync — BEGIN", "Live sync — END")
+    assert "if (!window.__noodleShot){\n    setInterval(syncPoll, 1500);" in sync

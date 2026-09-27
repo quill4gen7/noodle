@@ -1183,6 +1183,40 @@ it in a panel at the left, one click away.
 - The copilot/MCP both go through `cad_nodes.api`; new capabilities belong there
   so all three surfaces (UI, MCP, copilot) get them.
 
+### 6e. Live sync — the editor and an agent on the same graph
+
+graph.json has two writers: the editor's saves and an agent (API/MCP/copilot).
+The incident: an agent wrote the graph while the editor was open, the editor's
+next save put its older canvas back, and the agent kept telling the user "reload
+before saving". Three pieces fix it:
+
+- **Versions** (`cad_nodes/graph_version.py`): version = hash of graph.json's
+  bytes (covers every writer, needs no state, cannot miss a same-size edit the
+  way mtime can). `POST /api/graph/{name}` and `GraphStore.save` take an optional
+  `base_version`; a stale one is refused with **409** + the current
+  `{version, graph}`. No base = overwrite, as before. `GET …/version[?graph=1]`.
+- **Merge** (`cad_nodes/graph_merge.py`, `POST …/merge`, stateless): three-way,
+  field by field, each side diffed against ITS OWN spelling of the base (the
+  editor writes every widget value, an agent may omit defaults). A true conflict
+  keeps the human's value and is reported; position/collapse/size are quiet.
+- **Editor** (nodes.html, "Live sync" block): every save carries its base; a
+  1.5s poll of `/version` merges outside writes into the canvas — patched in
+  place when only values moved, rebuilt (viewport + selection kept) otherwise;
+  deferred while the human is dragging or has a modal open. Changed nodes glow
+  amber, a pill shows while edits keep arriving, conflicts get a keep-mine /
+  take-theirs box and hold saving until answered. Undo snapshots are rebased
+  with the merge's `ops`, so Ctrl+Z never takes an agent's edit back out. A save
+  of what disk already holds is skipped (every Live run saves first, and the
+  echo would only bump the version under an agent).
+- **Stable ids**: litegraph numbers nodes 1..N in load order and the save used
+  to write those back (n51 → n49 → n48). `fromGraphJSON` now pins runtime id K
+  to disk id `nK` (other ids ride on `node._gid`); `graphIdOf()` is the only way
+  from a node to its id.
+- Found on the way: `openGraph(currentName)` returns early for the open graph,
+  so the copilot's and Import's "reload" were no-ops (then reverted by the next
+  save) — they now `syncPullNow()`; and `checkDirty` re-armed the 2.5s autosave
+  debounce every second, so an idle dirty graph never autosaved.
+
 ## 7. The AI copilot — scope & guardrails
 
 `cad_nodes/copilot.py` drives an OpenAI-compatible tool loop bound to ONE graph.
