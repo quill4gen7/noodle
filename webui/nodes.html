@@ -1676,7 +1676,7 @@ function openCodeEditor(node){
         '</div>'+
       '</div>';
     document.body.appendChild(ov);
-    ov.addEventListener('mousedown', e => { if (e.target === ov) ov.style.display = 'none'; });
+    ov.addEventListener('pointerdown', e => { if (e.target === ov) ov.style.display = 'none'; });
     document.getElementById('ce-cancel').onclick = () => { ov.style.display = 'none'; };
   }
   const ta = document.getElementById('ce-text');
@@ -1882,7 +1882,7 @@ function openCurveEditor(node, name){
           '<span style="font-size:11px;color:var(--text-dim)">click add · drag move · dbl-click corner/smooth · shift/right-click delete</span>'+
         '</div>'+
         '<canvas id="cv-canvas" width="480" height="340" style="background:#0c1118;'+
-          'border:1px solid #1f2a3a;border-radius:6px;cursor:crosshair"></canvas>'+
+          'border:1px solid #1f2a3a;border-radius:6px;cursor:crosshair;max-width:100%;touch-action:none"></canvas>'+
         '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
           '<span id="cv-presets" style="display:flex;gap:4px"></span><span style="flex:1"></span>'+
           '<label style="font-size:12px;color:var(--text-dim);display:flex;align-items:center;gap:4px">'+
@@ -1893,7 +1893,7 @@ function openCurveEditor(node, name){
         '</div>'+
       '</div>';
     document.body.appendChild(ov);
-    ov.addEventListener('mousedown', e=>{ if(e.target===ov) ov.style.display='none'; });
+    ov.addEventListener('pointerdown', e=>{ if(e.target===ov) ov.style.display='none'; });
   }
   const cv = document.getElementById('cv-canvas'), ctx = cv.getContext('2d');
   const W=cv.width, H=cv.height, pad=14;
@@ -1928,8 +1928,14 @@ function openCurveEditor(node, name){
   cv.oncontextmenu = e=>{ e.preventDefault();
     const r=cv.getBoundingClientRect(), h=hit(e.clientX-r.left,e.clientY-r.top);
     if(h && h.handle==null){ const p=get(); if(p.length>2){ p.splice(h.i,1); st.sel=null; commit(p);} draw(); } };
-  cv.onmousedown = e=>{
-    const r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  // pointer events + CSS→canvas px scaling: a finger drags anchors too, and the
+  // canvas may be drawn narrower than its 480px on a phone (max-width:100%)
+  const cvPt = e=>{ const r=cv.getBoundingClientRect();
+    return [(e.clientX-r.left-cv.clientLeft)*cv.width/(cv.clientWidth||cv.width),
+            (e.clientY-r.top-cv.clientTop)*cv.height/(cv.clientHeight||cv.height)]; };
+  cv.onpointerdown = e=>{
+    try { cv.setPointerCapture(e.pointerId); } catch(_){}
+    const [mx,my]=cvPt(e);
     const h=hit(mx,my); const p=get();
     if (e.shiftKey && h && h.handle==null){ if(p.length>2){p.splice(h.i,1);commit(p);} st.sel=null; draw(); return; }
     if (h){ st.sel=h.i; st.drag=h; draw(); return; }
@@ -1940,8 +1946,8 @@ function openCurveEditor(node, name){
     if(mode()==='bezier') curveAutoHandles(p);
     st.sel=idx; st.drag={i:idx,handle:null}; commit(p); draw();
   };
-  cv.onmousemove = e=>{
-    const r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  cv.onpointermove = e=>{
+    const [mx,my]=cvPt(e);
     if (!st.drag){ const h=hit(mx,my); const nv=h?h.i:null; if(nv!==st.hover){st.hover=nv; draw();} return; }
     const p=get(), a=p[st.drag.i];
     const [cx,cy]=toCurve(mx,my);
@@ -1962,7 +1968,7 @@ function openCurveEditor(node, name){
     commit(p); draw();
   };
   const endDrag=()=>{ if(st.drag){ st.drag=null; commit(curveNorm(node.properties[name])); } };
-  cv.onmouseup = endDrag; cv.onmouseleave = ()=>{ endDrag(); st.hover=null; draw(); };
+  cv.onpointerup = endDrag; cv.onpointercancel = endDrag; cv.onpointerleave = ()=>{ endDrag(); st.hover=null; draw(); };
   cv.ondblclick = e=>{
     const r=cv.getBoundingClientRect(), h=hit(e.clientX-r.left,e.clientY-r.top);
     if(h && h.handle==null){ const p=get(); const a=p[h.i];
@@ -4000,7 +4006,7 @@ function openInlineNoteEditor(node){
   setTimeout(()=>{
     if (inlineEditor && inlineEditor.el === el){
       el.focus(); el.select();
-      document.addEventListener('mousedown', onOutside, true);
+      document.addEventListener('pointerdown', onOutside, true);
     }
   }, 60);
 }
@@ -4020,7 +4026,7 @@ function closeInlineNoteEditor(commit){
   if (!inlineEditor) return;
   const { node, param, el, onOutside } = inlineEditor;
   inlineEditor = null;                           // clear first so handlers become no-ops
-  if (onOutside) document.removeEventListener('mousedown', onOutside, true);
+  if (onOutside) document.removeEventListener('pointerdown', onOutside, true);
   if (commit) node.properties[param] = el.value;
   el.remove();
   if (commit){
