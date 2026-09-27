@@ -1306,6 +1306,30 @@ before saving". Three pieces fix it:
   save) — they now `syncPullNow()`; and `checkDirty` re-armed the 2.5s autosave
   debounce every second, so an idle dirty graph never autosaved.
 
+### 6g. Touch (tablets/phones) — the `── touch ──` block in nodes.html
+
+litegraph runs on **pointer events** (`touchPreInit`, before `new LGraphCanvas`).
+Everything finger-specific lives in one JS block and one CSS block named
+`── touch ──`; gestures: one finger = mouse left button, two = pan + pinch-zoom,
+long-press = right-click, double-tap = node search, "+ Nodo" / "Seleziona"
+floating buttons. Traps worth knowing before touching canvas code:
+
+- litegraph 0.7.18's pointer path **inverts `isPrimary`** in processMouseDown, so
+  a window-capture router shows every event litegraph handles with
+  `isPrimary=undefined` (= a MouseEvent). Without it double-click dies — for the
+  mouse too. Non-primary fingers never reach litegraph.
+- The graph canvas backing store is in **device pixels** (`TOUCH.dpr`, ≤2): the
+  ratio is folded into `ds.toCanvasContext`, so `ds.scale/offset`, events and
+  graph-space drawing (`onDrawForeground`) stay in CSS px. **Screen-space**
+  hooks (`onDrawOverlay`, `onRenderBackground`) get an identity transform in
+  device px — `ctx.scale(TOUCH.dpr, TOUCH.dpr)` first; size with the CSS rect,
+  not `canvas.width` (see the `renderInfo`/`centerOnNode` overrides).
+- `body.touch-ui` = the last pointer was not a mouse; it drives bigger targets
+  and the single-node selection bar. Under 800px the layout is one pane at a
+  time (`body[data-mtab]` = graph | view | panel).
+- Use `pointerdown`, not `mousedown`, for outside-click handlers: litegraph's
+  preventDefault on pointerdown suppresses the compat mouse events.
+
 ## 7. The AI copilot — scope & guardrails
 
 `cad_nodes/copilot.py` drives an OpenAI-compatible tool loop bound to ONE graph.

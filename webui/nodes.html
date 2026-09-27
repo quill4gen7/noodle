@@ -18,7 +18,7 @@
 *{margin:0;padding:0;box-sizing:border-box;}
 html,body{height:100%;overflow:hidden;}
 body{font-family:var(--font);background:var(--bg-0);color:var(--text);}
-.app{display:grid;grid-template-rows:48px 1fr 24px;height:100vh;}
+.app{display:grid;grid-template-rows:48px 1fr 24px;height:100vh;height:100dvh;}
 /* toolbar */
 .toolbar{background:var(--bg-1);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;padding:0 12px;}
 .toolbar h1{font-size:15px;font-weight:700;color:var(--text);letter-spacing:-.5px;margin-right:8px;font-family:var(--mono,monospace);}
@@ -37,7 +37,7 @@ body{font-family:var(--font);background:var(--bg-0);color:var(--text);}
 /* workspace */
 .workspace{display:flex;overflow:hidden;}
 .graph-pane{flex:1.4;position:relative;min-width:240px;}
-#graph-canvas{width:100%;height:100%;display:block;}
+#graph-canvas{width:100%;height:100%;display:block;touch-action:none;}
 .split{width:5px;background:var(--border);cursor:col-resize;}
 .split:hover{background:var(--accent);}
 .right-pane{flex:1;display:flex;flex-direction:column;min-width:240px;background:var(--bg-0);}
@@ -282,6 +282,62 @@ body{font-family:var(--font);background:var(--bg-0);color:var(--text);}
 .log-line .node-link{color:var(--accent-hover);cursor:pointer;text-decoration:underline;}
 .tab-badge{font-size:9px;background:var(--err);color:#fff;border-radius:8px;padding:0 5px;margin-left:3px;display:none;}
 .tab-badge.visible{display:inline;}
+
+/* ── touch ── tablets & phones (see the JS block of the same name). body.touch-ui
+   = the last pointer was not a mouse: bigger targets, the floating graph tools,
+   litegraph menus that scroll instead of running off-screen. */
+.split{touch-action:none;}
+.touch-tools{position:absolute;left:10px;bottom:10px;z-index:5;display:none;gap:6px;}
+body.touch-ui .touch-tools{display:flex;}
+.touch-tools .tb-btn{box-shadow:0 4px 14px rgba(0,0,0,.45);}
+.mtabs{display:none;}
+body.touch-ui .tb-btn,body.touch-ui .tb-icon{min-height:38px;min-width:38px;justify-content:center;font-size:13px;}
+body.touch-ui .menu-item{padding:11px 10px;font-size:13px;}
+body.touch-ui .tab{padding:11px 14px;}
+body.touch-ui .cmdk-item{padding:12px 11px;}
+body.touch-ui #sel-toolbar{flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 16px);}
+body.touch-ui #sel-toolbar button{padding:10px 12px;font-size:13px;}
+body.touch-ui .vp-tools .tb-icon{min-width:40px;height:36px;}
+body.touch-ui .split{position:relative;}
+body.touch-ui .split::after{content:"";position:absolute;top:0;bottom:0;left:-9px;right:-9px;z-index:4;}
+body.touch-ui:has(.litecontextmenu) #sel-toolbar{display:none !important;}
+body.touch-ui .litecontextmenu{max-height:calc(100dvh - 24px);overflow-y:auto;overscroll-behavior:contain;}
+body.touch-ui .litecontextmenu .litemenu-entry{padding:9px 14px 9px 10px;font-size:14px;}
+body.touch-ui .litegraph.litesearchbox{max-width:calc(100vw - 16px);}
+body.touch-ui .litegraph.litesearchbox .lite-search-item{padding:9px 6px;}
+/* iOS zooms the whole page into any focused field under 16px */
+body.touch-ui input,body.touch-ui textarea,body.touch-ui select{font-size:16px;}
+/* "⌘K" means nothing without a keyboard: say what it opens */
+body.touch-ui .toolbar [onclick="openPalette()"]{font-size:0;}
+body.touch-ui .toolbar [onclick="openPalette()"]::after{content:"☰ Comandi";font-size:13px;}
+/* narrow screens: one pane at a time, switched by the Grafo / 3D / Pannello tabs */
+@media (max-width:800px){
+  .app{grid-template-rows:auto 1fr 24px;}
+  .toolbar{flex-wrap:wrap;row-gap:6px;padding:6px 8px;}
+  .toolbar .spacer,.tb-sep,.brand h1,#status,
+  .toolbar a.tb-icon[href="/ui"],.toolbar [onclick="openShortcuts()"]{display:none;}
+  .workspace{flex-direction:column;}
+  .mtabs{display:flex;flex:0 0 auto;background:var(--bg-1);border-bottom:1px solid var(--border);}
+  .mtabs button{flex:1;background:none;border:none;border-bottom:2px solid transparent;color:var(--text-dim);
+    font:600 13px var(--font);padding:11px 0;cursor:pointer;}
+  .mtabs button.on{color:var(--accent);border-bottom-color:var(--accent);}
+  .split{display:none;}
+  .graph-pane,.right-pane{flex:1 1 auto !important;width:auto !important;min-width:0;min-height:0;}
+  body:not([data-mtab="graph"]) .graph-pane,
+  body:not([data-mtab="graph"]) #sel-toolbar{display:none !important;}
+  body[data-mtab="graph"] .right-pane{display:none;}
+  body[data-mtab="view"] .panel{display:none;}
+  body[data-mtab="panel"] .viewer-wrap{display:none;}
+  body[data-mtab="panel"] .panel{flex:1;height:auto;min-height:0;}
+  /* fixed widths: a status flipping Saved → Save failed must not re-wrap the bar and jump the canvas */
+  #btn-project{max-width:150px;} #project-name{max-width:110px;}
+  .doc-status{width:100px;} .doc-status .lbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .toolbar [onclick="exportStep()"]{display:none;}              /* in the ⌘K palette */
+  #sel-toolbar .count,#sel-toolbar .sep{display:none;}
+  body.touch-ui #sel-toolbar{flex-wrap:nowrap;}
+  body.touch-ui #sel-toolbar button{padding:10px 8px;}
+  .tabs{overflow-x:auto;}
+}
 </style>
 </head>
 <body>
@@ -1654,7 +1710,7 @@ function openCodeEditor(node){
         '</div>'+
       '</div>';
     document.body.appendChild(ov);
-    ov.addEventListener('mousedown', e => { if (e.target === ov) ov.style.display = 'none'; });
+    ov.addEventListener('pointerdown', e => { if (e.target === ov) ov.style.display = 'none'; });
     document.getElementById('ce-cancel').onclick = () => { ov.style.display = 'none'; };
   }
   const ta = document.getElementById('ce-text');
@@ -1860,7 +1916,7 @@ function openCurveEditor(node, name){
           '<span style="font-size:11px;color:var(--text-dim)">click add · drag move · dbl-click corner/smooth · shift/right-click delete</span>'+
         '</div>'+
         '<canvas id="cv-canvas" width="480" height="340" style="background:#0c1118;'+
-          'border:1px solid #1f2a3a;border-radius:6px;cursor:crosshair"></canvas>'+
+          'border:1px solid #1f2a3a;border-radius:6px;cursor:crosshair;max-width:100%;touch-action:none"></canvas>'+
         '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
           '<span id="cv-presets" style="display:flex;gap:4px"></span><span style="flex:1"></span>'+
           '<label style="font-size:12px;color:var(--text-dim);display:flex;align-items:center;gap:4px">'+
@@ -1871,7 +1927,7 @@ function openCurveEditor(node, name){
         '</div>'+
       '</div>';
     document.body.appendChild(ov);
-    ov.addEventListener('mousedown', e=>{ if(e.target===ov) ov.style.display='none'; });
+    ov.addEventListener('pointerdown', e=>{ if(e.target===ov) ov.style.display='none'; });
   }
   const cv = document.getElementById('cv-canvas'), ctx = cv.getContext('2d');
   const W=cv.width, H=cv.height, pad=14;
@@ -1906,8 +1962,14 @@ function openCurveEditor(node, name){
   cv.oncontextmenu = e=>{ e.preventDefault();
     const r=cv.getBoundingClientRect(), h=hit(e.clientX-r.left,e.clientY-r.top);
     if(h && h.handle==null){ const p=get(); if(p.length>2){ p.splice(h.i,1); st.sel=null; commit(p);} draw(); } };
-  cv.onmousedown = e=>{
-    const r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  // pointer events + CSS→canvas px scaling: a finger drags anchors too, and the
+  // canvas may be drawn narrower than its 480px on a phone (max-width:100%)
+  const cvPt = e=>{ const r=cv.getBoundingClientRect();
+    return [(e.clientX-r.left-cv.clientLeft)*cv.width/(cv.clientWidth||cv.width),
+            (e.clientY-r.top-cv.clientTop)*cv.height/(cv.clientHeight||cv.height)]; };
+  cv.onpointerdown = e=>{
+    try { cv.setPointerCapture(e.pointerId); } catch(_){}
+    const [mx,my]=cvPt(e);
     const h=hit(mx,my); const p=get();
     if (e.shiftKey && h && h.handle==null){ if(p.length>2){p.splice(h.i,1);commit(p);} st.sel=null; draw(); return; }
     if (h){ st.sel=h.i; st.drag=h; draw(); return; }
@@ -1918,8 +1980,8 @@ function openCurveEditor(node, name){
     if(mode()==='bezier') curveAutoHandles(p);
     st.sel=idx; st.drag={i:idx,handle:null}; commit(p); draw();
   };
-  cv.onmousemove = e=>{
-    const r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  cv.onpointermove = e=>{
+    const [mx,my]=cvPt(e);
     if (!st.drag){ const h=hit(mx,my); const nv=h?h.i:null; if(nv!==st.hover){st.hover=nv; draw();} return; }
     const p=get(), a=p[st.drag.i];
     const [cx,cy]=toCurve(mx,my);
@@ -1940,7 +2002,7 @@ function openCurveEditor(node, name){
     commit(p); draw();
   };
   const endDrag=()=>{ if(st.drag){ st.drag=null; commit(curveNorm(node.properties[name])); } };
-  cv.onmouseup = endDrag; cv.onmouseleave = ()=>{ endDrag(); st.hover=null; draw(); };
+  cv.onpointerup = endDrag; cv.onpointercancel = endDrag; cv.onpointerleave = ()=>{ endDrag(); st.hover=null; draw(); };
   cv.ondblclick = e=>{
     const r=cv.getBoundingClientRect(), h=hit(e.clientX-r.left,e.clientY-r.top);
     if(h && h.handle==null){ const p=get(); const a=p[h.i];
@@ -3137,6 +3199,7 @@ document.addEventListener('keydown', (e)=>{
   const bar = document.createElement('div'); bar.id = 'sel-toolbar';
   bar.innerHTML =
     '<span class="count"></span>'+
+    '<button data-act="rename" title="Rename (F2)">✎ Rename</button>'+
     '<button data-act="view" title="Group view — cycle the render of the selected nodes: auto (terminals only) → on (force-show) → off (hide)">👁 Auto</button>'+
     '<span class="sep"></span>'+
     '<button data-act="bypass" title="Toggle bypass (Ctrl+B)">⊘ Bypass</button>'+
@@ -3154,34 +3217,48 @@ document.addEventListener('keydown', (e)=>{
     else if (act === 'group')  groupSelected();
     else if (act === 'clone')  cloneSelected();
     else if (act === 'delete') deleteSelected();
+    else if (act === 'rename'){ const ns = selectedNodes(); if (ns.length === 1) renameNode(ns[0]); }
   });
   const countEl = bar.querySelector('.count');
   const viewBtn = bar.querySelector('[data-act="view"]');
   const bypassBtn = bar.querySelector('[data-act="bypass"]');
+  const renameBtn = bar.querySelector('[data-act="rename"]');
+  const groupBtn = bar.querySelector('[data-act="group"]');
   (function loop(){
     requestAnimationFrame(loop);
     if (!lcanvas){ bar.style.display = 'none'; return; }
     syncIsolate();    // isolate: force-preview the selection on change + refresh filter
-    // only for a real multi-selection (2+ nodes) or a selected group
+    // only for a real multi-selection (2+ nodes) or a selected group — on touch
+    // also for ONE node: there is no Del/F2/Ctrl+B to reach for (── touch ──)
     const selNodes = Object.values(lcanvas.selected_nodes || {});
     const grp = lcanvas.selected_group;
-    if (selNodes.length < 2 && !grp){ bar.style.display = 'none'; return; }
+    const minSel = touchUI() ? 1 : 2;
+    if (selNodes.length < minSel && !grp){ bar.style.display = 'none'; return; }
     // bounding rectangle of the selection (group box, or the nodes)
-    let x0, x1, yTop;
-    if (selNodes.length >= 2){
-      x0=Infinity; x1=-Infinity; yTop=Infinity;
+    let x0, x1, yTop, yBot;
+    if (selNodes.length >= minSel){
+      x0=Infinity; x1=-Infinity; yTop=Infinity; yBot=-Infinity;
       for (const n of selNodes){
         x0 = Math.min(x0, n.pos[0]); x1 = Math.max(x1, n.pos[0]+n.size[0]);
         yTop = Math.min(yTop, n.pos[1] - LiteGraph.NODE_TITLE_HEIGHT);
+        yBot = Math.max(yBot, n.pos[1] + n.size[1]);
       }
     } else {
-      x0 = grp.pos[0]; x1 = grp.pos[0] + grp.size[0]; yTop = grp.pos[1];
+      x0 = grp.pos[0]; x1 = grp.pos[0] + grp.size[0]; yTop = grp.pos[1]; yBot = grp.pos[1] + grp.size[1];
     }
     const ds = lcanvas.ds, r = lcanvas.canvas.getBoundingClientRect();
     let cx = ((x0+x1)/2 + ds.offset[0]) * ds.scale + r.left;   // top-centre
     let cy = (yTop + ds.offset[1]) * ds.scale + r.top - 8;
-    cx = Math.max(r.left+60, Math.min(r.right-60, cx));
+    const hw = Math.max(60, (bar.offsetWidth || 0) / 2 + 4);   // keep the whole bar on screen
+    cx = Math.max(r.left+hw, Math.min(r.right-hw, cx));
     cy = Math.max(r.top+34, cy);
+    if (touchUI()){        // a finger drags nodes by the title: sit ABOVE it, else below the selection
+      const bh = bar.offsetHeight || 44;
+      cy = (yTop + ds.offset[1]) * ds.scale + r.top - 8 - bh;
+      if (cy < r.top + 4) cy = Math.min((yBot + ds.offset[1]) * ds.scale + r.top + 8, r.bottom - bh - 4);
+    }
+    renameBtn.style.display = selNodes.length === 1 ? '' : 'none';
+    groupBtn.style.display = (touchUI() && selNodes.length === 1) ? 'none' : '';
     bar.style.display = 'flex';
     bar.style.left = cx + 'px';
     bar.style.top  = cy + 'px';
@@ -3989,7 +4066,7 @@ function openInlineNoteEditor(node){
   setTimeout(()=>{
     if (inlineEditor && inlineEditor.el === el){
       el.focus(); el.select();
-      document.addEventListener('mousedown', onOutside, true);
+      document.addEventListener('pointerdown', onOutside, true);
     }
   }, 60);
 }
@@ -4009,7 +4086,7 @@ function closeInlineNoteEditor(commit){
   if (!inlineEditor) return;
   const { node, param, el, onOutside } = inlineEditor;
   inlineEditor = null;                           // clear first so handlers become no-ops
-  if (onOutside) document.removeEventListener('mousedown', onOutside, true);
+  if (onOutside) document.removeEventListener('pointerdown', onOutside, true);
   if (commit) node.properties[param] = el.value;
   el.remove();
   if (commit){
@@ -5378,6 +5455,7 @@ window.closeTracer = function(commit){
 function initGraph(){
   lgraph = new LGraph();
   const canvas = document.getElementById('graph-canvas');
+  touchPreInit();                         // pointer events: must precede bindEvents
   lcanvas = new LGraphCanvas(canvas, lgraph);
   lcanvas.onSearchBox = nodeSearchRows;   // find nodes by label/alias, not just type path
   lcanvas.background_image = null;
@@ -5416,28 +5494,287 @@ function initGraph(){
   initCrossView();
   initGroupRename();      // dbl-click a group title -> rename
   initGraphClarity();     // lineage, derived titles, minimap, stale notice (own block)
+  initTouch(canvas);      // pinch, long-press menu, slot snapping, HiDPI (── touch ──)
   resizeGraph();
 }
+// The backing store is sized in DEVICE pixels (sharp on HiDPI); litegraph keeps
+// thinking in CSS pixels — initTouch folds the ratio into ds.toCanvasContext.
 function resizeGraph(){
   const canvas = document.getElementById('graph-canvas');
   const r = canvas.parentElement.getBoundingClientRect();
-  canvas.width = r.width; canvas.height = r.height;
-  if (lcanvas) lcanvas.resize();
+  const dpr = TOUCH.dpr = graphDpr();
+  const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
+  if (lcanvas) lcanvas.resize(w, h); else { canvas.width = w; canvas.height = h; }
 }
 
-// ── split handle ──
+// ── split handle ── (pointer events, so a finger drags it too)
 (function(){
   const split=document.getElementById('split'), gp=document.querySelector('.graph-pane');
   let drag=false;
-  split.addEventListener('mousedown',e=>{drag=true;document.body.style.cursor='col-resize';e.preventDefault();});
-  document.addEventListener('mousemove',e=>{
+  split.addEventListener('pointerdown',e=>{
+    drag=true; document.body.style.cursor='col-resize'; e.preventDefault();
+    try { split.setPointerCapture(e.pointerId); } catch(_){}
+  });
+  split.addEventListener('pointermove',e=>{
     if(!drag)return;
     const ws=document.querySelector('.workspace').getBoundingClientRect();
     gp.style.flex='none'; gp.style.width=Math.max(240,Math.min(ws.width-245, e.clientX-ws.left))+'px';
     resizeGraph(); resizeViewer();
   });
-  document.addEventListener('mouseup',()=>{drag=false;document.body.style.cursor='';});
+  const endDrag=()=>{drag=false;document.body.style.cursor='';};
+  split.addEventListener('pointerup',endDrag); split.addEventListener('pointercancel',endDrag);
 })();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── touch ── tablets & phones. litegraph 0.7.18 is mouse-first; this block
+// makes it usable with a finger WITHOUT patching its source and without
+// changing any mouse/keyboard gesture:
+//  • 'pointer' events (touchPreInit). With the default 'mouse' method a finger
+//    can tap but never drag. Caveat: litegraph's pointer path INVERTS isPrimary
+//    in processMouseDown (`!e.isPrimary`), which kills double-click for the
+//    mouse too — so every event litegraph handles is shown isPrimary=undefined,
+//    exactly what a MouseEvent looked like before the switch;
+//  • two fingers pan + pinch-zoom; the second finger never reaches litegraph
+//    (its pointer_is_double path would pop the context menu);
+//  • long-press (500ms, <8px) = right-click; "＋ Nodo" opens the node search;
+//    "Seleziona" turns a one-finger drag into a box selection (= Ctrl+drag);
+//  • fat-finger slots: a touch near a slot snaps onto it, at press and at drop;
+//  • HiDPI: the backing store is in device pixels and the ratio is folded into
+//    ds.toCanvasContext, so ds.scale/offset and every event coordinate stay in
+//    CSS pixels. onDrawOverlay/onRenderBackground (screen space) get an
+//    identity transform in DEVICE pixels — scale by TOUCH.dpr there;
+//  • body.touch-ui (last pointer was not a mouse) drives the bigger CSS
+//    targets and, under 800px, the one-pane layout with Grafo/3D/Pannello tabs.
+// ═══════════════════════════════════════════════════════════════════════════
+const TOUCH = { dpr: 1, ui: false, selectMode: false };
+function graphDpr(){ return Math.max(1, Math.min(window.devicePixelRatio || 1, 2)); }
+function touchUI(){ return TOUCH.ui; }
+function touchPreInit(){ LiteGraph.pointerevents_method = 'pointer'; }
+function setTouchUI(on){
+  on = !!on;
+  if (on === TOUCH.ui) return;
+  TOUCH.ui = on;
+  document.body.classList.toggle('touch-ui', on);
+  // the search box and litegraph's prompt close when the pointer LEAVES them;
+  // a lifted finger always leaves, so on touch an outside tap closes them instead
+  LiteGraph.search_hide_on_mouse_leave = !on;
+  LiteGraph.dialog_close_on_mouse_leave = !on;
+  if (!on && TOUCH.selectMode) setSelectMode(false);
+  requestAnimationFrame(()=>{ resizeGraph(); resizeViewer(); });   // targets/layout changed size
+}
+function setSelectMode(on){
+  TOUCH.selectMode = !!on;
+  const b = document.getElementById('tt-select');
+  if (b) b.classList.toggle('on', TOUCH.selectMode);
+}
+// Forget whatever one-pointer gesture litegraph started (a node drag, a canvas
+// pan, a wire…): a second finger or a long-press takes the gesture over. The
+// pointer's own pointerup still reaches litegraph afterwards (it must: that is
+// what clears pointer_is_down) and finds nothing left to finish.
+function abortLitegraphGesture(){
+  const c = lcanvas; if (!c) return;
+  c.node_dragged = null; c.dragging_canvas = false; c.resizing_node = null;
+  c.dragging_rectangle = null; c.node_widget = null; c.node_capturing_input = null;
+  c.selected_group = null; c.selected_group_resizing = false;
+  c.connecting_node = c.connecting_output = c.connecting_input = c.connecting_pos = null;
+  c.connecting_slot = -1; c.last_mouse_dragging = false;
+  c.setDirty(true, true);
+}
+// A finger is ~40 CSS px; a slot is a 10px dot. Move the event's graph point onto
+// the nearest slot within reach (inputs AND outputs at press; only the opposite
+// kind while a wire is being dropped), so litegraph's own hit tests just pass.
+function snapToSlot(c, e, want){
+  const s = c.ds.scale || 1, R = Math.min(36, Math.max(12, 22 / s)), RY = Math.min(10, R);
+  const x = e.canvasX, y = e.canvasY;
+  let best = null, bd = Infinity;
+  for (const n of (c.visible_nodes || [])){
+    if (!n || (n.flags && n.flags.collapsed) || (want && n === c.connecting_node)) continue;
+    if (x < n.pos[0] - R || x > n.pos[0] + n.size[0] + R || y < n.pos[1] - RY || y > n.pos[1] + n.size[1] + RY) continue;
+    for (const isIn of [true, false]){
+      const list = isIn ? n.inputs : n.outputs;
+      if (!list || (want === 'in' && !isIn) || (want === 'out' && isIn)) continue;
+      for (let i = 0; i < list.length; i++){
+        const p = n.getConnectionPos(isIn, i);
+        const dx = Math.abs(x - p[0]), dy = Math.abs(y - p[1]);
+        if (dx > R || dy > RY) continue;
+        const d = dx * dx + 4 * dy * dy;       // rows are close together, columns are not
+        if (d < bd){ bd = d; best = p; }
+      }
+    }
+  }
+  if (best){ e.canvasX = best[0]; e.canvasY = best[1]; }
+}
+// "＋ Nodo": litegraph's node search, centred on the view (the node lands there).
+function touchAddNode(){
+  if (!lcanvas) return;
+  const r = lcanvas.canvas.getBoundingClientRect();
+  const x = r.left + r.width / 2, y = r.top + Math.min(r.height * 0.3, 160);
+  LGraphCanvas.active_canvas = lcanvas;
+  // the prototype, not the instance: initGroupRename's wrapper would turn a
+  // centre that happens to sit on a group title into a rename
+  LGraphCanvas.prototype.showSearchBox.call(lcanvas, {
+    clientX: x, clientY: y, layerX: x - r.left, layerY: y - r.top,
+    preventDefault(){}, stopPropagation(){} });
+}
+// Phones: one pane at a time. body[data-mtab] = graph | view | panel.
+function setMobileTab(t){
+  document.body.dataset.mtab = t;
+  for (const b of document.querySelectorAll('.mtabs button')) b.classList.toggle('on', b.dataset.mtab === t);
+  requestAnimationFrame(()=>{ resizeGraph(); resizeViewer(); });
+}
+
+function initTouch(canvas){
+  const lc = lcanvas;
+  // ── HiDPI (see resizeGraph): graph space = CSS px × dpr on the backing store
+  lc.ds.toCanvasContext = function(ctx){
+    ctx.scale(TOUCH.dpr, TOUCH.dpr);
+    LiteGraph.DragAndScale.prototype.toCanvasContext.call(this, ctx);
+  };
+  lc.ds.computeVisibleArea = function(viewport){     // cull in CSS px, not device px
+    if (!this.element){ this.visible_area.fill(0); return; }
+    let w = this.element.width / TOUCH.dpr, h = this.element.height / TOUCH.dpr;
+    let x0 = -this.offset[0], y0 = -this.offset[1];
+    if (viewport){ x0 += viewport[0] / this.scale; y0 += viewport[1] / this.scale; w = viewport[2]; h = viewport[3]; }
+    this.visible_area[0] = x0; this.visible_area[1] = y0;
+    this.visible_area[2] = w / this.scale; this.visible_area[3] = h / this.scale;
+  };
+  const renderInfo = lc.renderInfo;
+  lc.renderInfo = function(ctx, x, y){
+    ctx.save(); ctx.scale(TOUCH.dpr, TOUCH.dpr);
+    renderInfo.call(this, ctx, x || 10, y || (this.canvas.height / TOUCH.dpr - 80));
+    ctx.restore();
+  };
+  lc.centerOnNode = function(node){                   // stock one halves by canvas.width
+    const r = this.canvas.getBoundingClientRect();
+    this.ds.offset[0] = -node.pos[0] - node.size[0] * 0.5 + (r.width * 0.5) / this.ds.scale;
+    this.ds.offset[1] = -node.pos[1] - node.size[1] * 0.5 + (r.height * 0.5) / this.ds.scale;
+    this.setDirty(true, true);
+  };
+  // ── fat-finger slots
+  const adjust = lc.adjustMouseEvent;
+  lc.adjustMouseEvent = function(e){
+    adjust.call(this, e);
+    if (!e.pointerType || e.pointerType === 'mouse' || TOUCH.selectMode) return;
+    if (e.type === 'pointerdown') snapToSlot(this, e, null);
+    else if (this.connecting_node && (e.type === 'pointermove' || e.type === 'pointerup'))
+      snapToSlot(this, e, this.connecting_output ? 'in' : 'out');
+  };
+
+  // ── pointer router: window capture runs before litegraph's canvas/document ones
+  const pts = new Map();   // non-mouse pointers that went down on the graph: id -> [x, y]
+  let lgId = null;         // the pointer litegraph is tracking
+  let pinch = null;        // {d, c} while two fingers are down
+  let tail = false;        // a pinch ended with a finger still down: swallow it
+  let lp = null;           // pending long-press
+  const shadow = (e, k, v)=>{ try { Object.defineProperty(e, k, {value: v, configurable: true}); } catch(_){} };
+  const pinchState = ()=>{
+    const [a, b] = [...pts.values()];
+    return { d: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, c: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] };
+  };
+  let eatTimer = null;
+  const eatClick = ev=>{ ev.stopPropagation(); ev.preventDefault(); };
+  const stopEating = ()=>{ clearTimeout(eatTimer); eatTimer = null; removeEventListener('click', eatClick, true); };
+  const cancelLongPress = ()=>{ if (lp){ clearTimeout(lp.timer); lp = null; } };
+  const fireLongPress = ()=>{
+    const p = lp; lp = null;
+    if (!p || pts.size !== 1) return;   // on a widget too: a slider being dragged is past 8px by now
+    const r = canvas.getBoundingClientRect(), ds = lc.ds;
+    const gx = (p.x - r.left) / ds.scale - ds.offset[0], gy = (p.y - r.top) / ds.scale - ds.offset[1];
+    const node = lgraph.getNodeOnPos(gx, gy, lc.visible_nodes, 5);
+    abortLitegraphGesture();
+    if (node && !lc.selected_nodes[node.id]) lc.selectNodes([node]);
+    try { navigator.vibrate && navigator.vibrate(12); } catch(_){}
+    // ContextMenu insists on a real Mouse/PointerEvent with a target: reuse the press
+    p.ev.canvasX = gx; p.ev.canvasY = gy;
+    LGraphCanvas.active_canvas = lc;
+    lc.processContextMenu(node, p.ev);
+    // the menu opens UNDER the finger: the click that lifting it produces would
+    // land on a menu entry. Swallow clicks until shortly after the lift (onUp).
+    addEventListener('click', eatClick, true);
+    eatTimer = setTimeout(stopEating, 5000);
+  };
+  const closeStrayDialogs = (e)=>{
+    for (const d of document.querySelectorAll('.litegraph.graphdialog'))
+      if (!d.contains(e.target) && typeof d.close === 'function') d.close();
+  };
+
+  addEventListener('pointerdown', e=>{
+    const mouse = e.pointerType === 'mouse';
+    setTouchUI(!mouse);
+    if (!mouse) closeStrayDialogs(e);
+    if (e.target !== canvas) return;
+    if (mouse){ lgId = e.pointerId; shadow(e, 'isPrimary', undefined); return; }
+    pts.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pts.size > 1){                    // a second finger: the view gesture takes over
+      e.stopImmediatePropagation(); e.preventDefault();
+      cancelLongPress(); abortLitegraphGesture();
+      if (pts.size === 2) pinch = pinchState();
+      return;
+    }
+    lgId = e.pointerId; shadow(e, 'isPrimary', undefined);
+    if (TOUCH.selectMode) shadow(e, 'ctrlKey', true);   // litegraph: Ctrl+drag = box select
+    cancelLongPress();
+    lp = { id: e.pointerId, x: e.clientX, y: e.clientY, ev: e, timer: setTimeout(fireLongPress, 500) };
+  }, true);
+
+  addEventListener('pointermove', e=>{
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, [e.clientX, e.clientY]);
+    if (lp && lp.id === e.pointerId && Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 8) cancelLongPress();
+    if (pinch){
+      e.stopImmediatePropagation(); e.preventDefault();
+      if (pts.size < 2) return;
+      const now = pinchState(), ds = lc.ds, r = canvas.getBoundingClientRect();
+      ds.offset[0] += (now.c[0] - pinch.c[0]) / ds.scale;      // pan with the centre…
+      ds.offset[1] += (now.c[1] - pinch.c[1]) / ds.scale;
+      ds.changeScale(ds.scale * now.d / pinch.d, [now.c[0] - r.left, now.c[1] - r.top]);   // …zoom about it
+      pinch = now;
+      lc.setDirty(true, true);
+      return;
+    }
+    if (tail || e.pointerId !== lgId) e.stopImmediatePropagation();
+  }, true);
+
+  const onUp = e=>{
+    const mine = pts.has(e.pointerId);
+    if (e.pointerId === lgId){
+      lgId = null;
+      if (mine && TOUCH.selectMode) shadow(e, 'ctrlKey', true);   // tap adds to the selection
+      if (e.type === 'pointercancel'){ abortLitegraphGesture(); lc.pointer_is_down = false; }
+    } else if (mine) e.stopImmediatePropagation();
+    if (!mine) return;
+    pts.delete(e.pointerId);
+    if (lp && lp.id === e.pointerId) cancelLongPress();
+    if (eatTimer){ clearTimeout(eatTimer); eatTimer = setTimeout(stopEating, 350); }
+    if (pinch && pts.size < 2){ pinch = null; tail = pts.size > 0; }
+    if (!pts.size) tail = false;
+  };
+  addEventListener('pointerup', onUp, true);
+  addEventListener('pointercancel', onUp, true);
+
+  // ── floating touch tools on the graph pane
+  const tools = document.createElement('div');
+  tools.className = 'touch-tools';
+  tools.innerHTML =
+    '<button class="tb-btn" id="tt-add" title="Aggiungi un nodo (anche: doppio tap sul canvas)">+ Nodo</button>'+
+    '<button class="tb-btn toggle" id="tt-select" title="Selezione: trascina un dito per un rettangolo, tocca per aggiungere un nodo">Seleziona</button>';
+  canvas.parentElement.appendChild(tools);
+  tools.querySelector('#tt-add').addEventListener('click', touchAddNode);
+  tools.querySelector('#tt-select').addEventListener('click', ()=> setSelectMode(!TOUCH.selectMode));
+
+  // ── phone layout tabs (shown by CSS under 800px only)
+  const tabs = document.createElement('div');
+  tabs.className = 'mtabs';
+  tabs.innerHTML = '<button data-mtab="graph">Grafo</button><button data-mtab="view">3D</button><button data-mtab="panel">Pannello</button>';
+  const ws = document.querySelector('.workspace');
+  ws.insertBefore(tabs, ws.firstChild);
+  tabs.addEventListener('click', e=>{ const b = e.target.closest('button'); if (b) setMobileTab(b.dataset.mtab); });
+  setMobileTab('graph');
+
+  setTouchUI(matchMedia('(pointer: coarse)').matches);
+  // any layout change (toolbar wrap, tab switch, touch-ui sizes) re-fits the backing store
+  if (window.ResizeObserver) new ResizeObserver(()=> resizeGraph()).observe(canvas.parentElement);
+}
 window.addEventListener('resize', ()=>{ resizeGraph(); resizeViewer(); });
 // picker modal controls
 document.getElementById('picker-confirm').addEventListener('click', ()=>closePicker(true));
@@ -6027,7 +6364,10 @@ function runPalette(i){ const c=palItems[i]; closePalette(); if(c) c.run(); }
  * ============================================================ */
 // Toggles, each remembered per browser (a convenience, not graph state).
 const CLARITY_KEYS = {lineage: 'noodle:settings:lineage', minimap: 'noodle:settings:minimap', autoTitle: 'noodle:settings:autoTitle'};
-const clarity = {lineage: true, minimap: true, autoTitle: true, mm: null, mmDrag: false};
+// The minimap defaults OFF on a phone-width pane: 190×130 there is a third of
+// the canvas, right where one-finger pans and long-presses land.
+const clarity = {lineage: true, minimap: !matchMedia('(max-width: 800px)').matches,
+                 autoTitle: true, mm: null, mmDrag: false};
 for (const k in CLARITY_KEYS){
   try { const v = localStorage.getItem(CLARITY_KEYS[k]); if (v != null) clarity[k] = v === '1'; } catch(_){}
 }

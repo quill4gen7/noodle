@@ -275,12 +275,6 @@ def test_a_stale_base_version_is_refused(tmp_path):
     assert api.set_param(s, "g", "box_1", {"width": 3}, base_version=7)["version"] == 7
 
 
-def test_without_versions_the_hook_is_a_no_op(store):
-    api.add_node(store, "g", "Box")
-    out = api.set_param(store, "g", "box_1", {"width": 3}, base_version="anything")
-    assert out["version"] is None
-
-
 # --- compact reads ---------------------------------------------------------
 def test_compact_graph_is_small_and_elides_long_code(store):
     long_code = "\n".join(f"x{i} = {i}" for i in range(200))

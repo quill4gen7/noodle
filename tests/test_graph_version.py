@@ -65,7 +65,7 @@ def test_no_base_still_overwrites(tmp_path):
 def test_api_round_trip(tmp_path):
     store = GraphStore(tmp_path)
     store.save("p", _g(length=5))
-    cur = api.graph_version(store, "p")
+    cur = api.read_versioned_graph(store, "p")
     assert cur["graph"]["nodes"][0]["params"] == {"length": 5}
     g = cur["graph"]
     g["nodes"][0]["params"]["length"] = 8
