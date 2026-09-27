@@ -86,6 +86,8 @@ add_node/connect/delete tools exist on MCP: `cad_add_node`, `cad_connect`,
 | `GET /api/agent/tags` | ToAgent provenance index (`cad_agent_tags`) |
 | `GET /api/graph/{name}/slice_summary?path=&n=` | symbolic sections (`cad_slice_summary`) |
 | `GET /api/graph/{name}/section_outline?axis=&pos=&path=` | one exact section (`cad_section_outline`) |
+| `POST /api/graph/{name}/measure` body=`{queries:[…]}` | geometry facts by node ref `n5`/`n51.body`/`n51[3]` (`cad_measure`): `props`, `interference` (a+b, or every pair of a list node), `distance`, `section` (+svg), `probe`, `summary` — check fits and clashes instead of writing scripts |
+| `GET /api/graph/{name}/lint` | soft findings (`cad_lint`): slider vs `#@param`, hidden `_cb` overrides, CodeBlock syntax, unassigned `#@out` |
 | `GET /api/graph/{name}/screenshot?view=&node=&…` | **PNG of the viewport** (`cad_screenshot`) — see below |
 
 Project names: one path segment, `[A-Za-z0-9][A-Za-z0-9._ -]{0,63}` — anything
@@ -177,7 +179,14 @@ selected objects (type-preserving, fans out downstream).
 ## Custom nodes (CodeBlock)
 
 A `CodeBlock` node runs arbitrary build123d Python from its `code` param.
-Lines like `#@param radius: float = 5.0` become live sliders + input sockets.
+A declaration `radius = 5.0  #@param float min=1 max=20` becomes a live slider
++ a same-named input socket. `#@out body: solid` (one per line) adds a named
+OUTPUT socket that carries the block's variable `body` (or `result["body"]`);
+`result` stays the first output. Prefer named outputs over returning a list
+that ListItem nodes unpack by index. A CodeBlock error reports
+`node_errors[id].line/col` relative to the block; `lint` (in the execute
+result, or `GET /api/graph/{name}/lint` · `cad_lint`) flags code that will not
+compile, hidden `_cb` overrides and sliders that disagree with a `#@param`.
 Use catalog nodes first; reach for CodeBlock only when no node fits. Never
 rewrite a CodeBlock the user made — copy it and edit the copy.
 

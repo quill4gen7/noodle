@@ -28,6 +28,7 @@ ENGINE_CALLS = {
     "slice_summary",
     "section_outline",
     "set_warm",
+    "measure_graph",
 }
 
 

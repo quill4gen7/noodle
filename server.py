@@ -1191,6 +1191,42 @@ async def graph_subshapes(name: str, node_id: str, kind: str = "edge"):
     return data
 
 
+# ---------------------------------------------------------------------------
+# Geometry facts + graph lint (cad_nodes/measure.py, cad_nodes/lint.py).
+# Self-contained block: imports are local so it never touches the header.
+# ---------------------------------------------------------------------------
+@app.post("/api/graph/{name}/measure")
+async def graph_measure(name: str, body: dict = Body(...)):
+    """Geometry facts about node outputs, by reference (n5 | n51.body | n51[3]).
+    Body: {"queries": [{"op": "props", "node": "n5", "each"?: true},
+    {"op": "interference", "a": "n5", "b": "n7"} | {"op": "interference",
+    "node": "n51"} (every pair of a list value) | {"nodes": [...]},
+    {"op": "distance", "a", "b"}, {"op": "section", "node", "axis": "z",
+    "offset": 3.0, "svg"?: true, "outline"?: true}, {"op": "probe", "node",
+    "points": [[x,y,z], …]}, {"op": "summary", "node", "n": 10}]}.
+    Returns {"success", "results": [one per query, each may carry "error"],
+    "node_errors"}. Unsaved graphs: pass "graph" in the body instead."""
+    from cad_nodes.executor import measure_graph
+    d = require_project(name)
+    graph = Graph.from_dict(body["graph"]) if body.get("graph") else _load_graph(name)
+    try:
+        data = await off_loop(measure_graph, graph, d, body.get("queries"))
+    except (ValidationError, ValueError) as e:
+        raise HTTPException(400, str(e)) from e
+    if not data.get("success"):
+        raise HTTPException(400, {"message": "Measure failed", "error": data.get("error")})
+    return data
+
+
+@app.get("/api/graph/{name}/lint")
+async def graph_lint(name: str):
+    """Soft findings (never errors): slider vs #@param mismatches, hidden _cb
+    overrides, CodeBlocks that will not compile, unassigned #@out. Pure Python —
+    no engine run, so it is cheap to call right after editing code."""
+    from cad_nodes.lint import lint_graph
+    return {"lint": lint_graph(_load_graph(name))}
+
+
 @app.get("/api/copilot/status")
 async def copilot_status_route():
     """Which LLM backend the copilot will use (provider/model/keyed)."""

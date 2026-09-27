@@ -232,6 +232,42 @@ def cad_get_node_catalog(filter_category: str = "") -> list:
 
 
 # ===========================================================================
+# Tools — geometry facts + lint (cad_nodes/measure.py, cad_nodes/lint.py).
+# Self-contained block; imports are local.
+# ===========================================================================
+@mcp.tool()
+def cad_measure(graph_id: str, queries: list) -> dict:
+    """Geometry FACTS about node outputs — ask instead of writing a script.
+    Reference nodes as "n5", a named output "n51.body", a list item "n51[3]".
+    queries: list of
+      {"op":"props","node":"n5","each":true}  bbox/volume/area/center/valid/
+          solids/shells (solids>1 on one part = it is split in pieces)
+      {"op":"interference","a":"n5","b":"n7"}  overlap volume + its bbox
+      {"op":"interference","node":"n51"}  every pair inside a list value
+          (or "nodes":[...]); only clashing pairs are listed unless "all":true
+      {"op":"distance","a":"n5","b":"n7"}  min distance + closest points
+      {"op":"section","node":"n5","axis":"z","offset":3,"svg":false,
+          "outline":false}  regions/holes/area/bbox2d at that cut
+      {"op":"probe","node":"n5","points":[[x,y,z],...]}  in | on | out
+      {"op":"summary","node":"n5","n":10}  slice_summary of that node only
+    Each query answers alone (a bad one carries "error"). Numbers rounded."""
+    from cad_nodes.executor import measure_graph
+    return _safe(lambda: measure_graph(STORE.load(graph_id), STORE.dir(graph_id),
+                                       queries))
+
+
+@mcp.tool()
+def cad_lint(graph_id: str) -> dict:
+    """Soft findings on a graph (no run): sliders whose value/min/max disagree
+    with the CodeBlock #@param they drive, hidden per-block `_cb` overrides
+    (the value that runs is not the one in the code), CodeBlocks that do not
+    compile (block-relative line/col), #@out never assigned. Call it after
+    cad_set_code; cad_execute also returns it as `lint`."""
+    from cad_nodes.lint import lint_graph
+    return _safe(lambda: {"lint": lint_graph(STORE.load(graph_id))})
+
+
+# ===========================================================================
 # Resources
 # ===========================================================================
 @mcp.resource("cad://help")
