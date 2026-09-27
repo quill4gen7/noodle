@@ -82,6 +82,22 @@ def test_numbers_are_coerced_and_clamps_are_reported(store):
     assert any("box_1.height clamped" in n for n in out["notes"])
 
 
+
+
+def test_an_input_slider_widens_its_window_instead_of_clamping(store):
+    # The catalog's 0..100 is only a slider's default drag window; a real graph
+    # (tars-pet) keeps a leg angle at 180 with a ⚙-widened window.
+    api.add_node(store, "g", "NumberSlider", title="Angolo")
+    out = api.set_param(store, "g", "Angolo", {"value": 180})
+    assert out["params"]["value"] == 180
+    node = store.load("g").node(out["node"])
+    assert node.params["_ui"]["value"] == {"min": 0, "max": 180}
+    assert any("widened" in n for n in out["notes"])
+    out = api.set_param(store, "g", "Angolo", {"value": 90})   # inside: untouched
+    assert not out.get("notes")
+    assert store.load("g").node(out["node"]).params["_ui"]["value"]["max"] == 180
+
+
 def test_bool_and_select_are_checked(store):
     api.add_node(store, "g", "Box")
     api.set_param(store, "g", "box_1", {"centered": "false"})

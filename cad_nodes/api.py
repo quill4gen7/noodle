@@ -211,6 +211,25 @@ def _apply_param(node: Node, name: str, value, notes: Optional[list] = None):
     where = f"{node.id}.{name}"
     ndef = catalog.get(node.type)
     pdef = next((p for p in ndef.params if p.name == name), None)
+    if pdef is not None and pdef.widget == "slider" and ndef.category == "input":
+        # An input slider's catalog min/max is only its DEFAULT drag window —
+        # the user widens it with ⚙ (`_ui[name]`), and the engine never clamps.
+        # So a value outside the window widens the window instead of being cut.
+        value = _coerce_clamp(pdef.type, value, where=where, notes=notes)
+        ui = dict(node.params.get("_ui") or {})
+        win = dict(ui.get(name) or {})
+        lo = win.get("min", pdef.min)
+        hi = win.get("max", pdef.max)
+        if (lo is not None and value < lo) or (hi is not None and value > hi):
+            win["min"] = min(v for v in (lo, value) if v is not None)
+            win["max"] = max(v for v in (hi, value) if v is not None)
+            ui[name] = win
+            node.params["_ui"] = ui
+            if notes is not None:
+                notes.append(f"{where}: slider window widened to "
+                             f"[{win['min']:g}, {win['max']:g}] to fit {value:g}")
+        node.params[name] = value
+        return value
     if pdef is not None:
         value = _coerce_clamp(pdef.type, value, lo=pdef.min, hi=pdef.max,
                               options=pdef.options or None, where=where,
