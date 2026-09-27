@@ -931,17 +931,27 @@ def execute(store: GraphStore, graph_id: str, timeout: int = 120,
     set_param, never saved — to try a value before committing to it. (The run
     still refreshes the project's last view/output, like any run.)"""
     graph = store.load(graph_id)
-    applied = {}
-    notes: list[str] = []
-    for ref, params in (overrides or {}).items():
+    extra = apply_overrides(graph, overrides)
+    result = execute_graph(graph, store.dir(graph_id), timeout=timeout)
+    return {**result, **extra} if extra else result
+
+
+def apply_overrides(graph: Graph, overrides: Optional[dict]) -> dict:
+    """Apply `{node_id_or_title: {param: value}}` to an in-memory graph,
+    validated like set_param. Returns {overrides: applied, override_notes?}
+    to merge into the run's result ({} when there was nothing to apply)."""
+    if not overrides:
+        return {}
+    if not isinstance(overrides, dict):
+        raise ValueError("overrides must be {node_id_or_title: {param: value}}")
+    applied, notes = {}, []
+    for ref, params in overrides.items():
         node = resolve_node(graph, ref)
         applied[node.id] = _apply_params(node, params, notes)
-    result = execute_graph(graph, store.dir(graph_id), timeout=timeout)
-    if applied:
-        result = {**result, "overrides": applied}
-        if notes:
-            result["override_notes"] = notes
-    return result
+    out = {"overrides": applied}
+    if notes:
+        out["override_notes"] = notes
+    return out
 
 
 def get_view(store: GraphStore, graph_id: str) -> dict | None:
