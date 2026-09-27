@@ -40,12 +40,15 @@ def _lean_view(view, keep_mesh: bool = False):
 # Tools — orientation
 # ===========================================================================
 @mcp.tool()
-def cad_help() -> str:
-    """START HERE if this is your first noodle call: the full orientation
-    guide (markdown) — what noodle is, the graph model, wire types, list
-    fan-out, all tools/endpoints, and the standard build + retro-engineering
-    loops."""
-    return _safe(api.agent_help)
+def cad_help(topic: str = "") -> str:
+    """START HERE if this is your first noodle call: the orientation guide
+    (markdown) — what noodle is, the graph model, wire types, list fan-out,
+    every tool, and the build loop. `topic=` returns one detail section
+    instead: screenshots, retroeng, print, threads, fluid."""
+    try:
+        return api.agent_help(topic)
+    except Exception as e:  # noqa: BLE001 - an unknown topic lists the real ones
+        return f"error: {e}"
 
 
 # ===========================================================================

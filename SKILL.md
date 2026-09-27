@@ -1,54 +1,60 @@
 # noodle — nanobot Skill
 
-## Descrizione
-CAD parametrico **a nodi**. Si compone un grafo di nodi; il backend lo transpila
-in **build123d** (Python), lo esegue in un worker isolato e restituisce STL +
-mesh per il viewport. Unico motore geometrico: build123d (OpenCASCADE). Nessun
-OpenSCAD/CadQuery.
+## Description
+**Node-based** parametric CAD. You compose a graph of nodes; the backend
+transpiles it to **build123d** (Python), runs it in an isolated worker and
+returns STL + a mesh for the viewport. One geometry engine: build123d
+(OpenCASCADE). No OpenSCAD/CadQuery.
 
-## Servizio
-- **Docker**: container `noodle` su porta **8090**
+## Service
+- **Docker**: container `noodle` on port **8090**
 - **API base**: `http://localhost:8090`
-- **Editor a nodi**: `http://localhost:8090/nodes`
-- **Vista codice** (build123d generato dal grafo, sola lettura): `http://localhost:8090/ui`
+- **Node editor**: `http://localhost:8090/nodes`
+- **Code view** (build123d generated from the graph, read-only): `http://localhost:8090/ui`
+- **Agent guide**: `GET /api/agent/help` (MCP `cad_help`) — read it first;
+  `?topic=screenshots|retroeng|print|threads|fluid` for detail.
 
-## Endpoints principali
+## Main endpoints
 
-| Metodo | Path | Descrizione |
+| Method | Path | Description |
 |---|---|---|
-| GET | `/api/nodes` | Catalogo nodi (tipi, socket, parametri) |
-| GET | `/api/projects` | Lista progetti (i grafi hanno `backend: "nodegraph"`) |
-| POST | `/api/graph/{name}` | Crea/sovrascrive un grafo (body: `{name, nodes, connections}`) |
-| GET | `/api/graph/{name}` | Leggi il grafo |
-| GET | `/api/graph/{name}/code` | Codice build123d transpilato dal grafo |
-| POST | `/api/graph/{name}/execute` | Esegui il grafo → view + STL + errori per-nodo |
-| POST | `/api/projects/{name}/render` | Esegui e produci `output.stl` |
-| GET | `/api/projects/{name}/download` | Download STL |
-| GET | `/api/graph/{name}/export/{fmt}` | Export (es. `step`) |
-| DELETE | `/api/projects/{name}` | Elimina progetto |
-| POST | `/api/copilot/chat` | Copilot NL → modifica il grafo |
-| GET | `/api/system/health` · `/api/system/logs` · POST `/api/system/restart` | Salute / log backend / riavvio |
+| GET | `/api/agent/help` | Orientation guide (markdown) |
+| GET | `/api/nodes?query=…` · `/api/nodes/{type}` | Catalog, one line per type · one type in detail |
+| GET | `/api/projects` | List projects (graphs have `backend: "nodegraph"`) |
+| POST | `/api/graph/{name}` | Create/overwrite a graph (body: `{name, nodes, connections}`) |
+| GET | `/api/graph/{name}/compact` | Read the graph compactly (`?node=` one node in full) |
+| POST | `/api/graph/{name}/ops` | Atomic, validated batch of edits (`{ops: [...]}`) |
+| POST | `/api/graph/{name}/set_param` · `/edit_code` | Validated param edit (node by id or title) · CodeBlock str-replace |
+| POST | `/api/graph/{name}/execute?lean=1` | Run → lean summary + per-node errors (`{overrides}` body: try values unsaved) |
+| GET | `/api/graph/{name}/screenshot` | PNG of the viewport |
+| POST | `/api/graph/{name}/arrange` | Tidy the node layout |
+| GET | `/api/graph/{name}/export/{fmt}` | Export (`step`, `stl`, `gltf`) |
+| DELETE | `/api/projects/{name}` | Delete a project |
+| POST | `/api/copilot/chat` | Copilot: natural language → graph edits |
+| GET | `/api/system/health` · `/api/system/logs` · POST `/api/system/restart` | Health / backend logs / restart |
 | GET | `/health` | Health check |
 
-## Come un agente costruisce un modello
-Un grafo è `{nodes, connections}`. Ogni nodo ha `id`, `type` (dal catalogo
-`/api/nodes`), `params` e `position`; ogni connessione collega
-`from_node/from_socket` → `to_node/to_socket` (wire tipizzati).
+## How an agent builds a model
+A graph is `{nodes, connections}`. Each node has `id`, `type` (from the
+catalog), `params`, optional `title`; each connection links
+`from_node/from_socket` → `to_node/to_socket` (typed wires).
 
-Vie consigliate, in ordine:
-1. **MCP server** (`mcp_server.py` → `cad_nodes.api`): `add_node`, `connect`,
-   `set_param`, `delete_node`, `execute`, `transpile` — la sorgente di verità,
-   condivisa anche dal copilot.
-2. **Copilot**: `POST /api/copilot/chat` con linguaggio naturale.
-3. **HTTP diretto**: `POST /api/graph/{name}` con il JSON del grafo, poi
-   `POST /api/graph/{name}/execute`; in caso di errori leggi `node_errors`
-   (mappa `node_id → messaggio`) e correggi.
+Preferred routes, in order:
+1. **MCP server** (`mcp_server.py` → `cad_nodes.api`): `cad_apply_ops`,
+   `cad_set_param`, `cad_edit_code`, `cad_execute`, `cad_screenshot`… — the
+   source of truth, shared with the copilot. See `AGENTS.md`.
+2. **HTTP**: the same operations (`/ops`, `/set_param`, `/edit_code`,
+   `/execute?lean=1`); read `node_errors` (`node_id → message`) and fix.
+3. **Copilot**: `POST /api/copilot/chat` in natural language.
 
-## Gestione servizio
+Never hand-edit `graph.json`: the API validates, keeps ids stable and places
+new nodes; an open editor tab would overwrite a hand edit anyway.
+
+## Running the service
 ```bash
 cd ~/projects/noodle
-docker compose up -d --build   # avvia
-docker compose logs -f          # log
-docker restart noodle       # dopo modifiche a server.py
-docker compose down             # ferma
+docker compose up -d --build   # start
+docker compose logs -f         # logs
+docker restart noodle          # after changes to server.py / cad_nodes
+docker compose down            # stop
 ```

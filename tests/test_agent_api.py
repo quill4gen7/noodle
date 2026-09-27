@@ -413,3 +413,28 @@ def test_cli_validate_and_arrange_work_offline(store, tmp_path, capsys):
     assert cli.main(["validate", str(path)]) == 1
     assert cli.main(["catalog", "--query", "polar"]) == 0
     assert "ArrayPolar [" in capsys.readouterr().out
+
+
+# --- the guide ---------------------------------------------------------------
+def test_help_topics_are_served_on_demand_only():
+    core = api.agent_help()
+    assert "## topic:" not in core
+    assert set(api.help_topics()) >= {"screenshots", "retroeng", "print",
+                                      "threads", "fluid"}
+    for t in api.help_topics():
+        assert t in core                          # the core guide lists them
+        assert api.agent_help(t).startswith(f"## topic: {t}")
+    assert "section_outline" in api.agent_help("retroeng")
+    with pytest.raises(ValueError, match="screenshots"):
+        api.agent_help("nope")
+
+
+def test_every_tool_the_guide_names_exists():
+    import re
+    from pathlib import Path
+    root = Path(api.__file__).resolve().parent.parent
+    mcp_src = (root / "mcp_server.py").read_text()
+    text = (root / "cad_nodes" / "AGENT_HELP.md").read_text()
+    named = set(re.findall(r"\b(cad_[a-z_]+)\(?", text))
+    missing = [t for t in named if f"def {t}(" not in mcp_src]
+    assert not missing, missing

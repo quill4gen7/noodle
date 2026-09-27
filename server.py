@@ -1239,9 +1239,15 @@ async def graph_progress(request: Request, name: str, run: str | None = None):
 
 
 @app.get("/api/agent/help")
-async def agent_help_route():
-    """Self-contained orientation guide for a remote agent (markdown text)."""
-    return PlainTextResponse(api.agent_help(), media_type="text/markdown")
+async def agent_help_route(topic: str = ""):
+    """Self-contained orientation guide for a remote agent (markdown text).
+    `?topic=<name>` returns one detail section (screenshots, retroeng, print,
+    threads, fluid) instead of the core guide."""
+    try:
+        text = api.agent_help(topic)
+    except ValueError as e:
+        raise HTTPException(404, str(e)) from e
+    return PlainTextResponse(text, media_type="text/markdown")
 
 
 @app.get("/api/agent/tags")

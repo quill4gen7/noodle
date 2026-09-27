@@ -23,13 +23,37 @@ from .transpiler import parse_codeblock_params, transpile, transpile_with_map
 
 
 # --- orientation ----------------------------------------------------------
-def agent_help() -> str:
+_TOPIC_MARK = "<!-- topics"
+_TOPIC_HEAD = re.compile(r"^## topic: (\S+)[ \t]*$", re.M)
+
+
+def agent_help(topic: str = "") -> str:
     """The self-contained remote-agent guide (cad_nodes/AGENT_HELP.md): what
     noodle is, the graph model, wire rules, the HTTP/MCP surface and the
     standard build + retro-engineering loops. Served on every surface so an
-    agent on another machine can orient itself with one call."""
-    return (Path(__file__).resolve().parent / "AGENT_HELP.md").read_text(
+    agent on another machine can orient itself with one call.
+
+    The file ends with `## topic: <name>` sections (screenshots, retroeng,
+    print, ...) that are NOT part of the default guide — `topic=<name>`
+    returns just that section, so detail costs nothing until it is wanted."""
+    text = (Path(__file__).resolve().parent / "AGENT_HELP.md").read_text(
         encoding="utf-8")
+    core, _, tail = text.partition(_TOPIC_MARK)
+    heads = list(_TOPIC_HEAD.finditer(tail))
+    topics = {m.group(1): tail[m.start():(heads[i + 1].start() if i + 1 < len(heads)
+                                          else len(tail))].strip()
+              for i, m in enumerate(heads)}
+    if not topic:
+        return core.rstrip() + "\n"
+    if topic not in topics:
+        raise ValueError(f"no help topic {topic!r}; topics: {', '.join(topics)}")
+    return topics[topic] + "\n"
+
+
+def help_topics() -> list[str]:
+    text = (Path(__file__).resolve().parent / "AGENT_HELP.md").read_text(
+        encoding="utf-8")
+    return _TOPIC_HEAD.findall(text.partition(_TOPIC_MARK)[2])
 
 
 # --- catalog --------------------------------------------------------------
