@@ -1381,6 +1381,23 @@ async def graph_version(name: str, graph: int = 0):
     if graph:
         out["graph"] = Graph.from_dict(data or {}).to_dict()
     return out
+
+
+@app.post("/api/graph/{name}/merge")
+async def graph_merge(name: str, body: dict = Body(...)):
+    """Stateless three-way merge (cad_nodes/graph_merge.py) of the editor's
+    unsaved canvas with a graph someone else wrote: body `{base_mine, mine,
+    base_theirs, theirs}` -> `{graph, conflicts, changed, ops, renamed,
+    base_next}`. Touches nothing on disk."""
+    from cad_nodes.graph_merge import merge3, rebase
+    validate_graph_id(name)
+    try:
+        parts = [body[k] or {} for k in ("base_mine", "mine", "base_theirs", "theirs")]
+    except KeyError as e:
+        raise HTTPException(400, f"missing {e}") from e
+    out = merge3(*parts)
+    out["base_next"] = rebase(parts[0], parts[2], parts[3])
+    return out
 # ---------------------------------------------------------------------------
 # Graph version — END
 # ---------------------------------------------------------------------------

@@ -130,3 +130,19 @@ def test_http_version_can_carry_the_graph(client):
     r = client.get("/api/graph/p/version?graph=1").json()
     assert r["graph"]["nodes"][0]["params"] == {"length": 5}
     assert client.get("/api/graph/nope/version").status_code == 404
+
+
+def test_http_merge_is_stateless_and_returns_the_rebased_base(client, tmp_path):
+    base = _doc(5)
+    mine = _doc(5)
+    mine["nodes"][0]["position"] = [50, 50]
+    theirs = _doc(8)
+    r = client.post("/api/graph/p/merge", json={"base_mine": base, "mine": mine,
+                                                "base_theirs": base, "theirs": theirs})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["graph"]["nodes"][0]["params"] == {"length": 8}
+    assert d["graph"]["nodes"][0]["position"] == [50, 50]
+    assert d["base_next"]["nodes"][0]["position"] == [0, 0]
+    assert d["changed"] == ["n1"] and d["conflicts"] == []
+    assert not (tmp_path / "p").exists()
