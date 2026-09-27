@@ -329,6 +329,19 @@ cad_nodes/
   slice_summary.py   retro-engineering perception (§7b): slice_summary
                        (symbolic cross-sections; STEP exact, STL arc-fitted)
                        + section_outline (one exact section, edge by edge).
+                       Both take node=<ref> (executor) to slice ONE node.
+  measure.py         geometry FACTS by node reference (n5 | n51.body | n51[3]):
+                       props / interference / distance / section(+svg) / probe
+                       / summary. Worker-side; executor.measure_graph runs the
+                       memo'd program + an epilogue reading the named vars.
+                       POST /api/graph/{name}/measure, MCP cad_measure.
+  lint.py            soft graph findings (pure Python): slider vs #@param
+                       mismatch, hidden/dead `_cb` overrides, CodeBlock syntax
+                       (block-relative line/col), unassigned #@out. Attached to
+                       execute results as `lint`; GET .../lint, MCP cad_lint.
+                       CodeBlock `#@out name: type` = extra named output
+                       sockets (transpiler.parse_codeblock_outputs, mirrored by
+                       parseCbOutputs in nodes.html); `result` stays socket 0.
   toposort.py        topological sort + cycle detection.
   layout.py          ★ node SIZE model + automatic `arrange()` (§6c). The one
                        place that knows how big a node is server-side.
