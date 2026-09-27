@@ -47,3 +47,24 @@ def test_arrange_packs_collapsed_nodes_tightly():
 def test_the_editor_saves_and_restores_collapsed():
     assert "if (n.flags && n.flags.collapsed) nd.collapsed = true;" in NODES
     assert "if (nd.collapsed) node.flags.collapsed = true;" in NODES
+
+
+# ── stable node ids ───────────────────────────────────────────────────────
+
+
+def test_the_editor_keeps_on_disk_node_ids():
+    """litegraph numbers nodes 1..N in load order and the save used to write
+    those back, so n51 became n49 then n48 across saves and an agent holding
+    `n51` edited the wrong node. The loader now pins the runtime id to the disk
+    id and the serializer goes through graphIdOf."""
+    load = NODES[NODES.index("function fromGraphJSON("):NODES.index("function refreshPolyType(")]
+    assert "if (m) node.id = +m[1];" in load
+    assert "node._gid = nd.id" in load
+    assert "const id = graphIdOf(n); idMap[n.id] = id;" in NODES
+    assert "return node._gid || ('n' + node.id);" in NODES
+
+
+def test_no_caller_rebuilds_a_graph_id_by_hand():
+    import re
+    code = "\n".join(line for line in NODES.splitlines() if not line.lstrip().startswith("//"))
+    assert not re.search(r"'n'\s*\+\s*\w+\.id\b(?!\))", code.replace("('n' + node.id)", ""))

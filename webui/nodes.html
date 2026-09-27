@@ -2226,7 +2226,7 @@ function toGraphJSON(name){
   const nodes = [], connections = [], idMap = {};
   nodeIndex = {};
   for (const n of lgraph._nodes){
-    const id = 'n'+n.id; idMap[n.id] = id; nodeIndex[id] = n;
+    const id = graphIdOf(n); idMap[n.id] = id; nodeIndex[id] = n;
     const params = {};
     const nd = {id, type:n.cadType, params, position:[Math.round(n.pos[0]),Math.round(n.pos[1])]};
     // A user-given name. Only stored when it differs from the type's own label,
@@ -2387,12 +2387,23 @@ function fromGraphJSON(data){
   const _unionIds = new Set((data.nodes||[]).filter(n=>n.type==='Union').map(n=>n.id));
   for (const c of (data.connections||[]))
     if (_unionIds.has(c.to_node) && (c.to_socket==='a' || c.to_socket==='b')) c.to_socket = 'shapes';
+  // Keep every node's ON-DISK id. litegraph numbers nodes 1..N in load order,
+  // and the save wrote those numbers back — so a file whose ids were not already
+  // 1..N in order came back renumbered (n51 -> n49 -> n48 across saves), and an
+  // agent holding "n51" edited the wrong node or none. A numeric id `nK` becomes
+  // runtime id K (so 'n'+node.id still names it); any other id (`drop`) is kept
+  // on node._gid and the node gets a fresh runtime number above all of them.
+  let _maxId = 0;
+  for (const nd of (data.nodes||[])){ const m = /^n([1-9]\d*)$/.exec(nd.id||''); if (m) _maxId = Math.max(_maxId, +m[1]); }
   for (const nd of (data.nodes||[])){
     if (nd.type === 'Panel'){
       if (hasIncoming.has(nd.id)){ nd.type = 'Display'; if (nd.params){ delete nd.params.text; delete nd.params.mode; } }
       else nd.type = 'Input';
     }
     const node = createNodeFromData(nd); if(!node) continue;
+    const m = /^n([1-9]\d*)$/.exec(nd.id||'');
+    if (m) node.id = +m[1];
+    else { node.id = ++_maxId; if (nd.id) node._gid = nd.id; }
     lgraph.add(node);
     map[nd.id] = node;
   }
@@ -2727,7 +2738,7 @@ const FINISHES = [
 // switches its target. No new state, no new serialization: it is a view onto the
 // per-node fields that already exist.
 function piecesOf(node){
-  const p = lastView && lastView.previews && lastView.previews['n' + node.id];
+  const p = lastView && lastView.previews && lastView.previews[graphIdOf(node)];
   if (!p || !p.bodies || !p.bodies.length) return null;
   const by = new Map();
   for (const b of p.bodies){
@@ -2998,7 +3009,7 @@ const CLIP_KEY = 'noodle:nodeclip';
 function copySelected(){
   const ns = selectedNodes(); if (!ns.length) return;
   const full = toGraphJSON(currentName || 'clip');
-  const ids = new Set(ns.map(n => 'n'+n.id));
+  const ids = new Set(ns.map(n => graphIdOf(n)));
   const nodes = full.nodes.filter(nd => ids.has(nd.id));
   const connections = (full.connections||[]).filter(c => ids.has(c.from_node) && ids.has(c.to_node));
   graphClipboard = {nodes, connections};
@@ -3837,7 +3848,7 @@ function fmtPanel(v){ return panelLines(v).join('\n'); }
 let lastPanels = {};   // id -> typed panel value, from the most recent view.json
 function drawDisplayBody(ctx, node){
   const pad = 8, lh = 14, top = noteTextTop(node), w = node.size[0] - pad*2;
-  const val = lastPanels['n' + node.id];
+  const val = lastPanels[graphIdOf(node)];
   ctx.save();
   ctx.font = '11px var(--mono, monospace)';
   ctx.textBaseline = 'top';
@@ -4241,7 +4252,7 @@ function applyIsolate(){
     if(_isoDirty){ for(const id in previewMeshes){ const m=previewMeshes[id]; if(m) m.visible=true; } _isoDirty=false; }
     return;
   }
-  const sel = new Set(selectedNodes().map(n=>'n'+n.id));
+  const sel = new Set(selectedNodes().map(n=>graphIdOf(n)));
   const hasSel = sel.size > 0;                 // nothing picked -> nothing to isolate to
   for(const id in previewMeshes){
     const m = previewMeshes[id]; if(!m) continue;
@@ -4309,10 +4320,12 @@ function nodeFor(id){ return nodeByGraphId[id] || nodeIndex[id] || null; }
 // nothing while its mesh sat under `n29`, and a Number Slider (runtime 31) hit
 // `n31` — the TORUS's mesh. A miss loses the 60fps scrub; a false hit hands a
 // node someone else's geometry to transform.
+// Since fromGraphJSON keeps on-disk ids (a numeric `nK` IS runtime id K, any
+// other id rides on node._gid), the two namespaces no longer drift apart and
+// this is O(1) — toGraphJSON calls it once per node, every second.
 function graphIdOf(node){
   if (!node) return null;
-  for (const gid in nodeByGraphId) if (nodeByGraphId[gid] === node) return gid;
-  return 'n' + node.id;      // never saved in this session: ids really are the editor's
+  return node._gid || ('n' + node.id);
 }
 function previewMeshOf(node){ const g = graphIdOf(node); return (g && previewMeshes[g]) || null; }
 function previewAnimOf(node){ const g = graphIdOf(node); return (g && previewAnims[g]) || null; }
@@ -4388,7 +4401,7 @@ function syncRefImages(){
     if (n.cadType !== 'RefImage') continue;
     const p = n.properties || {}, path = p.path;
     if (!path || path === '(no file)' || !currentName) continue;
-    const id = 'n' + n.id; seen.add(id);
+    const id = graphIdOf(n); seen.add(id);
     let m = refMeshes[id];
     if (!m){
       m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
@@ -4495,7 +4508,7 @@ function flashNode(n){
 }
 function broadcastReveal(node){
   if (!xlink || !node || _xlinkEcho) return;
-  xlink.postMessage({cmd:'reveal', graph: currentName, node_id: 'n' + node.id});
+  xlink.postMessage({cmd:'reveal', graph: currentName, node_id: graphIdOf(node)});
 }
 
 // ── sub-shape selection picker (modal 3D viewer) ───────────────────────────
@@ -4785,7 +4798,7 @@ window.openSelectionPicker = async function(node, kind){
   try {
     await saveGraph();
     if (!currentName) return;
-    const srcId = 'n'+src.id;
+    const srcId = graphIdOf(src);
     setStatus(`loading ${pluralKind(kind)}…`);
     let data;
     try {
