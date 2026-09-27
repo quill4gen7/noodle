@@ -258,6 +258,19 @@ def _sockets_hint(graph: Graph, node_id: str, side: str) -> str:
     return f" Valid {side}s of {node_id} ({node.type}): {', '.join(names) or '(none)'}"
 
 
+def validation_report(graph: Graph) -> dict:
+    """Everything checkable without running: {ok, error?, warnings,
+    param_issues}. `error` is a hard wiring/type problem; `param_issues` are
+    stored params that are unknown, badly typed or out of range."""
+    try:
+        warnings = validate_graph(graph)
+    except (ValidationError, KeyError, ValueError) as e:
+        return {"ok": False, "error": str(e), "warnings": [],
+                "param_issues": check_params(graph)}
+    issues = check_params(graph)
+    return {"ok": not issues, "warnings": warnings, "param_issues": issues}
+
+
 def validate_graph(graph: Graph) -> list[str]:
     """`Graph.validate()` with agent-friendly errors: a bad socket name comes
     back listing the node's real sockets. Returns the soft warnings."""
