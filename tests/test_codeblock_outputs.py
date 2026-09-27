@@ -193,5 +193,6 @@ def test_end_to_end_named_outputs_and_errors(monkeypatch):
     errs = res["node_errors"]
     assert errs["bad"]["line"] == 2 and errs["bad"]["col"] == 5
     assert errs["rt"]["line"] == 4 and "ZeroDivisionError" in errs["rt"]["exception"]
+    assert any(f["code"] == "codeblock_syntax" and f["node"] == "bad" for f in res["lint"])
     bb = res["view"]["bbox"]                 # the Move got the 1mm lid, raised 10
     assert abs(bb["size"][2] - 1.0) < 0.01 and abs(bb["min"][2] - 9.5) < 0.01

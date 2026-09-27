@@ -443,8 +443,15 @@ def execute_graph(graph: Graph, workdir: Path, timeout: int = 120,
     nodes whose content hash is unchanged are restored from the persistent
     cache (shapes AND preview meshes) — only the dirty subtree re-runs."""
     code = transpile(graph, memo=True)
-    return execute_code(code, workdir, timeout=timeout, quality=quality,
-                        write_stl=write_stl, run_id=run_id)
+    result = execute_code(code, workdir, timeout=timeout, quality=quality,
+                          write_stl=write_stl, run_id=run_id)
+    # Soft findings (cad_nodes/lint.py) ride along; they never fail a run.
+    try:
+        from .lint import lint_graph
+        result["lint"] = lint_graph(graph)
+    except Exception:  # noqa: BLE001
+        result["lint"] = []
+    return result
 
 
 _SUBSHAPE_EPILOGUE = """
