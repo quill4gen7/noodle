@@ -1162,6 +1162,29 @@ it in a panel at the left, one click away.
   the result stays tall and narrow (`retromy`: 2010×8179). Naming them is the fix,
   and now it is available.
 
+**Straighter wires, auto groups** (`layout.py`, measured over the 52 examples +
+59 saved projects + tars-pet-sg92r): ordering now routes a long wire through one
+dummy per column it crosses and keeps the best of 12 sweeps by crossing count;
+placement (`_align`) pulls each node to the weighted centre of its neighbours
+(weight = 1/source fan-out, so a hub does not drag chains apart) and re-packs each
+column in order with pool-adjacent-violators. Groups are rigid rectangles packed
+first-fit (two band orders tried, shorter kept) so boxes never cut across. Totals:
+crossings 1038 → 763, wire length −6.5 %, height +7 %; sg92r 75 → 49 crossings.
+Uniform weights in the ORDERING step measured better (763 vs 844) — keep them.
+`arrange(groups="auto")` (`?groups=auto`, `api.propose_groups`, ⌘K "Riordina +
+gruppi automatici") adds `propose_groups()`: "Parametri" (every input source,
+lifted into the panel — a group titled Parametri/Parameters/Params made only of
+sources IS the panel), connected hubs (fan-out ≥ 3), one box per remaining chain
+titled by its most downstream user name, else `<hub>[index]`. Opt-in only.
+
+**Editor readability** ("Graph clarity" block in nodes.html): selecting nodes
+dims everything outside their lineage (one even-odd veil + the lineage wires
+redrawn, upstream cyan / downstream amber); nameless ListItems and chain nodes
+DISPLAY a derived title (`Progetto[5] → Batteria`, `Export STL · Stampa frontale`)
+via `getTitle` — never saved; a minimap in the canvas corner (click/drag to
+navigate). All three toggle from ⌘K or the canvas right-click, remembered in
+localStorage. `flags.collapsed` is now persisted as `collapsed: true`.
+
 **Apply / reload rules:**
 - Backend Python change → `docker restart noodle` (process caches imports;
   the read-only mount alone isn't enough).
