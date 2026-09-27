@@ -736,7 +736,8 @@ async def patch_graph_param(name: str, payload: ParamPatch):
 
 
 @app.post("/api/graph/{name}/arrange")
-async def arrange_graph(name: str, graph: Optional[dict] = Body(default=None)):
+async def arrange_graph(name: str, graph: Optional[dict] = Body(default=None),
+                        groups: Optional[str] = None):
     """Tidy node positions — left-to-right by dependency depth, on the nodes' REAL
     on-canvas sizes, so the result cannot contain overlapping nodes (§6c).
 
@@ -752,8 +753,13 @@ async def arrange_graph(name: str, graph: Optional[dict] = Body(default=None)):
     Returns `{status, summary, graph?}`. `summary.group_overlaps` > 0 means some
     group boxes still cut across each other (their members interleave in the
     dependency order); the nodes are still correctly placed.
+
+    `?groups=auto` also proposes and adds group boxes (Parametri, shared hubs,
+    one per output chain) for nodes not already grouped — see
+    layout.propose_groups. Without it nothing is invented.
     """
     require_project(name)
+    opts = {"groups": groups} if groups else {}
     if graph is not None:
         graph.setdefault("name", name)
         try:
@@ -762,14 +768,14 @@ async def arrange_graph(name: str, graph: Optional[dict] = Body(default=None)):
         except (ValidationError, KeyError, ValueError) as e:
             raise HTTPException(400, f"Invalid graph: {e}") from e
         try:
-            summary = layout.arrange(g)
+            summary = layout.arrange(g, **opts)
         except (ValueError, AssertionError) as e:
             raise HTTPException(400, str(e)) from e
         return {"status": "ok", "summary": summary, "graph": g.to_dict()}
 
     store = GraphStore(PROJECTS_DIR)
     try:
-        summary = api.arrange(store, name)
+        summary = api.arrange(store, name, **opts)
     except (ValueError, AssertionError, KeyError) as e:
         raise HTTPException(400, str(e)) from e
     return {"status": "ok", "summary": summary}

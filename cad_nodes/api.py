@@ -363,3 +363,11 @@ def write_graph(store: GraphStore, graph_id: str, graph: dict,
     g = Graph.from_dict({**graph, "name": graph_id})
     g.validate()
     return {"version": store.save(graph_id, g, base_version=base_version)}
+
+
+def propose_groups(store: GraphStore, graph_id: str) -> list[dict]:
+    """Group boxes that would make the graph readable (Parametri, shared hubs,
+    one per output chain), for nodes not already grouped. Read-only; apply them
+    with `arrange(store, graph_id, groups="auto")`."""
+    from . import layout as _layout
+    return _layout.propose_groups(store.load(graph_id))
