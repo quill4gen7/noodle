@@ -151,7 +151,7 @@ def node_size(ndef: NodeDef, node=None) -> tuple[float, float]:
     # A sticky Note is resizable and its size IS persisted — trust it.
     if node is not None and getattr(node, "size", None):
         w, h = float(node.size[0]), float(node.size[1])
-        return w, h
+        return (w, 0.0) if getattr(node, "collapsed", False) else (w, h)
 
     n_widgets = widget_count(ndef, node)
     rows = _slot_rows(ndef, node)
@@ -185,6 +185,12 @@ def node_size(ndef: NodeDef, node=None) -> tuple[float, float]:
     if any(p.widget == "curve" for p in (ndef.params or [])):
         w, h = max(w, 200.0), h + _CURVE_PREVIEW_H
 
+    if node is not None and getattr(node, "collapsed", False):
+        # A COLLAPSED node is drawn as its title bar alone. Its width is
+        # litegraph's `_collapsed_width` — never more than the full width, and
+        # measured with canvas font metrics we cannot mirror — so keep the full
+        # width: conservative, and a column is as wide as its widest node anyway.
+        return max(w, MIN_WIDTH), 0.0
     return max(w, MIN_WIDTH), h
 
 

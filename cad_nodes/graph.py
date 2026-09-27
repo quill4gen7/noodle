@@ -56,6 +56,10 @@ class Node:
     # restores their extra/spare connection slots on reload. Ignored by the
     # engine (several connections to one socket already fan out by themselves).
     multi: list[str] = field(default_factory=list)
+    # Editor-only: the node is folded down to its title bar (litegraph's
+    # `flags.collapsed`). Persisted so a graph tidied by collapsing stays tidy;
+    # `layout` measures a collapsed node as its title bar alone.
+    collapsed: bool = False
 
     def to_dict(self) -> dict:
         d = {
@@ -81,6 +85,8 @@ class Node:
             d["title"] = self.title
         if self.multi:
             d["multi"] = list(self.multi)
+        if self.collapsed:
+            d["collapsed"] = True
         return d
 
     @staticmethod
@@ -100,6 +106,7 @@ class Node:
             size=list(d["size"]) if d.get("size") else None,
             title=(d.get("title") or None),
             multi=list(d.get("multi", [])),
+            collapsed=bool(d.get("collapsed", False)),
         )
 
 

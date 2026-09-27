@@ -2257,6 +2257,7 @@ function toGraphJSON(name){
     if (n.previewFinish) nd.finish = n.previewFinish;
     if (n.wireframe) nd.wireframe = true;
     if (n.multiInputs && n.multiInputs.size) nd.multi = [...n.multiInputs];
+    if (n.flags && n.flags.collapsed) nd.collapsed = true;   // folded to its title bar
     nodes.push(nd);
   }
   for (const k in lgraph.links){
@@ -2295,6 +2296,7 @@ function createNodeFromData(nd){
   if (nd.finish) node.previewFinish = nd.finish;
   if (nd.wireframe) node.wireframe = true;
   if (nd.multi) for (const nm of nd.multi) node.multiInputs.add(nm);
+  if (nd.collapsed) node.flags.collapsed = true;   // set, not collapse(): that one toggles
   if (nd.params && nd.params.selection){ node.selectionData = nd.params.selection; updateSelectBtn(node); }
   if (nd.params && nd.params.trace){ node.traceData = nd.params.trace; updateTraceBtn(node); }
   if (nd.params && nd.params._ui) node.properties._ui = Object.assign({}, nd.params._ui);   // slider ⚙ config
@@ -5353,6 +5355,7 @@ function initGraph(){
   lgraph.start();
   initCrossView();
   initGroupRename();      // dbl-click a group title -> rename
+  initGraphClarity();     // lineage, derived titles, minimap, stale notice (own block)
   resizeGraph();
 }
 function resizeGraph(){
@@ -5946,6 +5949,25 @@ function renderPalette(keepSel){
   document.querySelectorAll('.cmdk-item').forEach(el=>el.onclick=()=>runPalette(+el.dataset.i));
 }
 function runPalette(i){ const c=palItems[i]; closePalette(); if(c) c.run(); }
+
+/* ============================================================ *
+ *  Graph clarity — BEGIN                                       *
+ *  Readability aids for a big graph. Self-contained: the only  *
+ *  hooks outside this block are one call in initGraph(), the   *
+ *  collapsed flag in toGraphJSON/createNodeFromData and one    *
+ *  spread in paletteCommands().                                *
+ * ============================================================ */
+function initGraphClarity(){
+  // Collapsing from the node menu happens in a DOM menu, not on the canvas, so
+  // the canvas pointerup that normally snapshots history never sees it.
+  const _collapse = LGraphNode.prototype.collapse;
+  LGraphNode.prototype.collapse = function(force){
+    const r = _collapse.call(this, force);
+    if (!loadingGraph) scheduleHistory();
+    return r;
+  };
+}
+/* ============================ Graph clarity — END ============ */
 
 /* ============================================================ *
  *  Global shortcuts (work even with focus in inputs)           *
