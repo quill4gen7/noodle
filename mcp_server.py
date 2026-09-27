@@ -31,31 +31,24 @@ def _safe(fn, *args, **kwargs):
 
 
 def _lean_view(view, keep_mesh: bool = False):
-    """Drop heavy tessellated meshes (top-level + per-node previews) so the
-    agent gets summaries, not megabytes of triangles."""
-    if not isinstance(view, dict):
-        return view
-    v = dict(view)
-    if not keep_mesh:
-        v.pop("mesh", None)
-        if isinstance(v.get("previews"), dict):
-            v["previews"] = {
-                nid: {k: val for k, val in entry.items() if k != "mesh"}
-                for nid, entry in v["previews"].items()
-            }
-    return v
+    """Drop heavy tessellated meshes (top-level + per-node previews) and round
+    floats, so the agent gets summaries, not megabytes of triangles."""
+    return api.lean_view(view, keep_mesh=keep_mesh)
 
 
 # ===========================================================================
 # Tools — orientation
 # ===========================================================================
 @mcp.tool()
-def cad_help() -> str:
-    """START HERE if this is your first noodle call: the full orientation
-    guide (markdown) — what noodle is, the graph model, wire types, list
-    fan-out, all tools/endpoints, and the standard build + retro-engineering
-    loops."""
-    return _safe(api.agent_help)
+def cad_help(topic: str = "") -> str:
+    """START HERE if this is your first noodle call: the orientation guide
+    (markdown) — what noodle is, the graph model, wire types, list fan-out,
+    every tool, and the build loop. `topic=` returns one detail section
+    instead: screenshots, retroeng, print, threads, fluid."""
+    try:
+        return api.agent_help(topic)
+    except Exception as e:  # noqa: BLE001 - an unknown topic lists the real ones
+        return f"error: {e}"
 
 
 # ===========================================================================
@@ -84,24 +77,34 @@ def cad_delete_graph(graph_id: str) -> bool:
 # ===========================================================================
 @mcp.tool()
 def cad_add_node(graph_id: str, node_type: str, params: dict = None,
-                 position: list = None, parent: str = "") -> str:
-    """Add a node. params = {param: value}; position = [x, y]. Returns node_id."""
-    return _safe(api.add_node, STORE, graph_id, node_type,
-                 params or {}, tuple(position or (0, 0)), parent or None)
+                 position: list = None, parent: str = "", title: str = "") -> str:
+    """Add a node. params = {param: value}, validated against the catalog
+    (unknown names/bad types are errors). Omit `position` and the node is
+    auto-placed in free space. `title` names it (addressable by that name).
+    Returns node_id. Several nodes + wires at once: cad_apply_ops."""
+    return _safe(api.add_node, STORE, graph_id, node_type, params or {},
+                 tuple(position) if position else None, parent or None,
+                 title or None)
 
 
 @mcp.tool()
 def cad_connect(graph_id: str, from_node_id: str, from_socket: str,
-                to_node_id: str, to_socket: str) -> str:
-    """Connect an output socket to an input socket. Returns connection_id."""
-    return _safe(api.connect, STORE, graph_id, from_node_id, from_socket,
-                 to_node_id, to_socket)
+                to_node_id: str, to_socket: str) -> dict:
+    """Connect an output socket to an input socket (nodes by id or title).
+    Returns {connection_id, warnings}; a bad socket name lists the real ones."""
+    return _safe(api.connect_checked, STORE, graph_id, from_node_id,
+                 from_socket, to_node_id, to_socket)
 
 
 @mcp.tool()
-def cad_set_param(graph_id: str, node_id: str, params: dict) -> bool:
-    """Update parameters of an existing node."""
-    return _safe(api.set_param, STORE, graph_id, node_id, params)
+def cad_set_param(graph_id: str, node_id: str, params: dict,
+                  base_version: str = "") -> dict:
+    """Update parameters of a node addressed by id OR exact title. Values are
+    validated (unknown param -> error listing valid names; bad type -> error
+    naming node.param; out-of-range -> clamped and reported in `notes`).
+    A CodeBlock's #@param knobs are set by their bare name."""
+    return _safe(api.set_param, STORE, graph_id, node_id, params,
+                 base_version or None)
 
 
 @mcp.tool()
@@ -126,13 +129,19 @@ def cad_delete_connection(graph_id: str, connection_id: str) -> bool:
 # Tools — execution / inspection / export
 # ===========================================================================
 @mcp.tool()
-def cad_execute(graph_id: str) -> dict:
-    """Execute the graph. Returns success, errors, code and a view summary
-    (bbox/volume/area/counts; the heavy mesh is omitted — use cad_get_view)."""
-    result = _safe(api.execute, STORE, graph_id)
-    if isinstance(result, dict) and result.get("view"):
-        result = {**result, "view": _lean_view(result["view"])}
-    return result
+def cad_execute(graph_id: str, overrides: dict = None,
+                include_code: bool = False) -> dict:
+    """Execute the graph. Returns success, errors, per-node errors, warnings,
+    the slowest nodes and a lean view summary (bbox/volume/area/counts/panels,
+    per-preview kind/bbox/volume; floats rounded; no meshes — cad_get_view
+    fmt='mesh' for those). The generated code (hundreds of KB on a real
+    graph) only with include_code=True — or read it with cad_get_code.
+
+    `overrides={node_id_or_title: {param: value}}` runs with those values
+    WITHOUT saving them: try a dimension, read the result, then commit it
+    with cad_set_param if it is right."""
+    result = _safe(api.execute, STORE, graph_id, overrides=overrides or None)
+    return api.summarize_execute(result, include_code=include_code)
 
 
 @mcp.tool()
@@ -175,9 +184,11 @@ async def cad_screenshot(graph_id: str, view: str = "iso", azim: float = None,
 
     `view` is one of iso / front / back / left / right / top / bottom, or give
     `azim`+`elev` in degrees (azimuth in the XY plane from +X, elevation from
-    it; the scene is Z-up). `zoom` > 1 pulls back. `node` frames one node's
-    preview by id, and `isolate` hides the rest. `run=False` reuses what is
-    already on screen instead of re-executing — cheap for extra angles.
+    it; the scene is Z-up). `zoom` > 1 pulls back. `node` (id or title)
+    frames one node's output — any geometry node, including an intermediate
+    step that is not normally drawn — and `isolate` hides the rest.
+    `run=False` reuses what is already on screen instead of re-executing —
+    cheap for extra angles. A failed capture is an error, never a blank image.
     """
     try:
         png, _meta = await api.screenshot(
@@ -226,9 +237,97 @@ def cad_export(graph_id: str, fmt: str = "step") -> str:
 
 
 @mcp.tool()
-def cad_get_node_catalog(filter_category: str = "") -> list:
-    """List available node types, optionally filtered by category."""
-    return api.list_catalog(filter_category)
+def cad_get_node_catalog(filter_category: str = "", query: str = "",
+                         full: bool = False):
+    """Node types, one line each: `Type [category] in:(socket:wire, opt:wire?)
+    out:(socket:wire) params:(name=default, ...)`. `query` filters by substring
+    (type, label, description, aliases); `filter_category` by category.
+    full=True returns the complete JSON list instead (large). One type in
+    detail (ranges, options, description): cad_get_node_def."""
+    if full:
+        return api.list_catalog(filter_category)
+    return api.compact_catalog(query=query, category=filter_category) or \
+        f"no node type matches query={query!r} category={filter_category!r}"
+
+
+# ===========================================================================
+# Tools — agent editing: compact reads, small edits, atomic batches
+# (one contiguous section; every tool here is a thin wrapper over cad_nodes.api)
+# ===========================================================================
+@mcp.tool()
+def cad_get_graph(graph_id: str, node: str = "", positions: bool = False) -> dict:
+    """Read a graph compactly: nodes (id, type, title, params — editor-only
+    `_ui` state dropped, long code elided), connections as
+    'id: from.socket -> to.socket', and `version`. Positions only with
+    positions=True. `node=<id or title>` returns that ONE node in full
+    (untruncated CodeBlock code) plus the connections touching it."""
+    return _safe(api.get_graph_compact, STORE, graph_id, positions, node or None)
+
+
+@mcp.tool()
+def cad_get_node_def(node_type: str) -> dict:
+    """One node type in detail: input/output sockets with wire types, params
+    with type/default/min/max/options, and its description."""
+    return _safe(api.node_def_for_agent, node_type)
+
+
+@mcp.tool()
+def cad_edit_code(graph_id: str, node: str, old: str, new: str,
+                  base_version: str = "") -> dict:
+    """Edit a CodeBlock's code by exact string replacement: `old` must occur
+    EXACTLY once (0 or 2+ matches is an error and nothing is saved). Far
+    cheaper than resending the script with cad_set_code. `node` = id or title.
+    Read the current code with cad_get_graph(node=...)."""
+    return _safe(api.edit_code, STORE, graph_id, node, old, new,
+                 base_version=base_version or None)
+
+
+@mcp.tool()
+def cad_set_node(graph_id: str, node: str, title: str = None,
+                 preview: bool = None, bypassed: bool = None,
+                 color: str = None, base_version: str = "") -> dict:
+    """Set node attributes (not params): `title` (a name you can address it
+    by; on an input slider it also promotes it to a graph parameter),
+    `preview` (the viewport eye: true/false), `bypassed`, `color` (hex)."""
+    props = {k: v for k, v in (("title", title), ("preview", preview),
+                               ("bypassed", bypassed), ("color", color))
+             if v is not None}
+    return _safe(api.set_node, STORE, graph_id, node,
+                 base_version=base_version or None, **props)
+
+
+@mcp.tool()
+def cad_apply_ops(graph_id: str, ops: list, base_version: str = "") -> dict:
+    """Apply a batch of edits ATOMICALLY — all validated, one save — or none
+    at all (the error names the failing op index). Ops:
+      {op:'add_node', type, params?, position?, id?, title?}
+      {op:'connect', from:'node.socket', to:'node.socket'}
+      {op:'disconnect', id} | {op:'disconnect', from?, to?}
+      {op:'set_param', node, params}
+      {op:'edit_code', node, old, new}      {op:'set_code', node, code}
+      {op:'set_node', node, title?, preview?, bypassed?, color?}
+      {op:'remove', node}
+    A node ref is an id, an exact title, or '$N' = the node created by op N
+    (0-based) of this same batch. New nodes without a position are placed
+    right of whatever they got wired to. Returns results, created ids,
+    validation warnings and the new version."""
+    return _safe(api.apply_ops, STORE, graph_id, ops, base_version or None)
+
+
+@mcp.tool()
+def cad_arrange(graph_id: str) -> dict:
+    """Tidy the whole graph's layout (left-to-right by dependency, real node
+    sizes, guaranteed no overlaps; named sliders gathered as a parameter
+    panel on the left). Saves. Returns the layout summary."""
+    return _safe(api.arrange, STORE, graph_id)
+
+
+@mcp.tool()
+def cad_validate(graph_id: str) -> dict:
+    """Check a graph without running it: wiring errors (bad socket names list
+    the real ones), soft warnings (unconnected required inputs) and stored
+    params that are unknown, badly typed or out of range."""
+    return _safe(lambda: api.validation_report(STORE.load(graph_id)))
 
 
 # ===========================================================================
@@ -305,35 +404,40 @@ def res_graph_view(graph_id: str) -> str:
 # ===========================================================================
 @mcp.prompt()
 def cad_design(descrizione: str) -> str:
-    return f"""Progetta un pezzo meccanico per: "{descrizione}"
+    # (argument names are part of the MCP interface: kept as they were)
+    return f"""Design a part for: "{descrizione}"
 
-1. Crea un grafo con cad_create_graph
-2. Aggiungi primitive (Box, Cylinder, Circle...) con cad_add_node
-3. Collega con Booleane (Union/Subtract/Intersect) via cad_connect
-4. Applica modificatori (Fillet, Chamfer)
-5. Esegui con cad_execute e leggi il view (volume, bbox)
-6. Itera con cad_set_param finché le misure sono corrette
-7. Esporta con cad_export (step)
-Mostra il view dopo ogni esecuzione per verificare le dimensioni."""
+1. cad_help once if you have not read it; cad_get_node_catalog(query=...) to
+   find node types, cad_get_node_def(type) for one type's params and ranges.
+2. cad_create_graph, then build it in ONE cad_apply_ops batch: add_node the
+   primitives, connect booleans (Union/Subtract/Intersect) and modifiers
+   (FilletChamfer...). Name the key dimensions with titled NumberSliders.
+3. cad_execute; fix node_errors; check bbox/volume in the view summary.
+4. Try values with cad_execute(overrides=...) before committing them with
+   cad_set_param; cad_screenshot to LOOK at the result.
+5. cad_arrange to tidy the canvas, cad_export(fmt='step') when right."""
 
 
 @mcp.prompt()
 def cad_modify(graph_id: str, istruzioni: str) -> str:
-    return f"""Modifica il grafo {graph_id} seguendo: "{istruzioni}"
+    return f"""Modify graph {graph_id} as follows: "{istruzioni}"
 
-1. Leggi cad_get_view({graph_id}) e cad_get_code({graph_id})
-2. Regola parametri (cad_set_param) o aggiungi nodi (cad_add_node)
-3. Esegui (cad_execute) e verifica
-4. Esporta solo se soddisfacente."""
+1. cad_get_graph({graph_id}) — compact; cad_get_graph(node=...) for one
+   node's full code. (Avoid cad_get_code: it is the whole generated script.)
+2. Small edits: cad_set_param (id or title), cad_edit_code (str-replace in a
+   CodeBlock); several at once: cad_apply_ops (atomic).
+3. cad_execute and verify (view summary, cad_screenshot).
+4. Export only when satisfied."""
 
 
 @mcp.prompt()
 def cad_analyze(graph_id: str) -> str:
-    return f"""Analizza il grafo {graph_id}:
-1. cad_execute se non ancora eseguito
-2. cad_get_view: volume, area, bbox, centro, conteggi (facce/edge/solidi)
-3. cad_get_panels per i nodi Panel
-4. Riassunto strutturale del modello."""
+    return f"""Analyze graph {graph_id}:
+1. cad_execute if it has not run yet
+2. the view summary: volume, area, bbox, center, counts (faces/edges/solids)
+3. cad_get_panels for Panel nodes; cad_slice_summary for the cross-sections
+4. cad_screenshot from a couple of angles
+5. a structural summary of the model (cad_get_graph)."""
 
 
 if __name__ == "__main__":

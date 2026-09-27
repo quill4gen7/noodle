@@ -606,12 +606,26 @@ def _load_graph(name: str) -> Graph:
 
 
 @app.get("/api/nodes")
-async def node_catalog(category: str = ""):
-    """Full node catalog (optionally filtered by category)."""
+async def node_catalog(category: str = "", compact: bool = False, query: str = ""):
+    """Full node catalog (optionally filtered by category). `?compact=1` (or any
+    `query=`) returns plain text instead, one signature line per type —
+    `Type [category] in:(...) out:(...) params:(name=default, ...)` — filtered
+    by a case-insensitive substring `query`. That is the agent's shape."""
+    if compact or query:
+        return PlainTextResponse(api.compact_catalog(query=query, category=category))
     nodes = catalog.as_json()
     if category:
         nodes = [n for n in nodes if n.get("category") == category]
     return nodes
+
+
+@app.get("/api/nodes/{node_type}")
+async def node_definition(node_type: str):
+    """One node type for an agent: sockets, params (type/default/range/options),
+    description — without the codegen templates."""
+    if node_type not in catalog.REGISTRY:
+        raise HTTPException(404, f"Unknown node type '{node_type}'")
+    return api.node_def_for_agent(node_type)
 
 
 def _read_aliases() -> dict[str, list[str]]:
@@ -673,9 +687,13 @@ async def save_graph(name: str, graph: dict):
     """Create/overwrite a node graph project."""
     graph.setdefault("name", name)
     try:
-        Graph.from_dict(graph).validate()
+        g = Graph.from_dict(graph)
+        warnings = api.validate_graph(g)     # bad sockets list the real ones
     except ValidationError as e:
         raise HTTPException(400, f"Invalid graph: {e}") from e
+    # Soft: stored params the catalog does not know / cannot coerce. Reported,
+    # not refused — a hand-edited or older graph must still save.
+    param_issues = api.check_params(g)
 
     d = project_dir(name)
     d.mkdir(parents=True, exist_ok=True)
@@ -685,9 +703,13 @@ async def save_graph(name: str, graph: dict):
         "backend": "nodegraph",
         "description": graph.get("description", ""),
     }, indent=2))
-    return {"status": "saved", "name": name,
-            "nodes": len(graph.get("nodes", [])),
-            "connections": len(graph.get("connections", []))}
+    out = {"status": "saved", "name": name,
+           "nodes": len(graph.get("nodes", [])),
+           "connections": len(graph.get("connections", [])),
+           "warnings": warnings}
+    if param_issues:
+        out["param_issues"] = param_issues
+    return out
 
 
 @app.get("/api/graph/{name}")
@@ -761,6 +783,70 @@ async def arrange_graph(name: str, graph: Optional[dict] = Body(default=None)):
     except (ValueError, AssertionError, KeyError) as e:
         raise HTTPException(400, str(e)) from e
     return {"status": "ok", "summary": summary}
+
+
+# --- agent editing: compact reads, small validated edits, atomic batches ------
+# Thin wrappers over cad_nodes.api — the same operations as the MCP tools of the
+# same names (cad_get_graph, cad_set_param, cad_edit_code, cad_apply_ops,
+# cad_validate). Each write loads, applies, validates and saves ONCE, so an agent
+# never has to hand-edit graph.json. `base_version` is optional (optimistic
+# concurrency; a no-op until the store keeps versions — see api.graph_version).
+def _agent_call(fn, *args, **kwargs):
+    """Run an api op, mapping its errors to HTTP: stale -> 409, bad input -> 400."""
+    try:
+        return fn(*args, **kwargs)
+    except api.StaleGraphError as e:
+        raise HTTPException(409, str(e)) from e
+    except KeyError as e:
+        raise HTTPException(400, str(e.args[0]) if e.args else str(e)) from e
+    except (ValueError, ValidationError, AssertionError) as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/graph/{name}/compact")
+async def graph_compact(name: str, node: str = "", positions: bool = False):
+    """The graph as an agent reads it (api.get_graph_compact): no positions or
+    `_ui` state, long code elided; `node=<id|title>` for one node in full."""
+    require_project(name)
+    return _agent_call(api.get_graph_compact, GraphStore(PROJECTS_DIR), name,
+                       positions, node or None)
+
+
+@app.get("/api/graph/{name}/validate")
+async def graph_validate(name: str):
+    """Check without running: wiring errors, soft warnings, param issues."""
+    require_project(name)
+    return api.validation_report(_load_graph(name))
+
+
+@app.post("/api/graph/{name}/set_param")
+async def graph_set_param(name: str, body: dict = Body(...)):
+    """`{node: <id or exact title>, params: {name: value}, base_version?}` —
+    validated against the catalog; unknown names / bad types are a 400."""
+    require_project(name)
+    return _agent_call(api.set_param, GraphStore(PROJECTS_DIR), name,
+                       body.get("node") or body.get("node_id", ""),
+                       body.get("params") or {}, body.get("base_version"))
+
+
+@app.post("/api/graph/{name}/edit_code")
+async def graph_edit_code(name: str, body: dict = Body(...)):
+    """`{node, old, new, base_version?}` — exact str-replace in a CodeBlock's
+    code; exactly one match or a 400 and nothing saved."""
+    require_project(name)
+    return _agent_call(api.edit_code, GraphStore(PROJECTS_DIR), name,
+                       body.get("node", ""), body.get("old", ""),
+                       body.get("new", ""), body.get("param", "code"),
+                       base_version=body.get("base_version"))
+
+
+@app.post("/api/graph/{name}/ops")
+async def graph_apply_ops(name: str, body: dict = Body(...)):
+    """`{ops: [...], base_version?}` — an atomic batch (api.apply_ops /
+    OPS_HELP): all applied and saved once, or a 400 naming the failing op."""
+    require_project(name)
+    return _agent_call(api.apply_ops, GraphStore(PROJECTS_DIR), name,
+                       body.get("ops"), body.get("base_version"))
 
 
 @app.post("/api/graph/{name}/codeblock/{node_id}/scan")
@@ -945,6 +1031,11 @@ async def api_screenshot(
         raise HTTPException(503, str(e)) from e
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
+    except Exception as e:  # noqa: BLE001 - ScreenshotFailed, browser timeouts...
+        # Never a 200 with a broken body: `curl -o shot.png` would save an
+        # error as a "picture". A failed capture says so, with the reason.
+        logger.error("screenshot '%s' failed: %s: %s", name, type(e).__name__, e)
+        raise HTTPException(502, f"screenshot failed: {type(e).__name__}: {e}") from e
     logger.info("screenshot '%s' %s %dx%d (%d bytes, ran=%s)",
                 name, view, meta["width"], meta["height"], meta["bytes"],
                 meta["ran"])
@@ -957,12 +1048,26 @@ async def api_screenshot(
 
 
 @app.post("/api/graph/{name}/execute")
-async def execute_graph_project(name: str, run: str | None = None):
+async def execute_graph_project(name: str, run: str | None = None,
+                                lean: bool = False, include_code: bool = False,
+                                body: Optional[dict] = Body(default=None)):
     """`run` is a caller-chosen id for this run. The editor generates one, opens
     /progress?run=<id> with it and then POSTs here, so the progress stream can
-    match its events to this exact run instead of inferring them from the file."""
+    match its events to this exact run instead of inferring them from the file.
+
+    `?lean=1` is the agent's shape (api.summarize_execute): no generated code
+    (add `include_code=1` for it), no meshes, rounded floats — a few KB instead
+    of ~1MB on a real graph. The default full shape is what the editor reads
+    (it shows `code` in its Code tab), so it stays as it was.
+
+    Body `{"overrides": {node_id_or_title: {param: value}}}` runs with those
+    values changed in memory only — the saved graph is not touched."""
     d = require_project(name)
     graph = _load_graph(name)
+    try:
+        extra = api.apply_overrides(graph, (body or {}).get("overrides"))
+    except (ValueError, KeyError) as e:
+        raise HTTPException(400, str(e.args[0] if isinstance(e, KeyError) else e)) from e
     logger.info("execute graph '%s' (%d nodes)", name, len(graph.nodes))
     try:
         # Live run: skip the STL export (regenerated on demand by /download).
@@ -977,13 +1082,18 @@ async def execute_graph_project(name: str, run: str | None = None):
             "message": "Graph execution failed",
             "errors": result.get("errors"),
             "error_detail": result.get("error_detail"),
-            "code": result.get("code"),
+            **({"code": result.get("code")} if (include_code or not lean) else {}),
         })
     node_errors = result.get("node_errors", {})
     if node_errors:
         for nid, err in node_errors.items():
             logger.error("execute '%s' node %s: %s", name, nid, err)
+    if lean:
+        return {"status": "executed",
+                **api.summarize_execute({**result, **extra},
+                                        include_code=include_code)}
     return {
+        **extra,
         "status": "executed",
         "view": result["view"],
         "code": result["code"],
@@ -1129,9 +1239,15 @@ async def graph_progress(request: Request, name: str, run: str | None = None):
 
 
 @app.get("/api/agent/help")
-async def agent_help_route():
-    """Self-contained orientation guide for a remote agent (markdown text)."""
-    return PlainTextResponse(api.agent_help(), media_type="text/markdown")
+async def agent_help_route(topic: str = ""):
+    """Self-contained orientation guide for a remote agent (markdown text).
+    `?topic=<name>` returns one detail section (screenshots, retroeng, print,
+    threads, fluid) instead of the core guide."""
+    try:
+        text = api.agent_help(topic)
+    except ValueError as e:
+        raise HTTPException(404, str(e)) from e
+    return PlainTextResponse(text, media_type="text/markdown")
 
 
 @app.get("/api/agent/tags")

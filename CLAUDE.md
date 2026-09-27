@@ -9,6 +9,12 @@ and an **MCP server** exposing the same operations.
 This file is the orientation doc for an AI agent picking up the project. It
 covers what it is, how to run it, how it's laid out, and how to change it safely.
 
+> **Using noodle rather than changing it** — building or editing a model for
+> the user? You want the MCP tools (or their HTTP twins) and the guide they
+> serve: `cad_help` / `GET /api/agent/help`, source `cad_nodes/AGENT_HELP.md`,
+> with detail topics (`screenshots`, `retroeng`, `print`, `threads`, `fluid`).
+> Never hand-edit a project's graph.json — see §6e for why the API exists.
+
 ---
 
 ## 1. Run it
@@ -106,9 +112,16 @@ server.py            FastAPI HTTP API (port 8090). Routes under /api/* :
                        /api/aliases (GET the personal add-node search aliases)
                        + PUT /api/aliases/{node_type} (replace one node's, []
                        clears) — stored in projects/_aliases.json, see §6,
-                       /api/agent/help (self-contained remote-agent guide =
-                       cad_nodes/AGENT_HELP.md, also MCP cad_help/cad://help —
-                       keep it in sync when the API surface changes),
+                       /api/agent/help[?topic=] (self-contained remote-agent
+                       guide = cad_nodes/AGENT_HELP.md, also MCP cad_help/
+                       cad://help; the `## topic:` sections after its marker
+                       are served only on request — keep it in sync when the
+                       API surface changes; a test fails if it names a cad_*
+                       tool that does not exist),
+                       the agent editing surface (§6e): GET /api/graph/{name}/
+                       compact|validate, POST .../ops|set_param|edit_code,
+                       POST .../execute?lean=1 (+ body {overrides}), GET
+                       /api/nodes?query=|compact=1 and /api/nodes/{type},
                        /api/agent/tags (ToAgent provenance index, §7b),
                        /api/graph/{name}/slice_summary|section_outline (§7b),
                        /api/graph/{name}/screenshot (PNG of the viewport, §9 —
@@ -700,7 +713,7 @@ thirds of the material within one — so orientation decides **where the part br
     rainbow bolts pour out and fall to the bed. Verified in the browser: dragging that
     one slider moves the cap and all seven scene bodies at 60fps, with exactly one
     re-bake at settle. Both lanes — a solid stays a solid.
-- Tests: `tests/test_print.py`.
+- Tests: `tests/test_print.py`. Agent-facing usage: AGENT_HELP topic `print`.
 
 ## 5e. Voronoi 3D + universal Populate
 
@@ -835,7 +848,8 @@ whole story:
   itself and places the thread BEFORE the boolean. Free bonus: a **list** of points
   drills a whole pattern of tapped holes in one node.
 - Example: `examples/bolt-and-nut.json` (a bolt whose thread ADDS to its shank, a
-  nut whose thread CUTS). Tests: `tests/test_thread.py`.
+  nut whose thread CUTS). Tests: `tests/test_thread.py`. Agent-facing usage:
+  AGENT_HELP topic `threads`.
 
 ## 5h. Fluids (category `fluid`) — moving air, and what it does to a part
 
@@ -919,7 +933,8 @@ quality, and the memo cache pays for it once. Full notes and every measurement i
   Panel is wired in.
 - Examples: `examples/wind-drop.json` (the same plate twice, one facing the gust and one
   edge-on: 59mm of drift and flat on the bed against 0.1mm and still standing) and
-  `examples/wind-tunnel.json`. Tests: `tests/test_fluid.py`.
+  `examples/wind-tunnel.json`. Tests: `tests/test_fluid.py`. Agent-facing
+  usage: AGENT_HELP topic `fluid`.
 
 ## 5b. Lists & fan-out (Grasshopper-style)
 
@@ -1196,6 +1211,44 @@ it in a panel at the left, one click away.
 - The copilot/MCP both go through `cad_nodes.api`; new capabilities belong there
   so all three surfaces (UI, MCP, copilot) get them.
 
+### 6e. The agent editing surface — why it exists, and its invariants
+
+Real use, four sessions of an agent designing a robot enclosure: it never touched
+MCP or the CLI. It went through `docker exec` + curl and **hand-edited graph.json
+with string replace** — because the tools answered 300KB of generated code per
+run, accepted any param silently, and had no way to change one line of a
+CodeBlock. The editor and the agent then overwrote each other's saves. The
+surface below is the answer; all of it lives in `cad_nodes/api.py`, with thin
+MCP (one contiguous section of `mcp_server.py`) and HTTP twins.
+
+- **Params are validated at the edge** (`_apply_param`): catalog name or a
+  CodeBlock `#@param` (bare name → the `_cb` override), `_`-prefixed editor
+  state and `selection`/`trace` pass through; everything else is an error that
+  LISTS the valid names. Out-of-range numbers clamp (as the editor's typed field
+  does) and say so in `notes`. Stored graphs are never rejected for it — saves
+  and `validate` only REPORT (`check_params`), because real graphs hold values
+  past the catalog range that the engine runs fine (tars-pet: a 0-100 slider at
+  180).
+- **Nodes are addressed by id OR exact title** (`resolve_node`); id wins, an
+  ambiguous title is an error naming the ids.
+- **One implementation of every edit**: the `_op_*` functions mutate an
+  in-memory Graph; the single-call functions are load → op → save, and
+  `apply_ops` is load → many ops → validate → ONE save, or nothing (errors name
+  the op index). Ids are never renumbered.
+- **New nodes without a position are placed** (`_place_new`) with `layout`'s
+  real sizes: right of their upstream after a batch, else right of the graph,
+  nudged down until nothing overlaps. `arrange()` is still the real layout.
+- **Lean reads**: `summarize_execute` (no code/stdout/meshes, floats to 6
+  significant/4 decimals — 930KB → 6KB on a 61-node graph), `get_graph_compact`,
+  `compact_catalog` (the copilot's prompt uses it too). The HTTP `/execute`
+  default payload is UNCHANGED — `nodes.html` reads `data.code` for its Code
+  tab — the lean shape is `?lean=1`.
+- **Versions are a hook**: write calls take an optional `base_version` and
+  return `version`, via `graph_version()` which duck-types `store.version()`.
+  A no-op until the store keeps versions (the graph-versioning branch).
+- Tests: `tests/test_agent_api.py`, `tests/test_mcp_agent.py`,
+  `tests/test_server_agent_routes.py`.
+
 ## 7. The AI copilot — scope & guardrails
 
 `cad_nodes/copilot.py` drives an OpenAI-compatible tool loop bound to ONE graph.
@@ -1240,8 +1293,8 @@ STL at +2.2% — see `projects/retro_nodes` and `projects/retromy`):
    `.../section_outline?axis=z&pos=…`: ONE exact section, edge by edge.
    Mesh gotcha: a single section can drop loops near tangent surfaces —
    confirm with nearby sections or with per-section areas.
-3. **Rebuild** with catalog nodes via `cad_nodes.api` (add_node / connect /
-   set_param). Proceduralize, don't trace: constant section → Extrude; N equal
+3. **Rebuild** with catalog nodes via `cad_nodes.api` — one `apply_ops`
+   batch (§6e). Proceduralize, don't trace: constant section → Extrude; N equal
    circles in a regular layout → ArrayLinear/ArrayPolar with a count slider,
    not copies; small rounds → a downstream Fillet; overall dims → sliders.
    The user's stated intent about what to parameterize wins over defaults.
@@ -1249,6 +1302,8 @@ STL at +2.2% — see `projects/retro_nodes` and `projects/retromy`):
    (`slice_summary` without `path`) and diff the two summaries as text;
    comparing per-section AREAS localizes residuals; bbox + volume checksum
    is the final seal.
+
+The agent-facing version of this loop is AGENT_HELP topic `retroeng`.
 
 Not yet built (see PLAN_RETROENG.md): vision contact-sheet, gcode stripper,
 numeric `cad_compare`.
@@ -1344,6 +1399,16 @@ thought to measure; a picture shows what you did not.**
   WebGL2 through SwiftShader (ANGLE/Vulkan), verified. Measured cost of the whole
   feature: **1.87GB -> 2.6GB** (+730MB); installing both browsers made it 3.35GB.
   A missing browser is a **503**, not a 500.
+- **`node` may name ANY geometry node**, not only a drawn one: `api.screenshot`
+  resolves it by id or title and, when its eye is not on, turns it on in
+  graph.json for the shot and restores it in a `finally` (the shot page reads
+  the graph from disk, so there is no in-memory way). A node with nothing
+  drawable (a slider) is a 400 before any browser work.
+- **A failed capture is never a 200.** `api._check_png` rejects anything that
+  is not a PNG or is under 200 bytes (`ScreenshotFailed`), and the route maps
+  every non-HTTP failure to a **502** with the reason — an agent doing
+  `curl -o shot.png` used to save an error body as its "picture".
+- Agent-facing usage: AGENT_HELP topic `screenshots`.
 - Tests: `tests/test_screenshot.py` (pure-Python: camera planning, the clamps,
   and that HTTP/MCP expose one operation rather than two).
 

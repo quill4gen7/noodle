@@ -24,7 +24,7 @@ import os
 import urllib.error
 import urllib.request
 
-from . import api, catalog
+from . import api
 from .graph import ValidationError
 from .store import GraphStore
 
@@ -67,14 +67,9 @@ def _chat(provider: dict, messages: list, tools: list) -> dict:
 
 # ── tool surface (bound to one graph) ───────────────────────────────────────
 def _compact_catalog() -> str:
-    lines = []
-    for t in sorted(catalog.REGISTRY):
-        d = catalog.REGISTRY[t]
-        ins = ", ".join(f"{s.name}:{s.wire_type}{'' if s.required else '?'}" for s in d.inputs) or "-"
-        outs = ", ".join(f"{s.name}:{s.wire_type}" for s in d.outputs) or "-"
-        ps = ", ".join(p.name for p in d.params) or "-"
-        lines.append(f"{t} [{d.category}] in:({ins}) out:({outs}) params:({ps})")
-    return "\n".join(lines)
+    # The same one-line signatures MCP/HTTP agents get (api.compact_catalog),
+    # in the copilot's leaner flavour: param names only, hidden types kept.
+    return api.compact_catalog(include_hidden=True, defaults=False)
 
 
 def _lean_view(v: dict) -> dict:
