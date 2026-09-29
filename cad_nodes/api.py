@@ -1222,3 +1222,117 @@ def propose_groups(store: GraphStore, graph_id: str) -> list[dict]:
     with `arrange(store, graph_id, groups="auto")`."""
     from . import layout as _layout
     return _layout.propose_groups(store.load(graph_id))
+
+
+# --- generations: a link instead of a screenshot ---------------------------
+# An agent reporting a result used to send pictures. A picture is one angle,
+# chosen by the agent. A generation is the whole frozen scene, opened in the
+# read-only viewer at /view/<graph>/<gen>: the user orbits it, hides pieces,
+# inverts the selection — and the link keeps showing THAT result however the
+# live workflow changes afterwards, because it reads a copy, not the project.
+def _preview_drawable(e) -> bool:
+    return bool(e) and any(k in e for k in ("mesh", "polylines", "points", "bodies"))
+
+
+def _gen_pieces(graph: Graph, previews: dict) -> list[dict]:
+    """Names for what the viewer will list: one entry per drawn node, with the
+    count of its sub-pieces (fanned-out items / scene bodies)."""
+    def title(nid):
+        try:
+            n = graph.node(nid)
+        except KeyError:
+            return nid, ""
+        label = n.title
+        if not label:
+            try:
+                label = catalog.get(n.type).label
+            except KeyError:
+                label = n.type
+        return label, n.type
+
+    out = []
+    for nid, e in previews.items():
+        if not _preview_drawable(e):
+            continue
+        t, ty = title(nid)
+        p = {"id": nid, "title": t, "type": ty}
+        if e.get("parts") and len(e["parts"]) > 1:
+            p["parts"] = len(e["parts"])
+        if e.get("bodies"):
+            p["bodies"] = [title(b["owner"])[0] if b.get("owner") else None
+                           for b in e["bodies"]]
+        if _anim_seconds(e):
+            p["animated"] = True
+        out.append(p)
+    return out
+
+
+def _anim_seconds(e) -> float:
+    """Length (s) of the timeline a preview carries — an Animate's or a Drop's
+    `anim`, or a collide scene's per-body plans — 0 if it does not move."""
+    plans = [e.get("anim")] + [b.get("anim") for b in (e.get("bodies") or [])]
+    return max([float(a.get("T") or 0) for a in plans if isinstance(a, dict)] or [0.0])
+
+
+def gen_url(graph_id: str, gen: str, base: str = "") -> str:
+    """The viewer link for a generation. `base` is the server's public origin;
+    without one, NOODLE_PUBLIC_URL, else localhost."""
+    import os
+    from urllib.parse import quote
+    base = (base or os.environ.get("NOODLE_PUBLIC_URL") or "http://localhost:8090")
+    return f"{base.rstrip('/')}/view/{quote(graph_id)}/{gen}"
+
+
+def _timeline(view: dict):
+    secs = [_anim_seconds(e) for e in (view.get("previews") or {}).values() if isinstance(e, dict)]
+    longest = max(secs or [0.0])
+    return {"seconds": round(longest, 3)} if longest > 0 else None
+
+
+def snapshot(store: GraphStore, graph_id: str, label: str = "",
+             run: bool = True, base_url: str = "") -> dict:
+    """Freeze the graph's current result as a new generation and return its
+    viewer link. `run=True` (default) executes first, so the generation is the
+    graph AS SAVED NOW, not whatever last ran; `run=False` freezes the last
+    view.json as is. An unchanged result is not duplicated: if it is identical
+    to the newest generation (same geometry, same label) that one is returned
+    with `reused: true`."""
+    import datetime
+    import hashlib
+    import json as _json
+    graph = store.load(graph_id)
+    if run:
+        result = execute_graph(graph, store.dir(graph_id), write_stl=False)
+        if not result.get("success"):
+            raise ValueError(f"execution failed, nothing to snapshot: "
+                             f"{result.get('errors') or result.get('error_detail')}")
+        view = result.get("view") or store.view(graph_id)
+    else:
+        view = store.view(graph_id)
+    if not view or not any(_preview_drawable(e) for e in (view.get("previews") or {}).values()):
+        raise ValueError(f"graph {graph_id!r} has nothing drawn to snapshot "
+                         "(run it, and check a geometry node has its eye on)")
+    digest = hashlib.sha1(_json.dumps(view.get("previews"), sort_keys=True)
+                          .encode()).hexdigest()[:16]
+    gens = store.list_gens(graph_id)
+    if gens and gens[0].get("hash") == digest and gens[0].get("label", "") == label:
+        meta = gens[0]
+        return {**meta, "reused": True,
+                "url": gen_url(graph_id, meta["gen"], base_url)}
+    meta = store.save_gen(graph_id, view, graph.to_dict(), {
+        "label": label,
+        "created": datetime.datetime.now().isoformat(timespec="seconds"),
+        "version": store.version(graph_id),
+        "hash": digest,
+        "pieces": _gen_pieces(graph, view.get("previews") or {}),
+        # the /view page plays it (▶, andata e ritorno…); None = a still
+        "timeline": _timeline(view),
+    })
+    return {**meta, "reused": False, "url": gen_url(graph_id, meta["gen"], base_url)}
+
+
+def list_gens(store: GraphStore, graph_id: str, base_url: str = "") -> list[dict]:
+    store.load(graph_id)                 # unknown project → KeyError
+    return [{k: m.get(k) for k in ("gen", "label", "created", "version")}
+            | {"url": gen_url(graph_id, m["gen"], base_url)}
+            for m in store.list_gens(graph_id)]

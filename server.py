@@ -72,6 +72,24 @@ app = FastAPI(title="noodle", version="0.1.0")
 app.mount("/static", StaticFiles(directory="/app/webui"), name="static")
 
 
+# The pages are ES modules importing each other by NAME (nodes.html and view.html
+# both `import { …, poseAnim } from '/static/viewer.js'`). Served with no
+# Cache-Control, a browser may keep an OLD viewer.js heuristically while taking the
+# new page — and a single missing export kills the whole module: the page loaded
+# blank ("does not provide an export named 'poseAnim'", reproduced). `no-cache`
+# is not "no store": the browser still keeps the file, it just asks first, and an
+# unchanged one comes back as a body-less 304 on its ETag. So the UI can never be
+# half old, half new after an update, for the price of one tiny round trip.
+@app.middleware("http")
+async def _revalidate_ui(request: Request, call_next):
+    response = await call_next(request)
+    p = request.url.path
+    if (p.startswith("/static/") or p in ("/", "/ui", "/nodes", "/library")
+            or p.startswith("/view/")) and "cache-control" not in response.headers:
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 # ---------------------------------------------------------------------------
 # System: backend log capture (ring buffer) + health/uptime
 # ---------------------------------------------------------------------------
@@ -478,6 +496,68 @@ async def webui_library():
     if page.exists():
         return page.read_text()
     return HTMLResponse("<h1>noodle</h1><p>Library not found</p>", status_code=404)
+
+
+# ---------------------------------------------------------------------------
+# Generations + the read-only viewer (/view/<name>/<gen>)
+# ---------------------------------------------------------------------------
+# A generation is a frozen copy of one run (view + graph) under
+# projects/<name>/gens/g<N>/ — see api.snapshot. The viewer page reads ONLY that
+# copy, so a link an agent sends keeps showing that result while the workflow
+# it came from keeps changing.
+def _public_base(request: Request) -> str:
+    return os.environ.get("NOODLE_PUBLIC_URL") or str(request.base_url)
+
+
+def _gen_http(fn, *args, **kwargs):
+    try:
+        return fn(*args, **kwargs)
+    except KeyError as e:
+        raise HTTPException(404, str(e.args[0] if e.args else e)) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/graph/{name}/snapshot")
+async def snapshot_graph(request: Request, name: str, label: str = "",
+                         run: bool = True):
+    """Freeze the current result as a new generation; returns its viewer `url`."""
+    require_project(name)
+    store = GraphStore(PROJECTS_DIR)
+    try:
+        # off the loop: with run=1 this executes the graph (see off_loop)
+        return await off_loop(api.snapshot, store, name, label=label, run=run,
+                              base_url=_public_base(request))
+    except KeyError as e:
+        raise HTTPException(404, str(e.args[0] if e.args else e)) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/graph/{name}/gens")
+async def list_generations(request: Request, name: str):
+    require_project(name)
+    return {"gens": _gen_http(api.list_gens, GraphStore(PROJECTS_DIR), name,
+                              base_url=_public_base(request))}
+
+
+@app.get("/api/graph/{name}/gens/{gen}/{part}")
+async def get_generation(name: str, gen: str, part: str):
+    """part = view | graph | meta. Immutable once written, so cacheable."""
+    require_project(name)
+    data = _gen_http(GraphStore(PROJECTS_DIR).load_gen, name, gen, part)
+    return Response(json.dumps(data), media_type="application/json",
+                    headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+@app.get("/view/{name}", response_class=HTMLResponse)
+@app.get("/view/{name}/{gen}", response_class=HTMLResponse)
+async def webui_view(name: str, gen: str = ""):
+    """The read-only viewer. Without a gen it opens the newest one."""
+    page = Path("/app/webui/view.html")
+    if not page.exists():
+        return HTMLResponse("<h1>noodle</h1><p>Viewer not found</p>", status_code=404)
+    return page.read_text()
 
 
 # ---------------------------------------------------------------------------

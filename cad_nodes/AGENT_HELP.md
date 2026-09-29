@@ -55,6 +55,25 @@ More detail on demand — `cad_help(topic=...)` / `GET /api/agent/help?topic=...
    mesh and green tests and still be plainly wrong: a boolean that filled the
    feature it was meant to cut, an array pointing the wrong way, a part sunk
    through the bed. One picture settles it.
+   **To SHOW the user a result, send a link, not pictures**: `cad_snapshot(graph_id,
+   label=...)` freezes the current geometry as a generation and returns a `url`
+   (`/view/<graph>/g<N>`) to a read-only 3D viewer where the user orbits it,
+   hides pieces and inverts the selection. The link stays fixed on THAT result
+   while the workflow keeps changing. Append `#hide=n3,n7.2` to open it with
+   pieces hidden (a node id = all its pieces, `id.i` = its i-th piece).
+   **A movement is one link, not several**: to show a lid open AND closed, a
+   drawer in and out, an assembly exploding, do not send one link per pose —
+   animate it. `Motion` (type `ContainerMotion`: move x/y/z, rotate rx/ry/rz,
+   `duration`, `cycles` 0 = go once) → `Animate(shape, motion, t)`; for a hinge
+   wire a `pivot` point on the hinge line (lid of a box whose back top edge is
+   at y=20, z=15: pivot (0,20,15), rx=-105 lifts it backwards). Set the
+   Animate's `t` to the pose you want as the resting one (0 = closed). The
+   generation then carries the timeline (`timeline: {seconds}` in the result)
+   and the viewer shows a ▶ player: only-Animate scenes default to there-and-
+   back (open ⇄ close), anything with a Drop loops. Link params:
+   `#play=1` autoplays, `#t=0.5` opens at that point, `#mode=pingpong|loop|once`;
+   combine with `&`: `…/g3#hide=n2&play=1`. Several Animates share one clock,
+   so pad short ones with `hold` to line them up (see topic `print`).
 6. **Tidy and export**: `cad_arrange` lays the whole graph out (dependency
    order, real node sizes, no overlaps, named sliders gathered in a parameter
    panel on the left) — you never compute positions yourself. Then
@@ -120,6 +139,7 @@ required inputs, unknown / badly typed / out-of-range stored params).
 | `POST /api/graph/{name}/import` (multipart `file`) | upload STEP/STL/SVG/DXF **and** add its Import node |
 | `POST /api/graph/{name}/asset` (multipart `file`) · `GET .../assets` | upload into `assets/` without a node · list them |
 | `GET /api/graph/{name}/screenshot?view=&node=&…` | **PNG of the viewport** (`cad_screenshot`) |
+| `POST /api/graph/{name}/snapshot?label=&run=` · `GET .../gens` | freeze a generation → `{gen, url}` for the read-only viewer (`cad_snapshot`, `cad_list_gens`) — send the user the `url` |
 | `GET /api/agent/tags` | ToAgent provenance index (`cad_agent_tags`) |
 | `GET /api/graph/{name}/slice_summary?path=&n=` · `.../section_outline?axis=&pos=&path=` | sections (`cad_slice_summary`, `cad_section_outline`) |
 | `POST /api/graph/{name}/measure` body=`{queries:[…]}` | geometry facts by node ref `n5`/`n51.body`/`n51[3]` (`cad_measure`): `props`, `interference` (a+b, or every pair of a list node), `distance`, `section` (+svg), `probe`, `summary` — check fits and clashes instead of writing scripts |

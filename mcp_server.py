@@ -200,6 +200,28 @@ async def cad_screenshot(graph_id: str, view: str = "iso", azim: float = None,
 
 
 @mcp.tool()
+def cad_snapshot(graph_id: str, label: str = "", run: bool = True) -> dict:
+    """SHOW the user a result: freeze the graph's current geometry as a new
+    GENERATION and get back a `url` to the read-only 3D viewer. Send that link
+    instead of screenshots — the user orbits it, hides pieces, inverts the
+    selection, and it keeps showing THIS result after the workflow changes.
+    `label` names it ("v2 thicker wall"). `run=True` executes first so the
+    generation matches the graph as saved; an identical result to the newest
+    generation is reused, not duplicated. Append `#hide=n3,n7` to the url to
+    open it with those nodes' pieces hidden (e.g. a lid, to show the inside).
+    If the graph has Animate/Drop nodes the viewer PLAYS them (`timeline` in the
+    result): send one link for a movement — open ⇄ close — rather than one per
+    pose; `#play=1` autoplays, `#t=0.5` / `#mode=pingpong|loop|once`."""
+    return _safe(api.snapshot, STORE, graph_id, label=label, run=run)
+
+
+@mcp.tool()
+def cad_list_gens(graph_id: str) -> list:
+    """The frozen generations of a graph, newest first, each with its viewer url."""
+    return _safe(api.list_gens, STORE, graph_id)
+
+
+@mcp.tool()
 def cad_agent_tags() -> list:
     """Provenance index: every 'To Agent' tag node across ALL projects —
     label, date (auto-stamped at save), graph, node id and the tagged source

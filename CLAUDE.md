@@ -189,6 +189,9 @@ webui/
                        white. No refraction of the glow and no caustics: those need
                        rays. Costs ~0-1fps (glass dominates); off unless HQ and
                        something declares itself emissive.
+  view.html          the `/view/<graph>/<gen>` read-only viewer of a frozen
+                       GENERATION (§9c): hide / solo / invert pieces, state in
+                       the URL hash. What an agent links instead of screenshots.
   index.html         the `/ui` code view — generated build123d source (read-only
                        text) + STL preview. Parameter literals are highlighted
                        and click-to-edit via a terminal-style inline editor that
@@ -1216,8 +1219,12 @@ localStorage. `flags.collapsed` is now persisted as `collapsed: true`.
 **Apply / reload rules:**
 - Backend Python change → `docker restart noodle` (process caches imports;
   the read-only mount alone isn't enough).
-- Frontend (`webui/*.html`) change → hard-refresh the browser (Ctrl+Shift+R);
-  the file is static and cached.
+- Frontend (`webui/*`) change → a plain reload is enough: `_revalidate_ui` in
+  server.py serves /static and the pages with `Cache-Control: no-cache` (ETag →
+  304). Without it a browser kept an OLD viewer.js under a NEW page and the
+  module import failed — a blank editor and viewer (paid for when `poseAnim`
+  moved into viewer.js). A browser that cached before that header existed
+  still needs ONE hard refresh.
 - Verify engine logic fast in the container (§2) before restarting.
 
 **Gotchas:**
@@ -1527,3 +1534,65 @@ when absent). Roadmap item 2 of `PLAN_NODE_CAD.md`.
   A workflow that cannot produce one is broken, and you see it from the gallery
   without opening it.
 - Tests: `tests/test_thumbnail.py`.
+
+## 9c. Generations + the read-only viewer — a link instead of a screenshot
+
+`/view/<graph>/<gen>` (`webui/view.html`) is a read-only 3D viewer for a
+**generation**: a frozen copy of one run — `view.json` + the `graph.json` that
+made it + a meta (label, date, graph version, content hash, piece names) — under
+`projects/<graph>/gens/g<N>/`. An agent sends the user that link instead of
+screenshots: the user orbits the real scene, and the link keeps showing THAT
+result while the workflow moves on.
+
+- **Made by** `api.snapshot` = `POST /api/graph/{name}/snapshot?label=&run=` =
+  MCP `cad_snapshot` (returns `{gen, url, pieces, reused}`); listed by
+  `GET .../gens` / `cad_list_gens`; files at `GET .../gens/{gen}/{view|graph|meta}`
+  (immutable, cached a year). `run=1` (default) executes first, so the gen is the
+  graph as SAVED, not whatever last ran — through `off_loop()`. A result identical
+  to the newest gen (same previews hash, same label) is returned with
+  `reused: true` instead of piling up duplicates. Numbers are never reused
+  (`mkdir` claims them), so a link means one thing forever. The absolute URL uses
+  `NOODLE_PUBLIC_URL` if set, else the request's base (HTTP) / localhost (MCP).
+- **The page reads only the frozen copy** — never `/api/graph/{name}/view`, which is
+  live — and writes nothing. It renders through the shared `CadViewer`, with
+  colour/finish/wireframe taken from the FROZEN graph. A badge says when the live
+  workflow has changed since (graph version differs). `/view/<graph>` opens the
+  newest gen and rewrites the URL to the fixed `/gN` one.
+- **Pieces**: one row per drawn node; a node whose preview holds several pieces
+  expands — fanned-out lists (`parts` → the one merged buffer is split into
+  geometry groups with a material each, and a hidden part is
+  `material.visible=false`) and collide scenes (`bodies` → the Group's children).
+  Visibility lives at LEAF level, which is what makes **Inverti** well defined.
+  Click/dblclick (solo) in the list, click in 3D to select, H hide, Alt+click hide,
+  I invert, A all, F frame visible (measured on visible leaves only — `Box3.
+  setFromObject` counts hidden children, hence `CadViewer.frame(box)`).
+- **State in the hash**: `#hide=n3,n7.2` (a bare node id = all its pieces), kept in
+  sync as the user clicks — so an agent can send a link already set up (lid
+  hidden), and "Copia link" hands back exactly what the user is looking at.
+- **Touch / narrow screens**: under 760px the header folds into a `⋯` menu (info,
+  share via `navigator.share` → copy, ortho, editor) and the pieces become a bottom
+  sheet — tap the handle to collapse, drag it to resize; a ResizeObserver keeps the
+  canvas out from under it. On `pointer:coarse` rows are 44px, every row carries an
+  explicit ● (toggle) and ◎ (solo) button, and a tap toggles at once: a finger has no
+  double-click, so the 220ms wait that tells a mouse click from a dblclick would only
+  be lag. A tap in 3D selects and opens a floating bar (Nascondi / Solo / ✕) — the
+  touch twin of `H`. Tap vs orbit: 12px / 500ms tolerance for a finger, 5px for a
+  mouse, never during a pinch; double tap = frame the visible pieces.
+- Tests: `tests/test_generations.py`.
+- **Timelines play.** A generation of a graph with `Animate` / `Drop` nodes carries
+  their plans (`previews[id].anim`, a scene's `bodies[i].anim`), and `/view` shows a
+  ▶ player — so a movement (lid open ⇄ closed) is ONE link, not one per pose. One
+  clock drives every plan through `poseAnim()`, the SAME function the editor's live
+  scrub uses: `dropMatrixAt` / `keyInterp` / `sceneBodyPose` / `poseAnim` moved from
+  nodes.html into viewer.js for exactly that reason (two copies would drift).
+  `t` is each plan's own normalised 0..1, one pass lasts the longest plan's `T`,
+  with a 0.6s pause at the ends. Mode defaults to `pingpong` when every plan is an
+  Animate (kinematics) and `loop` as soon as a Drop is involved (a fall played
+  backwards is nonsense). Hash: `t=`, `play=1`, `mode=`; they are read ONCE at load
+  (`HASH0`) because the first `writeHash()` runs before the timeline exists and
+  used to eat `play=1`. "Inquadra" frames the union over the whole movement
+  (sampled), so an opening lid never swings out of the frame. The clock follows
+  wall time (dt capped at 0.5s): a slow device skips frames rather than slowing the
+  motion — the glass jar runs at ~1.7fps on SwiftShader, fine on a real GPU.
+  `api.snapshot` reports `timeline: {seconds}` and marks `animated` pieces.
+  Example project: `projects/cassone-demo` (a chest whose lid opens on a hinge).

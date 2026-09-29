@@ -201,6 +201,97 @@ function objFromPreview(p, color, opts, scale) {
   return null;
 }
 
+// ── Drop live replay ────────────────────────────────────────────────────────
+// The engine ships the WHOLE fall with the preview (previews[id].anim: bounce
+// segments + topple steps, world coordinates, and the t it was baked at), so
+// the browser can play any t of the timeline as pure matrix math — the same
+// physics, anticipated at 60fps while the slider drags; the exact re-bake
+// lands when the drag settles.
+export function dropMatrixAt(anim, t){
+  const M = new THREE.Matrix4();
+  const n = new THREE.Vector3(anim.n[0], anim.n[1], anim.n[2]);
+  const tau = Math.min(Math.max(+t || 0, 0), 1) * anim.T;
+  const h0 = anim.h0;
+  if (tau < anim.Tb || !(anim.steps||[]).length){      // still in the air
+    const f = anim.Tb > 0 ? tau / anim.Tb : 1;
+    let h = 0;
+    if (h0 <= 0) h = h0 * (1 - f);
+    else {
+      let tn = f * anim.tot_n;
+      for (const [d, up] of anim.segs){
+        if (tn <= d){ h = h0 * Math.max((up == null ? 1 - tn*tn : up*tn - tn*tn), 0); break; }
+        tn -= d;
+      }
+    }
+    return M.makeTranslation(n.x*(h-h0), n.y*(h-h0), n.z*(h-h0));
+  }
+  M.makeTranslation(-h0*n.x, -h0*n.y, -h0*n.z);        // landed…
+  let left = tau - anim.Tb;
+  for (const s of anim.steps){                         // …then the topples, in order
+    let deg = s.deg, partial = false;
+    if (left >= s.du - 1e-12){ left -= s.du; }
+    else { const fr = Math.max(0, left / s.du); deg = s.deg * fr * fr; partial = true; }
+    const ax = new THREE.Vector3(s.ax[0], s.ax[1], s.ax[2]).normalize();
+    M.premultiply(new THREE.Matrix4().makeTranslation(-s.p[0], -s.p[1], -s.p[2]))
+     .premultiply(new THREE.Matrix4().makeRotationAxis(ax, deg * Math.PI/180))
+     .premultiply(new THREE.Matrix4().makeTranslation(s.p[0], s.p[1], s.p[2]));
+    if (partial) break;
+  }
+  return M;
+}
+
+// A collide body ships a KEYFRAME plan instead (kind "keys"): pybullet ran the
+// whole scene once, and here we interpolate (lerp + slerp) the pose at any t.
+export function keyInterp(anim, tau){
+  const T = anim.times; if (!T || !T.length) return null;
+  const q = (i)=> new THREE.Quaternion(anim.quat[i][0], anim.quat[i][1], anim.quat[i][2], anim.quat[i][3]);
+  if (tau <= T[0])            return { p: anim.pos[0], q: q(0) };
+  if (tau >= T[T.length-1])   return { p: anim.pos[T.length-1], q: q(T.length-1) };
+  let lo = 0, hi = T.length - 1;
+  while (hi - lo > 1){ const mid = (lo+hi)>>1; if (T[mid] <= tau) lo = mid; else hi = mid; }
+  const f = (tau - T[lo]) / ((T[hi] - T[lo]) || 1);
+  const p = [0,1,2].map(i => anim.pos[lo][i]*(1-f) + anim.pos[hi][i]*f);
+  return { p, q: q(lo).slerp(q(hi), f) };
+}
+
+// Move one Scene body (baked at anim.t) to tNew. Its world vertices sit at pose
+// (pB,qB); target is (pT,qT). The rigid delta is Δq = qT·qB⁻¹, and the child's
+// offset = pT − Δq·pB, so vertex y → Δq·(y−pB) + pT.
+export function sceneBodyPose(anim, tNew, child){
+  const T = anim.T || 1;
+  const at = keyInterp(anim, Math.min(Math.max(tNew,0),1) * T);
+  const bk = keyInterp(anim, Math.min(Math.max(anim.t,0),1) * T);
+  if (!at || !bk) return;
+  const dq = at.q.clone().multiply(bk.q.clone().invert());
+  const pB = new THREE.Vector3(bk.p[0], bk.p[1], bk.p[2]);
+  const pT = new THREE.Vector3(at.p[0], at.p[1], at.p[2]);
+  child.quaternion.copy(dq);
+  child.position.copy(pT).sub(pB.clone().applyQuaternion(dq));
+}
+
+// Seat one drawn preview object at timeline position tNew (0..1), relative to
+// the t its mesh was baked at. `anim` is the node-level plan (previews[id].anim);
+// a collide Scene group carries one plan per body on child.userData.anim, and a
+// single part falling into a container is a plain mesh with a "keys" plan.
+// Returns false when there is nothing to replay. Shared by the editor's live
+// scrub and the /view page's timeline, so the two cannot drift.
+export function poseAnim(obj, anim, tNew) {
+  if (!obj) return false;
+  if (obj.userData && obj.userData.isScene) {
+    let any = false;
+    for (const child of obj.children) {
+      const a = child.userData && child.userData.anim;
+      if (a && a.kind === 'keys') { sceneBodyPose(a, tNew, child); any = true; }
+    }
+    return any;
+  }
+  if (!anim) return false;
+  if (anim.kind === 'keys') { sceneBodyPose(anim, tNew, obj); return true; }
+  const rel = dropMatrixAt(anim, tNew).multiply(dropMatrixAt(anim, anim.t).invert());
+  rel.decompose(obj.position, obj.quaternion, obj.scale);
+  return true;
+}
+
 export class CadViewer {
   constructor(canvas, { background = 0x0b0e14 } = {}) {
     this.canvas = canvas;
@@ -473,10 +564,12 @@ export class CadViewer {
   toggleProjection() { this.setProjection(this.isOrtho ? 'persp' : 'ortho'); return this._projection; }
 
   // Re-target + re-distance the camera to fit the shown geometry WITHOUT moving
-  // it: keep the current view direction, just frame the real bounds.
-  frame() {
+  // it: keep the current view direction, just frame the real bounds. `fit` (a
+  // Box3) frames that box instead — /view passes the pieces left visible.
+  frame(fit = null) {
     const box = new THREE.Box3();
-    if (this.previewGroup.children.length) box.setFromObject(this.previewGroup);
+    if (fit) box.copy(fit);
+    else if (this.previewGroup.children.length) box.setFromObject(this.previewGroup);
     else if (this.currentMesh) box.setFromObject(this.currentMesh);
     if (box.isEmpty()) return;
     const ctr = new THREE.Vector3(); box.getCenter(ctr);
