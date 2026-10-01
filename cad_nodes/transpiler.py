@@ -289,14 +289,34 @@ def _memo_put(_k, _v):
     __MEMO__[_k] = _v
 
 
-def _out(_path):
+try:
+    __GRAPH_KEY__
+except NameError:
+    __GRAPH_KEY__ = None
+
+
+def _out(_path, _nid=None):
     \"\"\"Resolve an Export node's path into the project's exports/ folder.
     The worker runs with cwd = the project dir, so exports land in
     projects/<name>/exports/. The path is sandboxed to a basename (any
     directory components / traversal are stripped) so an Export node can
-    never write outside its own project. Feeds the global file library.\"\"\"
+    never write outside its own project. Feeds the global file library.
+    With the node id it also appends a provenance line to exports/index.jsonl
+    (format: cad_nodes/export_index.py) so the library can say WHICH node
+    wrote the file and whether the graph changed since.\"\"\"
     _name = os.path.basename(str(_path).strip()) or "output"
     os.makedirs("exports", exist_ok=True)
+    if _nid is not None:
+        try:
+            _e = {"file": _name, "via": "node", "node": _nid,
+                  "fmt": os.path.splitext(_name)[1].lstrip(".").lower(),
+                  "t": round(__import__("time").time(), 3)}
+            if __GRAPH_KEY__:
+                _e["graph"] = __GRAPH_KEY__
+            with open(os.path.join("exports", "index.jsonl"), "a") as _f:
+                _f.write(_json.dumps(_e) + "\\n")
+        except Exception:
+            pass             # a lost label must never fail the export
     return os.path.join("exports", _name)
 
 
@@ -5917,6 +5937,7 @@ class Transpiler:
             child = self.graph.node(cid)
             cdef = catalog.get(child.type)
             cvals = self._merge_inputs(child.id, cdef, self._param_values(child, cdef))
+            cvals.setdefault("node_id", child.id)
             tmpl = cdef.code_template.get("builder") or cdef.code_template.get("algebra", "")
             stmt = _substitute(tmpl, cvals) + _annot(child)
             if not self._memo:

@@ -138,11 +138,15 @@ required inputs, unknown / badly typed / out-of-range stored params).
 | `GET /api/graph/{name}/validate` | check without running (`cad_validate`) |
 | `POST /api/graph/{name}/arrange` | tidy layout and save (`cad_arrange`) |
 | `POST /api/graph/{name}/execute?lean=1` body=`{overrides?}` | run → lean summary (`cad_execute`); without `lean` the editor's full payload (code + meshes, ~1MB) |
+| `GET /api/graph/{name}/progress?run=<id>` · `POST /api/graph/{name}/runs/{id}/cancel` | per-node SSE events of the run you started with `?run=<id>` on execute · cancel it (a queued job never starts, a running one is killed). A run id is used once (409 on reuse) |
+| `GET /health` | `{status, version, enabled, alive, busy, queued}`: `busy`/`queued` is the warm worker |
 | `POST /api/graph/{name}` body=`{name,nodes,connections}` | create or overwrite the whole graph → `{warnings, param_issues?}` |
 | `GET /api/graph/{name}` | the raw graph JSON |
 | `PATCH /api/graph/{name}/param` body=`{node_id,param,value}` | single-param edit (the code view's) |
 | `GET /api/graph/{name}/code` · `GET /api/graph/{name}/view` | generated build123d source · last run's full view |
-| `GET /api/graph/{name}/export/{fmt}` | export + download (`step`/`stl`/`gltf`) |
+| `GET`/`POST /api/graph/{name}/export/{fmt}` | export the RESULT + download (`step`/`stl`/`gltf`); POST body = optional unsaved graph. Also published as `exports/<name>.<ext>` (`cad_export`) |
+| `GET`/`POST /api/graph/{name}/export/bundle` | bake every PREVIEWED node to STEP + STL, one pair per node, zipped with `manifest.json`; published as `exports/<name>_<date>.zip` (`cad_export_all`) |
+| `GET /api/library` | every project's exports/assets; each export carries `source` from `exports/index.jsonl`: which node / button / bundle wrote it, and `fresh` = graph unchanged since |
 | `POST /api/graph/{name}/import` (multipart `file`) | upload STEP/STL/SVG/DXF **and** add its Import node |
 | `POST /api/graph/{name}/asset` (multipart `file`) · `GET .../assets` | upload into `assets/` without a node · list them |
 | `GET /api/graph/{name}/screenshot?view=&node=&…` | **PNG of the viewport** (`cad_screenshot`) |

@@ -259,6 +259,18 @@ def cad_export(graph_id: str, fmt: str = "step") -> str:
 
 
 @mcp.tool()
+def cad_export_all(graph_id: str) -> dict:
+    """Bake every PREVIEWED node (what the viewport shows) to STEP + STL, zipped
+    with a manifest.json, into the project's exports/ (indexed in
+    exports/index.jsonl with the node each file came from). Returns
+    {path, file, manifest}."""
+    def _run(store, gid):
+        path, fname, manifest = api.export_all(store, gid)
+        return {"path": path, "file": fname, "manifest": manifest}
+    return _safe(_run, STORE, graph_id)
+
+
+@mcp.tool()
 def cad_get_node_catalog(filter_category: str = "", query: str = "",
                          full: bool = False):
     """Node types, one line each: `Type [category] in:(socket:wire, opt:wire?)

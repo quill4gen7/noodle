@@ -1837,7 +1837,7 @@ register(NodeDef("ExportMesh", "mesh", "Export Mesh",
     inputs=[Socket("mesh", WIRE_MESH)],
     params=[Param("path", "str", "path", "output.stl", widget="input")],
     outputs=[],
-    code_template={"algebra": "_mesh_export({mesh}, _out({path}))"},
+    code_template={"algebra": "_mesh_export({mesh}, _out({path}, {node_id!r}))"},
     description="Write a mesh to STL/OBJ/PLY/3MF (the extension picks the format), "
                 "into the project's exports/ folder."))
 
@@ -2349,21 +2349,21 @@ register(NodeDef("ExportSTEP", "export", "Export STEP",
     inputs=[Socket("shape", WIRE_SOLID)],
     params=[Param("path", "str", "path", "output.step", widget="input")],
     outputs=[],
-    code_template={"algebra": "export_step({shape}, _out({path}))"},
+    code_template={"algebra": "export_step({shape}, _out({path}, {node_id!r}))"},
     description="Write the shape to a STEP file (into the project's exports/ folder)."))
 
 register(NodeDef("ExportSTL", "export", "Export STL",
     inputs=[Socket("shape", WIRE_SOLID)],
     params=[Param("path", "str", "path", "output.stl", widget="input")],
     outputs=[],
-    code_template={"algebra": "export_stl({shape}, _out({path}))"},
+    code_template={"algebra": "export_stl({shape}, _out({path}, {node_id!r}))"},
     description="Write the shape to an STL file (into the project's exports/ folder)."))
 
 register(NodeDef("Export3MF", "export", "Export 3MF",
     inputs=[Socket("shape", WIRE_SOLID)],
     params=[Param("path", "str", "path", "output.3mf", widget="input")],
     outputs=[],
-    code_template={"algebra": "_export_3mf({shape}, _out({path}))"},
+    code_template={"algebra": "_export_3mf({shape}, _out({path}, {node_id!r}))"},
     description="Write the shape to a 3MF file (the modern 3D-printing format: "
                 "mesh + units in one file)."))
 
@@ -2371,14 +2371,14 @@ register(NodeDef("ExportGLTF", "export", "Export glTF",
     inputs=[Socket("shape", WIRE_SOLID)],
     params=[Param("path", "str", "path", "output.gltf", widget="input")],
     outputs=[],
-    code_template={"algebra": "export_gltf({shape}, _out({path}))"},
+    code_template={"algebra": "export_gltf({shape}, _out({path}, {node_id!r}))"},
     description="Write the shape to a glTF file (web/AR viewers, three.js)."))
 
 register(NodeDef("ExportSVG", "export", "Export SVG",
     inputs=[Socket("shape", WIRE_SURFACE, accepts=[WIRE_CURVE])],
     params=[Param("path", "str", "path", "output.svg", widget="input")],
     outputs=[],
-    code_template={"algebra": "_export_2d({shape}, _out({path}), 'svg')"},
+    code_template={"algebra": "_export_2d({shape}, _out({path}, {node_id!r}), 'svg')"},
     description="Write 2D geometry (a sketch, curve, or a Section of a solid) "
                 "to an SVG drawing — the XY projection. Laser cutting, plotting, "
                 "documentation."))
@@ -2387,7 +2387,7 @@ register(NodeDef("ExportDXF", "export", "Export DXF",
     inputs=[Socket("shape", WIRE_SURFACE, accepts=[WIRE_CURVE])],
     params=[Param("path", "str", "path", "output.dxf", widget="input")],
     outputs=[],
-    code_template={"algebra": "_export_2d({shape}, _out({path}), 'dxf')"},
+    code_template={"algebra": "_export_2d({shape}, _out({path}, {node_id!r}), 'dxf')"},
     description="Write 2D geometry (a sketch, curve, or a Section of a solid) "
                 "to a DXF drawing — the XY projection. CNC/laser toolchains."))
 

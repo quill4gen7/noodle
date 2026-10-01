@@ -49,6 +49,27 @@
     object-fit:cover;background:var(--bg-0);border-radius:9px 9px 0 0;border-bottom:1px solid var(--border);}
   .card .thumb.ph{display:flex;align-items:center;justify-content:center;
     font-size:22px;color:var(--border);}
+  .card{position:relative;}
+  /* quick export: bake every visible node to STEP + STL, zipped */
+  .card .qx{position:absolute;top:8px;right:8px;z-index:2;display:inline-flex;align-items:center;gap:5px;
+    padding:5px 9px;border-radius:7px;border:1px solid var(--border);background:rgba(11,14,20,.82);
+    color:var(--text);font-size:12px;font-family:var(--font);cursor:pointer;opacity:0;transition:all .15s;}
+  .card:hover .qx,.card .qx:focus-visible,.card .qx.busy{opacity:1;}
+  .card .qx:hover{border-color:var(--green);color:var(--green);}
+  .card .qx.busy{cursor:progress;color:var(--text-dim);}
+  @media (hover:none){ .card .qx{opacity:1;} }
+  .sort{display:inline-flex;border:1px solid var(--border);border-radius:7px;overflow:hidden;}
+  .sort button{background:var(--bg-1);color:var(--text-dim);border:0;padding:6px 11px;font-size:12px;
+    cursor:pointer;font-family:var(--font);}
+  .sort button+button{border-left:1px solid var(--border);}
+  .sort button.on{background:var(--bg-3);color:var(--text);}
+  .sec-tools{display:flex;gap:10px;align-items:center;}
+  #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:50;display:flex;
+    flex-direction:column;gap:8px;align-items:center;}
+  .tmsg{background:var(--bg-3);border:1px solid var(--border);border-radius:8px;padding:10px 16px;
+    font-size:13px;box-shadow:0 6px 24px rgba(0,0,0,.4);max-width:min(560px,calc(100vw - 32px));}
+  .tmsg.success{border-color:var(--green);} .tmsg.error{border-color:var(--accent);}
+  .tmsg a{color:var(--green);text-decoration:underline;}
   .card.new{align-items:center;justify-content:center;text-align:center;color:var(--text-dim);
     border-style:dashed;min-height:78px;}
   .card.new:hover{color:var(--text);}
@@ -78,7 +99,15 @@
   </header>
 
   <section>
-    <div class="sec-head"><h2>Your projects</h2><a class="btn" id="new-btn" href="/nodes?new=1" style="padding:6px 12px;font-size:12px">＋ New project</a></div>
+    <div class="sec-head"><h2>Your projects</h2>
+      <div class="sec-tools">
+        <div class="sort" role="group" aria-label="Sort projects">
+          <button type="button" data-sort="date" onclick="setSort('date')">Recent</button>
+          <button type="button" data-sort="name" onclick="setSort('name')">A–Z</button>
+        </div>
+        <a class="btn" id="new-btn" href="/nodes?new=1" style="padding:6px 12px;font-size:12px">＋ New project</a>
+      </div>
+    </div>
     <div class="grid" id="projects"><div class="empty">Loading…</div></div>
   </section>
 
@@ -93,6 +122,7 @@
   </section>
 </div>
 
+<div id="toast" aria-live="polite"></div>
 <footer>noodle · local single-user app · drive it from an AI agent over MCP (see <code>AGENTS.md</code>)</footer>
 
 <script>
@@ -103,13 +133,60 @@ async function loadHealth(){
     dot.className='dot ok'; txt.textContent=`backend online · v${d.version}`;
   }catch(_){ dot.className='dot err'; txt.textContent='backend offline'; }
 }
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// Sort order — the same key as the editor's project menu, so both agree.
+const SORT_KEY='noodle:sort:workflows';
+function getSort(){ try{ return localStorage.getItem(SORT_KEY)==='name'?'name':'date'; }catch(_){ return 'date'; } }
+function setSort(v){ try{ localStorage.setItem(SORT_KEY,v); }catch(_){} renderProjects(); }
+let LIST=null;
+function ago(ts){
+  if(!ts) return '';
+  const s=Math.max(0,Date.now()/1000-ts);
+  if(s<60) return 'just now';
+  if(s<3600) return Math.round(s/60)+' min ago';
+  if(s<86400) return Math.round(s/3600)+' h ago';
+  if(s<86400*30) return Math.round(s/86400)+' d ago';
+  return new Date(ts*1000).toLocaleDateString();
+}
+function toast(html, kind){
+  const t=document.createElement('div'); t.className='tmsg'+(kind?' '+kind:''); t.innerHTML=html;
+  document.getElementById('toast').appendChild(t);
+  setTimeout(()=>{ t.style.transition='opacity .3s'; t.style.opacity='0'; setTimeout(()=>t.remove(),300); }, kind==='error'?7000:4500);
+}
+// ⬇ quick export: the SAVED graph, baked — every node whose eye is on becomes its
+// own STEP + STL, zipped with a manifest. The zip also lands in the library.
+async function quickExport(ev, name, btn){
+  ev.preventDefault(); ev.stopPropagation();
+  if(btn.classList.contains('busy')) return;
+  btn.classList.add('busy'); const label=btn.innerHTML; btn.innerHTML='⏳ baking…';
+  try{
+    const r=await fetch(`/api/graph/${encodeURIComponent(name)}/export/bundle`,{method:'POST'});
+    if(!r.ok){ const d=await r.json().catch(()=>({})); throw new Error(typeof d.detail==='string'?d.detail:r.statusText); }
+    const cd=r.headers.get('Content-Disposition')||'';
+    const m=/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cd);
+    const file=m?decodeURIComponent(m[1]):name+'.zip';
+    const url=URL.createObjectURL(await r.blob()), a=document.createElement('a');
+    a.href=url; a.download=file; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),60000);
+    toast(`📦 <b>${esc(file)}</b> — STEP + STL of every visible node. `+
+          `<a href="/library?p=${encodeURIComponent(name)}">Open in library</a>`,'success');
+  }catch(e){ toast('Export failed: '+esc(e.message||e),'error'); }
+  finally{ btn.classList.remove('busy'); btn.innerHTML=label; }
+}
 async function loadProjects(){
   const host=document.getElementById('projects');
-  let list=[];
-  try{ list=(await (await fetch('/api/projects',{cache:'no-store'})).json()).filter(p=>p.backend==='nodegraph'); }
+  try{ LIST=(await (await fetch('/api/projects',{cache:'no-store'})).json()).filter(p=>p.backend==='nodegraph'); }
   catch(_){ host.innerHTML='<div class="empty">Could not reach the backend.</div>'; return; }
-  list.sort((a,b)=>a.name.localeCompare(b.name));
-  const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  renderProjects();
+}
+function renderProjects(){
+  const host=document.getElementById('projects');
+  const order=getSort();
+  document.querySelectorAll('.sort button').forEach(b=>b.classList.toggle('on',b.dataset.sort===order));
+  if(!LIST) return;
+  const list=LIST.slice();
+  if(order==='name') list.sort((a,b)=>a.name.localeCompare(b.name));
+  else list.sort((a,b)=>(b.mtime||0)-(a.mtime||0) || a.name.localeCompare(b.name));
   // The thumbnail doubles as a proof of execution: a workflow that never
   // rendered has none, and says so rather than showing a black rectangle.
   const thumb = p => p.thumb
@@ -118,9 +195,12 @@ async function loadProjects(){
     : `<span class="thumb ph" title="Not rendered yet — open it and run">⬡</span>`;
   let html = list.map(p=>
     `<a class="card" href="/nodes?p=${encodeURIComponent(p.name)}">`+
+      `<button type="button" class="qx" title="Bake &amp; export every visible node — STEP + STL, zipped"`+
+      ` onclick="quickExport(event, ${esc(JSON.stringify(p.name))}, this)">⬇ STEP+STL</button>`+
       thumb(p)+
       `<span class="name">${esc(p.name)}</span>`+
-      `<span class="meta">${p.description?esc(p.description):'open in editor →'}</span></a>`).join('');
+      `<span class="meta">${p.description?esc(p.description):'open in editor →'}`+
+      `${p.mtime?' · '+esc(ago(p.mtime)):''}</span></a>`).join('');
   html += `<a class="card new" href="/nodes?new=1">＋ New project</a>`;
   if(!list.length) html = `<div class="empty" style="grid-column:1/-1">No projects yet — `+
     `<a href="/nodes?new=1" style="color:var(--accent)">create your first model</a>.</div>`+html;

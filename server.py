@@ -32,7 +32,8 @@ from cad_nodes import api, catalog, layout
 from cad_nodes.graph import Graph, ValidationError
 from cad_nodes.screenshot import ScreenshotUnavailable
 from cad_nodes.transpiler import transpile, transpile_with_map
-from cad_nodes.executor import execute_graph, export_graph, extract_subshapes_for_node, warm_status
+from cad_nodes.executor import execute_graph, extract_subshapes_for_node, warm_status
+from cad_nodes import export_index
 from cad_nodes.store import GraphStore, stamp_agent_tags, validate_graph_id
 from cad_nodes.job_files import atomic_write, progress_file, run_dir
 from cad_nodes.copilot import run_chat, copilot_status
@@ -575,8 +576,11 @@ async def list_projects():
             if meta_path.exists():
                 meta = json.loads(meta_path.read_text())
             thumb = d / THUMB_NAME
+            gpath = d / "graph.json"
             projects.append({
                 "name": d.name,
+                # last save of the graph: what "sort by date" orders by
+                "mtime": int(gpath.stat().st_mtime) if gpath.exists() else 0,
                 "backend": meta.get("backend", "nodegraph"),
                 "description": meta.get("description", ""),
                 # the listing carries the thumbnail's mtime rather than a bare
@@ -1509,17 +1513,34 @@ _EXPORT_MEDIA = {
 }
 
 
+# The 📦 bake: every node whose eye is on, as STEP + STL, zipped with a manifest.
+# Registered BEFORE /export/{fmt} so "bundle" is not read as a format.
+@app.get("/api/graph/{name}/export/bundle")
+@app.post("/api/graph/{name}/export/bundle")
+async def export_bundle_project(name: str, snapshot: Optional[dict] = Body(default=None)):
+    require_project(name)
+    graph = Graph.from_dict(snapshot) if snapshot is not None else _load_graph(name)
+    try:
+        zpath, fname, _man = await off_loop(api.export_all, GraphStore(PROJECTS_DIR), name, graph)
+    except ValidationError as e:
+        raise HTTPException(400, str(e)) from e
+    except (RuntimeError, ValueError) as e:
+        raise HTTPException(400, f"Export failed: {e}") from e
+    return FileResponse(zpath, media_type="application/zip", filename=fname)
+
+
 @app.get("/api/graph/{name}/export/{fmt}")
-async def export_graph_project(name: str, fmt: str):
+@app.post("/api/graph/{name}/export/{fmt}")
+async def export_graph_project(name: str, fmt: str, snapshot: Optional[dict] = Body(default=None)):
     fmt = fmt.lower()
     if fmt not in _EXPORT_MEDIA:
         raise HTTPException(400, f"Unsupported format {fmt!r}; "
                                  f"choose from {sorted(_EXPORT_MEDIA)}")
-    d = require_project(name)
-    graph = _load_graph(name)
+    require_project(name)
+    graph = Graph.from_dict(snapshot) if snapshot is not None else _load_graph(name)
     media, ext = _EXPORT_MEDIA[fmt]
     try:
-        out_path = await off_loop(export_graph, graph, d, fmt)
+        out_path = await off_loop(api.export, GraphStore(PROJECTS_DIR), name, fmt, graph)
     except ValidationError as e:
         raise HTTPException(400, str(e)) from e
     except (RuntimeError, ValueError) as e:
@@ -1541,21 +1562,27 @@ _LIB_MEDIA = {
     ".dxf": "image/vnd.dxf",
     ".png": "image/png",
     ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".zip": "application/zip",
+    ".obj": "model/obj", ".ply": "application/octet-stream",
 }
 # The two sandboxed sub-folders the library exposes. Nothing else in a
 # project dir (graph.json, _run.py, output.stl, …) is ever listed or served.
 _LIB_KINDS = ("exports", "assets")
 
 
-def _lib_entries(d: Path, kind: str) -> list[dict]:
-    """List downloadable files in a project's exports/ or assets/ folder."""
+def _lib_entries(d: Path, kind: str, prov: Optional[dict] = None) -> list[dict]:
+    """List downloadable files in a project's exports/ or assets/ folder.
+    `prov` = export_index.load(...) — each export carries its `source` (which
+    node / button / bundle wrote it, and whether the graph changed since)."""
     folder = d / kind
     out: list[dict] = []
     if folder.is_dir():
         for f in sorted(folder.iterdir()):
             if f.is_file() and f.suffix.lower() in _LIB_MEDIA:
                 st = f.stat()
+                src = (prov or {}).get(f.name) if kind == "exports" else None
                 out.append({
+                    **({"source": src} if src else {}),
                     "name": f.name,
                     "kind": kind,
                     "ext": f.suffix.lower(),
@@ -1574,9 +1601,16 @@ async def library_list():
     for d in sorted(PROJECTS_DIR.iterdir()):
         if not d.is_dir() or d.name in _RESERVED_PROJECT_DIRS:
             continue
-        files = _lib_entries(d, "exports") + _lib_entries(d, "assets")
+        gpath = d / "graph.json"
+        try:
+            graph = json.loads(gpath.read_text()) if gpath.exists() else None
+        except (OSError, ValueError):
+            graph = None
+        prov = export_index.load(d, graph)
+        files = _lib_entries(d, "exports", prov) + _lib_entries(d, "assets")
         thumb = d / THUMB_NAME
         projects.append({"project": d.name, "files": files,
+                         "mtime": int(gpath.stat().st_mtime) if gpath.exists() else 0,
                          "thumb": int(thumb.stat().st_mtime) if thumb.exists() else 0})
     return {"projects": projects}
 

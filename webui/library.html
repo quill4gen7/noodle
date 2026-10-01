@@ -94,6 +94,27 @@
     border:1px solid var(--border);background:var(--bg-3);color:var(--text);}
   .font-card .acts a.dl:hover{border-color:var(--green);color:var(--green);}
   .fonts-hint{color:var(--text-dim);font-size:12px;margin-top:10px;}
+  /* toolbar: search + sort */
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 18px;}
+  .toolbar input{flex:1;min-width:200px;background:var(--bg-3);color:var(--text);border:1px solid var(--border);
+    border-radius:8px;padding:8px 11px;font-size:13px;font-family:var(--font);}
+  .toolbar input:focus{outline:none;border-color:var(--accent);}
+  .toolbar .lbl{color:var(--text-dim);font-size:12px;}
+  /* provenance — which node / button / bundle wrote the file (exports/index.jsonl) */
+  .src{font-size:12px;color:var(--text-dim);line-height:1.45;display:flex;flex-direction:column;gap:3px;}
+  .src a.nd{color:var(--text);border-bottom:1px dotted var(--text-dim);}
+  .src a.nd:hover{color:var(--green);border-color:var(--green);}
+  .src .gone{text-decoration:line-through;}
+  .chip{display:inline-block;font-size:10px;font-family:var(--mono);padding:1px 6px;border-radius:9px;
+    border:1px solid var(--border);margin-left:4px;vertical-align:1px;}
+  .chip.fresh{color:var(--green);border-color:rgba(45,212,160,.4);}
+  .chip.stale{color:#f0b35a;border-color:rgba(240,179,90,.4);}
+  .src details summary{cursor:pointer;color:var(--text-dim);}
+  .src details ul{margin:4px 0 0;padding-left:16px;}
+  .src details li{margin:2px 0;}
+  .src details .fl{font-family:var(--mono);font-size:10px;color:var(--text-dim);}
+  .badge.bundle{background:rgba(233,69,96,.14);color:var(--accent-hover);}
+  .proj.hl{outline:1px solid var(--accent);outline-offset:8px;border-radius:6px;}
   /* toast */
   #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:50;
     display:flex;flex-direction:column;gap:8px;align-items:center;}
@@ -139,6 +160,14 @@
       <style id="font-faces"></style>
     </section>
 
+    <div class="toolbar">
+      <input id="q" type="search" placeholder="Find an export — file, node, project…" oninput="render()">
+      <span class="lbl">Sort</span>
+      <select id="sort" onchange="setSort(this.value)" title="Sort projects and files">
+        <option value="date">Newest first</option>
+        <option value="name">Name A–Z</option>
+      </select>
+    </div>
     <div id="list"><div class="empty">Loading…</div></div>
   </main>
 
@@ -182,28 +211,111 @@ async function load(){
     || '<option value="" disabled>No projects yet</option>';
   if(prev && PROJECTS.some(p=>p.project===prev)) sel.value = prev;
 
-  const withFiles = PROJECTS.filter(p => p.files.length);
+  render();
+  if(FOCUS && !FOCUSED){
+    FOCUSED = true;
+    const el = document.getElementById('proj-'+FOCUS);
+    if(el){ el.classList.add('hl'); el.scrollIntoView({block:'start'}); setTimeout(()=>el.classList.remove('hl'), 2500); }
+  }
+}
+
+// ?p=<project>: arrive on that project's block (the editor's toast links here).
+const FOCUS = new URLSearchParams(location.search).get('p');
+let FOCUSED = false;
+const SORT_KEY = 'noodle:sort:library';
+function getSort(){ try{ return localStorage.getItem(SORT_KEY) === 'name' ? 'name' : 'date'; }catch(_){ return 'date'; } }
+function setSort(v){ try{ localStorage.setItem(SORT_KEY, v); }catch(_){} render(); }
+window.setSort = setSort;
+
+// Everything the search box matches a file on: its name, the project, and its
+// provenance — the node's title/type/id, and for a bundle every node inside it.
+function haystack(p, f){
+  const s = f.source || {};
+  const parts = [f.name, p.project, s.via, s.node, s.node_title, s.node_type];
+  for(const c of (s.contents || [])) parts.push(c.title, c.type, c.node, ...(c.files || []));
+  return parts.filter(Boolean).join(' ').toLowerCase();
+}
+function render(){
+  const order = getSort();
+  document.getElementById('sort').value = order;
+  const q = (document.getElementById('q').value || '').trim().toLowerCase();
+  const byName = (a,b) => a.localeCompare(b, undefined, {numeric:true, sensitivity:'base'});
+  const shown = [];
+  for(const p of PROJECTS){
+    let files = p.files.slice();
+    if(q) files = files.filter(f => haystack(p, f).includes(q));
+    if(!files.length) continue;
+    if(order === 'name') files.sort((a,b) => byName(a.name, b.name));
+    else files.sort((a,b) => (b.mtime||0) - (a.mtime||0) || byName(a.name, b.name));
+    // a project's date = its newest file, so the latest export floats to the top
+    shown.push({...p, files, newest: Math.max(0, ...files.map(f => f.mtime||0))});
+  }
+  if(order === 'name') shown.sort((a,b) => byName(a.project, b.project));
+  else shown.sort((a,b) => b.newest - a.newest || byName(a.project, b.project));
   const total = PROJECTS.reduce((n,p)=>n+p.files.length, 0);
   const el = document.getElementById('list');
   if(!total){
     el.innerHTML = `<div class="empty">No files yet.<br>
-      Add an <b>Export</b> node to a graph (it writes into the project's
-      <code>exports/</code> folder), or upload an asset above.</div>`;
+      Press <b>⬇ Export</b> in the editor, the <b>⬇ STEP+STL</b> quick export on the home page,
+      or add an <b>Export</b> node (it writes into the project's <code>exports/</code> folder) —
+      or upload an asset above.</div>`;
     return;
   }
-  el.innerHTML = withFiles.map(renderProject).join('');
+  if(!shown.length){
+    el.innerHTML = `<div class="empty">Nothing matches “${esc(q)}”.</div>`;
+    return;
+  }
+  el.innerHTML = shown.map(renderProject).join('');
+}
+
+function nodeLink(project, id, title, exists){
+  const t = esc(title || id);
+  if(exists === false) return `<span class="gone" title="This node is no longer in the graph">${t}</span>`;
+  return `<a class="nd" href="/nodes?p=${encodeURIComponent(project)}&node=${encodeURIComponent(id)}"`+
+         ` title="Open the editor on this node (${esc(id)})">${t}</a>`;
+}
+function freshChip(s){
+  if(s.fresh === true) return `<span class="chip fresh" title="The graph has not changed since this export">up to date</span>`;
+  if(s.fresh === false) return `<span class="chip stale" title="Parameters or wiring changed since this export — re-export to refresh it">graph changed</span>`;
+  return '';
+}
+// Where the file came from, read off exports/index.jsonl (cad_nodes/export_index.py).
+function renderSource(p, f){
+  const s = f.source;
+  if(!s) return f.kind === 'exports' ? `<div class="src">source unknown · written before the export index</div>` : '';
+  if(s.via === 'node'){
+    const what = s.node_title ? `${nodeLink(p.project, s.node, s.node_title, s.node_exists)}`
+                              : nodeLink(p.project, s.node, s.node, s.node_exists);
+    return `<div class="src"><span>⟵ Export node ${what}${s.node_type && s.node_type !== (s.node_title||'').replace(/\s+/g,'') ? ' <span class="fl">'+esc(s.node_type)+'</span>' : ''}`+
+           `${s.guessed ? ' <span class="chip" title="Matched by file name: exported before the index existed">guessed</span>' : ''}${freshChip(s)}</span></div>`;
+  }
+  if(s.via === 'button')
+    return `<div class="src"><span>⟵ ⬇ Export button · the graph's final result${freshChip(s)}</span></div>`;
+  if(s.via === 'bundle'){
+    const items = (s.contents || []).map(c => {
+      const sk = c.skipped ? ` <span class="fl" title="${esc(Object.entries(c.skipped).map(([k,v])=>k+': '+v).join('\n'))}">(${esc(Object.keys(c.skipped).join(', '))} skipped)</span>` : '';
+      return `<li>${nodeLink(p.project, c.node, c.title, c.node_exists === false ? false : undefined)}`+
+             ` <span class="fl">${esc((c.files||[]).join(' · '))}</span>${sk}</li>`;
+    }).join('');
+    const n = (s.contents || []).length;
+    return `<div class="src"><span>⟵ 📦 bake of every visible node${freshChip(s)}</span>`+
+           `<details><summary>${n} node${n!==1?'s':''} inside</summary><ul>${items}</ul></details></div>`;
+  }
+  return '';
 }
 
 function renderProject(p){
   const cards = p.files.map(f => {
-    const badge = f.kind === 'exports' ? 'export' : 'asset';
-    const label = f.kind === 'exports' ? 'export' : 'asset';
+    const bundle = f.source && f.source.via === 'bundle';
+    const badge = f.kind === 'exports' ? (bundle ? 'bundle' : 'export') : 'asset';
+    const label = f.kind === 'exports' ? (bundle ? 'bundle' : 'export') : 'asset';
     return `<div class="file">
       <div class="top">
         <span class="badge ${badge}">${label}</span>
         <span class="fname">${esc(f.name)}</span>
       </div>
       <div class="fmeta">${fmtSize(f.size)} · ${fmtDate(f.mtime)}</div>
+      ${renderSource(p, f)}
       <div class="acts">
         <a href="${esc(f.url)}" download="${esc(f.name)}" title="Download">⬇ Download</a>
         <button class="del" title="Delete" onclick="delFile('${esc(p.project)}','${esc(f.kind)}','${esc(f.name)}')">✕</button>
@@ -216,7 +328,7 @@ function renderProject(p){
     ? `<img class="pthumb" loading="lazy" alt="" onerror="this.remove()"`+
       ` src="${API}/api/projects/${encodeURIComponent(p.project)}/thumb?v=${p.thumb}">`
     : `<span class="pthumb ph" title="Not rendered yet">⬡</span>`;
-  return `<section class="proj">
+  return `<section class="proj" id="proj-${esc(p.project)}">
     <div class="proj-head">
       ${pic}
       <h2>${esc(p.project)}</h2>

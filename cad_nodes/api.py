@@ -13,8 +13,11 @@ import re
 from pathlib import Path
 from typing import Any, Optional
 
-from . import catalog
-from .executor import (execute_graph, export_graph, section_outline_file,
+import shutil
+import time
+
+from . import catalog, export_index
+from .executor import (execute_graph, export_bundle, export_graph, section_outline_file,
                        section_outline_graph, slice_summary_file,
                        slice_summary_graph)
 from .graph import Connection, Graph, Node, ValidationError
@@ -1081,11 +1084,57 @@ def agent_tags(store: GraphStore) -> list[dict]:
     return out
 
 
-def export(store: GraphStore, graph_id: str, fmt: str = "step") -> str:
-    """Export the graph to a file; returns the path."""
-    graph = store.load(graph_id)
-    out = export_graph(graph, store.dir(graph_id), fmt)
+def node_labels(graph: Graph) -> dict:
+    """{node_id: {"title", "type"}} — the worker only sees ids; files and the
+    export index should carry the names the user reads on the canvas."""
+    out = {}
+    for n in graph.nodes:
+        try:
+            label = n.title or catalog.get(n.type).label or n.type
+        except KeyError:
+            label = n.title or n.type
+        out[n.id] = {"title": label, "type": n.type}
+    return out
+
+
+def _publish(d: Path, src: Path, filename: str, via: str, graph: Graph, **meta) -> Path:
+    """Copy a finished export into exports/ (so the library lists it) and give
+    it its provenance line in exports/index.jsonl (cad_nodes/export_index.py)."""
+    target = d / export_index.EXPORTS_DIR / filename
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(src, target)
+    export_index.record(d, filename, via,
+                        graph=export_index.graph_key(graph.to_dict()), **meta)
+    return target
+
+
+def export(store: GraphStore, graph_id: str, fmt: str = "step",
+           graph: Optional[Graph] = None) -> str:
+    """Export the graph's RESULT to one file, publish it as exports/<name>.<ext>
+    with a provenance line, and return the (immutable) run-dir path.
+    `graph` = an unsaved snapshot to export instead of the stored one."""
+    graph = graph if graph is not None else store.load(graph_id)
+    d = store.dir(graph_id)
+    out = export_graph(graph, d, fmt)
+    _publish(d, out, f"{graph_id}{out.suffix}", "button", graph, fmt=out.suffix[1:])
     return str(out)
+
+
+def export_all(store: GraphStore, graph_id: str,
+               graph: Optional[Graph] = None) -> tuple[str, str, dict]:
+    """Bake every PREVIEWED node (what the viewport shows) to STEP + STL, zip
+    them with a manifest.json and publish the zip in exports/. Returns
+    (zip path, published filename, manifest)."""
+    graph = graph if graph is not None else store.load(graph_id)
+    d = store.dir(graph_id)
+    zpath, manifest = export_bundle(graph, d, node_labels(graph))
+    fname = f"{graph_id}_{time.strftime('%Y%m%d-%H%M%S')}.zip"
+    contents = [{"node": n.get("node"), "type": n.get("type"), "title": n.get("title"),
+                 "files": n.get("files", []),
+                 **({"skipped": n["skipped"]} if n.get("skipped") else {})}
+                for n in manifest.get("nodes", [])]
+    _publish(d, zpath, fname, "bundle", graph, fmt="zip", contents=contents)
+    return str(zpath), fname, manifest
 
 
 async def screenshot(store: GraphStore, graph_id: str, **opts):
