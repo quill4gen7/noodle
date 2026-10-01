@@ -79,11 +79,17 @@ def _fn(name, until):
 
 
 def test_every_save_names_its_base_and_a_409_merges():
-    save = _fn("async function persistToServer(", "window.saveGraph")
+    save = _fn("function persistToServer(", "window.saveGraph")
     assert "${syncBaseQuery()}" in save
-    assert "if (res.status === 409) return syncOnStaleSave(res, _retry || 0);" in save
-    assert "syncSaved(payload," in save
+    assert "if (res.status === 409){" in save and "await syncOnStaleSave(res)" in save
+    assert "if (!merged || retry >= 2) return false;" in save   # bounded merge-then-save
+    assert "syncSaved(JSON.parse(json), version)" in save
     assert "if (!syncMaySave()) return false;" in save     # held while conflicts are open
+    # writes are queued (saveChain); the retry must stay inside the queued step —
+    # a persistToServer() call from the merge would queue behind itself forever
+    assert "saveChain = saveChain.then(write, write);" in save
+    stale = _fn("async function syncOnStaleSave(", "// Is the human in the middle")
+    assert "persistToServer(" not in stale
 
 
 def test_open_reads_graph_and_version_in_one_go():
@@ -103,7 +109,7 @@ def test_autosave_is_armed_once_per_change():
     """checkDirty runs every second; re-arming the 2.5s debounce each time meant
     an idle dirty graph never autosaved."""
     cd = _fn("function checkDirty(){", "function scheduleServerSave(){")
-    assert "if (cur !== _dirtySeen){" in cd
+    assert "if (cur === lastObservedJSON) return;" in cd      # act only on a NEW state
 
 
 def test_external_edits_never_become_undo_steps():

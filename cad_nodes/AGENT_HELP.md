@@ -137,7 +137,7 @@ required inputs, unknown / badly typed / out-of-range stored params).
 | `POST /api/graph/{name}/edit_code` body=`{node, old, new, base_version?}` | CodeBlock str-replace (`cad_edit_code`) |
 | `GET /api/graph/{name}/validate` | check without running (`cad_validate`) |
 | `POST /api/graph/{name}/arrange` | tidy layout and save (`cad_arrange`) |
-| `POST /api/graph/{name}/execute?lean=1` body=`{overrides?}` | run → lean summary (`cad_execute`); without `lean` the editor's full payload (code + meshes, ~1MB) |
+| `POST /api/graph/{name}/execute?lean=1` body=`{overrides?}` | run → lean summary (`cad_execute`); without `lean` the editor's full payload (code + meshes, ~1MB). A body that is a whole graph (`nodes`, `connections`) runs that snapshot instead of the file |
 | `GET /api/graph/{name}/progress?run=<id>` · `POST /api/graph/{name}/runs/{id}/cancel` | per-node SSE events of the run you started with `?run=<id>` on execute · cancel it (a queued job never starts, a running one is killed). A run id is used once (409 on reuse) |
 | `GET /health` | `{status, version, enabled, alive, busy, queued}`: `busy`/`queued` is the warm worker |
 | `POST /api/graph/{name}` body=`{name,nodes,connections}` | create or overwrite the whole graph → `{warnings, param_issues?}` |

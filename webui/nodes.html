@@ -38,6 +38,9 @@ body{font-family:var(--font);background:var(--bg-0);color:var(--text);}
 .workspace{display:flex;overflow:hidden;}
 .graph-pane{flex:1.4;position:relative;min-width:240px;}
 #graph-canvas{width:100%;height:100%;display:block;touch-action:none;}
+.empty-guide{position:absolute;inset:15%;display:flex;flex-direction:column;justify-content:center;gap:14px;
+  padding:24px;background:var(--bg-1);border:1px solid var(--border);border-radius:12px;font-size:14px;line-height:1.5;}
+:focus-visible{outline:2px solid var(--green);outline-offset:2px;}
 .split{width:5px;background:var(--border);cursor:col-resize;}
 .split:hover{background:var(--accent);}
 .right-pane{flex:1;display:flex;flex-direction:column;min-width:240px;background:var(--bg-0);}
@@ -174,6 +177,9 @@ body{font-family:var(--font);background:var(--bg-0);color:var(--text);}
   font-size:13px;color:var(--border);}
 .menu-sep{height:1px;background:var(--border);margin:5px 4px;}
 .menu-head{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-dim);padding:4px 9px 2px;}
+.menu-sortbar{display:flex;gap:6px;align-items:center;}
+.menu-sortbar .menu-search{flex:1;min-width:0;}
+.menu-sortbar select{background:var(--bg-3);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:4px 6px;font-size:12px;margin:2px 0 4px;cursor:pointer;}
 .menu-search{width:100%;margin:2px 0 4px;background:var(--bg-3);border:1px solid var(--border);border-radius:5px;
   color:var(--text);padding:6px 8px;font-size:12px;}
 .menu-search:focus{outline:none;border-color:var(--accent);}
@@ -351,7 +357,12 @@ body.touch-ui .toolbar [onclick="openPalette()"]::after{content:"☰ Comandi";fo
           <span id="project-name">— no graph —</span><span class="caret">▾</span>
         </button>
         <div class="menu" id="project-menu">
-          <input class="menu-search" id="project-search" placeholder="Search projects…" oninput="renderProjectList()">
+          <div class="menu-sortbar">
+            <input class="menu-search" id="project-search" placeholder="Search projects…" oninput="renderProjectList()">
+            <select id="project-sort" title="Sort projects" onchange="setProjectSort(this.value)">
+              <option value="date">Recent</option><option value="name">A–Z</option>
+            </select>
+          </div>
           <div class="menu-list" id="project-list"></div>
           <div class="menu-sep"></div>
           <button class="menu-item" onclick="promptNewGraph()"><span class="ic">＋</span>New project…<span class="k">Ctrl+N</span></button>
@@ -365,6 +376,7 @@ body.touch-ui .toolbar [onclick="openPalette()"]::after{content:"☰ Comandi";fo
     <!-- ZONA ESECUZIONE -->
     <div class="tb-zone">
       <button class="tb-btn primary" id="btn-run" onclick="runGraph()" title="Run the graph (Ctrl+Enter)">▶ Run</button>
+      <button class="tb-btn" id="btn-stop" onclick="stopRun()" disabled title="Cancel the current run">■ Stop</button>
       <button class="tb-btn toggle js-live-btn" id="btn-live" onclick="toggleLive()" title="Auto-run on every change — and drags (Move/Rotate/Scale, a Drop timeline) replay live in the viewport while you hold them. Settings ⚙ turns that anticipation off.">Live</button>
       <button class="tb-btn toggle js-cost-btn" id="btn-cost" onclick="toggleCost()" title="Show each node's cost from the last run (blue = served by the cache)">Costi</button>
       <button class="tb-btn" id="btn-arrange" onclick="arrangeGraph()" title="Riordina i nodi: da sinistra a destra per profondità, senza sovrapposizioni, gruppi tenuti insieme (Ctrl+Shift+A)">⊞ Riordina</button>
@@ -377,7 +389,7 @@ body.touch-ui .toolbar [onclick="openPalette()"]::after{content:"☰ Comandi";fo
       <button class="tb-icon" id="btn-undo" onclick="undo()" title="Undo (Ctrl+Z)" disabled>↶</button>
       <button class="tb-icon" id="btn-redo" onclick="redo()" title="Redo (Ctrl+Shift+Z)" disabled>↷</button>
       <button class="tb-icon" onclick="openPalette()" title="Command palette (Ctrl+K)">⌘K</button>
-      <button class="tb-btn" onclick="exportStep()" title="Export the model as STEP">⬇ STEP</button>
+      <button class="tb-btn" onclick="exportStep()" title="Save and export the model">⬇ Export</button>
       <a class="tb-icon" href="/library" title="File library — download exports &amp; upload assets">📁</a>
       <button class="tb-icon" id="btn-feedback" style="display:none" onclick="openFeedback()" title="Send feedback / report">🐞</button>
       <div class="menu-wrap" style="position:relative">
@@ -399,7 +411,15 @@ body.touch-ui .toolbar [onclick="openPalette()"]::after{content:"☰ Comandi";fo
   <div class="sys-banner" id="sys-banner"></div>
 
   <div class="workspace">
-    <div class="graph-pane"><canvas id="graph-canvas"></canvas></div>
+    <div class="graph-pane"><canvas id="graph-canvas" aria-label="Node graph editor"></canvas>
+      <section class="empty-guide" id="empty-guide" aria-label="Get started">
+        <h2>Nodes → solid</h2>
+        <p>1. Open an example from Your projects.<br>2. Change a parameter and press Run.<br>3. Export your model as STEP or STL.</p>
+        <button class="tb-btn primary" onclick="document.getElementById('btn-project').click()">Open a project or example</button>
+        <button class="tb-btn" onclick="promptNewGraph()">New empty project</button>
+        <p class="hint">In an empty graph, double-click to search for Box. Connect nodes to build your model.</p>
+      </section>
+    </div>
     <div class="split" id="split"></div>
     <div class="right-pane">
       <div class="viewer-wrap">
@@ -435,7 +455,7 @@ body.touch-ui .toolbar [onclick="openPalette()"]::after{content:"☰ Comandi";fo
         </div>
       </div>
       <div class="panel">
-        <div class="tabs">
+        <div class="tabs" role="tablist" aria-label="Project details">
           <div class="tab active" data-tab="code" onclick="showTab('code')">Code</div>
           <div class="tab" data-tab="view" onclick="showTab('view')">View / Data</div>
           <div class="tab" data-tab="panels" onclick="showTab('panels')">Panels <span id="panel-count" class="panel-badge"></span></div>
@@ -571,6 +591,46 @@ let highlighted = [];      // nodes currently flagged with an error
 let liveMode = false;      // auto-run on every change
 let liveTimer = null;      // debounce handle
 let runAbort = null;       // AbortController for the in-flight run
+let sessionEpoch = 0, openSequence = 0;
+let saveChain = Promise.resolve(), runTask = null, runPending = false, runContext = null;
+
+async function fetchTimed(url, options = {}, timeout = 15000){
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(), timeout);
+  try { return await fetch(url, {...options, signal: controller.signal}); }
+  finally { clearTimeout(timer); }
+}
+function previewStale(){
+  const el = document.getElementById('viewer-stats');
+  el.textContent = 'Preview out of date — Run to update'; el.classList.add('visible');
+}
+window.stopRun = function(){
+  runPending = false; clearTimeout(liveTimer);
+  if (runContext){
+    const {name, id, es, glowId} = runContext;
+    fetchTimed(`${API}/api/graph/${encodeURIComponent(name)}/runs/${encodeURIComponent(id)}/cancel`,
+      {method:'POST'}, 5000).catch(()=>{});
+    finishProgress(es); endExecGlow(glowId);
+  }
+  if (runAbort) runAbort.abort();
+  setStatus('stopped');
+};
+function resetProjectSession(){
+  sessionEpoch++; openSequence++; stopRun();
+  clearTimeout(serverSaveTimer); clearTimeout(histTimer); clearTimeout(thumbTimer);
+  clearTimeout(gizmoRunTimer);
+  loadingGraph = true; stopAllPlay();
+  if (gizmoNode) exitGizmoEdit();
+  if (sketchNode) exitCurveDrawMode();
+  lastView = null; lastRunJSON = null; lastObservedJSON = null; thumbWanted = false;
+  previewMeshes = {}; previewAnims = {}; lastNodeErrors = {};
+  if (viewer){ viewer.clear(); viewer.resetFraming(); }
+  renderLegend([]);
+  document.getElementById('viewer-stats').textContent = 'Run to generate a preview';
+  document.getElementById('body-code').textContent = '// Run the graph to generate code';
+  document.getElementById('body-view').textContent = 'No execution yet.';
+  document.getElementById('body-panels').textContent = 'No execution yet.';
+}
 let loadingGraph = false;  // suppress live triggers while rebuilding the graph
 // Drag anticipation: replay a drag locally in Three.js instead of waiting for a
 // round trip. It is not a mode of its own — it is how Live behaves while you are
@@ -2116,6 +2176,7 @@ function sketchDeletePoint(idx){
   commitSketchPts(); refreshSketchVisual(); refreshSketchBarButtons();
 }
 function buildSketchGroup(){
+  if (viewer) viewer.invalidate();
   sketchGroup = new THREE.Group();
   const geo = new THREE.PlaneGeometry(400,400);
   const mat = new THREE.MeshBasicMaterial({color:0x39d3ff, transparent:true, opacity:0.05,
@@ -2132,6 +2193,7 @@ function buildSketchGroup(){
   refreshSketchVisual();
 }
 function refreshSketchVisual(){
+  if (viewer) viewer.invalidate();
   if (!sketchGroup) return;
   while (sketchMarkers.children.length) sketchMarkers.remove(sketchMarkers.children[0]);
   const world = sketchPts.map(p=>sketchLocalToWorld(p, sketchPlaneAxis));
@@ -2193,6 +2255,7 @@ function enterCurveDrawMode(node, name){
   if (lcanvas && lcanvas.selectNode) lcanvas.selectNode(node);
 }
 function exitCurveDrawMode(){
+  if (viewer) viewer.invalidate();
   if (!sketchNode) return;
   const node = sketchNode;
   commitSketchPts();
@@ -2603,11 +2666,20 @@ window.newGraph = async function(name){
   name = (name||'').trim();
   if(!name){ setStatus('enter a name','err'); return; }
   if (!(await guardUnsaved())) return;
-  lgraph.clear(); if (viewer) viewer.resetFraming();
-  const _nr = await fetch(`${API}/api/graph/${name}`, {method:'POST',headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({name, nodes:[], connections:[]})});
-  syncLoaded(name, (await _nr.json().catch(()=>({}))).version, {name, nodes:[], connections:[]});   // live sync
+  if (projectNames.includes(name)){ toast('error','A project with this name already exists'); return; }
+  const epoch = sessionEpoch;
+  let version = null;
+  try {
+    const res = await fetchTimed(`${API}/api/graph/${encodeURIComponent(name)}`, {method:'POST',headers:{'Content-Type':'application/json','If-None-Match':'*'},
+      body: JSON.stringify({name, nodes:[], connections:[]})});
+    if (!res.ok) throw new Error(JSON.stringify((await res.json()).detail));
+    version = (await res.json().catch(()=>({}))).version;
+  } catch(e){ toast('error','Create failed: '+e.message); return; }
+  if (epoch !== sessionEpoch) return;
+  resetProjectSession(); lgraph.clear(); loadingGraph = false;
+  syncLoaded(name, version, {name, nodes:[], connections:[]});   // live sync
   currentName = name;
+  localStorage.setItem('noodle:last', name);
   setCurrentName(name);
   lastSavedJSON = JSON.stringify(toGraphJSON(name));
   lastRunJSON = null;              // nothing on screen belongs to this graph yet
@@ -2618,36 +2690,67 @@ window.newGraph = async function(name){
 };
 
 // Single writer to the server, shared by manual Save + autosave.
-// Every save names the version it was edited from (live sync block): if an
-// agent wrote the graph meanwhile the server answers 409 and we MERGE, never
-// overwrite. `_retry` bounds the merge-then-save-again loop.
-async function persistToServer(_retry){
-  if (!currentName) return false;
-  if (!syncMaySave()) return false;           // merging, or conflicts to resolve
-  const payload = toGraphJSON(currentName);
-  const json = JSON.stringify(payload);
-  if (syncCanSkipEcho(json)){ setDocState('saved'); return true; }   // disk already has it
-  setDocState('saving');
-  syncSaveStarted();
-  let res;
-  try{
-    res = await fetch(`${API}/api/graph/${currentName}${syncBaseQuery()}`, {method:'POST',
-      headers:{'Content-Type':'application/json'}, body: json});
-  }catch(e){ setDocState('failed'); log('save: '+e.message,'err'); return false; }
-  if (res.status === 409) return syncOnStaleSave(res, _retry || 0);
-  if(!res.ok){ const e=await res.json().catch(()=>({})); setDocState('failed');
-    log('save: '+JSON.stringify(e.detail||e),'err'); return false; }
-  syncSaved(payload, (await res.json().catch(()=>({}))).version);
-  lastSavedJSON = json; clearDraft(currentName); setDocState('saved');
-  nodeByGraphId = Object.assign({}, nodeIndex);   // saved disk ids now equal serialized ids
-  thumbWanted = true; maybeThumb();               // the library's picture of this graph
-  return true;
+// Single writer, two guarantees. From the live sync block: every save names the
+// version it was edited from, so if an agent wrote the graph meanwhile the
+// server answers 409 and we MERGE, never overwrite. From the session work:
+// writes are serialized in call order, bound to the project they were captured
+// for (sessionEpoch), and a failed write never poisons the queue. The 409
+// merge-then-save-again retry stays INSIDE this queued step: calling
+// persistToServer from there would queue behind itself and never run.
+function persistToServer(snapshot = null){
+  if (!currentName) return Promise.resolve(false);
+  const name = currentName, epoch = sessionEpoch;
+  const index = {...nodeIndex};
+  const current = ()=>epoch === sessionEpoch && name === currentName;
+  const fail = (msg)=>{
+    if (!current()) return false;
+    lastObservedJSON = JSON.stringify(toGraphJSON(name));
+    setDocState('failed'); saveDraft(name, lastObservedJSON);
+    log('save: '+msg, 'err');
+    return false;
+  };
+  const write = async ()=>{
+    let json = snapshot || JSON.stringify(toGraphJSON(name));
+    for (let retry = 0; ; retry++){
+      if (!current()) return false;
+      if (!syncMaySave()) return false;           // merging, or conflicts to resolve
+      if (syncCanSkipEcho(json)){ setDocState('saved'); return true; }   // disk already has it
+      setDocState('saving');
+      syncSaveStarted();
+      let res;
+      try {
+        res = await fetchTimed(`${API}/api/graph/${encodeURIComponent(name)}${syncBaseQuery()}`, {method:'POST',
+          headers:{'Content-Type':'application/json'}, body:json});
+      } catch(e){ return fail(e.message); }
+      if (res.status === 409){
+        if (!current()) return false;
+        const merged = await syncOnStaleSave(res);
+        if (!merged || retry >= 2) return false;
+        json = JSON.stringify(toGraphJSON(name));   // the merged canvas
+        continue;
+      }
+      if (!res.ok){ const e = await res.json().catch(()=>({})); return fail(JSON.stringify(e.detail || e)); }
+      const version = (await res.json().catch(()=>({}))).version;
+      if (!current()) return false;
+      syncSaved(JSON.parse(json), version);
+      lastSavedJSON = json; nodeByGraphId = index;   // saved disk ids now equal serialized ids
+      const cur = JSON.stringify(toGraphJSON(name));
+      lastObservedJSON = cur;
+      if (cur === json){ clearDraft(name); setDocState('saved'); }
+      else { saveDraft(name, cur); setDocState('dirty'); scheduleServerSave(); }
+      thumbWanted = true; maybeThumb();               // the library's picture of this graph
+      return true;
+    }
+  };
+  saveChain = saveChain.then(write, write);
+  return saveChain;
 }
 
 window.saveGraph = async function(){
-  if(!currentName){ setStatus('create or open a graph first','err'); return; }
+  if(!currentName){ setStatus('create or open a graph first','err'); return false; }
   const ok = await persistToServer();
-  if (ok){ await refreshGraphList(); setStatus('saved ✓','ok'); }
+  if (ok){ setStatus('saved ✓','ok'); }
+  return ok;
 };
 
 // ── workflow thumbnail: the picture the library lists you by ───────────────
@@ -2676,6 +2779,8 @@ function maybeThumb(){
 async function postThumb(){
   if (!currentName || !viewer) return;
   const name = currentName;
+  if (lastRunJSON === null || lastRunJSON !== lastSavedJSON ||
+      JSON.stringify(toGraphJSON(name)) !== lastRunJSON) return;
   // Must be read back in one go, before the browser composites the frame away.
   const url = viewer.snapshot();
   if (!url) return;      // empty viewport: keep the last good picture, don't blank it
@@ -2690,7 +2795,9 @@ async function postThumb(){
 
 // ── live mode: debounced auto-run on any graph change ──
 function scheduleLive(){
-  if(!liveMode || loadingGraph) return;
+  if (loadingGraph) return;
+  if (currentName) previewStale();
+  if(!liveMode) return;
   clearTimeout(liveTimer);
   liveTimer = setTimeout(()=>{ runGraph(); }, 120);
 }
@@ -2698,6 +2805,7 @@ window.toggleLive = function(){
   liveMode = !liveMode;
   document.querySelectorAll('.js-live-btn').forEach(b=>b.classList.toggle('on', liveMode));
   if(liveMode) scheduleLive();
+  else { clearTimeout(liveTimer); runPending = false; }
 };
 window.toggleCost = function(){
   showCost = !showCost;
@@ -3045,6 +3153,7 @@ function recordHistory(){                 // commit the current state as a new u
   if (histBase != null){ undoStack.push(histBase); if (undoStack.length > HIST_MAX) undoStack.shift(); }
   histBase = cur; redoStack.length = 0;
   updateUndoButtons();
+  checkDirty();
 }
 function scheduleHistory(){ clearTimeout(histTimer); histTimer = setTimeout(recordHistory, 300); }
 
@@ -3289,7 +3398,7 @@ function onParamChange(node){
   // Playing and nothing could anticipate it: scheduleLive()'s debounce is reset
   // every frame and would never fire, so the sweep would be invisible until stop.
   if (playActive()){ playPump(); return; }
-  if (liveMode) scheduleLive();
+  scheduleLive();  // also marks a stale preview with Live off
 }
 
 // ── Drop live replay ────────────────────────────────────────────────────────
@@ -3303,6 +3412,7 @@ function onParamChange(node){
 // single Drop is one mesh moved by M(tNew)·M(tBaked)⁻¹; a collide Scene is a
 // group whose bodies each carry their own keyframe plan.
 function applyDropAnim(node, tNew){
+  if (viewer) viewer.invalidate();
   const m = previewMeshOf(node);
   if (!m) return false;
   return poseAnim(m, previewAnimOf(node), tNew);
@@ -3337,6 +3447,7 @@ function applyDropTargets(node){
 // from the params baked into the current mesh. Returns false if not applicable.
 // A timeline node replays its shipped plan the same way (dropMatrixAt/keys).
 function applyLocalTransform(node){
+  if (viewer) viewer.invalidate();
   if (!node) return false;
   if (TIMELINE_NODES.has(node.cadType)) return applyDropAnim(node, +node.properties.t);
   if (!['Move','Rotate','Scale'].includes(node.cadType)) return false;
@@ -3461,6 +3572,7 @@ function enterGizmoEdit(node){
 }
 
 function exitGizmoEdit(){
+  if (viewer) viewer.invalidate();
   if (!gizmoNode) return;
   const node = gizmoNode; gizmoNode = null;
   if (node._gizmoPrevMode !== undefined){
@@ -3491,6 +3603,7 @@ function gizmoWriteParam(node, name, raw){
 // the gizmo moved: map its delta onto the node's bound param(s), give immediate
 // optimistic feedback (reuse applyLocalTransform), then debounce an exact re-run.
 function gizmoDragUpdate(){
+  if (viewer) viewer.invalidate();
   if (!gizmoNode || !gizmoParamStart) return;
   const node = gizmoNode, g = node._gizmo;
   if (g.kind === 'rotate'){
@@ -3578,16 +3691,18 @@ function showGizmoHint(node){
 // which is most of them once the memo cache is warm.
 const PROGRESS_GRACE_MS = 2000;
 
-function openProgress(runId, glowId){
+function openProgress(runId, glowId, name = currentName){
+  const epoch = sessionEpoch;
   if (!window.EventSource) return null;
   try {
-    const es = new EventSource(`${API}/api/graph/${currentName}/progress?run=${encodeURIComponent(runId)}`);
+    const es = new EventSource(`${API}/api/graph/${encodeURIComponent(name)}/progress?run=${encodeURIComponent(runId)}`);
     es._seen = 0; es._glowId = glowId; es._done = false; es._closed = false;
     es.onmessage = (m)=>{
       es._seen++;
       let ev = null;
       try { ev = JSON.parse(m.data); } catch(e){ return; }
-      if (!ev) return;
+      if (!ev || epoch !== sessionEpoch) return;
+      if (ev.k === 'phase' && runContext && runContext.id === runId){ runContext.phase = ev.phase; return; }
       if (ev.k === 'done'){ es._done = true; finishProgress(es); return; }
       // Late events from a SUPERSEDED run must not paint the run that replaced
       // it — the glow they belong to is gone.
@@ -3618,42 +3733,67 @@ function closeProgress(es, glowId){
   es._grace = setTimeout(()=>finishProgress(es), PROGRESS_GRACE_MS);
 }
 
-window.runGraph = async function(){
+window.runGraph = function(){
+  if (loadingGraph || !currentName) return Promise.resolve();
+  runPending = true;
+  if (runTask) return runTask;
+  runTask = (async ()=>{
+    document.getElementById('btn-stop').disabled = false;
+    try {
+      while (runPending){ runPending = false; await executeCurrentGraph(); }
+    } catch(e){ setStatus('execution failed','err'); log(e.message,'err'); }
+    finally { runTask = null; runContext = null; document.getElementById('btn-stop').disabled = true; }
+  })();
+  return runTask;
+};
+async function executeCurrentGraph(){
+  const name = currentName, epoch = sessionEpoch;
+  const json = JSON.stringify(toGraphJSON(name));
+  runAbort = new AbortController();
+  const signal = runAbort.signal;
+  const sameSession = ()=>name === currentName && epoch === sessionEpoch && !signal.aborted;
+  const current = ()=>sameSession() && (window.__noodleShot || playActive() || json === JSON.stringify(toGraphJSON(name)));
   // The agent's screenshot page is a READER, never a writer. It saved like any
   // user, so a shot taken with a stale in-memory graph wrote that stale copy
   // over the file on disk — taking a picture destroyed the user's work, and
   // silently. /execute runs the graph ON DISK, which is exactly what an agent
   // wants rendered, so skipping the save is also the more correct behaviour.
-  if (!window.__noodleShot) await window.saveGraph();
-  if(!currentName) return;
-  if(runAbort) runAbort.abort();          // supersede any in-flight run
-  runAbort = new AbortController();
-  const signal = runAbort.signal;
+  if (!window.__noodleShot && !(await persistToServer(json))){
+    if (sameSession()) setStatus('Save failed — execution not started','err');
+    return;
+  }
+  if (!current()) return;
   clearHighlights();
   const _rt0 = performance.now();
   const _elapsed = ()=> ((performance.now()-_rt0)/1000).toFixed(1)+'s';
   const _verb = liveMode ? 'live' : 'running';
   setStatus(_verb+'…');
   // live ticking clock so a long run visibly reads as "thinking", not frozen
-  const _tick = setInterval(()=> setStatus(_verb+'… '+_elapsed()), 250);
+  const _tick = setInterval(()=> {
+    if (sameSession()) setStatus((runContext?.phase || _verb)+'… '+_elapsed());
+  }, 250);
   // Subscribe BEFORE asking for the run, so no node's start event is missed. The
   // worker appends one per node as it goes; the server tails the file to us.
   const _runId = (crypto.randomUUID ? crypto.randomUUID()
                                     : String(Date.now()) + Math.random().toString(16).slice(2));
   const _glowId = beginExecGlow();
-  const es = openProgress(_runId, _glowId);
+  const es = openProgress(_runId, _glowId, name);
+  runContext = {name, id:_runId, es, glowId:_glowId, phase:'queued'};
   let res;
   try {
-    res = await fetch(`${API}/api/graph/${currentName}/execute?run=${encodeURIComponent(_runId)}`,
-                      {method:'POST', signal});
+    res = await fetch(`${API}/api/graph/${encodeURIComponent(name)}/execute?run=${encodeURIComponent(_runId)}`,
+                      {method:'POST', signal, headers:{'Content-Type':'application/json'},
+                       body:window.__noodleShot ? undefined : json});
   } catch(e){
     clearInterval(_tick); closeProgress(es, _glowId);
-    if(e.name === 'AbortError') return;    // a newer change took over
+    if(e.name === 'AbortError' || !sameSession()) return;
     setStatus('execution failed','err'); log('execute: '+e.message,'err'); return;
   }
   clearInterval(_tick); closeProgress(es, _glowId);
+  if (!current()){ if (sameSession()) previewStale(); return; }
   if(!res.ok){
     const e = await res.json();
+    if (!current()) return;
     const d = e.detail || e;
     const det = d.error_detail;
     document.getElementById('body-code').textContent = (d.code||'');
@@ -3678,10 +3818,11 @@ window.runGraph = async function(){
   let data;
   try { data = await res.json(); }
   catch(e){ if(e.name === 'AbortError') return; throw e; }
+  if (!current() || (data.run_id && data.run_id !== _runId)){ if (sameSession()) previewStale(); return; }
   document.getElementById('body-code').textContent = data.code || '';
   document.getElementById('body-view').textContent = JSON.stringify(stripMesh(data.view), null, 2);
   renderPanels(data.view);
-  renderPreviews(data.view);   // draw whatever succeeded
+  renderPreviews(data.view, JSON.parse(json));   // bake params from THIS snapshot, not a later edit
   // per-node errors: flag the culprits but keep the rest of the graph rendered
   const nerr = data.node_errors || {};
   lastNodeErrors = nerr;   // remembered for the feedback report
@@ -3705,17 +3846,60 @@ window.runGraph = async function(){
   if (nids.length){ setStatus(`done · ${nids.length} node error(s) · ${_elapsed()}`, 'err'); }
   else if ((data.warnings||[]).length){ setStatus(`done ⚠ · ${_elapsed()}`,'err'); }
   else { setStatus(`done ✓ · ${_elapsed()}`,'ok'); }
-  log('executed '+currentName,'ok');
+  log('executed '+name,'ok');
   // What is on screen now provably came from what is on disk now (runGraph saved
   // before executing) — the one moment a thumbnail can be taken truthfully.
-  lastRunJSON = lastSavedJSON;
+  lastRunJSON = json;
+  if (!window.__noodleShot && json !== JSON.stringify(toGraphJSON(name))) previewStale();
   maybeThumb();
-};
+}
 
-window.exportStep = function(){
-  if(!currentName){ setStatus('save first','err'); return; }
-  // Real STEP export: transpile + execute + write .step (not the cached STL).
-  window.open(`${API}/api/graph/${currentName}/export/step`, '_blank');
+// ⬇ Export. The default is the 📦 bake: every node whose eye is on — exactly
+// what the viewport shows — each as its own STEP + STL, zipped with a
+// manifest.json. The single-format choices export the graph's RESULT as before.
+// Every export also lands in the project's exports/ with a provenance line in
+// exports/index.jsonl, so the library (📁) says which node it came from.
+function downloadBlob(blob, filename){
+  const url = URL.createObjectURL(blob), a = document.createElement('a');
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 60000);
+}
+function filenameOf(res, fallback){
+  const cd = res.headers.get('Content-Disposition') || '';
+  const m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cd);
+  return m ? decodeURIComponent(m[1]) : fallback;
+}
+window.exportStep = async function(preset){
+  if(!currentName){ toast('info','Create or open a project first'); return; }
+  const epoch = sessionEpoch;
+  const fmt = preset || await confirmModal('Export model',
+    '<b>📦 Everything visible</b> bakes every node with its eye on into its own STEP + STL, '+
+    'zipped. The single formats export the graph\'s final result. The graph is saved first; '+
+    'every file also lands in the 📁 library, tagged with the node it came from.',
+    [{id:'bundle',label:'📦 Everything visible (STEP+STL .zip)',cls:'primary'},
+     {id:'step',label:'STEP'},{id:'stl',label:'STL'},{id:'gltf',label:'glTF'},{id:'cancel',label:'Cancel'}]);
+  // confirmModal resolves null on Cancel / Esc / overlay click
+  if (!fmt || fmt === 'cancel' || epoch !== sessionEpoch) return;
+  const name = currentName, json = JSON.stringify(toGraphJSON(name));
+  if (!(await persistToServer(json)) || epoch !== sessionEpoch) return;
+  const bundle = fmt === 'bundle';
+  const modal = buildModal('<h3>'+(bundle ? 'Baking every visible node…' : 'Exporting '+fmt.toUpperCase()+'…')+
+    '</h3><p role="status">'+(bundle ? 'One STEP + one STL per previewed node, then zipped. ' : '')+
+    'Building the saved snapshot. Please wait.</p>');
+  try {
+    const res = await fetchTimed(`${API}/api/graph/${encodeURIComponent(name)}/export/${bundle ? 'bundle' : fmt}`,
+      {method:'POST', headers:{'Content-Type':'application/json'}, body:json}, bundle ? 240000 : 150000);
+    if (!res.ok){
+      const d = await res.json().catch(()=>({}));
+      throw new Error(typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail || res.statusText));
+    }
+    const blob = await res.blob();
+    if (epoch !== sessionEpoch) return;
+    const file = filenameOf(res, name+'.'+(bundle ? 'zip' : fmt));
+    downloadBlob(blob, file);
+    toast('success','Export ready: '+file, {label:'📁 Library', run:()=>{ location.href='/library?p='+encodeURIComponent(name); }});
+  } catch(e){ if (epoch === sessionEpoch) toast('error','Export failed: '+e.message); }
+  finally { modal.close(); }
 };
 
 function stripMesh(v){
@@ -3735,17 +3919,31 @@ function stripMesh(v){
 let projectNames = [];   // cached for the project menu + palette
 let projectThumbs = {};  // name -> thumbnail mtime (0 = none), doubles as cache-buster
 async function refreshGraphList(){
-  const res = await fetch(`${API}/api/projects`);
+  const res = await fetchTimed(`${API}/api/projects`);
+  if (!res.ok) throw new Error('Could not load projects');
   const list = (await res.json()).filter(p=>p.backend==='nodegraph');
   projectNames = list.map(p=>p.name).sort();
   projectThumbs = Object.fromEntries(list.map(p=>[p.name, p.thumb||0]));
+  projectMtimes = Object.fromEntries(list.map(p=>[p.name, p.mtime||0]));
   renderProjectList();
 }
+// Sort order of the workflow list — shared with the home page (same key).
+let projectMtimes = {};
+function projectSort(){
+  try{ return localStorage.getItem('noodle:sort:workflows') === 'name' ? 'name' : 'date'; }catch(_){ return 'date'; }
+}
+window.setProjectSort = function(v){
+  try{ localStorage.setItem('noodle:sort:workflows', v); }catch(_){}
+  renderProjectList();
+};
 window.renderProjectList = function(){
   const list = document.getElementById('project-list'); if (!list) return;
   const q = (document.getElementById('project-search').value||'').toLowerCase();
   list.innerHTML = '';
   const names = projectNames.filter(n=>n.toLowerCase().includes(q));
+  const order = projectSort(), sel = document.getElementById('project-sort');
+  if (sel) sel.value = order;
+  if (order === 'date') names.sort((a,b)=>(projectMtimes[b]||0)-(projectMtimes[a]||0) || a.localeCompare(b));
   if (!names.length){ list.innerHTML = '<div class="menu-status">No projects</div>'; }
   for (const n of names){
     const b = document.createElement('button'); b.className = 'menu-item';
@@ -3762,11 +3960,17 @@ window.renderProjectList = function(){
 
 window.openGraph = async function(name){
   if(!name || name===currentName) { closeMenus(); return; }
-  if (!(await guardUnsaved())) return;
-  const res = await fetch(`${API}/api/graph/${name}/version?graph=1`, {cache:'no-store'});
-  if(!res.ok){ setStatus('open failed','err'); return; }
-  const _vd = await res.json(), data = _vd.graph;
-  syncLoaded(name, _vd.version, data);   // BEFORE fromGraphJSON, which migrates `data` in place
+  const seq = ++openSequence;
+  if (!(await guardUnsaved()) || seq !== openSequence) return;
+  let data, version;
+  try {
+    const res = await fetchTimed(`${API}/api/graph/${encodeURIComponent(name)}/version?graph=1`, {cache:'no-store'});
+    if (!res.ok) throw new Error('Could not open project');
+    ({version, graph: data} = await res.json());
+  } catch(e){ toast('error','Open failed: '+e.message); return; }
+  if (seq !== openSequence) return;
+  resetProjectSession();
+  syncLoaded(name, version, data);   // BEFORE fromGraphJSON, which migrates `data` in place
   fromGraphJSON(data);
   currentName = name; if (viewer) viewer.resetFraming();   // frame the freshly opened graph once
   setCurrentName(name);
@@ -3779,10 +3983,14 @@ window.openGraph = async function(name){
   maybeRestoreDraft(name);
   refreshAssets(true);   // prime the Import-node asset picker for this project
   syncRefImages();   // draw any RefImage reference quads now currentName is set
+  if (liveMode) scheduleLive();
 };
 
 window.showTab = function(t){
-  for (const el of document.querySelectorAll('.tab')) el.classList.toggle('active', el.dataset.tab===t);
+  for (const el of document.querySelectorAll('.tab')){
+    const active=el.dataset.tab===t;
+    el.classList.toggle('active',active); el.setAttribute('aria-selected',String(active)); el.tabIndex=active?0:-1;
+  }
   document.getElementById('body-code').style.display   = t==='code'?'block':'none';
   document.getElementById('body-view').style.display   = t==='view'?'block':'none';
   document.getElementById('body-panels').style.display = t==='panels'?'block':'none';
@@ -4215,6 +4423,7 @@ function initViewer(){
   // r0.169+ : the visual is a separate helper object you add to the scene
   viewer.scene.add(transformControls.getHelper ? transformControls.getHelper() : transformControls);
   transformControls.enabled = false;
+  transformControls.addEventListener('change', ()=>viewer.invalidate());
   transformControls.addEventListener('dragging-changed', e=>{ viewer.controls.enabled = !e.value; });
   transformControls.addEventListener('objectChange', ()=> gizmoDragUpdate());
   // when the viewer swaps perspective⇄ortho it rebuilds the active camera; the
@@ -4297,14 +4506,15 @@ window.toggleProjection = function(){
 //   syncIsolateForce()  — force-preview the selection, restore the rest, re-run
 function applyIsolate(){
   if(!isolateSel){
-    if(_isoDirty){ for(const id in previewMeshes){ const m=previewMeshes[id]; if(m) m.visible=true; } _isoDirty=false; }
+    if(_isoDirty){ for(const id in previewMeshes){ const m=previewMeshes[id]; if(m) m.visible=true; } _isoDirty=false; if(viewer) viewer.invalidate(); }
     return;
   }
   const sel = new Set(selectedNodes().map(n=>graphIdOf(n)));
   const hasSel = sel.size > 0;                 // nothing picked -> nothing to isolate to
   for(const id in previewMeshes){
     const m = previewMeshes[id]; if(!m) continue;
-    m.visible = !hasSel || sel.has(id);
+    const visible = !hasSel || sel.has(id);
+    if (m.visible !== visible){ m.visible = visible; if(viewer) viewer.invalidate(); }
   }
   _isoDirty = hasSel;
 }
@@ -4391,8 +4601,10 @@ function clearPreviewDots(){
 }
 // Draw the execution view via the shared viewer, then apply node-editor glue:
 // per-node title dots, baked-param snapshots (for gizmo/fastDrag), and the legend.
-function renderPreviews(view){
+function renderPreviews(view, bakedGraph = null){
+  const baked = bakedGraph && Object.fromEntries(bakedGraph.nodes.map(n=>[n.id,n.params]));
   lastView = view;                       // cache so colour/wireframe changes re-render instantly
+  if (!viewer) return;
   clearPreviewDots();
   const setStats = (txt)=>{ const st=document.getElementById('viewer-stats'); st.innerHTML=txt; st.classList.add('visible'); };
   const r = viewer.renderPreviews((view && view.previews) || {}, {
@@ -4414,7 +4626,7 @@ function renderPreviews(view){
   for(const id of r.order){
     const n = nodeIndex[id], color = r.colors[id];
     // the title dot cannot show a sentinel: rainbow gets one stand-in swatch
-    if(n){ n._baked = {...n.properties};
+    if(n){ n._baked = {...((baked && baked[id]) || n._baked || n.properties)};
            n.boxcolor = (color === 'rainbow') ? '#9b6dd6' : color; }   // snapshot + title dot
     legend.push({id, color, label:(n && (n.title||n.cadType)) || id, wire: !!(n && n.wireframe)});
   }
@@ -4443,6 +4655,7 @@ function _applyRefSize(mesh, node, tex){
 }
 function syncRefImages(){
   if (!viewer || !lgraph) return;
+  viewer.invalidate();
   if (!refGroup.parent) viewer.scene.add(refGroup);
   const seen = new Set();
   for (const n of lgraph._nodes){
@@ -4491,7 +4704,7 @@ function syncRefImages(){
     m.material.opacity = (p.opacity == null ? 0.6 : +p.opacity);
   }
   for (const id in refMeshes) if (!seen.has(id)){   // drop quads whose node is gone
-    refGroup.remove(refMeshes[id]); refMeshes[id].geometry.dispose(); delete refMeshes[id];
+    refGroup.remove(refMeshes[id]); refMeshes[id].geometry.dispose(); refMeshes[id].material.dispose(); delete refMeshes[id];
   }
 }
 
@@ -5733,9 +5946,10 @@ document.addEventListener('keydown', e=>{   // Esc cancels the trace editor
  * ============================================================ */
 let lastSavedJSON = null;      // normalized graph last confirmed on disk
 let docState = 'none';         // none | saved | dirty | saving | failed
-let serverSaveTimer = null;
+let serverSaveTimer = null, lastObservedJSON = null;
 
 function setCurrentName(name){
+  document.getElementById('empty-guide').style.display = name ? 'none' : 'flex';
   document.getElementById('project-name').textContent = name || '— no graph —';
   document.getElementById('sb-graph').textContent = name || 'no graph';
   renderProjectList();
@@ -5769,38 +5983,43 @@ function maybeRestoreDraft(name){
   showRestoreModal(name, d);                                       // disk changed under the draft
 }
 // dirty-detection + autosave loop (covers param edits, no per-widget hook)
-let _dirtySeen = null;
 function checkDirty(){
   if (loadingGraph || !currentName || lastSavedJSON===null) return;
   let cur; try{ cur = JSON.stringify(toGraphJSON(currentName)); }catch(_){ return; }
+  if (cur === lastObservedJSON) return;
+  lastObservedJSON = cur;
+  clearTimeout(serverSaveTimer);
   if (cur === lastSavedJSON){
-    if (docState==='dirty') setDocState('saved');
-  } else if (docState!=='saving') {
-    if (docState!=='dirty') setDocState('dirty');
-    // Only on a NEW change: this runs every second, and re-arming the 2.5s
-    // debounce each time meant an idle dirty graph was never autosaved.
-    if (cur !== _dirtySeen){
-      _dirtySeen = cur;
-      saveDraft(currentName, cur);          // instant local safety net
-      scheduleServerSave();                  // debounced server autosave
-    }
+    if (docState!=='saving') setDocState('saved');
+    clearDraft(currentName);
+  } else {
+    saveDraft(currentName, cur);
+    if (docState!=='saving') setDocState('dirty');
+    scheduleServerSave();
   }
 }
 function scheduleServerSave(){
   clearTimeout(serverSaveTimer);
-  serverSaveTimer = setTimeout(()=>{ if (docState==='dirty') persistToServer().then(ok=>ok&&refreshGraphList()); }, 2500);
+  const epoch = sessionEpoch;
+  serverSaveTimer = setTimeout(()=>{
+    serverSaveTimer = null;
+    if (epoch === sessionEpoch && docState==='dirty') persistToServer();
+  }, 2500);
 }
 async function guardUnsaved(){
+  checkDirty();
+  if (docState==='saving'){ await saveChain; checkDirty(); }
   if (docState!=='dirty' && docState!=='failed') return true;
   const choice = await confirmModal('Unsaved changes',
     'You have unsaved changes in “'+currentName+'”. Save before continuing?',
     [{id:'save',label:'Save',cls:'primary'},{id:'discard',label:'Discard',cls:'danger'},{id:'cancel',label:'Cancel'}]);
-  if (choice==='cancel') return false;
   if (choice==='save') return await persistToServer();
-  clearDraft(currentName); return true;   // discard
+  if (choice==='discard'){ clearDraft(currentName); return true; }
+  return false;   // cancel, overlay click, Esc
 }
 window.addEventListener('beforeunload', e=>{
-  if (docState==='dirty' || docState==='saving'){ e.preventDefault(); e.returnValue=''; return ''; }
+  checkDirty();
+  if (docState==='dirty' || docState==='saving' || docState==='failed'){ e.preventDefault(); e.returnValue=''; return ''; }
 });
 window.promptNewGraph = async function(){
   closeMenus();
@@ -5814,10 +6033,26 @@ window.deleteCurrentGraph = async function(){
     'Permanently delete “'+currentName+'” from disk? This cannot be undone.',
     [{id:'del',label:'Delete',cls:'danger'},{id:'cancel',label:'Cancel'}]);
   if (ok!=='del') return;
-  const gone = currentName;
-  await fetch(`${API}/api/projects/${gone}`, {method:'DELETE'});
+  const gone = currentName, epoch = sessionEpoch;
+  await saveChain;
+  if (epoch !== sessionEpoch) return;
+  stopRun();
+  if (runTask) await runTask;
+  if (epoch !== sessionEpoch) return;
+  try {
+    let res;
+    for (let attempt=0;attempt<15;attempt++){
+      res = await fetchTimed(`${API}/api/projects/${encodeURIComponent(gone)}`, {method:'DELETE'});
+      if (res.status !== 409) break;
+      await sleep(200);
+    }
+    if (!res.ok) throw new Error((await res.json()).detail || 'Server refused deletion');
+  } catch(e){ toast('error','Delete failed: '+e.message); return; }
+  if (epoch !== sessionEpoch) return;
   clearDraft(gone); localStorage.removeItem('noodle:last');
-  lgraph.clear(); currentName=null; lastSavedJSON=null; setCurrentName(null); setDocState('none');
+  resetProjectSession(); lgraph.clear(); loadingGraph = false;
+  currentName=null; lastSavedJSON=null; setCurrentName(null); setDocState('none');
+  histInit();
   await refreshGraphList();
   toast('success','Deleted “'+gone+'”');
 };
@@ -5875,12 +6110,29 @@ function toast(kind, msg, action){
 
 // generic modal helpers (return a Promise) ------------------------
 function buildModal(html){
+  const previous = document.activeElement;
   const ov=document.createElement('div'); ov.className='modal-overlay open';
-  ov.innerHTML='<div class="modal">'+html+'</div>';
+  ov.innerHTML='<div class="modal" role="dialog" aria-modal="true" tabindex="-1">'+html+'</div>';
+  const dialog = ov.firstElementChild, heading = dialog.querySelector('h3');
+  if (heading){ heading.id = 'modal-'+crypto.randomUUID(); dialog.setAttribute('aria-labelledby',heading.id); }
   document.body.appendChild(ov);
+  const focusable = ()=>Array.from(dialog.querySelectorAll('button:not(:disabled), input, select, textarea, [tabindex="0"]'));
+  setTimeout(()=>{ if(ov.isConnected) (focusable()[0] || dialog).focus(); },0);
   ov.addEventListener('click', e=>{ if(e.target===ov) close('cancel'); });
-  let resolver; const p=new Promise(r=>resolver=r);
-  function close(v){ ov.remove(); resolver(v); }
+  ov.addEventListener('keydown', e=>{
+    e.stopPropagation();
+    if(e.key==='Escape'){ e.preventDefault(); close('cancel'); }
+    if(e.key==='Tab'){
+      const list=focusable(), first=list[0]||dialog, last=list[list.length-1]||dialog;
+      if(e.shiftKey && (document.activeElement===first || document.activeElement===dialog)){ e.preventDefault(); last.focus(); }
+      else if(!e.shiftKey && (document.activeElement===last || document.activeElement===dialog)){ e.preventDefault(); first.focus(); }
+    }
+  });
+  let resolver, closed=false; const p=new Promise(r=>resolver=r);
+  function close(v){
+    if(closed) return; closed=true; ov.remove();
+    if(previous && previous.isConnected) previous.focus(); resolver(v);
+  }
   return {ov, close, p};
 }
 function confirmModal(title, body, buttons){
@@ -5889,7 +6141,7 @@ function confirmModal(title, body, buttons){
   for(const b of buttons){ const el=document.createElement('button');
     el.className='tb-btn '+(b.cls==='primary'?'primary':b.cls==='danger'?'danger':'');
     el.textContent=b.label; el.onclick=()=>m.close(b.id); bar.appendChild(el); }
-  return m.p;
+  return m.p.then(v => (v === 'cancel' || v == null) ? null : v);
 }
 function promptModal(title, label, def){
   const m=buildModal(`<h3>${title}</h3><p>${label}</p>`+
@@ -5900,7 +6152,7 @@ function promptModal(title, label, def){
   m.ov.querySelector('#__pc').onclick=()=>m.close(null);
   m.ov.querySelector('#__po').onclick=()=>m.close(inp.value.trim());
   inp.addEventListener('keydown',e=>{ if(e.key==='Enter')m.close(inp.value.trim()); if(e.key==='Escape')m.close(null); });
-  return m.p;
+  return m.p.then(v=>v === 'cancel' ? null : v);
 }
 function showRestoreModal(name, d){
   const cur = JSON.parse(lastSavedJSON), dr = JSON.parse(d.json);
@@ -6168,8 +6420,10 @@ function refreshHealthText(){
 async function pollHealth(){
   if (restarting) return;
   try{
-    const r=await fetch(`${API}/api/system/health`,{cache:'no-store'});
-    backendOnline = r.ok; setHealth(r.ok?'online':'offline');
+    const r=await fetchTimed(`${API}/api/system/health`,{cache:'no-store'}, 3000);
+    const state = r.ok ? await r.json() : {};
+    backendOnline = r.ok; setHealth(r.ok ? (state.busy || state.queued ? 'busy' : 'online') : 'offline');
+    if (state.queued) document.getElementById('health').title = `Backend busy · ${state.queued} queued`;
   }catch(_){ backendOnline=false; setHealth('offline'); }
   refreshHealthText();
 }
@@ -6234,7 +6488,9 @@ function paletteCommands(){
     {ic:'⧉', label:'Toggle perspective / orthographic', k:'O', run:()=>toggleProjection()},
     {ic:'◎', label:'Isolate selected shapes', k:'I', run:()=>toggleIsolate()},
     {ic:'📁', label:'Open file library', k:'', run:()=>{ location.href='/library'; }},
-    {ic:'⬇', label:'Export STEP', k:'', run:()=>exportStep()},
+    {ic:'📦', label:'Export everything visible (STEP+STL zip)', k:'', run:()=>exportStep('bundle')},
+    {ic:'⬇', label:'Export STEP (result)', k:'', run:()=>exportStep('step')},
+    {ic:'⬇', label:'Export…', k:'', run:()=>exportStep()},
     {ic:'⛌', label:'Open backend console', k:'', run:()=>openConsole()},
     {ic:'⟳', label:'Restart backend…', k:'', run:()=>confirmRestart()},
     {ic:'🐞',label:'Send feedback / report…', k:'', run:()=>openFeedback()},
@@ -6590,12 +6846,14 @@ function syncSaved(payload, version){
   if (version){ sync.version = version; sync.baseRaw = _clone(payload); sync.name = currentName; }
   sync.needsWrite = false;
 }
-async function syncOnStaleSave(res, retry){
+// A 409 on save: merge the disk version in. True = merged cleanly, and the
+// queued write in persistToServer saves the merged canvas again (bounded there).
+async function syncOnStaleSave(res){
   const body = await res.json().catch(()=>({}));
   const d = body.detail || {};
   setDocState('dirty');
   const ok = d.graph ? await syncPull(currentName, {version: d.version, graph: d.graph}) : false;
-  if (ok && !sync.conflicts.length && retry < 2) return persistToServer(retry + 1);
+  if (ok && !sync.conflicts.length) return true;
   if (!ok) scheduleServerSave();              // busy right now: try again shortly
   return false;
 }
@@ -6664,7 +6922,7 @@ async function syncPull(name, given){
     rebaseHistory(m.ops);
     if (wasDirty || m.conflicts.length){
       lastSavedJSON = JSON.stringify(m.base_next);   // what is on disk, in our spelling
-      _dirtySeen = null;                             // let checkDirty re-arm the autosave
+      lastObservedJSON = null;                       // let checkDirty re-arm the autosave
     } else {
       lastSavedJSON = JSON.stringify(toGraphJSON(name));
       clearDraft(name); setDocState('saved');
@@ -6886,7 +7144,7 @@ function resolveConflicts(list, takeTheirs){
   }
   sync.conflicts = sync.conflicts.filter(c => !list.includes(c));
   renderConflicts();
-  if (!sync.conflicts.length){ _dirtySeen = null; scheduleServerSave(); scheduleLive(); }
+  if (!sync.conflicts.length){ lastObservedJSON = null; scheduleServerSave(); scheduleLive(); }
 }
 
 
@@ -6959,6 +7217,22 @@ document.addEventListener('keydown', e=>{
 // ── boot ──
 (async function(){
   initGraph();
+  const tabs = Array.from(document.querySelectorAll('.tab'));
+  tabs.forEach((tab,i)=>{
+    tab.setAttribute('role','tab'); tab.setAttribute('aria-controls','body-'+tab.dataset.tab);
+    tab.setAttribute('aria-selected',String(i===0)); tab.tabIndex=i===0?0:-1;
+    const panel=document.getElementById('body-'+tab.dataset.tab); panel.setAttribute('role','tabpanel');
+    tab.addEventListener('keydown',e=>{
+      let n=i;
+      if(e.key==='ArrowRight') n=(i+1)%tabs.length;
+      else if(e.key==='ArrowLeft') n=(i+tabs.length-1)%tabs.length;
+      else if(e.key==='Home') n=0;
+      else if(e.key==='End') n=tabs.length-1;
+      else if(e.key!=='Enter' && e.key!==' ') return;
+      e.preventDefault(); tabs[n].click(); tabs[n].focus();
+    });
+  });
+  document.querySelectorAll('button[title]').forEach(b=>{ if(!b.hasAttribute('aria-label')) b.setAttribute('aria-label',b.title); });
   // Never let a viewport failure (e.g. WebGL unavailable) block node registration
   // or graph editing — the editor must stay usable even without the 3D preview.
   try { initViewer(); } catch(e){ log('3D viewer disabled: '+(e.message||e), 'err'); }
@@ -6966,34 +7240,40 @@ document.addEventListener('keydown', e=>{
   document.querySelectorAll('.js-cost-btn').forEach(b=>b.classList.toggle('on', showCost));
   setHealth('busy'); setDocState('none');
   try{
-    // wire-type compatibility from the backend cast registry (single source of
-    // truth); falls back to the literal INPUT_ACCEPTS if the endpoint is absent.
-    try{
-      const wt = await (await fetch(`${API}/api/wiretypes`)).json();
-      if (wt && wt.input_accepts) INPUT_ACCEPTS = wt.input_accepts;
-    }catch(e){ log('wiretypes: using built-in fallback','err'); }
-    // personal search aliases (projects/_aliases.json) — merged with the
-    // catalog's built-in ones by nodeSearchRows. Absent file = {}, never fatal.
-    try{
-      const ua = await (await fetch(`${API}/api/aliases`)).json();
-      USER_ALIASES = (ua && ua.aliases) || {};
-    }catch(e){ log('aliases: none loaded','err'); }
-    const defs = await (await fetch(`${API}/api/nodes`)).json();
+    const getJSON = async (path, timeout=15000)=>{
+      const res = await fetchTimed(`${API}/api/${path}`, {}, timeout);
+      if (!res.ok) throw new Error('Could not load '+path);
+      return res.json();
+    };
+    const [wt, ua, defs] = await Promise.all([
+      getJSON('wiretypes', 3000).catch(()=>null),
+      getJSON('aliases', 3000).catch(()=>null),
+      getJSON('nodes'), refreshGraphList(),
+    ]);
+    if (wt && wt.input_accepts) INPUT_ACCEPTS = wt.input_accepts;
+    USER_ALIASES = (ua && ua.aliases) || {};
     registerNodes(defs);
     log(`registered ${defs.length} node types`);
-    await refreshGraphList();
     refreshCopilotStatus();
     // open from the landing page (?p=name / ?new=1), else restore last session
     const qs = new URLSearchParams(location.search);
     const want = qs.get('p');
     if (qs.has('new')) { promptNewGraph(); }
-    else if (want && projectNames.includes(want)) { await openGraph(want); }
+    else if (want && projectNames.includes(want)) {
+      await openGraph(want);
+      // ?node=<graph id>: the library's "from node …" link lands on that node
+      const focus = qs.get('node');
+      if (focus) setTimeout(()=>locateNode(focus), 300);
+    }
     else {
       const last = localStorage.getItem('noodle:last');
       if (last && projectNames.includes(last)) await openGraph(last);
     }
     setStatus('ready','ok');
-  }catch(e){ setStatus('init failed','err'); log('init: '+e.message,'err'); }
+  }catch(e){
+    setStatus('init failed','err'); log('init: '+e.message,'err');
+    showBanner('Could not load the editor. <button class="tb-btn" onclick="location.reload()">Retry</button>');
+  }
   // background loops
   setInterval(checkDirty, 1000);
   pollHealth(); setInterval(pollHealth, 4000);

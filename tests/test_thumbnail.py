@@ -98,8 +98,10 @@ def test_the_shot_needs_the_viewport_to_match_what_was_saved():
     screen was computed from the graph now on disk. In Live that is true the
     moment the run lands; outside it, a bare save shoots nothing."""
     assert "lastRunJSON !== lastSavedJSON) return;" in NODES
-    body = NODES.split("window.runGraph = async function()")[1].split("\n};")[0]
-    assert "lastRunJSON = lastSavedJSON;" in body    # set only on a good run
+    body = NODES.split('async function executeCurrentGraph(){')[1].split('window.exportStep =')[0]
+    assert 'lastRunJSON = json;' in body  # bind to THIS run, not a later save
+    assert 'const json = JSON.stringify(toGraphJSON(name));' in body
+    assert 'if (!current() || (data.run_id && data.run_id !== _runId))' in body
 
 
 def test_opening_another_graph_disarms_the_shot():

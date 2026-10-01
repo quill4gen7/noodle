@@ -253,6 +253,7 @@ function apply() {
     for (const l of n.leaves) { const v = !hidden.has(l.key); l.apply(v); any = any || v; }
     n.obj.visible = any;
   }
+  viewer.invalidate();
   const shown = allLeaves().filter(k => !hidden.has(k)).length;
   $('stats').textContent = `${shown}/${allLeaves().length} pezzi visibili` + (sizeTxt ? ' · ' + sizeTxt : '');
   renderList();
@@ -331,6 +332,7 @@ const fmtT = (t, T) => `${(t * T).toFixed(1)} / ${T.toFixed(1)} s`;
 function poseTrack(a, t) {
   a.t = Math.min(Math.max(t, 0), 1);
   poseAnim(a.obj, a.anim, a.t);
+  viewer.invalidate();             // the viewer draws on demand, not every frame
   if (a.el) { a.el.range.value = a.t; a.el.time.textContent = fmtT(a.t, a.T); }
 }
 function poseAll(t) {

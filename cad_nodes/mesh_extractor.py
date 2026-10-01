@@ -688,7 +688,7 @@ def extract_and_write(result, stl_path: str, view_path: str, panels=None,
                     entry = None
                 _cache_put(memo, pck, entry)
             if entry:
-                out[nid] = entry
+                out[nid] = {**entry, "cache_key": pck}  # client can retain unchanged GPU buffers
         if out:
             view["previews"] = out
 

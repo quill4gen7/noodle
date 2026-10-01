@@ -773,7 +773,7 @@ async def wire_types():
 
 
 @app.post("/api/graph/{name}")
-async def save_graph(name: str, graph: dict, base_version: Optional[str] = None):
+async def save_graph(name: str, graph: dict, request: Request, base_version: Optional[str] = None):
     """Create/overwrite a node graph project.
 
     `base_version` (query, or a top-level body key) is the version the writer
@@ -794,6 +794,8 @@ async def save_graph(name: str, graph: dict, base_version: Optional[str] = None)
     param_issues = api.check_params(g)
 
     d = project_dir(name)
+    if request.headers.get('if-none-match') == '*' and (d / 'graph.json').exists():
+        raise HTTPException(409, 'A project with this name already exists')
     try:
         check_base(d / "graph.json", base_version)
     except StaleGraphError as e:
@@ -1169,11 +1171,22 @@ async def execute_graph_project(name: str, run: str | None = None,
     (it shows `code` in its Code tab), so it stays as it was.
 
     Body `{"overrides": {node_id_or_title: {param: value}}}` runs with those
-    values changed in memory only — the saved graph is not touched."""
+    values changed in memory only — the saved graph is not touched. A body that
+    is itself a graph (`nodes`, `connections`) runs THAT snapshot instead of the
+    file on disk: the editor sends exactly what it saved, so a later edit can
+    never slip into this run."""
     d = require_project(name)
-    graph = _load_graph(name)
+    body = body or {}
+    if "nodes" in body:
+        try:
+            graph = Graph.from_dict({k: v for k, v in body.items() if k != "overrides"})
+            graph.validate()
+        except (ValidationError, KeyError, TypeError, ValueError) as e:
+            raise HTTPException(400, f"Invalid graph: {e}") from e
+    else:
+        graph = _load_graph(name)
     try:
-        extra = api.apply_overrides(graph, (body or {}).get("overrides"))
+        extra = api.apply_overrides(graph, body.get("overrides"))
     except (ValueError, KeyError) as e:
         raise HTTPException(400, str(e.args[0] if isinstance(e, KeyError) else e)) from e
     logger.info("execute graph '%s' (%d nodes)", name, len(graph.nodes))

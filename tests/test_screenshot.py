@@ -202,6 +202,8 @@ def test_the_shot_page_never_writes_the_graph():
     runs the graph ON DISK, so skipping the save is also more correct."""
     import pathlib
     src = (pathlib.Path(__file__).parent.parent / "webui" / "nodes.html").read_text()
-    assert "if (!window.__noodleShot) await window.saveGraph();" in src
+    body = src.split('async function executeCurrentGraph(){')[1].split('window.exportStep =')[0]
+    assert 'if (!window.__noodleShot && !(await persistToServer(json)))' in body
+    assert 'body:window.__noodleShot ? undefined : json' in body
     # and the flag is still stamped before the page loads
     assert "window.__noodleShot = true;" in inspect.getsource(screenshot)
