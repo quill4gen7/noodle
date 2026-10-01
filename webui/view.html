@@ -83,6 +83,17 @@
   #tl-t{flex:1;min-width:60px;accent-color:var(--accent);height:var(--tap);margin:0;touch-action:none;}
   #tl-time{font:11px var(--mono);color:var(--text-dim);white-space:nowrap;min-width:78px;text-align:right;}
   #tl select{max-width:none;}
+  #tl-tracks{display:none;}
+  #tl-trk[hidden]{display:none;}
+  #tl.tracks{flex-wrap:wrap;}
+  #tl.tracks #tl-tracks{display:flex;flex-direction:column;gap:2px;order:-1;flex-basis:100%;max-height:40vh;overflow:auto;
+    border-bottom:1px solid var(--border);padding-bottom:6px;margin-bottom:2px;}
+  #tl.tracks #tl-trk{background:var(--bg-3);}
+  .trk{display:flex;align-items:center;gap:8px;}
+  .trk .btn{min-width:var(--tap);font-size:12px;}
+  .trk .nm{width:150px;flex:0 0 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;}
+  .trk input{flex:1;min-width:60px;accent-color:var(--accent);margin:0;touch-action:none;}
+  .trk .tm{font:11px var(--mono);color:var(--text-dim);white-space:nowrap;min-width:78px;text-align:right;}
   #vp.has-anim #selbar{bottom:86px;}
   #selbar .nm{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;max-width:40vw;}
   aside{width:300px;border-left:1px solid var(--border);background:var(--bg-1);display:flex;flex-direction:column;min-height:0;}
@@ -143,6 +154,7 @@
     #tl-t{order:5;flex-basis:100%;}
     #tl-time{flex:1;text-align:left;}
     #vp.has-anim #selbar{bottom:112px;}
+    .trk{flex-wrap:wrap;} .trk .nm{flex:1;width:auto;} .trk input{order:5;flex-basis:100%;}
   }
 </style>
 </head>
@@ -167,9 +179,11 @@
   <main>
     <div id="vp"><canvas id="c" tabindex="0"></canvas><div id="stats"></div><div id="msg"></div>
       <div id="tl" hidden>
+        <div id="tl-tracks"></div>
         <button class="btn" id="tl-play" aria-label="Riproduci" title="Riproduci / pausa (spazio)">▶</button>
         <input type="range" id="tl-t" min="0" max="1" step="0.001" value="0" aria-label="Timeline">
         <span id="tl-time"></span>
+        <button class="btn" id="tl-trk" title="Uno slider per ogni animazione: riproducile una alla volta, nell'ordine che vuoi" hidden>≡ Tracce</button>
         <select id="tl-mode" title="Come ripete">
           <option value="pingpong">⇆ andata e ritorno</option>
           <option value="loop">↻ ciclo</option>
@@ -270,6 +284,9 @@ function writeHash() {
     if (clock.playing) ps.push('play=1');
     else ps.push('t=' + (+clock.t.toFixed(3)));
     if (clock.mode !== clock.defaultMode) ps.push('mode=' + clock.mode);
+    const off = anims.filter(a => Math.abs(a.t - clock.t) > 5e-4);
+    if (off.length && !clock.playing) ps.push('tt=' + off.map(a => `${a.id}:${+a.t.toFixed(3)}`).join(','));
+    if ($('tl').classList.contains('tracks') && !off.length) ps.push('tracks=1');
   }
   history.replaceState(null, '', location.pathname + (ps.length ? '#' + ps.join('&') : ''));
 }
@@ -287,31 +304,56 @@ function readHash() {
 // A generation of a graph with Animate / Drop nodes carries each movement as a
 // plan in its previews (the same `anim` the editor scrubs at 60fps): a Drop's
 // fall, a collide scene's keyframes, an Animate's keyframes — a lid opening, a
-// drawer sliding out. Here ONE clock drives all of them, exactly as one Number
-// Slider wired into several `t` sockets does in the editor, through the same
-// shared poseAnim(). So one link replaces "a link with the lid open and one with
-// it closed": the part moves between the two, and you can stop it anywhere.
+// drawer sliding out. So one link replaces "a link with the lid open and one
+// with it closed": the part moves between the two, and you can stop it anywhere.
+//
+// Every movement is a TRACK with its own `t` and its own slider (the ≡ Tracce
+// panel), and the master slider moves them all together, as one Number Slider
+// wired into several `t` sockets does in the editor. The tracks exist because
+// chaining several movements into ONE perfectly timed sequence (lid opens, head
+// folds, lid closes) is exactly what an agent got wrong on walle: it had to pad
+// every clock with `hold` so they lined up, and a single misjudged delay made the
+// head move through a closed lid. With a slider per track the user plays the
+// sequence by hand — open the lid, fold the head, close the lid — and every
+// track still replays through the same shared poseAnim().
 //   t     — 0..1 on every plan's own normalised timeline (as the engine's `t`)
+//   tt    — per-track overrides, `id:t,id:t` (written only when they diverge)
 //   mode  — loop, pingpong (there and back: open ⇄ close) or once
-// Real time: one pass lasts as long as the longest plan (its `T`, in seconds),
-// with a short pause at each end so the two end states can be read.
-const anims = [];                  // [{obj, anim}]
-const clock = { t: 0, playing: false, mode: 'loop', defaultMode: 'loop', dir: 1,
+// Real time: a master pass lasts as long as the longest plan (its `T`, in
+// seconds); a track played alone lasts its own `T`. Short pause at each end so
+// the two end states can be read.
+const anims = [];                  // [{id, title, obj, anim, kinds, T, t, el}]
+const clock = { t: 0, playing: false, only: null, mode: 'loop', defaultMode: 'loop', dir: 1,
                 speed: 1, dur: 3, hold: 0, last: 0 };
 const HOLD_S = 0.6;
+const fmtT = (t, T) => `${(t * T).toFixed(1)} / ${T.toFixed(1)} s`;
 
+function poseTrack(a, t) {
+  a.t = Math.min(Math.max(t, 0), 1);
+  poseAnim(a.obj, a.anim, a.t);
+  if (a.el) { a.el.range.value = a.t; a.el.time.textContent = fmtT(a.t, a.T); }
+}
 function poseAll(t) {
   clock.t = Math.min(Math.max(t, 0), 1);
-  for (const a of anims) poseAnim(a.obj, a.anim, clock.t);
-  $('tl-t').value = clock.t;
-  $('tl-time').textContent = `${(clock.t * clock.dur).toFixed(1)} / ${clock.dur.toFixed(1)} s`;
+  for (const a of anims) poseTrack(a, clock.t);
+  showMaster();
 }
-function setPlaying(on) {
+function showMaster() {
+  $('tl-t').value = clock.t;
+  $('tl-time').textContent = fmtT(clock.t, clock.dur);
+}
+// What the clock is driving: every track (master) or one of them.
+const curT = () => clock.only ? clock.only.t : clock.t;
+const curDur = () => clock.only ? Math.max(clock.only.T, 0.2) : clock.dur;
+function setT(t) { if (clock.only) poseTrack(clock.only, t); else poseAll(t); }
+function setPlaying(on, only = null) {
   clock.playing = on;
-  clock.last = performance.now(); clock.hold = 0;
-  $('tl-play').textContent = on ? '❚❚' : '▶';
-  $('tl-play').setAttribute('aria-label', on ? 'Pausa' : 'Riproduci');
-  if (on && clock.mode !== 'pingpong' && clock.t >= 1) poseAll(0);   // replay from the start
+  clock.only = on ? only : null;
+  clock.last = performance.now(); clock.hold = 0; clock.dir = 1; clock.jump = false;
+  $('tl-play').textContent = on && !only ? '❚❚' : '▶';
+  $('tl-play').setAttribute('aria-label', on && !only ? 'Pausa' : 'Riproduci');
+  for (const a of anims) if (a.el) a.el.play.textContent = on && only === a ? '❚❚' : '▶';
+  if (on && clock.mode !== 'pingpong' && curT() >= 1) setT(0);      // replay from the start
   writeHash();
 }
 function tick(now) {
@@ -321,26 +363,46 @@ function tick(now) {
   // down (capped so a tab coming back from the background does not jump).
   const dt = Math.min((now - clock.last) / 1000, 0.5); clock.last = now;
   if (clock.hold > 0) { clock.hold -= dt; return; }
-  let t = clock.t + clock.dir * dt * clock.speed / clock.dur;
+  let t = curT() + clock.dir * dt * clock.speed / curDur();
   if (t >= 1 || t <= 0) {
     t = t >= 1 ? 1 : 0;
-    if (clock.mode === 'once') { poseAll(t); setPlaying(false); return; }
+    if (clock.mode === 'once') { setT(t); setPlaying(false); return; }
     if (clock.mode === 'pingpong') clock.dir = -clock.dir;
-    else if (t === 1) { poseAll(1); clock.hold = HOLD_S; clock.t = 0; clock.jump = true; return; }
+    else if (t === 1) { setT(1); clock.hold = HOLD_S; clock.jump = true; return; }
     clock.hold = HOLD_S;
   }
   if (clock.jump) { clock.jump = false; t = 0; }
-  poseAll(t);
+  setT(t);
 }
 
+function renderTracks() {
+  const box = $('tl-tracks'); box.innerHTML = '';
+  for (const a of anims) {
+    const row = document.createElement('div');
+    row.className = 'trk';
+    row.innerHTML = `<button class="btn" aria-label="Riproduci solo questa" title="Riproduci solo questa traccia">▶</button>
+      <span class="nm" title="${esc(a.id)}">${esc(a.title)}</span>
+      <input type="range" min="0" max="1" step="0.001" aria-label="${esc(a.title)}">
+      <span class="tm"></span>`;
+    const [play, , range, time] = row.children;
+    a.el = { play, range, time };
+    play.onclick = () => setPlaying(!(clock.playing && clock.only === a), a);
+    range.addEventListener('input', e => { if (clock.playing) setPlaying(false); poseTrack(a, +e.target.value); });
+    range.addEventListener('change', writeHash);
+    poseTrack(a, a.t);
+    box.appendChild(row);
+  }
+}
 function initTimeline(view) {
   for (const n of nodes) {
     const anim = (view.previews[n.id] || {}).anim || null;
     const bodies = n.obj.userData.isScene
       ? n.obj.children.map(c => c.userData.anim).filter(a => a && a.kind === 'keys') : [];
     if (!anim && !bodies.length) continue;
-    anims.push({ obj: n.obj, anim, kinds: bodies.length ? 'scene' : (anim.kind || 'drop'),
-                 T: Math.max(0, ...[anim, ...bodies].map(a => (a && a.T) || 0)) });
+    const T = Math.max(0, ...[anim, ...bodies].map(a => (a && a.T) || 0));
+    const baked = anim && anim.t != null ? anim.t : ((bodies[0] && bodies[0].t != null) ? bodies[0].t : 1);
+    anims.push({ id: n.id, title: n.title, obj: n.obj, anim, T, t: baked, baked,
+                 kinds: bodies.length ? 'scene' : (anim.kind || 'drop') });
   }
   if (!anims.length) return;
   clock.dur = Math.min(Math.max(Math.max(...anims.map(a => a.T)) || 3, 0.5), 60);
@@ -351,19 +413,27 @@ function initTimeline(view) {
   const mode = hashParam('mode');
   clock.mode = ['loop', 'pingpong', 'once'].includes(mode) ? mode : clock.defaultMode;
   $('tl-mode').value = clock.mode;
+  renderTracks();
   // Start where the engine baked it, unless the link says otherwise.
-  const baked = (anims[0].anim && anims[0].anim.t != null) ? anims[0].anim.t
-    : ((anims[0].obj.children.find(c => c.userData.anim) || { userData: { anim: { t: 1 } } }).userData.anim.t);
   const ht = parseFloat(hashParam('t'));
-  poseAll(Number.isFinite(ht) ? ht : (hashParam('play') ? 0 : baked));
+  poseAll(Number.isFinite(ht) ? ht : (hashParam('play') ? 0 : anims[0].baked));
+  const tt = hashParam('tt');
+  if (tt) for (const kv of tt.split(',')) {
+    const [id, v] = kv.split(':'); const a = anims.find(x => x.id === id);
+    if (a && Number.isFinite(parseFloat(v))) poseTrack(a, parseFloat(v));
+  }
+  // one track needs no track panel: the master slider IS its slider
+  $('tl-trk').hidden = anims.length < 2;
+  if (anims.length > 1 && (tt || hashParam('tracks') === '1')) $('tl').classList.add('tracks');
   $('vp').classList.add('has-anim');
   $('tl').hidden = false;
   if (hashParam('play') === '1') setPlaying(true);
   requestAnimationFrame(tick);
 }
-$('tl-play').onclick = () => setPlaying(!clock.playing);
+$('tl-play').onclick = () => setPlaying(!(clock.playing && !clock.only));
 $('tl-t').addEventListener('input', e => { if (clock.playing) setPlaying(false); poseAll(+e.target.value); });
 $('tl-t').addEventListener('change', writeHash);
+$('tl-trk').onclick = () => { $('tl').classList.toggle('tracks'); writeHash(); };
 $('tl-mode').onchange = e => { clock.mode = e.target.value; clock.dir = 1; writeHash(); };
 $('tl-speed').onchange = e => { clock.speed = +e.target.value; };
 
@@ -451,9 +521,10 @@ function showAll() { hidden.clear(); apply(); }
 function frameVisible() {
   const box = new THREE.Box3();
   if (anims.length) {
-    const keep = clock.t;
+    const keep = anims.map(a => a.t), keepT = clock.t;
     for (let i = 0; i <= 8; i++) { poseAll(i / 8); box.union(visibleBox()); }
-    poseAll(keep);
+    clock.t = keepT; showMaster();
+    anims.forEach((a, i) => poseTrack(a, keep[i]));
   } else box.copy(visibleBox());
   if (!box.isEmpty()) viewer.frame(box);
 }

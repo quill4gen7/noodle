@@ -75,3 +75,23 @@ def test_syntax_and_unassigned_out():
     assert syn["node"] == "a" and syn["line"] == 1
     un = [x for x in f if x["code"] == "cb_out_unassigned"]
     assert [x["output"] for x in un] == ["ghost"]           # 'lid' is a dict key
+
+
+def test_animate_fed_by_animate_is_flagged():
+    """walle: Animate(open) → Animate(close) was meant as a sequence; it is the
+    closed lid swinging into the body. Two Animates side by side are fine."""
+    def g(chained):
+        return Graph.from_dict({"name": "t", "nodes": [
+            {"id": "b", "type": "Box", "params": {}},
+            {"id": "m", "type": "ContainerMotion", "params": {}},
+            {"id": "a1", "type": "Animate", "params": {}},
+            {"id": "a2", "type": "Animate", "params": {}}],
+            "connections": [
+            {"id": "c1", "from_node": "b", "from_socket": "result", "to_node": "a1", "to_socket": "shape"},
+            {"id": "c2", "from_node": "a1" if chained else "b", "from_socket": "result",
+             "to_node": "a2", "to_socket": "shape"},
+            {"id": "c3", "from_node": "m", "from_socket": "result", "to_node": "a1", "to_socket": "motion"},
+            {"id": "c4", "from_node": "m", "from_socket": "result", "to_node": "a2", "to_socket": "motion"}]})
+    (f,) = lint_graph(g(True))
+    assert (f["code"], f["level"], f["node"], f["upstream"]) == ("animate_chain", "warning", "a2", "a1")
+    assert lint_graph(g(False)) == []

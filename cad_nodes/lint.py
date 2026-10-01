@@ -16,6 +16,12 @@ Each finding: {"level": "error"|"warning"|"info", "code", "node", "message", …
                      value that runs is NOT the one written in the code; also
                      overrides that are dead (param wired, or no longer declared).
   cb_out_unassigned  a `#@out` the code never assigns (the socket will be None).
+  animate_chain      an Animate fed by another Animate. It does NOT play the two
+                     in sequence: the downstream one moves its input FROZEN at
+                     the upstream's own `t`, and only the last plan is replayed —
+                     "open, then close" becomes "stay closed, then swing into
+                     the body" (walle's lid). One Animate per moving part; the
+                     /view player gives each its own slider.
 """
 
 from __future__ import annotations
@@ -83,6 +89,18 @@ def lint_graph(graph: Graph) -> list[dict]:
     out: list[dict] = []
     by_id = {n.id: n for n in graph.nodes}
     for node in graph.nodes:
+        if node.type == "Animate":
+            for (src_id, _sock) in graph.inputs_of(node.id).get("shape", []):
+                src = by_id.get(src_id)
+                if src is not None and src.type == "Animate":
+                    out.append({"level": "warning", "code": "animate_chain",
+                                "node": node.id, "upstream": src_id,
+                                "message": f"Animate {node.id} is fed by Animate {src_id}: "
+                                           "they do not play in sequence — this one moves "
+                                           f"{src_id}'s result frozen at {src_id}'s own t, "
+                                           "and only this plan is replayed. Use ONE Animate "
+                                           "per moving part, wired from the part itself; "
+                                           "the viewer gives each its own slider."})
         if node.type != "CodeBlock":
             continue
         code = (node.params or {}).get("code") or ""

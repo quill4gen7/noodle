@@ -142,3 +142,17 @@ def test_the_ui_is_revalidated_so_it_is_never_half_old_half_new():
     mw = SERVER.split("async def _revalidate_ui(")[1].split("\n\n")[0]
     assert '"/static/"' in mw and '"/nodes"' in mw and '"/view/"' in mw
     assert '"no-cache"' in mw
+
+
+def test_every_movement_has_its_own_track():
+    """A sequence the agent must choreograph by padding clocks is exactly what
+    went wrong on walle. Each plan is a track with its own t, slider and ▶; the
+    master slider still moves them all, and a per-track pose rides the hash."""
+    assert 'id="tl-tracks"' in VIEW and 'id="tl-trk"' in VIEW
+    body = VIEW.split("function poseTrack(")[1].split("\n}")[0]
+    assert "poseAnim(a.obj, a.anim, a.t)" in body
+    assert "poseTrack(a, clock.t)" in VIEW.split("function poseAll(")[1].split("\n}")[0]
+    assert "hashParam('tt')" in VIEW and "'tt='" in VIEW
+    # framing samples the whole movement, then puts EVERY track back where it was
+    frame = VIEW.split("function frameVisible(")[1].split("\n}")[0]
+    assert "poseTrack(a, keep[i])" in frame

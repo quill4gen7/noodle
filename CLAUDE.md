@@ -1595,4 +1595,14 @@ result while the workflow moves on.
   wall time (dt capped at 0.5s): a slow device skips frames rather than slowing the
   motion — the glass jar runs at ~1.7fps on SwiftShader, fine on a real GPU.
   `api.snapshot` reports `timeline: {seconds}` and marks `animated` pieces.
+- **One track per movement (≡ Tracce).** Every animated node is also a TRACK
+  with its own `t`, slider and ▶ (played alone, over its own `T`); the master
+  slider still moves them all. Why: choreographing a sequence on one clock
+  (`delay` + `hold` arithmetic) is what an agent got wrong on `walle` — it chained
+  Animate(open) → Animate(close), which does NOT sequence: the downstream one
+  moves its input frozen at the upstream's `t`, and only the last plan replays,
+  so the lid stayed shut and the head folded through it. Now the agent makes one
+  Animate per moving part and the USER plays the order; `lint.py` flags the chain
+  (`animate_chain`). Hash: `tt=<id>:<t>,…` (only tracks that differ from the
+  master `t`), `tracks=1` (panel open). Framing restores every track's own `t`.
   Example project: `projects/cassone-demo` (a chest whose lid opens on a hinge).

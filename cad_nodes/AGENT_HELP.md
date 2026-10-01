@@ -72,8 +72,15 @@ More detail on demand — `cad_help(topic=...)` / `GET /api/agent/help?topic=...
    and the viewer shows a ▶ player: only-Animate scenes default to there-and-
    back (open ⇄ close), anything with a Drop loops. Link params:
    `#play=1` autoplays, `#t=0.5` opens at that point, `#mode=pingpong|loop|once`;
-   combine with `&`: `…/g3#hide=n2&play=1`. Several Animates share one clock,
-   so pad short ones with `hold` to line them up (see topic `print`).
+   combine with `&`: `…/g3#hide=n2&play=1`.
+   **Do not choreograph a sequence** (lid opens, head folds, lid closes):
+   give each moving part ONE Animate with ONE Motion, wired from the part
+   itself, `t` = 0 at rest. The player shows a slider and a ▶ per Animate
+   (≡ Tracce), so the user plays them in whatever order they like — no
+   `delay`/`hold` arithmetic to get right. Never feed an Animate into another
+   Animate: the second moves the first's result FROZEN at its `t`, it does not
+   play after it (lint `animate_chain`). Link a pose of the tracks with
+   `#tt=<id>:0.6,<id>:1` (per-track t) and `#tracks=1` (panel open).
 6. **Tidy and export**: `cad_arrange` lays the whole graph out (dependency
    order, real node sizes, no overlaps, named sliders gathered in a parameter
    panel on the left) — you never compute positions yourself. Then
@@ -375,7 +382,9 @@ Most take the `mesh` lane; a solid wired in is tessellated automatically.
 - `Animate(shape, motion, t)` — the same Motion with NO physics: a lid
   unscrewing (`move z 12` + `rotate z 720`), a drawer sliding out. `hold` pads
   the timeline with stillness so one `t` slider can drive a short and a long
-  motion together — pad the short clock, never rescale the wire.
+  motion together — pad the short clock, never rescale the wire. You rarely
+  need it: /view gives every Animate its own slider, so independent parts need
+  no common clock. Never chain Animate → Animate (lint `animate_chain`).
 
 Examples in the gallery: `print-orientation`, `container-tilt`,
 `jar-cap-unscrew`, `threaded-jar-pour`, `galton-board`.
