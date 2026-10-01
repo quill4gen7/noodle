@@ -92,5 +92,8 @@ def check_base(path: Path, base_version: Optional[str]) -> Optional[str]:
 def write_graph(path: Path, text: str) -> str:
     """Write graph.json and return the version of exactly what was written."""
     data = text.encode("utf-8")
-    Path(path).write_bytes(data)
+    # Atomic (temp file + rename): a reader, or a crash mid-write, never sees a
+    # half-written graph.json.
+    from .job_files import atomic_write
+    atomic_write(Path(path), data)
     return version_of_bytes(data)

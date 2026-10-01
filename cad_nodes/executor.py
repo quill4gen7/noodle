@@ -13,12 +13,15 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
 from pathlib import Path
 
+from . import export_index
 from .graph import Graph
+from .job_files import atomic_copy, atomic_write, cleanup_runs, run_dir
 from .transpiler import Transpiler, transpile
 
 # Marker the transpiler appends to each statement (see transpiler._annot).
@@ -135,6 +138,9 @@ _EPILOGUE = """
 import sys as _sys
 _sys.path.insert(0, {repo_root!r})
 from cad_nodes.mesh_extractor import extract_and_write
+if globals().get('__PROGRESS_PATH__'):
+    with open(__PROGRESS_PATH__, 'a') as _pf:
+        _pf.write('{{"k":"phase","phase":"preview"}}\\n')
 extract_and_write(__result__, {stl!r}, {view!r}, __panels__, __previews__, {lin}, {ang}, __errors__, __timings__,
                   hashes=globals().get("__hashes__") or {{}}, memo=globals().get("__MEMO__"),
                   cached_nodes=globals().get("__cached__") or {{}})
@@ -149,19 +155,36 @@ _QUALITY = {
 }
 
 
+def _graph_key(graph) -> str | None:
+    try:
+        return export_index.graph_key(graph.to_dict())
+    except Exception:
+        return None      # a missing label never blocks a run
+
+
+def _key_head(graph_key: str | None) -> str:
+    """Name the graph state this run was built from, so an Export node's `_out`
+    can stamp its line in exports/index.jsonl (cad_nodes/export_index.py).
+    Same guarded-global idiom as __PROGRESS_PATH__."""
+    return f"__GRAPH_KEY__ = {graph_key!r}\n" if graph_key else ""
+
+
 def build_script(code: str, stl_path: Path, view_path: Path,
                  quality: str = "live", write_stl: bool = True,
-                 progress_path: Path | None = None) -> str:
+                 progress_path: Path | None = None,
+                 graph_key: str | None = None) -> str:
     lin, ang = _QUALITY.get(quality, _QUALITY["live"])
     # The PREAMBLE guards __PROGRESS_PATH__ with try/except NameError (same idiom
     # as __MEMO__), so assigning it *before* the transpiled code sticks: the node
     # _ev() calls then append to this file while the run is still going, and the
     # editor tails it. No header = progress is a no-op.
-    head = f"__PROGRESS_PATH__ = {str(progress_path)!r}\n" if progress_path else ""
+    head = (f"__PROGRESS_PATH__ = {str(progress_path)!r}\n"
+            "with open(__PROGRESS_PATH__, 'a') as _pf:\n"
+            "    _pf.write('{\"k\":\"phase\",\"phase\":\"running\"}\\n')\n") if progress_path else ""
     # write_stl=False (live runs) skips the STL export in the epilogue — an empty
     # path makes extract_and_write no-op it. The STL is regenerated on demand by
     # the download/render routes, saving ~0.9s on every live re-run.
-    return head + code + _EPILOGUE.format(
+    return _key_head(graph_key) + head + code + _EPILOGUE.format(
         repo_root=_REPO_ROOT, stl=(str(stl_path) if write_stl else ""),
         view=str(view_path), lin=lin, ang=ang,
     )
@@ -185,19 +208,28 @@ class WarmWorker:
     def __init__(self):
         self._proc = None
         self._lock = threading.Lock()
+        self._state_lock = threading.Lock()
+        self._queued = 0
+        self._busy = False
+
+    def status(self) -> dict:
+        with self._state_lock:
+            return {"busy": self._busy, "queued": self._queued}
 
     def _alive(self) -> bool:
-        return self._proc is not None and self._proc.poll() is None
+        proc = self._proc
+        return proc is not None and proc.poll() is None
 
     def _kill(self) -> None:
         if self._proc is not None:
             try:
                 self._proc.kill()
+                self._proc.wait(timeout=5)
             except Exception:
                 pass
             self._proc = None
 
-    def _read_sentinel(self, timeout: float):
+    def _read_sentinel(self, timeout: float, cancel_path: Path | None = None):
         """Read worker stdout until a SENTINEL line; ignore other noise.
         Returns the parsed dict, or None on timeout."""
         box: dict = {}
@@ -214,21 +246,30 @@ class WarmWorker:
 
         t = threading.Thread(target=reader, daemon=True)
         t.start()
-        t.join(timeout)
-        if t.is_alive():
-            return None
+        deadline = time.monotonic() + max(0, timeout)
+        while t.is_alive():
+            if cancel_path is not None and cancel_path.exists():
+                return {"cancelled": True}
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return None
+            t.join(min(left, 0.1))
         return box.get("v")
 
-    def _spawn(self) -> None:
+    def _spawn(self, timeout: float = 120, cancel_path: Path | None = None) -> None:
         self._proc = subprocess.Popen(
             [sys.executable, "-u", _WORKER_PATH],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL, text=True, cwd=_REPO_ROOT,
         )
-        ready = self._read_sentinel(timeout=120)
-        if not ready or not ready.get("ready"):
-            self._kill()
-            raise RuntimeError("warm worker failed to import build123d")
+        ready = self._read_sentinel(timeout=timeout, cancel_path=cancel_path)
+        if ready and ready.get("ready"):
+            return
+        cancelled = bool(ready and ready.get("cancelled"))
+        self._kill()
+        if cancelled:
+            raise _Cancelled()
+        raise RuntimeError("warm worker failed to import build123d")
 
     def shutdown(self) -> None:
         """Terminate the resident worker, freeing its build123d memory. The next
@@ -236,10 +277,35 @@ class WarmWorker:
         with self._lock:
             self._kill()
 
-    def run(self, script_path: Path, cwd: Path, timeout: float) -> dict:
-        with self._lock:
+    def run(self, script_path: Path, cwd: Path, timeout: float,
+            cancel_path: Path | None = None) -> dict:
+        deadline = time.monotonic() + timeout  # includes queue AND startup
+        with self._state_lock:
+            self._queued += 1
+        acquired = False
+        try:
+            while not acquired:
+                if cancel_path is not None and cancel_path.exists():
+                    return {"cancelled": True}
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    return {"timeout": True, "phase": "queue"}
+                acquired = self._lock.acquire(timeout=min(left, 0.1))
+        finally:
+            with self._state_lock:
+                self._queued -= 1
+        with self._state_lock:
+            self._busy = True
+        try:
+            if cancel_path is not None and cancel_path.exists():
+                return {"cancelled": True}
             if not self._alive():
-                self._spawn()
+                try:
+                    self._spawn(max(0, deadline - time.monotonic()), cancel_path)
+                except _Cancelled:
+                    return {"cancelled": True}
+            if time.monotonic() >= deadline:
+                return {"timeout": True, "phase": "startup"}
             job = json.dumps({"cmd": "run", "script_path": str(script_path),
                               "cwd": str(cwd)})
             try:
@@ -248,11 +314,19 @@ class WarmWorker:
             except (BrokenPipeError, OSError):
                 self._kill()
                 raise
-            res = self._read_sentinel(timeout)
-            if res is None:                 # timed out or crashed mid-job
-                self._kill()
-                return {"timeout": True}
+            res = self._read_sentinel(deadline - time.monotonic(), cancel_path)
+            if res is None or res.get("cancelled"):
+                self._kill()  # only this job owns the worker lock
+                return res or {"timeout": True}
             return res
+        finally:
+            with self._state_lock:
+                self._busy = False
+            self._lock.release()
+
+
+class _Cancelled(Exception):
+    """Internal: spawn aborted because this job's cancel file appeared."""
 
 
 _WORKER = WarmWorker()
@@ -260,7 +334,7 @@ _WORKER = WarmWorker()
 
 def warm_status() -> dict:
     """Current warm-worker mode + whether a resident process is alive."""
-    return {"enabled": _warm_enabled, "alive": _WORKER._alive()}
+    return {"enabled": _warm_enabled, "alive": _WORKER._alive(), **_WORKER.status()}
 
 
 def set_warm(enabled: bool) -> dict:
@@ -358,9 +432,46 @@ def _finalize(code: str, script_text: str, stdout: str, stderr,
     return result
 
 
+_PUBLISH_LOCK = threading.Lock()
+
+
+def _run_script(script_path: Path, cwd: Path, timeout: float,
+                cancel_path: Path | None = None) -> dict:
+    """Shared warm/cold path for preview and exports; bounded and cancellable."""
+    deadline = time.monotonic() + timeout
+    if _warm_enabled:
+        try:
+            return _WORKER.run(script_path, cwd, timeout, cancel_path)
+        except _Cancelled:
+            return {"cancelled": True}
+        except Exception:
+            pass  # failed worker startup/pipe: cold fallback within same budget
+    if cancel_path is not None and cancel_path.exists():
+        return {"cancelled": True}
+    if time.monotonic() >= deadline:
+        return {"timeout": True}
+    with subprocess.Popen([sys.executable, str(script_path)], stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, text=True, cwd=str(cwd)) as proc:
+        while True:
+            if cancel_path is not None and cancel_path.exists():
+                proc.kill()
+                proc.communicate()
+                return {"cancelled": True}
+            left = deadline - time.monotonic()
+            if left <= 0:
+                proc.kill()
+                proc.communicate()
+                return {"timeout": True}
+            try:
+                stdout, stderr = proc.communicate(timeout=min(left, 0.1))
+                return {"stdout": stdout, "error": stderr if proc.returncode else ""}
+            except subprocess.TimeoutExpired:
+                continue
+
+
 def execute_code(code: str, workdir: Path, timeout: int = 120,
                  quality: str = "live", write_stl: bool = True,
-                 run_id: str | None = None) -> dict:
+                 run_id: str | None = None, graph_key: str | None = None) -> dict:
     """Execute already-transpiled code. Uses the warm worker (build123d kept
     loaded) with a fallback to a cold subprocess. Returns a result dict.
 
@@ -369,52 +480,52 @@ def execute_code(code: str, workdir: Path, timeout: int = 120,
 
     run_id names THIS run inside progress.jsonl, so a tailer can tell whose
     events it is reading — see the header line written below."""
+    workdir = workdir.resolve()
     workdir.mkdir(parents=True, exist_ok=True)
-    stl_path = workdir / "output.stl"
-    view_path = workdir / "view.json"
-    script_path = workdir / "_run.py"
-    progress_path = workdir / "progress.jsonl"
-
-    if view_path.exists():
-        view_path.unlink()
-    # Every run opens progress.jsonl with a header line naming itself. That id is
-    # the ONLY thing that distinguishes one run's events from the next one's:
-    # the file lives at a fixed path per project and two warm runs of the same
-    # graph write near-identical bytes, so size, mtime and offset can all agree
-    # across a run boundary. A tailer that watched the size alone missed entire
-    # runs (measured: 5/5 nodes lost on a small graph) — the glow simply never
-    # fired, at random, which is what this header exists to make impossible.
-    header = {"k": "run", "r": run_id or uuid.uuid4().hex, "t": time.time()}
+    run_id = run_id or uuid.uuid4().hex
+    jobdir = run_dir(workdir, run_id)
+    jobdir.mkdir(parents=True, exist_ok=True)
+    # Exclusive claim: retrying an ID may read its progress but cannot overwrite it.
+    with (jobdir / 'claimed').open('x'):
+        pass
+    stl_path = jobdir / "output.stl"
+    view_path = jobdir / "view.json"
+    script_path = jobdir / "_run.py"
+    progress_path = jobdir / "progress.jsonl"
+    # Each run owns its script, view and progress for its entire lifetime,
+    # including queue wait. The root file is only an atomic latest-run pointer
+    # for legacy subscribers and publication, never a shared worker output.
+    header = {"k": "run", "r": run_id, "t": time.time()}
     progress_path.write_text(json.dumps(header) + "\n")
+    with _PUBLISH_LOCK:
+        atomic_write(workdir / "progress.jsonl", json.dumps(header) + "\n")
+    with progress_path.open('a') as f:
+        f.write(json.dumps({"k": "phase", "phase": "queued"}) + '\n')
 
     script_text = build_script(code, stl_path, view_path, quality, write_stl,
-                               progress_path=progress_path)
+                               progress_path=progress_path, graph_key=graph_key)
     script_path.write_text(script_text)
 
     try:
-        # --- warm path ---------------------------------------------------
-        if _warm_enabled:
-            try:
-                res = _WORKER.run(script_path, workdir, timeout)
-                if res.get("timeout"):
-                    return _timeout_result(code, timeout)
-                stderr = (res.get("error") or "").strip() or None
-                return _finalize(code, script_text, res.get("stdout", ""),
-                                 stderr, view_path, stl_path)
-            except Exception:
-                pass  # worker unavailable → fall back to a cold subprocess
-
-        # --- cold fallback -----------------------------------------------
-        try:
-            proc = subprocess.run(
-                [sys.executable, str(script_path)],
-                capture_output=True, text=True, timeout=timeout, cwd=str(workdir),
-            )
-        except subprocess.TimeoutExpired:
+        res = _run_script(script_path, workdir, timeout, jobdir / 'cancel')
+        if res.get("timeout"):
             return _timeout_result(code, timeout)
-
-        stderr = proc.stderr if proc.returncode != 0 else None
-        return _finalize(code, script_text, proc.stdout, stderr, view_path, stl_path)
+        if res.get("cancelled"):
+            return {"success": False, "cancelled": True, "code": code,
+                    "errors": "Execution cancelled", "view": None}
+        stderr = (res.get("error") or "").strip() or None
+        result = _finalize(code, script_text, res.get("stdout", ""), stderr, view_path, stl_path)
+        result['run_id'] = run_id
+        with _PUBLISH_LOCK:
+            try:
+                latest = json.loads((workdir / 'progress.jsonl').read_text()).get('r')
+            except (OSError, ValueError):
+                latest = None  # project removed externally
+            if latest == run_id and result['success']:
+                for source in (view_path, stl_path):
+                    if source.exists():
+                        atomic_copy(source, workdir / source.name)
+        return result
     finally:
         # THE RUN SAYS WHEN IT IS OVER, so the progress stream has a definite end
         # and can hang up by itself. In a `finally` because a crashed or timed-out
@@ -434,6 +545,9 @@ def execute_code(code: str, workdir: Path, timeout: int = 120,
                 f.flush()
         except OSError:
             pass
+        if jobdir.exists():
+            (jobdir / 'complete').touch()
+        cleanup_runs(workdir)
 
 
 def execute_graph(graph: Graph, workdir: Path, timeout: int = 120,
@@ -444,7 +558,8 @@ def execute_graph(graph: Graph, workdir: Path, timeout: int = 120,
     cache (shapes AND preview meshes) — only the dirty subtree re-runs."""
     code = transpile(graph, memo=True)
     result = execute_code(code, workdir, timeout=timeout, quality=quality,
-                          write_stl=write_stl, run_id=run_id)
+                          write_stl=write_stl, run_id=run_id,
+                          graph_key=_graph_key(graph))
     # Soft findings (cad_nodes/lint.py) ride along; they never fail a run.
     try:
         from .lint import lint_graph
@@ -486,42 +601,8 @@ def extract_subshapes_for_node(graph: Graph, node_id: str, kind: str,
     # memo=True: right after an execute, the whole graph is warm in the cache,
     # so the picker's re-run costs almost nothing.
     code = transpile(graph, memo=True)
-    out_path = workdir / "subshapes.json"
-    script_path = workdir / "_subshapes.py"
-    if out_path.exists():
-        out_path.unlink()
-    script_path.write_text(code + _SUBSHAPE_EPILOGUE.format(
-        repo_root=_REPO_ROOT, node_id=node_id, kind=kind, out=str(out_path)))
-
-    def _read():
-        if out_path.exists():
-            try:
-                return json.loads(out_path.read_text())
-            except Exception:
-                return None
-        return None
-
-    if _warm_enabled:
-        try:
-            res = _WORKER.run(script_path, workdir, timeout)
-            if not res.get("timeout"):
-                data = _read()
-                if data is not None:
-                    return data
-                return {"success": False, "error": (res.get("error") or "no output")[:600]}
-        except Exception:
-            pass  # fall back to a cold subprocess
-
-    try:
-        proc = subprocess.run([sys.executable, str(script_path)],
-                              capture_output=True, text=True,
-                              timeout=timeout, cwd=str(workdir))
-    except subprocess.TimeoutExpired:
-        return {"success": False, "error": f"timed out after {timeout}s"}
-    data = _read()
-    if data is not None:
-        return data
-    return {"success": False, "error": (proc.stderr or "no output")[:600]}
+    return _run_json_tool(code, workdir, _SUBSHAPE_EPILOGUE, timeout,
+                          node_id=node_id, kind=kind)
 
 
 _TOOL_EPILOGUE = """
@@ -543,43 +624,36 @@ def _run_json(script: str, workdir: Path, stem: str, timeout: int) -> dict:
     """Run a script that ends by writing its answer to `<workdir>/_<stem>.json`
     (the name is passed in as the format field `out`) and return that JSON.
     Warm worker with a cold-subprocess fallback."""
+    workdir = workdir.resolve()
     workdir.mkdir(parents=True, exist_ok=True)
-    out_path = workdir / f"_{stem}.json"
-    script_path = workdir / f"_{stem}.py"
-    if out_path.exists():
-        out_path.unlink()
-    script_path.write_text(script.replace("@@OUT@@", repr(str(out_path))))
-
-    def _read():
+    # Each call gets its own temp dir (as every run gets its own .runs/ dir): two
+    # tools on the same project never read each other's half-written answer.
+    with tempfile.TemporaryDirectory(prefix=f".{stem}-", dir=workdir) as tmp:
+        out_path = Path(tmp) / "result.json"
+        script_path = Path(tmp) / "_run.py"
+        script_path.write_text(script.replace("@@OUT@@", repr(str(out_path))))
+        res = _run_script(script_path, workdir, timeout)
+        if res.get("timeout"):
+            return {"success": False, "error": f"timed out after {timeout}s"}
         if out_path.exists():
             try:
                 return json.loads(out_path.read_text())
             except Exception:
-                return None
-        return None
+                pass
+        return {"success": False, "error": (res.get("error") or "no output")[:600]}
 
-    if _warm_enabled:
-        try:
-            res = _WORKER.run(script_path, workdir, timeout)
-            if res.get("timeout"):
-                return {"success": False, "error": f"timed out after {timeout}s"}
-            data = _read()
-            if data is not None:
-                return data
-            return {"success": False, "error": (res.get("error") or "no output")[:600]}
-        except Exception:
-            pass  # fall back to a cold subprocess
 
-    try:
-        proc = subprocess.run([sys.executable, str(script_path)],
-                              capture_output=True, text=True,
-                              timeout=timeout, cwd=str(workdir))
-    except subprocess.TimeoutExpired:
-        return {"success": False, "error": f"timed out after {timeout}s"}
-    data = _read()
-    if data is not None:
-        return data
-    return {"success": False, "error": (proc.stderr or "no output")[:600]}
+def _run_json_tool(code: str, workdir: Path, epilogue: str, timeout: int, **kwargs) -> dict:
+    workdir = workdir.resolve()
+    workdir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='.tool-', dir=workdir) as tmp:
+        out = Path(tmp) / 'result.json'
+        script = Path(tmp) / '_run.py'
+        script.write_text(code + epilogue.format(repo_root=_REPO_ROOT, out=str(out), **kwargs))
+        res = _run_script(script, workdir, timeout)
+        if not res.get('timeout') and not res.get('error') and out.exists():
+            return json.loads(out.read_text())
+        return {'success': False, 'error': (res.get('error') or 'timeout / no output')[:600]}
 
 
 def _run_slice(code: str, workdir: Path, func: str, kwargs: str,
@@ -753,22 +827,77 @@ def export_graph(graph: Graph, workdir: Path, fmt: str = "step",
         raise ValueError(f"Unsupported export format {fmt!r}; "
                          f"choose from {sorted(_EXPORTERS)}")
     func, ext = _EXPORTERS[fmt]
+    workdir = workdir.resolve()
     workdir.mkdir(parents=True, exist_ok=True)
-    out_path = workdir / f"output.{ext}"
-    script_path = workdir / "_export.py"
-
-    code = transpile(graph)
-    script = code + (
+    cleanup_runs(workdir)
+    code = transpile(graph, memo=True)
+    jobdir = run_dir(workdir, uuid.uuid4().hex)
+    jobdir.mkdir(parents=True)
+    (jobdir / 'claimed').touch()
+    out_path = jobdir / f"output.{ext}"
+    script_path = jobdir / "_export.py"
+    script = _key_head(_graph_key(graph)) + code + (
         f"\n# --- export (injected) ---\n"
         f"from build123d import {func}\n"
+        f"if __result__ is None:\n"
+        f"    raise RuntimeError('the graph has no final result (its last node is an "
+        f"Export/Display node, or it failed) - use Everything visible (STEP+STL zip)')\n"
         f"{func}(__result__, {str(out_path)!r})\n"
     )
     script_path.write_text(script)
 
-    proc = subprocess.run(
-        [sys.executable, str(script_path)],
-        capture_output=True, text=True, timeout=timeout, cwd=str(workdir),
-    )
-    if proc.returncode != 0 or not out_path.exists():
-        raise RuntimeError(f"Export failed:\n{proc.stderr}")
-    return out_path
+    try:
+        res = _run_script(script_path, workdir.resolve(), timeout)
+        if res.get('timeout') or res.get('error') or not out_path.exists():
+            raise RuntimeError(f"Export failed: {res.get('error') or 'timeout / no output'}")
+        atomic_copy(out_path, workdir / out_path.name)
+        return out_path  # immutable file: a concurrent export cannot replace the download
+    finally:
+        (jobdir / 'complete').touch()
+
+
+_BAKE_EPILOGUE = """
+
+# --- bake every previewed node (injected by executor) ---
+import sys as _sys, json as _json
+_sys.path.insert(0, {repo_root!r})
+from cad_nodes.bake import bake_previews as _bake
+_bake(__previews__, __result__, {outdir!r}, {labels!r})
+"""
+
+
+def export_bundle(graph: Graph, workdir: Path, labels: dict | None = None,
+                  timeout: int = 180) -> tuple[Path, dict]:
+    """Bake every PREVIEWED node (what the viewport shows) to STEP + STL and zip
+    them with a manifest.json. Returns (zip path inside the run dir, manifest).
+    The zip is immutable, like export_graph's output: the caller copies it."""
+    import zipfile
+    workdir = workdir.resolve()
+    workdir.mkdir(parents=True, exist_ok=True)
+    cleanup_runs(workdir)
+    code = transpile(graph, memo=True)
+    jobdir = run_dir(workdir, uuid.uuid4().hex)
+    jobdir.mkdir(parents=True)
+    (jobdir / 'claimed').touch()
+    outdir = jobdir / "bake"
+    script_path = jobdir / "_bake.py"
+    script_path.write_text(
+        _key_head(_graph_key(graph)) + code
+        + _BAKE_EPILOGUE.format(repo_root=_REPO_ROOT, outdir=str(outdir),
+                                labels=labels or {}))
+    try:
+        res = _run_script(script_path, workdir, timeout)
+        man_path = outdir / "manifest.json"
+        if res.get('timeout') or res.get('error') or not man_path.exists():
+            raise RuntimeError(f"Bake failed: {(res.get('error') or 'timeout / no output')[-600:]}")
+        manifest = json.loads(man_path.read_text())
+        if not any(n.get("files") for n in manifest.get("nodes", [])):
+            raise RuntimeError("Nothing to export: no previewed node produced a solid, "
+                               "a surface, a mesh or a curve.")
+        zpath = jobdir / "bundle.zip"
+        with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
+            for f in sorted(outdir.iterdir()):
+                z.write(f, f.name)
+        return zpath, manifest
+    finally:
+        (jobdir / 'complete').touch()

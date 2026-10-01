@@ -32,8 +32,9 @@ from cad_nodes import api, catalog, layout
 from cad_nodes.graph import Graph, ValidationError
 from cad_nodes.screenshot import ScreenshotUnavailable
 from cad_nodes.transpiler import transpile, transpile_with_map
-from cad_nodes.executor import execute_graph, export_graph, extract_subshapes_for_node
+from cad_nodes.executor import execute_graph, export_graph, extract_subshapes_for_node, warm_status
 from cad_nodes.store import GraphStore, stamp_agent_tags, validate_graph_id
+from cad_nodes.job_files import atomic_write, progress_file, run_dir
 from cad_nodes.copilot import run_chat, copilot_status
 from cad_nodes import fonts as fontlib
 
@@ -245,7 +246,7 @@ async def off_loop(fn, *args, **kwargs):
 # ---------------------------------------------------------------------------
 @app.get("/health")
 async def health():
-    return {"status": "ok", "version": APP_VERSION}
+    return {"status": "ok", "version": APP_VERSION, **warm_status()}
 
 
 # ---------------------------------------------------------------------------
@@ -259,6 +260,7 @@ async def system_health():
         "version": "0.1.0",
         "uptime_s": round(time.time() - _BOOT_TIME, 1),
         "pid": os.getpid(),
+        **warm_status(),
     }
 
 
@@ -588,6 +590,10 @@ async def list_projects():
 @app.delete("/api/projects/{name}")
 async def delete_project(name: str):
     d = require_project(name)
+    # Do not remove a cancellation marker until the worker acknowledged it.
+    for claim in d.glob('.runs/*/claimed'):
+        if not (claim.parent / 'complete').exists() and time.time() - claim.stat().st_mtime < 300:
+            raise HTTPException(409, 'A run is active or stopping. Retry after it finishes.')
     shutil.rmtree(d)
     return {"status": "deleted"}
 
@@ -791,7 +797,7 @@ async def save_graph(name: str, graph: dict, base_version: Optional[str] = None)
     d.mkdir(parents=True, exist_ok=True)
     stamp_agent_tags(graph.get("nodes", []))  # date the 'To Agent' tags
     version = write_graph(d / "graph.json", json.dumps(graph, indent=2))
-    (d / "meta.json").write_text(json.dumps({
+    atomic_write(d / "meta.json", json.dumps({
         "backend": "nodegraph",
         "description": graph.get("description", ""),
     }, indent=2))
@@ -1171,9 +1177,13 @@ async def execute_graph_project(name: str, run: str | None = None,
         # Live run: skip the STL export (regenerated on demand by /download).
         # Off the event loop — see off_loop() for why every engine call is.
         result = await off_loop(execute_graph, graph, d, write_stl=False, run_id=run)
+    except FileExistsError as e:
+        raise HTTPException(409, 'Run ID already used') from e
     except ValidationError as e:
         logger.error("execute '%s' invalid graph: %s", name, e)
         raise HTTPException(400, str(e)) from e
+    if result.get('cancelled'):
+        raise HTTPException(409, 'Execution cancelled')
     if not result["success"]:
         logger.error("execute '%s' failed: %s", name, result.get("errors") or result.get("error_detail"))
         raise HTTPException(400, {
@@ -1187,12 +1197,13 @@ async def execute_graph_project(name: str, run: str | None = None,
         for nid, err in node_errors.items():
             logger.error("execute '%s' node %s: %s", name, nid, err)
     if lean:
-        return {"status": "executed",
+        return {"status": "executed", "run_id": result.get("run_id"),
                 **api.summarize_execute({**result, **extra},
                                         include_code=include_code)}
     return {
         **extra,
         "status": "executed",
+        "run_id": result.get('run_id'),
         "view": result["view"],
         "code": result["code"],
         "warnings": result.get("warnings", []),
@@ -1204,6 +1215,16 @@ async def execute_graph_project(name: str, run: str | None = None,
         # Always offered — /download regenerates the STL on demand if it's stale.
         "stl": f"/api/projects/{name}/download",
     }
+
+
+@app.post('/api/graph/{name}/runs/{run}/cancel')
+async def cancel_graph_run(name: str, run: str):
+    d = require_project(name)
+    # May arrive before execute: the marker also cancels a job still in transit.
+    job = run_dir(d, run)
+    job.mkdir(parents=True, exist_ok=True)
+    (job / 'cancel').touch()
+    return {'status': 'cancellation requested', 'run_id': run}
 
 
 async def _tail_progress(path: Path, want_run: str | None = None, request: Request | None = None):
@@ -1233,7 +1254,8 @@ async def _tail_progress(path: Path, want_run: str | None = None, request: Reque
     since_beat = 0.0
     # With no run id to wait for (MCP, curl, an older editor), keep the old
     # intent: ignore whatever is already on disk and report the NEXT run.
-    if want_run is None:
+    waiting_next = want_run is None
+    if waiting_next:
         seen_run = _run_id_of(path)
 
     while quiet < _PROGRESS_MAX_IDLE:
@@ -1257,7 +1279,16 @@ async def _tail_progress(path: Path, want_run: str | None = None, request: Reque
             yield ": ping\n\n"
 
         try:
-            lines = path.read_text().splitlines()
+            # Each run writes its own .runs/<id>/progress.jsonl; the project-root
+            # file only names the latest run, so a subscriber with no run id
+            # follows that pointer to the run's own file.
+            active = path
+            if want_run is None:
+                latest = _run_id_of(path) if waiting_next else seen_run
+                if latest:
+                    active = progress_file(path.parent, latest)
+            text = active.read_text()
+            lines = text.splitlines()
         except OSError:
             quiet += 0.05
             continue
@@ -1274,6 +1305,10 @@ async def _tail_progress(path: Path, want_run: str | None = None, request: Reque
             quiet += 0.05
             continue
         run = head.get("r")
+        if waiting_next and run == seen_run:
+            quiet += 0.05
+            continue
+        waiting_next = False
 
         if run != seen_run:          # a different run owns the file now
             if want_run is not None and run != want_run:
@@ -1285,7 +1320,7 @@ async def _tail_progress(path: Path, want_run: str | None = None, request: Reque
 
         # A half-written final line is skipped and picked up whole next poll.
         body = lines[1:]
-        if not path.read_text().endswith("\n") and body:
+        if not text.endswith("\n") and body:
             body = body[:-1]
         if len(body) <= sent:
             quiet += 0.05
@@ -1330,7 +1365,7 @@ async def graph_progress(request: Request, name: str, run: str | None = None):
     """
     d = require_project(name)
     return StreamingResponse(
-        _tail_progress(d / "progress.jsonl", run, request),
+        _tail_progress(progress_file(d, run) if run else d / "progress.jsonl", run, request),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -1462,7 +1497,7 @@ async def get_graph_view(name: str):
     vpath = d / "view.json"
     if not vpath.exists():
         raise HTTPException(404, "No view yet. Call /execute first.")
-    return json.loads(vpath.read_text())
+    return FileResponse(vpath, media_type='application/json')
 
 
 # Real geometry export: transpile + execute + write the file in the requested

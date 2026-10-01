@@ -22,6 +22,7 @@ from pathlib import Path
 
 from .graph import Graph
 from .graph_version import check_base, current_version, write_graph
+from .job_files import atomic_write
 
 DEFAULT_ROOT = os.environ.get("CAD_PROJECTS_DIR", "/app/projects")
 
@@ -339,7 +340,7 @@ class GraphStore:
         meta["backend"] = "nodegraph"
         if description:
             meta["description"] = description
-        mpath.write_text(json.dumps(meta, indent=2))
+        atomic_write(mpath, json.dumps(meta, indent=2))
         return version
 
     def delete(self, graph_id: str) -> None:
@@ -427,9 +428,9 @@ class GraphStore:
         meta = {**meta, "gen": d.name, "graph": graph_id}
         (d / "view.json").write_text(json.dumps(view))
         (d / "graph.json").write_text(json.dumps(graph, indent=2))
-        # meta LAST: list_gens only lists a gen whose meta exists, so a reader
-        # never sees one whose view is still being written.
-        (d / "meta.json").write_text(json.dumps(meta, indent=2))
+        # meta LAST, and atomic: list_gens only lists a gen whose meta exists, so a
+        # reader never sees one whose view is still being written, nor half a meta.
+        atomic_write(d / "meta.json", json.dumps(meta, indent=2))
         return meta
 
     def load_gen(self, graph_id: str, gen: str, part: str) -> dict:
