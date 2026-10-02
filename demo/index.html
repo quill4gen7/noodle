@@ -1,0 +1,825 @@
+<!doctype html>
+<html lang="it">
+<head>
+<script>
+(() => {
+  const real = window.fetch.bind(window);
+  const map = url => {
+    let m = /^\/api\/graph\/([^/]+)\/gens\/(g\d+)\/(view|graph|meta)$/.exec(url);
+    if (m) return `../data/${m[1]}/${m[2]}/${m[3]}.json`;
+    m = /^\/api\/graph\/([^/]+)\/(gens|version)$/.exec(url);
+    if (m) return `../data/${m[1]}/${m[2]}.json`;
+    return url;
+  };
+  window.fetch = (input, init) => real(typeof input === 'string' ? map(input) : input, init);
+})();
+</script>
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>noodle · view</title>
+<link rel="icon" href="../static/icon.svg">
+<!--
+  The read-only viewer: /view/<project>/<gen>.
+
+  It shows a GENERATION — a frozen copy of one run (projects/<name>/gens/gN/),
+  written by POST /api/graph/<name>/snapshot or MCP cad_snapshot — never the
+  live workflow, so a link an agent sends keeps meaning the same thing. It uses
+  the shared CadViewer, so it renders exactly like the editor (colours, glass,
+  bloom, rainbow). Nothing here writes anything.
+
+  Pieces: every drawn node is a row; a node whose preview holds several pieces
+  (a fanned-out list → `parts`, a collide scene → `bodies`) expands into one row
+  per piece. Visibility is kept at LEAF level (the finest piece), which is what
+  makes "Inverti" well defined: the hidden leaves become the shown ones.
+  The state lives in the URL hash (#hide=n3,n5.2 — a bare node id means all its
+  pieces), so a link can be sent already set up, e.g. with the lid hidden.
+-->
+<script type="importmap">
+{
+  "imports": {
+    "three": "../static/vendor/three-0.170.0/build/three.module.min.js",
+    "three/addons/": "../static/vendor/three-0.170.0/examples/jsm/"
+  }
+}
+</script>
+<style>
+  :root{
+    --bg-0:#0b0e14; --bg-1:#0f1318; --bg-2:#151a22; --bg-3:#1a2030;
+    --border:#1e2738; --text:#c5cdd8; --text-dim:#5c6a7a;
+    --accent:#e94560; --green:#2dd4a0; --amber:#f59e0b;
+    --font:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    --mono:'SFMono-Regular',Menlo,Consolas,monospace;
+    --tap:34px;                      /* min touch target; grows on touch screens */
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--bg-0);color:var(--text);
+    font-family:var(--font);font-size:13px;overscroll-behavior:none;}
+  /* dvh: on phones 100% includes the area under the address bar */
+  #app{display:flex;flex-direction:column;height:100%;height:100dvh;}
+  button,select,a,.row{touch-action:manipulation;}   /* no double-tap zoom, no 300ms delay */
+  header{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);
+    background:var(--bg-1);position:relative;z-index:20;padding-top:max(8px,env(safe-area-inset-top));}
+  header .brand{font-weight:700;letter-spacing:-.3px;white-space:nowrap;}
+  header .brand span{color:var(--accent);}
+  header .proj{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+  header .meta{color:var(--text-dim);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1;}
+  select,.btn{background:var(--bg-3);color:var(--text);border:1px solid var(--border);border-radius:8px;
+    padding:5px 10px;font-size:12px;font-family:var(--font);cursor:pointer;min-height:var(--tap);
+    display:inline-flex;align-items:center;justify-content:center;gap:5px;text-decoration:none;}
+  select{max-width:260px;}
+  .btn:hover,select:hover{border-color:var(--text-dim);}
+  .btn:active{background:var(--bg-2);}
+  .badge{font-size:11px;padding:2px 7px;border-radius:10px;border:1px solid var(--amber);color:var(--amber);white-space:nowrap;}
+  #more{display:none;font-size:18px;padding:0 12px;}
+  #menu{display:none;position:absolute;right:8px;top:calc(100% + 4px);background:var(--bg-2);border:1px solid var(--border);
+    border-radius:10px;padding:6px;min-width:230px;box-shadow:0 10px 30px rgba(0,0,0,.5);flex-direction:column;gap:4px;}
+  #menu.open{display:flex;}
+  #menu .btn{justify-content:flex-start;min-height:44px;font-size:14px;width:100%;}
+  #menu .info{color:var(--text-dim);font-size:12px;padding:6px 8px;line-height:1.5;}
+  main{flex:1;display:flex;min-height:0;}
+  #vp{flex:1;position:relative;min-width:0;min-height:0;}
+  #vp canvas{display:block;width:100%;height:100%;outline:none;touch-action:none;}
+  #stats{position:absolute;left:10px;bottom:8px;color:var(--text-dim);font:11px var(--mono);pointer-events:none;}
+  #msg{position:absolute;inset:0;display:none;align-items:center;justify-content:center;color:var(--text-dim);
+    text-align:center;padding:24px;line-height:1.6;}
+  /* the action bar for a piece selected in the 3D view */
+  #selbar{position:absolute;left:50%;transform:translateX(-50%);bottom:28px;display:none;align-items:center;gap:6px;
+    background:var(--bg-2);border:1px solid var(--border);border-radius:12px;padding:6px 6px 6px 12px;
+    box-shadow:0 8px 24px rgba(0,0,0,.5);max-width:calc(100% - 20px);z-index:5;}
+  #selbar.open{display:flex;}
+  /* the timeline player (only when the generation has Animate / Drop plans) */
+  #tl{position:absolute;left:10px;right:10px;bottom:26px;display:flex;align-items:center;gap:8px;z-index:4;
+    background:rgba(15,19,24,.88);border:1px solid var(--border);border-radius:12px;padding:6px 8px;
+    max-width:720px;margin:0 auto;backdrop-filter:blur(4px);}
+  #tl[hidden]{display:none;}
+  #tl-play{min-width:var(--tap);font-size:14px;}
+  #tl-t{flex:1;min-width:60px;accent-color:var(--accent);height:var(--tap);margin:0;touch-action:none;}
+  #tl-time{font:11px var(--mono);color:var(--text-dim);white-space:nowrap;min-width:78px;text-align:right;}
+  #tl select{max-width:none;}
+  #tl-tracks{display:none;}
+  #tl-trk[hidden]{display:none;}
+  #tl.tracks{flex-wrap:wrap;}
+  #tl.tracks #tl-tracks{display:flex;flex-direction:column;gap:2px;order:-1;flex-basis:100%;max-height:40vh;overflow:auto;
+    border-bottom:1px solid var(--border);padding-bottom:6px;margin-bottom:2px;}
+  #tl.tracks #tl-trk{background:var(--bg-3);}
+  .trk{display:flex;align-items:center;gap:8px;}
+  .trk .btn{min-width:var(--tap);font-size:12px;}
+  .trk .nm{width:150px;flex:0 0 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;}
+  .trk input{flex:1;min-width:60px;accent-color:var(--accent);margin:0;touch-action:none;}
+  .trk .tm{font:11px var(--mono);color:var(--text-dim);white-space:nowrap;min-width:78px;text-align:right;}
+  #vp.has-anim #selbar{bottom:86px;}
+  #selbar .nm{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;max-width:40vw;}
+  aside{width:300px;border-left:1px solid var(--border);background:var(--bg-1);display:flex;flex-direction:column;min-height:0;}
+  aside .grab{display:none;}
+  aside .tools{display:flex;gap:6px;padding:8px;border-bottom:1px solid var(--border);}
+  aside .tools .btn{flex:1;padding:5px 6px;}
+  #list{overflow:auto;flex:1;padding:4px 0;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;}
+  .row{display:flex;align-items:center;gap:6px;padding:0 6px 0 4px;cursor:pointer;user-select:none;-webkit-user-select:none;
+    min-height:var(--tap);}
+  .row:hover{background:var(--bg-2);}
+  .row.sub{padding-left:26px;font-size:12px;}
+  .row.off .name,.row.off .sw{opacity:.35;}
+  .row.off .name{text-decoration:line-through;}
+  .row.sel{background:var(--bg-3);box-shadow:inset 3px 0 0 var(--accent);}
+  .row .ib{flex:0 0 auto;width:var(--tap);height:var(--tap);display:flex;align-items:center;justify-content:center;
+    border-radius:8px;color:var(--text-dim);font-size:14px;}
+  .row .ib:active{background:var(--bg-3);}
+  .row .eye{color:var(--text);}
+  .row .solo{opacity:0;font-size:13px;}
+  .row:hover .solo,.row.sel .solo{opacity:1;}
+  .row .sw{width:10px;height:10px;border-radius:3px;flex:0 0 auto;}
+  .row .name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:6px 0;}
+  .row .id{color:var(--text-dim);font:10px var(--mono);}
+  .row .tw{width:22px;}
+  .hint{padding:8px 10px;border-top:1px solid var(--border);color:var(--text-dim);font-size:11px;line-height:1.5;}
+  kbd{font:10px var(--mono);border:1px solid var(--border);border-radius:3px;padding:0 3px;}
+  .touch-only{display:none;}
+  /* ── touch screens: bigger targets, solo always visible, no keyboard hints ── */
+  @media (pointer:coarse){
+    :root{--tap:44px;}
+    .row{font-size:14px;} .row.sub{font-size:13px;}
+    .row .solo{opacity:1;}
+    .keys{display:none;} .touch-only{display:inline;}
+  }
+  /* ── narrow screens: one-line header + ⋯ menu, pieces in a bottom sheet ── */
+  @media (max-width:760px){
+    header{gap:8px;padding:6px 8px;}
+    header .brand,header .meta,header .desk{display:none;}
+    header .proj{flex:1;font-size:14px;}
+    select{max-width:46vw;}
+    #more{display:inline-flex;}
+    main{flex-direction:column;}
+    aside{width:auto;border-left:0;border-top:1px solid var(--border);height:var(--sheet,42%);
+      border-radius:14px 14px 0 0;box-shadow:0 -6px 20px rgba(0,0,0,.4);
+      padding-bottom:env(safe-area-inset-bottom);}
+    aside.closed{height:auto !important;}
+    aside.closed #list,aside.closed .hint{display:none;}
+    aside .grab{display:flex;justify-content:center;align-items:center;height:22px;cursor:grab;touch-action:none;
+      flex:0 0 auto;}
+    aside .grab::before{content:"";width:40px;height:5px;border-radius:3px;background:var(--border);}
+    aside .tools{padding:2px 8px 8px;}
+    aside .tools .btn{flex-direction:column;gap:1px;font-size:11px;min-height:48px;}
+    aside .tools .btn .ic{font-size:16px;}
+    .hint{display:none;}
+    #selbar{bottom:12px;}
+    #stats{top:8px;bottom:auto;}
+    #tl{left:8px;right:8px;bottom:8px;flex-wrap:wrap;}
+    #tl-t{order:5;flex-basis:100%;}
+    #tl-time{flex:1;text-align:left;}
+    #vp.has-anim #selbar{bottom:112px;}
+    .trk{flex-wrap:wrap;} .trk .nm{flex:1;width:auto;} .trk input{order:5;flex-basis:100%;}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">noodle<span>·</span>view</div>
+    <div class="proj" id="proj"></div>
+    <select id="gen" title="Generazioni salvate di questo workflow"></select>
+    <span class="badge desk" id="stale" style="display:none" title="Il workflow live è stato modificato dopo questa generazione: la vista resta quella salvata">workflow cambiato</span>
+    <div class="meta" id="meta"></div>
+    <button class="btn desk" id="copy" title="Copia il link a questa generazione, con i pezzi nascosti">Copia link</button>
+    <a class="btn desk" id="edit" title="Apri il workflow live nell'editor">Editor ↗</a>
+    <button class="btn" id="more" aria-label="Menu">⋯</button>
+    <div id="menu" role="menu">
+      <div class="info" id="m-info"></div>
+      <button class="btn" id="m-share">↗ Condividi / copia link</button>
+      <button class="btn" id="m-ortho">▦ Prospettiva / ortografica</button>
+      <a class="btn" id="m-edit">✎ Apri nell'editor</a>
+    </div>
+  </header>
+  <main>
+    <div id="vp"><canvas id="c" tabindex="0"></canvas><div id="stats"></div><div id="msg"></div>
+      <div id="tl" hidden>
+        <div id="tl-tracks"></div>
+        <button class="btn" id="tl-play" aria-label="Riproduci" title="Riproduci / pausa (spazio)">▶</button>
+        <input type="range" id="tl-t" min="0" max="1" step="0.001" value="0" aria-label="Timeline">
+        <span id="tl-time"></span>
+        <button class="btn" id="tl-trk" title="Uno slider per ogni animazione: riproducile una alla volta, nell'ordine che vuoi" hidden>≡ Tracce</button>
+        <select id="tl-mode" title="Come ripete">
+          <option value="pingpong">⇆ andata e ritorno</option>
+          <option value="loop">↻ ciclo</option>
+          <option value="once">→ una volta</option>
+        </select>
+        <select id="tl-speed" title="Velocità">
+          <option value="0.25">0.25×</option><option value="0.5">0.5×</option>
+          <option value="1" selected>1×</option><option value="2">2×</option>
+        </select>
+      </div>
+      <div id="selbar">
+        <span class="nm" id="sel-name"></span>
+        <button class="btn" id="sel-hide">Nascondi</button>
+        <button class="btn" id="sel-solo">Solo</button>
+        <button class="btn" id="sel-x" aria-label="Deseleziona">✕</button>
+      </div>
+    </div>
+    <aside id="panel">
+      <div class="grab" id="grab" title="Trascina per ridimensionare, tocca per chiudere/aprire"></div>
+      <div class="tools">
+        <button class="btn" id="b-all" title="Mostra tutto (A)"><span class="ic">◉</span>Tutti</button>
+        <button class="btn" id="b-inv" title="Inverti: i nascosti si vedono, i visibili si nascondono (I)"><span class="ic">⇄</span>Inverti</button>
+        <button class="btn" id="b-frame" title="Inquadra i pezzi visibili (F)"><span class="ic">▣</span>Inquadra</button>
+        <button class="btn desk-ortho" id="b-ortho" title="Prospettiva / ortografica (O)"><span class="ic">▦</span><span id="b-ortho-t">Persp</span></button>
+      </div>
+      <div id="list"></div>
+      <div class="hint"><span class="keys">Clic sull'occhio o sul nome: mostra/nascondi · ◎ o doppio clic: solo lui ·
+        clic su un pezzo nel 3D: lo seleziona, <kbd>H</kbd> lo nasconde, <kbd>Alt</kbd>+clic lo nasconde subito ·
+        <kbd>I</kbd> inverti · <kbd>A</kbd> tutti · <kbd>F</kbd> inquadra</span>
+        <span class="touch-only">Tocca il nome o ● per mostrare/nascondere, ◎ per vedere solo quello.
+        Tocca un pezzo nel 3D per selezionarlo · doppio tocco: inquadra</span></div>
+    </aside>
+  </main>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import { CadViewer, PALETTE, poseAnim } from '../static/viewer.js';
+
+const $ = id => document.getElementById(id);
+const _q = new URLSearchParams(location.search);
+const seg = ['view', _q.get('g') || '', _q.get('gen') || ''];   // static preview
+const NAME = decodeURIComponent(seg[1] || '');
+let GEN = seg[2] || '';
+
+const viewer = new CadViewer($('c'));
+addEventListener('resize', () => viewer.resize());
+
+const msg = t => { $('msg').innerHTML = t; $('msg').style.display = t ? 'flex' : 'none'; };
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function getJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+  return r.json();
+}
+
+// ── state ────────────────────────────────────────────────────────────────
+// nodes: [{id, title, obj, color, leaves:[{key, label, apply(visible)}]}]
+let nodes = [];
+const hidden = new Set();          // leaf keys
+let selected = null;               // leaf key
+const leafIndex = new Map();       // key → {node, leaf}
+
+function allLeaves() { return nodes.flatMap(n => n.leaves.map(l => l.key)); }
+
+function apply() {
+  for (const n of nodes) {
+    let any = false;
+    for (const l of n.leaves) { const v = !hidden.has(l.key); l.apply(v); any = any || v; }
+    n.obj.visible = any;
+  }
+  viewer.invalidate();
+  const shown = allLeaves().filter(k => !hidden.has(k)).length;
+  $('stats').textContent = `${shown}/${allLeaves().length} pezzi visibili` + (sizeTxt ? ' · ' + sizeTxt : '');
+  renderList();
+  writeHash();
+}
+
+// URL hash: #hide=<keys>&t=<0..1>&play=1&mode=<loop|pingpong|once>. In `hide` a
+// bare node id stands for all of its leaves. The timeline keys are written only
+// when this generation HAS a timeline, and `t` only while paused (a playing
+// clock would rewrite the URL sixty times a second).
+// Read ONCE, at load: writeHash() rewrites the URL as soon as the pieces are
+// applied, before the timeline exists, and must not eat the link's own t/play.
+const HASH0 = location.hash;
+function hashParam(name) {
+  const m = new RegExp(`(?:^|[#&])${name}=([^&]*)`).exec(HASH0);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+function writeHash() {
+  const out = [];
+  for (const n of nodes) {
+    const h = n.leaves.filter(l => hidden.has(l.key));
+    if (!h.length) continue;
+    if (h.length === n.leaves.length && n.leaves.length > 1) out.push(n.id);
+    else out.push(...h.map(l => l.key));
+  }
+  const ps = [];
+  if (out.length) ps.push('hide=' + out.join(','));
+  if (anims.length) {
+    if (clock.playing) ps.push('play=1');
+    else ps.push('t=' + (+clock.t.toFixed(3)));
+    if (clock.mode !== clock.defaultMode) ps.push('mode=' + clock.mode);
+    const off = anims.filter(a => Math.abs(a.t - clock.t) > 5e-4);
+    if (off.length && !clock.playing) ps.push('tt=' + off.map(a => `${a.id}:${+a.t.toFixed(3)}`).join(','));
+    if ($('tl').classList.contains('tracks') && !off.length) ps.push('tracks=1');
+  }
+  history.replaceState(null, '', location.pathname + location.search + (ps.length ? '#' + ps.join('&') : ''));
+}
+function readHash() {
+  const hide = hashParam('hide');
+  if (!hide) return;
+  for (const k of hide.split(',').filter(Boolean)) {
+    const n = nodes.find(x => x.id === k);
+    if (n) n.leaves.forEach(l => hidden.add(l.key));
+    else if (leafIndex.has(k)) hidden.add(k);
+  }
+}
+
+// ── the timeline player ──────────────────────────────────────────────────
+// A generation of a graph with Animate / Drop nodes carries each movement as a
+// plan in its previews (the same `anim` the editor scrubs at 60fps): a Drop's
+// fall, a collide scene's keyframes, an Animate's keyframes — a lid opening, a
+// drawer sliding out. So one link replaces "a link with the lid open and one
+// with it closed": the part moves between the two, and you can stop it anywhere.
+//
+// Every movement is a TRACK with its own `t` and its own slider (the ≡ Tracce
+// panel), and the master slider moves them all together, as one Number Slider
+// wired into several `t` sockets does in the editor. The tracks exist because
+// chaining several movements into ONE perfectly timed sequence (lid opens, head
+// folds, lid closes) is exactly what an agent got wrong on walle: it had to pad
+// every clock with `hold` so they lined up, and a single misjudged delay made the
+// head move through a closed lid. With a slider per track the user plays the
+// sequence by hand — open the lid, fold the head, close the lid — and every
+// track still replays through the same shared poseAnim().
+//   t     — 0..1 on every plan's own normalised timeline (as the engine's `t`)
+//   tt    — per-track overrides, `id:t,id:t` (written only when they diverge)
+//   mode  — loop, pingpong (there and back: open ⇄ close) or once
+// Real time: a master pass lasts as long as the longest plan (its `T`, in
+// seconds); a track played alone lasts its own `T`. Short pause at each end so
+// the two end states can be read.
+const anims = [];                  // [{id, title, obj, anim, kinds, T, t, el}]
+const clock = { t: 0, playing: false, only: null, mode: 'loop', defaultMode: 'loop', dir: 1,
+                speed: 1, dur: 3, hold: 0, last: 0 };
+const HOLD_S = 0.6;
+const fmtT = (t, T) => `${(t * T).toFixed(1)} / ${T.toFixed(1)} s`;
+
+function poseTrack(a, t) {
+  a.t = Math.min(Math.max(t, 0), 1);
+  poseAnim(a.obj, a.anim, a.t);
+  viewer.invalidate();             // the viewer draws on demand, not every frame
+  if (a.el) { a.el.range.value = a.t; a.el.time.textContent = fmtT(a.t, a.T); }
+}
+function poseAll(t) {
+  clock.t = Math.min(Math.max(t, 0), 1);
+  for (const a of anims) poseTrack(a, clock.t);
+  showMaster();
+}
+function showMaster() {
+  $('tl-t').value = clock.t;
+  $('tl-time').textContent = fmtT(clock.t, clock.dur);
+}
+// What the clock is driving: every track (master) or one of them.
+const curT = () => clock.only ? clock.only.t : clock.t;
+const curDur = () => clock.only ? Math.max(clock.only.T, 0.2) : clock.dur;
+function setT(t) { if (clock.only) poseTrack(clock.only, t); else poseAll(t); }
+function setPlaying(on, only = null) {
+  clock.playing = on;
+  clock.only = on ? only : null;
+  clock.last = performance.now(); clock.hold = 0; clock.dir = 1; clock.jump = false;
+  $('tl-play').textContent = on && !only ? '❚❚' : '▶';
+  $('tl-play').setAttribute('aria-label', on && !only ? 'Pausa' : 'Riproduci');
+  for (const a of anims) if (a.el) a.el.play.textContent = on && only === a ? '❚❚' : '▶';
+  if (on && clock.mode !== 'pingpong' && curT() >= 1) setT(0);      // replay from the start
+  writeHash();
+}
+function tick(now) {
+  requestAnimationFrame(tick);
+  if (!clock.playing) return;
+  // real time, even on a slow device: skip frames rather than slow the motion
+  // down (capped so a tab coming back from the background does not jump).
+  const dt = Math.min((now - clock.last) / 1000, 0.5); clock.last = now;
+  if (clock.hold > 0) { clock.hold -= dt; return; }
+  let t = curT() + clock.dir * dt * clock.speed / curDur();
+  if (t >= 1 || t <= 0) {
+    t = t >= 1 ? 1 : 0;
+    if (clock.mode === 'once') { setT(t); setPlaying(false); return; }
+    if (clock.mode === 'pingpong') clock.dir = -clock.dir;
+    else if (t === 1) { setT(1); clock.hold = HOLD_S; clock.jump = true; return; }
+    clock.hold = HOLD_S;
+  }
+  if (clock.jump) { clock.jump = false; t = 0; }
+  setT(t);
+}
+
+function renderTracks() {
+  const box = $('tl-tracks'); box.innerHTML = '';
+  for (const a of anims) {
+    const row = document.createElement('div');
+    row.className = 'trk';
+    row.innerHTML = `<button class="btn" aria-label="Riproduci solo questa" title="Riproduci solo questa traccia">▶</button>
+      <span class="nm" title="${esc(a.id)}">${esc(a.title)}</span>
+      <input type="range" min="0" max="1" step="0.001" aria-label="${esc(a.title)}">
+      <span class="tm"></span>`;
+    const [play, , range, time] = row.children;
+    a.el = { play, range, time };
+    play.onclick = () => setPlaying(!(clock.playing && clock.only === a), a);
+    range.addEventListener('input', e => { if (clock.playing) setPlaying(false); poseTrack(a, +e.target.value); });
+    range.addEventListener('change', writeHash);
+    poseTrack(a, a.t);
+    box.appendChild(row);
+  }
+}
+function initTimeline(view) {
+  for (const n of nodes) {
+    const anim = (view.previews[n.id] || {}).anim || null;
+    const bodies = n.obj.userData.isScene
+      ? n.obj.children.map(c => c.userData.anim).filter(a => a && a.kind === 'keys') : [];
+    if (!anim && !bodies.length) continue;
+    const T = Math.max(0, ...[anim, ...bodies].map(a => (a && a.T) || 0));
+    const baked = anim && anim.t != null ? anim.t : ((bodies[0] && bodies[0].t != null) ? bodies[0].t : 1);
+    anims.push({ id: n.id, title: n.title, obj: n.obj, anim, T, t: baked, baked,
+                 kinds: bodies.length ? 'scene' : (anim.kind || 'drop') });
+  }
+  if (!anims.length) return;
+  clock.dur = Math.min(Math.max(Math.max(...anims.map(a => a.T)) || 3, 0.5), 60);
+  // Only Animate plans (kinematics, e.g. open/close a lid) → there and back reads
+  // best; anything with a fall or a simulated scene loops forward, since a fall
+  // played backwards is nonsense.
+  clock.defaultMode = anims.every(a => a.kinds === 'keys') ? 'pingpong' : 'loop';
+  const mode = hashParam('mode');
+  clock.mode = ['loop', 'pingpong', 'once'].includes(mode) ? mode : clock.defaultMode;
+  $('tl-mode').value = clock.mode;
+  renderTracks();
+  // Start where the engine baked it, unless the link says otherwise.
+  const ht = parseFloat(hashParam('t'));
+  poseAll(Number.isFinite(ht) ? ht : (hashParam('play') ? 0 : anims[0].baked));
+  const tt = hashParam('tt');
+  if (tt) for (const kv of tt.split(',')) {
+    const [id, v] = kv.split(':'); const a = anims.find(x => x.id === id);
+    if (a && Number.isFinite(parseFloat(v))) poseTrack(a, parseFloat(v));
+  }
+  // one track needs no track panel: the master slider IS its slider
+  $('tl-trk').hidden = anims.length < 2;
+  if (anims.length > 1 && (tt || hashParam('tracks') === '1')) $('tl').classList.add('tracks');
+  $('vp').classList.add('has-anim');
+  $('tl').hidden = false;
+  if (hashParam('play') === '1') setPlaying(true);
+  requestAnimationFrame(tick);
+}
+$('tl-play').onclick = () => setPlaying(!(clock.playing && !clock.only));
+$('tl-t').addEventListener('input', e => { if (clock.playing) setPlaying(false); poseAll(+e.target.value); });
+$('tl-t').addEventListener('change', writeHash);
+$('tl-trk').onclick = () => { $('tl').classList.toggle('tracks'); writeHash(); };
+$('tl-mode').onchange = e => { clock.mode = e.target.value; clock.dir = 1; writeHash(); };
+$('tl-speed').onchange = e => { clock.speed = +e.target.value; };
+
+// ── the piece list ───────────────────────────────────────────────────────
+const open = new Set();            // expanded nodes
+function swatch(c) {
+  if (c === 'rainbow') return 'background:conic-gradient(red,yellow,lime,cyan,blue,magenta,red)';
+  if (c && c.isColor) return 'background:#' + c.getHexString();
+  return 'background:' + (c || '#888');
+}
+function renderList() {
+  const L = $('list'); const top = L.scrollTop; L.innerHTML = '';
+  for (const n of nodes) {
+    const multi = n.leaves.length > 1;
+    const vis = n.leaves.filter(l => !hidden.has(l.key)).length;
+    const keys = n.leaves.map(l => l.key);
+    const row = document.createElement('div');
+    row.className = 'row' + (vis ? '' : ' off') + (!multi && selected === n.leaves[0].key ? ' sel' : '');
+    row.innerHTML = `<span class="ib tw" ${multi ? 'role="button" aria-label="Espandi"' : ''}>${multi ? (open.has(n.id) ? '▾' : '▸') : ''}</span>
+      <span class="ib eye" role="button" aria-label="Mostra/nascondi">${vis === n.leaves.length ? '●' : vis ? '◐' : '○'}</span>
+      <span class="sw" style="${swatch(n.color)}"></span>
+      <span class="name" title="${esc(n.type)}">${esc(n.title)}${multi ? ` <span class="id">×${n.leaves.length}</span>` : ''}</span>
+      <span class="id">${esc(n.id)}</span>
+      <span class="ib solo" role="button" aria-label="Solo questo" title="Solo questo">◎</span>`;
+    if (multi) row.querySelector('.tw').onclick = e => { e.stopPropagation(); open.has(n.id) ? open.delete(n.id) : open.add(n.id); renderList(); };
+    bindRow(row, keys, multi ? null : n.leaves[0].key);
+    if (!multi) row.dataset.key = n.leaves[0].key;
+    L.appendChild(row);
+    if (multi && open.has(n.id)) for (const l of n.leaves) {
+      const r = document.createElement('div');
+      const off = hidden.has(l.key);
+      r.className = 'row sub' + (off ? ' off' : '') + (selected === l.key ? ' sel' : '');
+      r.dataset.key = l.key;
+      r.innerHTML = `<span class="ib eye" role="button" aria-label="Mostra/nascondi">${off ? '○' : '●'}</span>
+        <span class="sw" style="${swatch(l.color || n.color)}"></span>
+        <span class="name">${esc(l.label)}</span><span class="id">${esc(l.key)}</span>
+        <span class="ib solo" role="button" aria-label="Solo questo" title="Solo questo">◎</span>`;
+      bindRow(r, [l.key], l.key);
+      L.appendChild(r);
+    }
+  }
+  L.scrollTop = top;
+  updateSelbar();
+}
+// Tap/click = toggle these leaves (any shown → hide all, else show all);
+// ◎ = solo. With a mouse, double-click on the row is solo too — which is why a
+// mouse click waits 220ms to be sure it is not the first half of one. A finger
+// has no double-click (the browser turns a double tap into zoom, disabled here),
+// so on touch the toggle is immediate.
+const COARSE = matchMedia('(pointer:coarse)');
+function toggle(keys) {
+  const anyShown = keys.some(k => !hidden.has(k));
+  keys.forEach(k => anyShown ? hidden.add(k) : hidden.delete(k));
+  apply();
+}
+function bindRow(row, keys, selKey) {
+  let t = null;
+  row.querySelector('.solo').addEventListener('click', e => { e.stopPropagation(); clearTimeout(t); solo(keys); });
+  row.querySelector('.eye').addEventListener('click', e => { e.stopPropagation(); clearTimeout(t); toggle(keys); });
+  row.addEventListener('click', e => {
+    clearTimeout(t);
+    const go = () => { if (selKey) selected = selKey; toggle(keys); };
+    if (COARSE.matches || e.pointerType === 'touch') go(); else t = setTimeout(go, 220);
+  });
+  row.addEventListener('dblclick', () => { clearTimeout(t); solo(keys); });
+}
+function solo(keys) {
+  hidden.clear();
+  for (const k of allLeaves()) if (!keys.includes(k)) hidden.add(k);
+  apply(); frameVisible();
+}
+function invert() {
+  const all = allLeaves();
+  const now = new Set(all.filter(k => !hidden.has(k)));
+  hidden.clear(); now.forEach(k => hidden.add(k));
+  apply();
+}
+function showAll() { hidden.clear(); apply(); }
+
+// Frame only what is visible. Box3.setFromObject counts hidden children too, so
+// the box is measured here: visible objects only, and for a mesh split into
+// parts, only the vertices of the parts still shown. With a timeline, the box
+// is the union over the whole movement (sampled), so an opening lid never
+// swings out of the frame; the pose on screen is restored afterwards.
+function frameVisible() {
+  const box = new THREE.Box3();
+  if (anims.length) {
+    const keep = anims.map(a => a.t), keepT = clock.t;
+    for (let i = 0; i <= 8; i++) { poseAll(i / 8); box.union(visibleBox()); }
+    clock.t = keepT; showMaster();
+    anims.forEach((a, i) => poseTrack(a, keep[i]));
+  } else box.copy(visibleBox());
+  if (!box.isEmpty()) viewer.frame(box);
+}
+function visibleBox() {
+  const box = new THREE.Box3(), v = new THREE.Vector3();
+  viewer.previewGroup.updateMatrixWorld(true);
+  const shown = o => { for (let p = o; p && p !== viewer.previewGroup; p = p.parent) if (!p.visible) return false; return true; };
+  viewer.previewGroup.traverse(o => {
+    if (!o.geometry || !shown(o)) return;
+    const g = o.geometry, pos = g.attributes.position;
+    if (!pos) return;
+    if (o.isInstancedMesh) {                        // Points: the dots are instances
+      if (!o.boundingBox) o.computeBoundingBox();
+      box.union(o.boundingBox.clone().applyMatrix4(o.matrixWorld));
+    } else if (Array.isArray(o.material) && g.groups.length && g.index) {
+      for (const gr of g.groups) {
+        if (!o.material[gr.materialIndex] || !o.material[gr.materialIndex].visible) continue;
+        for (let i = gr.start; i < gr.start + gr.count; i++)
+          box.expandByPoint(v.fromBufferAttribute(pos, g.index.getX(i)).applyMatrix4(o.matrixWorld));
+      }
+    } else {
+      if (!g.boundingBox) g.computeBoundingBox();
+      box.union(g.boundingBox.clone().applyMatrix4(o.matrixWorld));
+    }
+  });
+  return box;
+}
+
+// ── building the leaves from what the viewer drew ─────────────────────────
+// A mesh with `parts` is ONE buffer; each part becomes a geometry group with its
+// own material, and hiding a part is `material.visible = false` — three skips
+// that group's draw call. A collide scene is a Group whose children ARE the
+// bodies, so a body is hidden the ordinary way.
+function leavesOf(id, obj, entry, piece) {
+  if (obj.userData.isScene) {
+    return obj.children.map((ch, i) => {
+      const who = piece && piece.bodies && piece.bodies[i];
+      const m = Array.isArray(ch.material) ? ch.material[0] : ch.material;
+      return { key: `${id}.${i}`, label: who ? `${who} (corpo ${i + 1})` : `corpo ${i + 1}`,
+               color: m && m.color, obj: ch, apply: v => { ch.visible = v; } };
+    });
+  }
+  const parts = entry && entry.parts;
+  if (obj.isMesh && parts && parts.length > 1) {
+    let mats = obj.material;
+    if (!Array.isArray(mats)) {                  // split the single buffer into groups
+      const base = mats; mats = [];
+      obj.geometry.clearGroups();
+      let start = 0;
+      parts.forEach((cnt, i) => {
+        obj.geometry.addGroup(start * 3, cnt * 3, i);
+        mats.push(i ? base.clone() : base);
+        start += cnt;
+      });
+      obj.material = mats;
+    }
+    return parts.map((_, i) => ({ key: `${id}.${i}`, label: `pezzo ${i + 1}`,
+      color: mats[i] && mats[i].color, obj, part: i, apply: v => { mats[i].visible = v; } }));
+  }
+  return [{ key: id, label: '', obj, apply: () => {} }];     // node visibility covers it
+}
+
+// ── picking: which LEAF is under the pointer ──────────────────────────────
+const ray = new THREE.Raycaster(); const ndc = new THREE.Vector2();
+function pickLeaf(x, y) {
+  const r = $('c').getBoundingClientRect();
+  ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, viewer.camera);
+  ray.params.Line.threshold = 0.5; ray.params.Points.threshold = 3;
+  for (const h of ray.intersectObjects(viewer.previewGroup.children, true)) {
+    const o = h.object; let shown = true;
+    for (let p = o; p && p !== viewer.previewGroup; p = p.parent) if (!p.visible) shown = false;
+    if (!shown) continue;
+    if (Array.isArray(o.material) && h.face && o.material[h.face.materialIndex]
+        && !o.material[h.face.materialIndex].visible) continue;
+    let top = h.object; while (top.parent && top.parent !== viewer.previewGroup) top = top.parent;
+    const id = top.userData.nodeId; if (id == null) continue;
+    const n = nodes.find(x => x.id === id); if (!n) continue;
+    if (n.leaves.length === 1) return n.leaves[0].key;
+    if (top.userData.isScene) {
+      let b = h.object; while (b && b.parent !== top) b = b.parent;
+      return `${id}.${b ? b.userData.bodyIndex : 0}`;
+    }
+    if (h.face && Array.isArray(top.material)) return `${id}.${h.face.materialIndex}`;
+    return n.leaves[0].key;
+  }
+  return null;
+}
+// ── selection in the 3D view ─────────────────────────────────────────────
+// A tap/click selects the piece under it; the floating bar then offers what a
+// keyboard user does with H — the only way to hide from the 3D view on a phone.
+function labelOf(k) {
+  const e = leafIndex.get(k); if (!e) return k;
+  return e.node.leaves.length > 1 ? `${e.node.title} · ${e.leaf.label}` : e.node.title;
+}
+function updateSelbar() {
+  const on = !!selected && leafIndex.has(selected);
+  $('selbar').classList.toggle('open', on);
+  if (!on) return;
+  $('sel-name').textContent = labelOf(selected);
+  $('sel-hide').textContent = hidden.has(selected) ? 'Mostra' : 'Nascondi';
+}
+function select(k) {
+  selected = k;
+  if (k) { const n = leafIndex.get(k).node; if (n.leaves.length > 1) open.add(n.id); }
+  renderList();
+  const row = k && document.querySelector(`.row[data-key="${CSS.escape(k)}"]`);
+  if (row) row.scrollIntoView({ block: 'nearest' });
+}
+$('sel-hide').onclick = () => { if (selected) { toggle([selected]); if (hidden.has(selected)) select(null); } };
+$('sel-solo').onclick = () => { if (selected) solo([selected]); };
+$('sel-x').onclick = () => select(null);
+
+// Tap vs drag: a finger wobbles more than a mouse, so the threshold is wider on
+// touch. Multi-touch (pinch) is never a tap. Two taps close together = frame the
+// visible pieces — the touch twin of the viewer's double-click.
+const ptrs = new Map(); let down = null, multi = false, lastTap = 0;
+$('c').addEventListener('pointerdown', e => {
+  ptrs.set(e.pointerId, 1);
+  if (ptrs.size > 1) multi = true;
+  if (ptrs.size === 1) { multi = false; down = [e.clientX, e.clientY, performance.now()]; }
+});
+const lift = e => { ptrs.delete(e.pointerId); };
+$('c').addEventListener('pointercancel', lift);
+$('c').addEventListener('pointerup', e => {
+  lift(e);
+  closeMenu();
+  viewer.viewHelper.center.copy(viewer.controls.target);
+  if (viewer.viewHelper.handleClick(e)) { down = null; return; }
+  if (!down || multi || ptrs.size) { if (!ptrs.size) down = null; return; }
+  const tol = e.pointerType === 'mouse' ? 5 : 12;
+  const moved = Math.hypot(e.clientX - down[0], e.clientY - down[1]);
+  const long = performance.now() - down[2] > 500;
+  down = null;
+  if (moved > tol || long) return;
+  if (e.pointerType !== 'mouse') {
+    const now = performance.now();
+    if (now - lastTap < 320) { lastTap = 0; frameVisible(); return; }
+    lastTap = now;
+  }
+  const k = pickLeaf(e.clientX, e.clientY);
+  if (e.altKey && k) { hidden.add(k); select(null); apply(); return; }
+  select(k);
+});
+
+addEventListener('keydown', e => {
+  if (['SELECT', 'INPUT'].includes(e.target.tagName) || e.ctrlKey || e.metaKey) return;
+  if (e.key === ' ' && e.target.tagName === 'BUTTON') return;      // the button's own click handles it
+  const k = e.key.toLowerCase();
+  if (k === 'h' && selected) { hidden.add(selected); select(null); apply(); }
+  else if (k === 'i') invert();
+  else if (k === 'a') showAll();
+  else if (k === 'f') frameVisible();
+  else if (k === 'o') toggleOrtho();
+  else if (k === ' ' && anims.length) { e.preventDefault(); setPlaying(!clock.playing); }
+  else if (k === 'escape') { closeMenu(); select(null); }
+});
+function toggleOrtho() { $('b-ortho-t').textContent = viewer.toggleProjection() === 'ortho' ? 'Ortho' : 'Persp'; }
+$('b-all').onclick = showAll;
+$('b-inv').onclick = invert;
+$('b-frame').onclick = frameVisible;
+$('b-ortho').onclick = toggleOrtho;
+
+// ── the ⋯ menu (narrow screens) ──────────────────────────────────────────
+function closeMenu() { $('menu').classList.remove('open'); }
+$('more').onclick = e => { e.stopPropagation(); $('menu').classList.toggle('open'); };
+document.addEventListener('pointerdown', e => {
+  if (!$('menu').contains(e.target) && e.target !== $('more')) closeMenu();
+});
+$('m-ortho').onclick = () => { toggleOrtho(); closeMenu(); };
+async function copyLink(btn, idle) {
+  try { await navigator.clipboard.writeText(location.href); btn.textContent = '✓ Link copiato'; }
+  catch { prompt('Link:', location.href); }
+  setTimeout(() => { btn.textContent = idle; }, 1500);
+}
+$('copy').onclick = () => copyLink($('copy'), 'Copia link');
+$('m-share').onclick = async () => {
+  // the phone's own share sheet when there is one (send it on to a chat…)
+  if (navigator.share) {
+    try { await navigator.share({ title: document.title, url: location.href }); closeMenu(); return; }
+    catch (e) { if (e && e.name === 'AbortError') return; }
+  }
+  copyLink($('m-share'), '↗ Condividi / copia link');
+};
+
+// ── the bottom sheet (narrow screens) ────────────────────────────────────
+// Tap the handle: collapse to the toolbar / reopen. Drag it: any height between
+// the toolbar and 85% of the screen. The canvas follows through the
+// ResizeObserver below, so the model is never drawn under the sheet.
+{
+  const panel = $('panel'), grab = $('grab');
+  let start = null;
+  grab.addEventListener('pointerdown', e => {
+    grab.setPointerCapture(e.pointerId);
+    start = { y: e.clientY, h: panel.getBoundingClientRect().height, moved: false };
+  });
+  grab.addEventListener('pointermove', e => {
+    if (!start) return;
+    const dy = start.y - e.clientY;
+    if (Math.abs(dy) > 6) start.moved = true;
+    if (!start.moved) return;
+    const vh = $('app').clientHeight;
+    const h = Math.max(90, Math.min(vh * 0.85, start.h + dy));
+    panel.classList.toggle('closed', h < 110);
+    panel.style.setProperty('--sheet', h + 'px');
+  });
+  const end = () => {
+    if (start && !start.moved) panel.classList.toggle('closed');
+    start = null;
+  };
+  grab.addEventListener('pointerup', end);
+  grab.addEventListener('pointercancel', () => { start = null; });
+}
+new ResizeObserver(() => viewer.resize()).observe($('vp'));
+
+// ── load ─────────────────────────────────────────────────────────────────
+let sizeTxt = '';
+async function boot() {
+  $('proj').textContent = NAME;
+  document.title = `${NAME} · noodle view`;
+  $('edit').href = $('m-edit').href = 'https://github.com/rederyk/noodle';
+  let gens;
+  try { gens = (await getJSON(`/api/graph/${encodeURIComponent(NAME)}/gens`)).gens; }
+  catch (e) { msg(`Workflow <b>${esc(NAME)}</b> non trovato.<br>${esc(e.message)}`); return; }
+  if (!gens.length) { msg(`<b>${esc(NAME)}</b> non ha ancora generazioni salvate.<br>
+    Creane una con <code>POST /api/graph/${esc(NAME)}/snapshot</code> o <code>cad_snapshot</code>.`); return; }
+  if (!GEN) { GEN = gens[0].gen; history.replaceState(null, '', `?g=${encodeURIComponent(NAME)}&gen=${GEN}${location.hash}`); }
+  const sel = $('gen');
+  for (const g of gens) {
+    const o = document.createElement('option');
+    o.value = g.gen;
+    o.textContent = `${g.gen}${g.label ? ' · ' + g.label : ''} — ${(g.created || '').replace('T', ' ').slice(0, 16)}`;
+    sel.appendChild(o);
+  }
+  sel.value = GEN;
+  sel.onchange = () => { location.href = `?g=${encodeURIComponent(NAME)}&gen=${sel.value}`; };
+
+  const base = `/api/graph/${encodeURIComponent(NAME)}/gens/${GEN}`;
+  let view, graph, meta;
+  try { [view, graph, meta] = await Promise.all(['view', 'graph', 'meta'].map(p => getJSON(`${base}/${p}`))); }
+  catch (e) { msg(`Generazione <b>${esc(GEN)}</b> non trovata.<br>${esc(e.message)}`); return; }
+
+  $('meta').textContent = [meta.label, (meta.created || '').replace('T', ' ')].filter(Boolean).join(' · ');
+  $('m-info').innerHTML = `<b>${esc(GEN)}</b>${meta.label ? ' · ' + esc(meta.label) : ''}<br>${esc((meta.created || '').replace('T', ' '))}`;
+  getJSON(`/api/graph/${encodeURIComponent(NAME)}/version`).then(v => {
+    if (meta.version && v.version !== meta.version) {
+      $('stale').style.display = '';
+      $('m-info').insertAdjacentHTML('beforeend', '<br><span class="badge">workflow cambiato dopo questa generazione</span>');
+    }
+  }).catch(() => {});
+
+  // Look = the node fields the editor stores (color / finish / wireframe), read
+  // from the graph FROZEN WITH this generation, not the live one.
+  const byId = Object.fromEntries((graph.nodes || []).map(n => [n.id, n]));
+  const pieces = Object.fromEntries((meta.pieces || []).map(p => [p.id, p]));
+  const r = viewer.renderPreviews(view.previews || {}, {
+    colorOf: (id, order) => (byId[id] && byId[id].color) ||
+      PALETTE[Math.max(0, (order || []).indexOf(id)) % PALETTE.length],
+    finishOf: id => (byId[id] && byId[id].finish) || null,
+    wireOf: id => !!(byId[id] && byId[id].wireframe),
+    onEmpty: () => msg('Questa generazione non contiene geometria disegnabile.'),
+  });
+  if (r.size) sizeTxt = `${r.size.x.toFixed(1)} × ${r.size.y.toFixed(1)} × ${r.size.z.toFixed(1)} mm`;
+  for (const id of r.order) {
+    const obj = r.meshes[id]; if (!obj) continue;
+    const p = pieces[id] || {}, gn = byId[id] || {};
+    const n = { id, obj, color: r.colors[id], type: p.type || gn.type || '',
+                title: p.title || gn.title || gn.type || id };
+    n.leaves = leavesOf(id, obj, view.previews[id], p);
+    n.leaves.forEach(l => leafIndex.set(l.key, { node: n, leaf: l }));
+    nodes.push(n);
+  }
+  readHash();
+  apply();
+  initTimeline(view);
+  writeHash();
+  if (hidden.size || anims.length) frameVisible();
+}
+boot();
+</script>
+</body>

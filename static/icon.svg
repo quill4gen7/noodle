@@ -1,0 +1,17 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <defs>
+    <linearGradient id="t" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5dffb0"/><stop offset="1" stop-color="#2dd4a0"/></linearGradient>
+    <linearGradient id="l" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1f8f6e"/><stop offset="1" stop-color="#136047"/></linearGradient>
+    <linearGradient id="r" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#28b487"/><stop offset="1" stop-color="#17795a"/></linearGradient>
+    <filter id="g" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="1.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#g)">
+    <path d="M34 12 L54 24 L34 36 L14 24 Z" fill="url(#t)"/>
+    <path d="M14 24 L34 36 L34 58 L14 46 Z" fill="url(#l)"/>
+    <path d="M54 24 L34 36 L34 58 L54 46 Z" fill="url(#r)"/>
+    <path d="M34 12 L54 24 L34 36 L14 24 Z M14 24 L34 36 L34 58 M54 24 L34 36" stroke="#9affc9" stroke-width="0.9" stroke-linejoin="round" opacity="0.5"/>
+  </g>
+  <path d="M6 44 C 26 44, 16 6, 34 12" stroke="#e94560" stroke-width="3" stroke-linecap="round" filter="url(#g)"/>
+  <circle cx="6" cy="44" r="4" fill="#0b0e14" stroke="#e94560" stroke-width="2.4"/>
+  <circle cx="34" cy="12" r="2.6" fill="#ff6b81"/>
+</svg>

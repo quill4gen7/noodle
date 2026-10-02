@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>noodle — nodes → solid</title>
+<meta name="description" content="Node-based parametric CAD on build123d, drivable by an AI coding agent. Live preview of the read-only 3D viewer.">
+<link rel="icon" type="image/svg+xml" href="static/icon.svg">
+<style>
+  :root{
+    --bg-0:#0b0e14; --bg-1:#0f1318; --bg-2:#151a22; --bg-3:#1a2030;
+    --border:#1e2738; --text:#c5cdd8; --text-dim:#7a8899;
+    --accent:#e94560; --accent-hover:#ff6b81; --green:#2dd4a0; --blue:#3b82f6;
+    --font:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg-0);color:var(--text);font-family:var(--font);line-height:1.55}
+  a{color:var(--accent)} a:hover{color:var(--accent-hover)}
+  code{font-family:var(--mono);font-size:.9em;background:var(--bg-3);padding:1px 6px;border-radius:5px}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+  header.hero{text-align:center;padding:64px 0 36px}
+  .hero img.logo{width:300px;max-width:70vw}
+  .hero p.tag{font-size:1.15rem;color:var(--text-dim);max-width:640px;margin:14px auto 26px}
+  .btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:11px 20px;border-radius:9px;font-weight:600;
+    text-decoration:none;border:1px solid var(--border);background:var(--bg-2);color:var(--text)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover{background:var(--accent-hover);color:#fff}
+  .btn:hover{border-color:var(--accent)}
+  h2{font-size:1.5rem;margin:0 0 6px} h2 small{display:block;font-size:.95rem;color:var(--text-dim);font-weight:400;margin-top:4px}
+  section{padding:42px 0;border-top:1px solid var(--border)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px;margin-top:22px}
+  .card{display:block;background:var(--bg-1);border:1px solid var(--border);border-radius:12px;overflow:hidden;
+    text-decoration:none;color:var(--text);transition:border-color .15s,transform .15s}
+  .card:hover{border-color:var(--accent);transform:translateY(-2px);color:var(--text)}
+  .card img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:var(--bg-0)}
+  .card .b{padding:11px 13px 13px}
+  .card b{display:block;margin-bottom:2px} .card span{font-size:.86rem;color:var(--text-dim)}
+  .tag-anim{display:inline-block;font-size:.72rem;color:var(--green);border:1px solid var(--green);border-radius:20px;padding:0 7px;margin-left:6px;vertical-align:1px}
+  .feature{display:grid;grid-template-columns:1.25fr 1fr;gap:28px;align-items:center}
+  .feature.flip{grid-template-columns:1fr 1.25fr} .feature.flip .media{order:2}
+  .media video,.media img{display:block;width:100%;border-radius:12px;border:1px solid var(--border);background:#000}
+  .feature ul{padding-left:18px;margin:10px 0 0} .feature li{margin:5px 0}
+  footer{padding:36px 0 50px;color:var(--text-dim);font-size:.9rem;text-align:center;border-top:1px solid var(--border)}
+  @media (max-width:820px){ .feature,.feature.flip{grid-template-columns:1fr} .feature.flip .media{order:0} header.hero{padding-top:40px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="hero">
+    <img class="logo" src="assets/logo.svg" alt="noodle — nodes → solid">
+    <p class="tag">Node-based parametric CAD on <a href="https://build123d.readthedocs.io">build123d</a>. Wire nodes,
+      get solid geometry — transpiled to Python, rendered live, and drivable by an AI coding agent.</p>
+    <div class="btns">
+      <a class="btn primary" href="#preview">▶ Open a 3D preview</a>
+      <a class="btn" href="https://github.com/rederyk/noodle">GitHub</a>
+    </div>
+  </header>
+
+  <section id="preview">
+    <h2>Live preview<small>These are real generations, frozen from noodle runs and opened in its read-only
+      viewer — the same page the app serves, here with no server behind it. Orbit, hide pieces, play the timelines.</small></h2>
+    <div class="grid">
+      <a class="card" href="demo/?g=galton-board&gen=g1#play=1"><img src="thumbs/galton-board.jpg" alt="" loading="lazy">
+        <div class="b"><b>Galton board <i class="tag-anim">plays</i></b><span>Sixty balls through pegs: rigid-body physics, replayed in the browser.</span></div></a>
+      <a class="card" href="demo/?g=polyhedron-tumbler&gen=g1#play=1"><img src="thumbs/polyhedron-tumbler.jpg" alt="" loading="lazy">
+        <div class="b"><b>Polyhedron tumbler <i class="tag-anim">plays</i></b><span>A hollowed solid as a concave container, tumbled by a Motion.</span></div></a>
+      <a class="card" href="demo/?g=glass-bowl&gen=g1#play=1"><img src="thumbs/glass-bowl.jpg" alt="" loading="lazy">
+        <div class="b"><b>Glass bowl <i class="tag-anim">plays</i></b><span>Real transmission, and a glow that crosses the glass.</span></div></a>
+      <a class="card" href="demo/?g=container-tilt&gen=g1#play=1"><img src="thumbs/container-tilt.jpg" alt="" loading="lazy">
+        <div class="b"><b>Container tilt <i class="tag-anim">plays</i></b><span>A box tips and its contents follow.</span></div></a>
+      <a class="card" href="demo/?g=jar-cap-unscrew&gen=g1#play=1"><img src="thumbs/jar-cap-unscrew.jpg" alt="" loading="lazy">
+        <div class="b"><b>Jar cap unscrew <i class="tag-anim">plays</i></b><span>Kinematics: one Animate, move + rotate.</span></div></a>
+      <a class="card" href="demo/?g=tars-pet-k3-zoccolo-52&gen=g1"><img src="thumbs/tars-pet-k3-zoccolo-52.jpg" alt="" loading="lazy">
+        <div class="b"><b>A small walking robot</b><span>Fifteen pieces from one 572-line CodeBlock — two shells side by side. Hide, solo, invert.</span></div></a>
+      <a class="card" href="demo/?g=axle-cage&gen=g1"><img src="thumbs/axle-cage.jpg" alt="" loading="lazy">
+        <div class="b"><b>Axle cage</b><span>Eighty nodes of production CAD: curves → extrude, selectors, fillets.</span></div></a>
+      <a class="card" href="demo/?g=lego-brick&gen=g1"><img src="thumbs/lego-brick.jpg" alt="" loading="lazy">
+        <div class="b"><b>LEGO brick</b><span>Parametric studs and embossed text.</span></div></a>
+    </div>
+  </section>
+
+  <section>
+    <div class="feature">
+      <div class="media"><video autoplay muted loop playsinline poster="assets/noodle-view-pieces.png"><source src="assets/noodle-view-tracks.webm" type="video/webm"><source src="assets/noodle-view-tracks.mp4" type="video/mp4"></video></div>
+      <div>
+        <h2>A link instead of a screenshot</h2>
+        <p>An agent calls <code>cad_snapshot</code> and sends a URL. The link stays on <em>that</em> result while
+          the workflow moves on.</p>
+        <ul>
+          <li>Pieces you can hide, solo and invert — the state lives in the URL hash.</li>
+          <li>Timelines play; <b>≡ Tracce</b> gives every movement its own slider, so you play the order.</li>
+          <li>Works on a phone: bottom sheet, tap to select, double-tap to frame.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="feature flip">
+      <div class="media"><video autoplay muted loop playsinline poster="assets/noodle-sections.png"><source src="assets/noodle-sections.webm" type="video/webm"><source src="assets/noodle-sections.mp4" type="video/mp4"></video></div>
+      <div>
+        <h2>▦ Sezioni — long code, read as nodes</h2>
+        <p>Agents write long CodeBlocks. Instead of making them assemble catalogue nodes, noodle reads the block's
+          structure from its AST — the code is never rewritten.</p>
+        <ul>
+          <li>Sections from the block's own headers, or grouped by what each statement builds.</li>
+          <li>A part built up over several sections shows as a <b>chain of steps</b>, each with its preview.</li>
+          <li>Inputs, outputs, values and time per section; agents get the same as <code>cad_codeblock_sections</code>.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="feature">
+      <div class="media"><video autoplay muted loop playsinline><source src="assets/noodle-live-sync.webm" type="video/webm"><source src="assets/noodle-live-sync.mp4" type="video/mp4"></video></div>
+      <div>
+        <h2>Safe with an agent in the loop</h2>
+        <p>An agent edits the graph over MCP or HTTP while you have it open.</p>
+        <ul>
+          <li>Every save names the version it was edited from; a concurrent edit is <b>merged</b>, never overwritten.</li>
+          <li>Each run has its own files, can be stopped, and never publishes a half-written result.</li>
+          <li>Validated, title-addressable edits, atomic batches, <code>/measure</code> and <code>/lint</code> for geometry facts.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="feature flip">
+      <div class="media"><img src="assets/noodle-library.png" alt="The file library: every export says which node wrote it and whether it is up to date" loading="lazy"></div>
+      <div>
+        <h2>Exports that know where they came from</h2>
+        <ul>
+          <li><b>📦 Bake</b>: every visible node as its own STEP + STL, zipped with a manifest.</li>
+          <li>The library tells you which node wrote each file, and whether the graph changed since.</li>
+          <li>STL · STEP · 3MF · glTF · SVG · DXF, and the whole UI works offline.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    noodle — node-based parametric CAD · <a href="https://github.com/rederyk/noodle">github.com/rederyk/noodle</a><br>
+    This page is built by <code>scripts/build_pages.py</code> from frozen generations; the 3D viewer is the app's own <code>webui/view.html</code>.
+  </footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,718 @@
+{
+  "name": "galton-board",
+  "nodes": [
+    {
+      "id": "note",
+      "type": "Note",
+      "params": {
+        "text": "GALTON BOARD - the normal distribution, fallen out of gravity\\n\\nEvery ball meets the same question at every row: left or right. One ball is\\nnoise. Sixty of them add up to a bell - not because anything draws one, but\\nbecause there are more ways to come down the middle than down a side.\\n\\nThere is no code in this graph. The board IS the nodes: a diamond Box, an\\nArrayLinear across and another down = one lattice; the same lattice moved half\\na spacing over and one row down = the stagger. Random + Range + ConstructPoint\\nscatter the balls. Everything static is wired into the ONE `container` socket.\\n\\nThe pegs are DIAMONDS on purpose. On a round peg a ball can sit balanced on\\ntop forever (friction holds it there) and only the balls flung sideways ever\\nreach a bin - the \"bell\" comes out hollow. An apex forces a choice. The bin\\ndividers get an apex too: a flat 1.6mm top is a ledge, and a ball WILL perch\\non it. Every horizontal surface a ball can rest on is a hole in the histogram.\\n\\nKnobs worth turning:\\n  grip (on Drop)  - how slippery the world is, and the knob that decides\\n                    whether you get a bell AT ALL: at 1 a sloped face grabs a\\n                    ball and flings it at the wall (two lumps, hollow middle);\\n                    at 0.15 it slides off and the walk is fair. Measured\\n  peg Box w/d     - fatter pegs deflect harder and jam the gaps\\n  array counts    - more rows = more coin flips = a wider, smoother bell\\n  Random count    - one ball is chance, sixty is a law (and `seed` re-runs the\\n                    same experiment: the bell survives, the lumps move)\\n  material        - clay lands dead; rubber makes it a pinball machine\\n  blade Move x    - slide the blade and the whole distribution moves with it\\n  timeline        - scrub the fall. With Live on it replays while you drag\\n\\nThe cost of having no code: the bins and walls do NOT follow the peg sliders.\\nWiden the lattice and you must widen them by hand - that coupling is the one\\nthing a CodeBlock buys you."
+      },
+      "position": [
+        -60,
+        -560
+      ],
+      "parent": null,
+      "size": [
+        820,
+        470
+      ]
+    },
+    {
+      "id": "peg",
+      "type": "Box",
+      "params": {
+        "width": 3.6769552621700474,
+        "height": 14.0,
+        "depth": 3.6769552621700474,
+        "centered": true
+      },
+      "position": [
+        60,
+        40
+      ],
+      "parent": null
+    },
+    {
+      "id": "pegrot",
+      "type": "Rotate",
+      "params": {
+        "angle": 45.0,
+        "axis": "Y",
+        "about": "part"
+      },
+      "position": [
+        300,
+        40
+      ],
+      "parent": null
+    },
+    {
+      "id": "pegpos",
+      "type": "Move",
+      "params": {
+        "x": -65.0,
+        "y": 0.0,
+        "z": 170.0
+      },
+      "position": [
+        540,
+        40
+      ],
+      "parent": null
+    },
+    {
+      "id": "rowA",
+      "type": "ArrayLinear",
+      "params": {
+        "count": 11,
+        "dx": 13.0,
+        "dy": 0.0,
+        "dz": 0.0
+      },
+      "position": [
+        780,
+        40
+      ],
+      "parent": null
+    },
+    {
+      "id": "gridA",
+      "type": "ArrayLinear",
+      "params": {
+        "count": 6,
+        "dx": 0.0,
+        "dy": 0.0,
+        "dz": -26.0
+      },
+      "position": [
+        1020,
+        40
+      ],
+      "parent": null
+    },
+    {
+      "id": "flatA",
+      "type": "ListFlatten",
+      "params": {},
+      "position": [
+        1260,
+        40
+      ],
+      "parent": null,
+      "preview": true,
+      "color": "#4a7a5a"
+    },
+    {
+      "id": "gridB",
+      "type": "Move",
+      "params": {
+        "x": 6.5,
+        "y": 0.0,
+        "z": -13.0
+      },
+      "position": [
+        1500,
+        40
+      ],
+      "parent": null,
+      "preview": true,
+      "color": "#4a7a5a"
+    },
+    {
+      "id": "fin",
+      "type": "Box",
+      "params": {
+        "width": 1.6,
+        "height": 14.0,
+        "depth": 18.0,
+        "centered": true
+      },
+      "position": [
+        60,
+        240
+      ],
+      "parent": null
+    },
+    {
+      "id": "finpos",
+      "type": "Move",
+      "params": {
+        "x": -78.0,
+        "y": 0.0,
+        "z": 9.0
+      },
+      "position": [
+        300,
+        240
+      ],
+      "parent": null
+    },
+    {
+      "id": "fins",
+      "type": "ArrayLinear",
+      "params": {
+        "count": 12,
+        "dx": 13.0,
+        "dy": 0.0,
+        "dz": 0.0
+      },
+      "position": [
+        540,
+        240
+      ],
+      "parent": null,
+      "preview": true,
+      "color": "#4a7a5a"
+    },
+    {
+      "id": "cap",
+      "type": "Box",
+      "params": {
+        "width": 2.2,
+        "height": 14.0,
+        "depth": 2.2,
+        "centered": true
+      },
+      "position": [
+        60,
+        400
+      ],
+      "parent": null
+    },
+    {
+      "id": "caprot",
+      "type": "Rotate",
+      "params": {
+        "angle": 45.0,
+        "axis": "Y",
+        "about": "part"
+      },
+      "position": [
+        300,
+        400
+      ],
+      "parent": null
+    },
+    {
+      "id": "cappos",
+      "type": "Move",
+      "params": {
+        "x": -78.0,
+        "y": 0.0,
+        "z": 18.0
+      },
+      "position": [
+        540,
+        400
+      ],
+      "parent": null
+    },
+    {
+      "id": "caps",
+      "type": "ArrayLinear",
+      "params": {
+        "count": 12,
+        "dx": 13.0,
+        "dy": 0.0,
+        "dz": 0.0
+      },
+      "position": [
+        780,
+        400
+      ],
+      "parent": null,
+      "preview": true,
+      "color": "#4a7a5a"
+    },
+    {
+      "id": "pane",
+      "type": "Box",
+      "params": {
+        "width": 176.0,
+        "height": 1.5,
+        "depth": 210.0,
+        "centered": true
+      },
+      "position": [
+        60,
+        560
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "panepos",
+      "type": "Move",
+      "params": {
+        "x": 0.0,
+        "y": -7.75,
+        "z": 105.0
+      },
+      "position": [
+        300,
+        560
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "panes",
+      "type": "ArrayLinear",
+      "params": {
+        "count": 2,
+        "dx": 0.0,
+        "dy": 15.5,
+        "dz": 0.0
+      },
+      "position": [
+        540,
+        560
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "side",
+      "type": "Box",
+      "params": {
+        "width": 1.5,
+        "height": 14.0,
+        "depth": 210.0,
+        "centered": true
+      },
+      "position": [
+        60,
+        720
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "sidepos",
+      "type": "Move",
+      "params": {
+        "x": -78.75,
+        "y": 0.0,
+        "z": 105.0
+      },
+      "position": [
+        300,
+        720
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "sides",
+      "type": "ArrayLinear",
+      "params": {
+        "count": 2,
+        "dx": 157.5,
+        "dy": 0.0,
+        "dz": 0.0
+      },
+      "position": [
+        540,
+        720
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "blade",
+      "type": "Box",
+      "params": {
+        "width": 34.0,
+        "height": 14.0,
+        "depth": 3.0,
+        "centered": true
+      },
+      "position": [
+        60,
+        880
+      ],
+      "parent": null,
+      "color": "#b8823a"
+    },
+    {
+      "id": "bladerot",
+      "type": "Rotate",
+      "params": {
+        "angle": 35.0,
+        "axis": "Y",
+        "about": "part"
+      },
+      "position": [
+        300,
+        880
+      ],
+      "parent": null
+    },
+    {
+      "id": "bladex",
+      "type": "Move",
+      "params": {
+        "x": -96.0,
+        "y": 0.0,
+        "z": 150.0
+      },
+      "position": [
+        540,
+        880
+      ],
+      "parent": null,
+      "preview": true,
+      "color": "#b8823a"
+    },
+    {
+      "id": "jitter",
+      "type": "Random",
+      "params": {
+        "count": 60,
+        "min": -1.5,
+        "max": 1.5,
+        "seed": 1
+      },
+      "position": [
+        60,
+        1060
+      ],
+      "parent": null
+    },
+    {
+      "id": "ladder",
+      "type": "ListRange",
+      "params": {
+        "start": 190.0,
+        "count": 60,
+        "step": 4.5
+      },
+      "position": [
+        60,
+        1180
+      ],
+      "parent": null
+    },
+    {
+      "id": "pts",
+      "type": "ConstructPoint",
+      "params": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "position": [
+        360,
+        1100
+      ],
+      "parent": null
+    },
+    {
+      "id": "balls",
+      "type": "Sphere",
+      "params": {
+        "radius": 2.2,
+        "arc": 360.0
+      },
+      "position": [
+        620,
+        1100
+      ],
+      "parent": null
+    },
+    {
+      "id": "t",
+      "type": "NumberSlider",
+      "params": {
+        "value": 1.0,
+        "_ui": {
+          "value": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        }
+      },
+      "position": [
+        620,
+        1260
+      ],
+      "parent": null
+    },
+    {
+      "id": "drop",
+      "type": "Drop",
+      "params": {
+        "t": 1.0,
+        "material": "wood",
+        "settle": true,
+        "collide": true,
+        "grip": 0.15
+      },
+      "position": [
+        1560,
+        500
+      ],
+      "parent": null,
+      "preview": true,
+      "color": "#5a7fb8"
+    }
+  ],
+  "connections": [
+    {
+      "id": "l1",
+      "from_node": "peg",
+      "from_socket": "result",
+      "to_node": "pegrot",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l2",
+      "from_node": "pegrot",
+      "from_socket": "result",
+      "to_node": "pegpos",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l3",
+      "from_node": "pegpos",
+      "from_socket": "result",
+      "to_node": "rowA",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l4",
+      "from_node": "rowA",
+      "from_socket": "result",
+      "to_node": "gridA",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l5",
+      "from_node": "gridA",
+      "from_socket": "result",
+      "to_node": "flatA",
+      "to_socket": "list"
+    },
+    {
+      "id": "l6",
+      "from_node": "flatA",
+      "from_socket": "result",
+      "to_node": "gridB",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l7",
+      "from_node": "fin",
+      "from_socket": "result",
+      "to_node": "finpos",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l8",
+      "from_node": "finpos",
+      "from_socket": "result",
+      "to_node": "fins",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l9",
+      "from_node": "cap",
+      "from_socket": "result",
+      "to_node": "caprot",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l10",
+      "from_node": "caprot",
+      "from_socket": "result",
+      "to_node": "cappos",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l11",
+      "from_node": "cappos",
+      "from_socket": "result",
+      "to_node": "caps",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l12",
+      "from_node": "pane",
+      "from_socket": "result",
+      "to_node": "panepos",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l13",
+      "from_node": "panepos",
+      "from_socket": "result",
+      "to_node": "panes",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l14",
+      "from_node": "side",
+      "from_socket": "result",
+      "to_node": "sidepos",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l15",
+      "from_node": "sidepos",
+      "from_socket": "result",
+      "to_node": "sides",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l16",
+      "from_node": "blade",
+      "from_socket": "result",
+      "to_node": "bladerot",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l17",
+      "from_node": "bladerot",
+      "from_socket": "result",
+      "to_node": "bladex",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l18",
+      "from_node": "jitter",
+      "from_socket": "result",
+      "to_node": "pts",
+      "to_socket": "x"
+    },
+    {
+      "id": "l19",
+      "from_node": "ladder",
+      "from_socket": "result",
+      "to_node": "pts",
+      "to_socket": "z"
+    },
+    {
+      "id": "l20",
+      "from_node": "pts",
+      "from_socket": "point",
+      "to_node": "balls",
+      "to_socket": "origin"
+    },
+    {
+      "id": "l21",
+      "from_node": "flatA",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "container"
+    },
+    {
+      "id": "l22",
+      "from_node": "gridB",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "container"
+    },
+    {
+      "id": "l23",
+      "from_node": "fins",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "container"
+    },
+    {
+      "id": "l24",
+      "from_node": "caps",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "container"
+    },
+    {
+      "id": "l25",
+      "from_node": "panes",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "container"
+    },
+    {
+      "id": "l26",
+      "from_node": "sides",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "container"
+    },
+    {
+      "id": "l27",
+      "from_node": "bladex",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "container"
+    },
+    {
+      "id": "l28",
+      "from_node": "balls",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l29",
+      "from_node": "t",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "t"
+    }
+  ],
+  "groups": [
+    {
+      "title": "THE PEGS - one diamond, two lattices, half a spacing apart",
+      "bounding": [
+        20,
+        -20,
+        1660,
+        180
+      ],
+      "color": "#3f589e"
+    },
+    {
+      "title": "THE BINS - a wall and its apex, repeated",
+      "bounding": [
+        20,
+        200,
+        940,
+        300
+      ],
+      "color": "#3d7a63"
+    },
+    {
+      "title": "THE BOX IT FALLS IN (eye off - it collides, you look through it)",
+      "bounding": [
+        20,
+        520,
+        700,
+        320
+      ],
+      "color": "#555b66"
+    },
+    {
+      "title": "THE MOVABLE PIECE",
+      "bounding": [
+        20,
+        850,
+        700,
+        150
+      ],
+      "color": "#8a5f3d"
+    },
+    {
+      "title": "THE BALLS - jitter, a ladder, one sphere per point",
+      "bounding": [
+        20,
+        1020,
+        820,
+        260
+      ],
+      "color": "#7a4f6e"
+    }
+  ]
+}

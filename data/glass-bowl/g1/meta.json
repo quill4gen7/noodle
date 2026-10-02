@@ -1,0 +1,29 @@
+{
+  "label": "preview",
+  "created": "2026-10-02T13:04:51",
+  "version": "44ff519e6bf3a8c8",
+  "hash": "fd77f81eddc2dad1",
+  "pieces": [
+    {
+      "id": "n6",
+      "title": "Move",
+      "type": "Move"
+    },
+    {
+      "id": "n10",
+      "title": "Drop",
+      "type": "Drop",
+      "bodies": [
+        "Move",
+        "Move",
+        "Move"
+      ],
+      "animated": true
+    }
+  ],
+  "timeline": {
+    "seconds": 0.938
+  },
+  "gen": "g1",
+  "graph": "glass-bowl"
+}

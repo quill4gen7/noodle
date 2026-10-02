@@ -1,0 +1,21 @@
+{
+  "label": "preview",
+  "created": "2026-10-02T13:04:58",
+  "version": "b17ba88dcb16b466",
+  "hash": "a3108330dd24314e",
+  "pieces": [
+    {
+      "id": "n9",
+      "title": "Select Face",
+      "type": "SelectFace"
+    },
+    {
+      "id": "n23",
+      "title": "Fillet / Chamfer (selected)",
+      "type": "FilletChamferSelected"
+    }
+  ],
+  "timeline": null,
+  "gen": "g1",
+  "graph": "lego-brick"
+}

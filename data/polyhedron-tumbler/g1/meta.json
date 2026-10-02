@@ -1,0 +1,27 @@
+{
+  "label": "preview",
+  "created": "2026-10-02T13:04:53",
+  "version": "4a128be8bcc90501",
+  "hash": "a00f060655fce1dd",
+  "pieces": [
+    {
+      "id": "n11",
+      "title": "Drop",
+      "type": "Drop",
+      "bodies": [
+        "Move",
+        "Move",
+        "Move",
+        "Move",
+        "Move",
+        "Move"
+      ],
+      "animated": true
+    }
+  ],
+  "timeline": {
+    "seconds": 11.054
+  },
+  "gen": "g1",
+  "graph": "polyhedron-tumbler"
+}

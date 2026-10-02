@@ -1,0 +1,2384 @@
+{
+  "name": "tars-pet-k3-zoccolo-52",
+  "nodes": [
+    {
+      "id": "n1",
+      "type": "NumberSlider",
+      "params": {
+        "value": 180,
+        "_ui": {
+          "value": {
+            "min": 0,
+            "max": 180,
+            "step": 1
+          }
+        }
+      },
+      "position": [
+        80,
+        150
+      ],
+      "parent": null,
+      "title": "1 Angolo gambe (\u00b0)"
+    },
+    {
+      "id": "n2",
+      "type": "NumberSlider",
+      "params": {
+        "value": 10,
+        "_ui": {
+          "value": {
+            "min": 4,
+            "max": 25,
+            "step": 0.5
+          }
+        }
+      },
+      "position": [
+        80,
+        307
+      ],
+      "parent": null,
+      "title": "2 Alzata gambe (mm)"
+    },
+    {
+      "id": "n3",
+      "type": "NumberSlider",
+      "params": {
+        "value": 10.5,
+        "_ui": {
+          "value": {
+            "min": 8,
+            "max": 14,
+            "step": 0.1
+          }
+        }
+      },
+      "position": [
+        80,
+        464
+      ],
+      "parent": null,
+      "title": "3 Spessore batteria (mm)"
+    },
+    {
+      "id": "n4",
+      "type": "NumberSlider",
+      "params": {
+        "value": 1,
+        "_ui": {
+          "value": {
+            "min": 0,
+            "max": 3,
+            "step": 0.1
+          }
+        }
+      },
+      "position": [
+        80,
+        621
+      ],
+      "parent": null,
+      "title": "4 Imbottitura spugna (mm)"
+    },
+    {
+      "id": "n5",
+      "type": "NumberSlider",
+      "params": {
+        "value": 10,
+        "_ui": {
+          "value": {
+            "min": 8,
+            "max": 16,
+            "step": 0.5
+          }
+        }
+      },
+      "position": [
+        80,
+        778
+      ],
+      "parent": null,
+      "title": "5 Spessore gambe (mm)"
+    },
+    {
+      "id": "n6",
+      "type": "NumberSlider",
+      "params": {
+        "value": 32,
+        "_ui": {
+          "value": {
+            "min": 20,
+            "max": 36,
+            "step": 0.5
+          }
+        }
+      },
+      "position": [
+        80,
+        935
+      ],
+      "parent": null,
+      "title": "6 Lunghezza squadretta servo (mm)"
+    },
+    {
+      "id": "n7",
+      "type": "NumberSlider",
+      "params": {
+        "value": 40,
+        "_ui": {
+          "value": {
+            "min": 20,
+            "max": 50,
+            "step": 0.5
+          }
+        }
+      },
+      "position": [
+        80,
+        1092
+      ],
+      "parent": null,
+      "title": "7 Cassa: lunghezza (mm)"
+    },
+    {
+      "id": "n8",
+      "type": "NumberSlider",
+      "params": {
+        "value": 28,
+        "_ui": {
+          "value": {
+            "min": 15,
+            "max": 34,
+            "step": 0.5
+          }
+        }
+      },
+      "position": [
+        80,
+        1249
+      ],
+      "parent": null,
+      "title": "8 Cassa: altezza (mm)"
+    },
+    {
+      "id": "n9",
+      "type": "NumberSlider",
+      "params": {
+        "value": 10,
+        "_ui": {
+          "value": {
+            "min": 5,
+            "max": 20,
+            "step": 0.5
+          }
+        }
+      },
+      "position": [
+        80,
+        1406
+      ],
+      "parent": null,
+      "title": "9 Cassa: spessore (mm)"
+    },
+    {
+      "id": "n10",
+      "type": "Note",
+      "params": {
+        "text": "TARS-PET SOTTILE (trapezio) \u2014 corpo monolite + 2 gambe-lastra su servo SG90 (ispirato a TARS, non una copia)\n\nGAMBE RIBALTABILI: ogni gamba \u00e8 alta quanto il corpo, col perno spostato di alzata/2\ndal centro. Servo a 0\u00b0 = ritratte, a filo del corpo. Servo a 180\u00b0 = ribaltate: sporgono di\n`alzata` sotto e sollevano il corpo. Slider \"1 Angolo gambe\" = anteprima del movimento.\n\nSERVO IN VERTICALE: in profondit\u00e0 occupano 11.8 mm invece di 32. L'albero (= perno delle\ngambe) sta a met\u00e0 profondit\u00e0, cos\u00ec le gambe ribaltate restano a filo: la profondit\u00e0 \u00e8\n2 x (cornice + PCB + componenti dietro il PCB + mezzo servo) = 32.6 mm (era 48).\nBATTERIA SDRAIATA sul fondo (zavorra bassa): il retro si apre verso il basso\n(sezione trapezoidale), la base \u00e8 pi\u00f9 profonda delle gambe. Altezza quasi invariata.\n\nMATERIALI: frontale e gambe in PETG; retro in TPU duro. La frontale \u00e8 la vasca che porta\ntutto (schermo, servo, batteria); il retro TPU \u00e8 il coperchio con la cassa audio.\nINCASTRO (profilo del powerbank di riferimento, multipli dell'ugello 0.4): labbro continuo\ntutto attorno (collo \"labbro\" 1.2, a \"gioco_tpu\" 0.2 dalla parete, alto 3.2) con cordone che\nsporge \"cordone\" 0.8; nel TPU la gola profonda \"incavo\" 0.8, pi\u00f9 alta di \"incavo_extra\" 0.4.\nLa giunzione sta dietro servo e USB-C: il labbro gira intero. Per aprire: tacca sotto il fondo.\n\nMONTAGGIO \u2014 NIENTE VITI PASSANTI, NIENTE CLIP, NIENTE PIOLI:\nSCHERMO (misure dal case di riferimento monitorVerticale): finestra grande quanto il VETRO,\n70.4 x 50.4 (\"finestra_l\"/\"finestra_w\"), centrata sul PCB, cornice spessa 5 mm; il vetro resta\nincassato 2.2. Dietro, la sede del PCB 86.8 x 50.8 profonda 1.5 lo centra da sola. Il PCB entra\ninclinato col bordo alto sotto i 2 fermi in cima, poi la parte bassa si appoggia nella sede.\nServo inseriti dall'interno nei blocchi della frontale, alette appoggiate (viti delle alette\nfacoltative); squadretta a scatto nella gamba, vite centrale dal foro \u00d85 della gamba.\nBOOT/RESET: graffetta nei fori B / R sul retro (tubi guida nella frontale).\n"
+      },
+      "position": [
+        537,
+        1229
+      ],
+      "parent": null,
+      "size": [
+        240,
+        130
+      ]
+    },
+    {
+      "id": "n11",
+      "type": "CodeBlock",
+      "params": {
+        "code": "# Quanto le gambe sollevano il corpo all'angolo dato (0 = ritratte, 180 = in piedi).\n# in_0 = lista del progetto (l'ultimo elemento sono le quote).\nangolo = 180.0  #@param float min=0 max=180 step=1\nm = in_0[-1]\nt = math.radians(angolo)\nlow = min(y * math.sin(t) + z * math.cos(t) for y in (-m['D'] / 2, m['D'] / 2) for z in (-m['reach_giu'], m['reach_su']))\nresult = Vector(0, 0, max(0.0, -(m['p'] + low)))\n"
+      },
+      "position": [
+        867,
+        2373
+      ],
+      "parent": null,
+      "preview": false,
+      "title": "Sollevamento"
+    },
+    {
+      "id": "n13",
+      "type": "Display",
+      "params": {},
+      "position": [
+        1167,
+        880
+      ],
+      "parent": null
+    },
+    {
+      "id": "n14",
+      "type": "ListItem",
+      "params": {
+        "index": 8
+      },
+      "position": [
+        867,
+        653
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "n15",
+      "type": "ListItem",
+      "params": {
+        "index": 0
+      },
+      "position": [
+        867,
+        1560
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "n17",
+      "type": "ListItem",
+      "params": {
+        "index": 1
+      },
+      "position": [
+        867,
+        1895
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "n18",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        1167,
+        1809
+      ],
+      "parent": null,
+      "preview": true,
+      "color": "#8d949e",
+      "finish": "glass",
+      "title": "Posteriore"
+    },
+    {
+      "id": "n19",
+      "type": "ListItem",
+      "params": {
+        "index": 2
+      },
+      "position": [
+        867,
+        339
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "n20",
+      "type": "Rotate",
+      "params": {
+        "angle": 90,
+        "axis": "X",
+        "about": "world"
+      },
+      "position": [
+        1167,
+        150
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "n21",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        1534,
+        335
+      ],
+      "parent": null,
+      "preview": true,
+      "color": "#b8bec7",
+      "finish": "metal",
+      "title": "Gamba sx"
+    },
+    {
+      "id": "n22",
+      "type": "ListItem",
+      "params": {
+        "index": 3
+      },
+      "position": [
+        867,
+        496
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "n23",
+      "type": "Rotate",
+      "params": {
+        "angle": 90,
+        "axis": "X",
+        "about": "world"
+      },
+      "position": [
+        1167,
+        515
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "n24",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        1534,
+        704
+      ],
+      "parent": null,
+      "preview": true,
+      "color": "#b8bec7",
+      "finish": "metal",
+      "title": "Gamba dx"
+    },
+    {
+      "id": "n25",
+      "type": "ListItem",
+      "params": {
+        "index": 4
+      },
+      "position": [
+        867,
+        2216
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "n26",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        1167,
+        2178
+      ],
+      "parent": null,
+      "preview": true,
+      "color": "#1f6f43",
+      "title": "Scheda"
+    },
+    {
+      "id": "n27",
+      "type": "ListItem",
+      "params": {
+        "index": 5
+      },
+      "position": [
+        867,
+        3489
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "n28",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        1167,
+        3260
+      ],
+      "parent": null,
+      "preview": true,
+      "color": "#c9a227",
+      "finish": "metal",
+      "title": "Batteria"
+    },
+    {
+      "id": "n29",
+      "type": "ListItem",
+      "params": {
+        "index": 6
+      },
+      "position": [
+        867,
+        3980
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "n30",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        1167,
+        3786
+      ],
+      "parent": null,
+      "preview": true,
+      "color": "#2a5bd7",
+      "title": "Servo"
+    },
+    {
+      "id": "n31",
+      "type": "ListItem",
+      "params": {
+        "index": 7
+      },
+      "position": [
+        867,
+        4324
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "n32",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        1167,
+        4155
+      ],
+      "parent": null,
+      "preview": true,
+      "color": "#222222",
+      "title": "Cassa"
+    },
+    {
+      "id": "n33",
+      "type": "CodeBlock",
+      "params": {
+        "code": "# Pezzi orientati per la stampa, senza supporti: [frontale, posteriore, gamba sx, gamba dx, 4 piedini TPU + tappo header]\ndef bed(s):\n    b = s.bounding_box()\n    return Pos(-(b.min.X + b.max.X) / 2, -(b.min.Y + b.max.Y) / 2, -b.min.Z) * s\nfr, post, gsx, gdx = in_0[:4]\nresult = [bed(Rot(90, 0, 0) * fr),        # schermo sul piatto\n          bed(Rot(-90 - in_0[-1].get('tilt', 0.0), 0, 0) * post),     # schiena sul piatto (anche se inclinata)\n          bed(Rot(0, -90, 0) * gsx),      # faccia esterna sul piatto\n          bed(Rot(0, 90, 0) * gdx)]\n\n# piedini TPU in fila. Quelli bassi (R80, quasi piatti): suola sul piatto, coda in su. Quelli da in piedi\n# (R22): di fianco, perch\u00e9 sulla suola toccherebbero il piatto lungo una riga; la coda resta orizzontale\n# con due sbalzi da 1,75 mm, che il TPU fa senza supporti.\nH = in_0[-1]['H']\npz = [bed(Rot(0, 90, 0) * s if s.center().Z > H / 2 else s) for s in in_0[9].solids()]\npz.append(Pos(0, 36, 0) * bed(Rot(180, 0, 0) * in_0[11]))     # tappo dell'header: flangia sul piatto\nresult.append(Compound(children=[Pos(0, (i - 1.5) * 40, 0) * s for i, s in enumerate(pz[:4])] + [Pos(30, 0, 0) * s for s in pz[4:]]))"
+      },
+      "position": [
+        867,
+        2840
+      ],
+      "parent": null,
+      "preview": false,
+      "title": "Orienta per stampa"
+    },
+    {
+      "id": "n34",
+      "type": "ListItem",
+      "params": {
+        "index": 0
+      },
+      "position": [
+        1167,
+        2547
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "n36",
+      "type": "ToMesh",
+      "params": {
+        "tolerance": 0.02
+      },
+      "position": [
+        1534,
+        2020
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "n37",
+      "type": "PrintCheck",
+      "params": {
+        "angle": 45,
+        "layer": 0.2,
+        "clearance": 0.2
+      },
+      "position": [
+        1918,
+        1970
+      ],
+      "parent": null,
+      "title": "Stampa frontale"
+    },
+    {
+      "id": "n38",
+      "type": "Display",
+      "params": {},
+      "position": [
+        2227,
+        2011
+      ],
+      "parent": null
+    },
+    {
+      "id": "n39",
+      "type": "ListItem",
+      "params": {
+        "index": 1
+      },
+      "position": [
+        1167,
+        2704
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "n40",
+      "type": "ExportSTL",
+      "params": {
+        "path": "tars_posteriore.stl"
+      },
+      "position": [
+        1534,
+        2539
+      ],
+      "parent": null
+    },
+    {
+      "id": "n41",
+      "type": "ToMesh",
+      "params": {
+        "tolerance": 0.02
+      },
+      "position": [
+        1534,
+        2358
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "n42",
+      "type": "PrintCheck",
+      "params": {
+        "angle": 45,
+        "layer": 0.2,
+        "clearance": 0.2
+      },
+      "position": [
+        1918,
+        2308
+      ],
+      "parent": null,
+      "title": "Stampa posteriore"
+    },
+    {
+      "id": "n43",
+      "type": "Display",
+      "params": {},
+      "position": [
+        2227,
+        2349
+      ],
+      "parent": null
+    },
+    {
+      "id": "n44",
+      "type": "ListItem",
+      "params": {
+        "index": 2
+      },
+      "position": [
+        1167,
+        2861
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "n45",
+      "type": "ExportSTL",
+      "params": {
+        "path": "tars_gamba_sx.stl"
+      },
+      "position": [
+        1534,
+        2877
+      ],
+      "parent": null
+    },
+    {
+      "id": "n46",
+      "type": "ToMesh",
+      "params": {
+        "tolerance": 0.02
+      },
+      "position": [
+        1534,
+        2696
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "n47",
+      "type": "PrintCheck",
+      "params": {
+        "angle": 45,
+        "layer": 0.2,
+        "clearance": 0.2
+      },
+      "position": [
+        1918,
+        2646
+      ],
+      "parent": null,
+      "title": "Stampa gamba sx"
+    },
+    {
+      "id": "n48",
+      "type": "Display",
+      "params": {},
+      "position": [
+        2227,
+        2687
+      ],
+      "parent": null
+    },
+    {
+      "id": "n49",
+      "type": "ListItem",
+      "params": {
+        "index": 3
+      },
+      "position": [
+        1167,
+        3629
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "n50",
+      "type": "ExportSTL",
+      "params": {
+        "path": "tars_gamba_dx.stl"
+      },
+      "position": [
+        1534,
+        3797
+      ],
+      "parent": null
+    },
+    {
+      "id": "n51",
+      "type": "CodeBlock",
+      "params": {
+        "code": "\n# TARS-PET SOTTILE \u2014 corpo monolite + 2 gambe-lastra su micro servo (SG92R / MG90S), ribaltabili di 180\u00b0.\n# Mondo: Z su, X larghezza, fronte (schermo) verso -Y, albero dei servo (= perno gambe) su y=0.\n# Trucco delle gambe: lastra alta quanto il corpo con il perno spostato di alzata/2\n# dal centro -> a 0\u00b0 \u00e8 a filo del corpo, ribaltata a 180\u00b0 sporge sotto di `alzata` e\n# solleva il corpo. Il perno sta SOPRA il baricentro (batteria in basso): pendolo stabile.\n# SERVO IN VERTICALE (corpo lungo Z): in profondit\u00e0 occupano 11.8 invece di 32.2. Il\n# perno deve stare a met\u00e0 profondit\u00e0 (le gambe ribaltate restano a filo), quindi la\n# profondit\u00e0 \u00e8 2 x (schermo + PCB + componenti dietro il PCB + mezzo servo) ~ 32 mm.\n# trapezio = 0: sezione rettangolare, batteria IN PIEDI sul fondo (servo sopra: corpo pi\u00f9 alto).\n# trapezio = 1: batteria SDRAIATA sul fondo, il retro si apre verso il basso (trapezio).\ntrapezio = 1  #@param int min=0 max=1\ngioco = 0.4  #@param float min=0.1 max=1.0 step=0.05\nparete = 2.0  #@param float min=1.6 max=3.0 step=0.1\nparete_retro = 2.4  #@param float min=1.6 max=3.6 step=0.4\nimbottitura = 1.0  #@param float min=0 max=3 step=0.1\nbatteria = 10.5  #@param float min=8 max=14 step=0.1\nfinestra_l = 70.4  #@param float min=66 max=76 step=0.2\nfinestra_w = 50.4  #@param float min=46 max=54 step=0.2\nalzata = 10.0  #@param float min=4 max=25 step=0.5\nspessore_gamba = 10.0  #@param float min=8 max=16 step=0.5\nsquadretta = 32.6  #@param float min=20 max=36 step=0.5\n# ---- SERVO TowerPro SG92R: quote dalla scansione a 300 dpi col calibro (27/9), 32.8 fondo -> cima squadretta;, tutte dal FONDO del servo lungo l'albero (vedi docs/design.md) ----\nh_squadretta = 32.8  #@param float min=28 max=38 step=0.1\nspalla = 23.3  #@param float min=20 max=28 step=0.1\nmozzo = 27.8  #@param float min=24 max=32 step=0.1\naletta = 16.9  #@param float min=14 max=23 step=0.1\naletta_sp = 2.4  #@param float min=1.5 max=3.5 step=0.1\nalette_l = 31.8  #@param float min=30 max=36 step=0.1\nservo_l = 22.4  #@param float min=21 max=24.5 step=0.1\nservo_w = 12.2  #@param float min=11 max=13.5 step=0.1\nasse = 6.7  #@param float min=5 max=8 step=0.1\nmozzo_r = 6.0  #@param float min=5 max=7 step=0.1\nsp_squadretta = 1.8  #@param float min=1 max=3 step=0.1\ningranaggio = 7.5  #@param float min=5 max=13 step=0.1\n# ---- gamba = anima PETG corta + due piedini TPU intercambiabili (sim/README.md, gambe K3) ----\n# Tutte le quote dal perno. L'anima resta sempre la stessa; alzata, forma e presa le decidono i piedini.\n# piede_su: il capo che fa da piede in piedi (a 180\u00b0). piede_giu: quello che tocca a gambe ritratte (remata).\nnucleo_su = 40.0  #@param float min=30 max=50 step=0.5\nnucleo_giu = 40.0  #@param float min=30 max=45 step=0.5\npiede_su = 52.0  #@param float min=46 max=60 step=0.5\nraggio_su = 22.0  #@param float min=16.6 max=300 step=0.5\npiede_giu = 48.0  #@param float min=44 max=52 step=0.5\nraggio_giu = 80.0  #@param float min=16.6 max=300 step=5\ndiff_su_dx = 0.0  #@param float min=-4 max=4 step=0.5\n# capo basso destro pi\u00f9 lungo: +5 (55 mm) lo rovescia dalla schiena a faccia in gi\u00f9, e seduto resta\n# in piedi (Webots K3, 29/9: 3 su 3 dalla schiena, 0 cadute su 30 seduto <-> in piedi; 56 mm gi\u00e0 1 su 30).\ndiff_giu_dx = 0.0  #@param float min=-4 max=8 step=0.5\n# zoccolo sul piedino basso (29/9): un tallone che sporge dietro la gamba (verso +Y), con la punta alla quota della suola.\n# Allunga la leva solo a gambe quasi ritratte: dalla schiena il robot si rovescia e si rialza da solo\n# (sim/forme/rotola.py, Webots tars_pet_zoccolo.wbt: 12 e 14 mm 9 su 9, seduto <-> in piedi e remata come prima).\n# Serve su tutti e due i piedini bassi: su uno solo il robot si piega di lato.\nzoccolo = 14.0  #@param float min=0 max=20 step=0.5\nzoccolo_dx = -1.0  #@param float min=-1 max=20 step=0.5\n# Il piedino basso con lo zoccolo \u00e8 disegnato come un pezzo solo (profilo di fianco estruso, spigoli raccordati):\n# suola R80 davanti, fondo piatto dal centro fino alla punta (sul piatto di stampa), punta smussata a 45\u00b0,\n# retro dritto alto quanto il piedino, e un CONTRAFFORTE che sale dietro la gamba e raccoglie lo zoccolo in una\n# curva concava: la leva dello zoccolo si scarica sul retro dell'anima PETG invece che sulla coda di rondine.\n# Tutto il pezzo sta dentro l'inviluppo convesso dello zoccolo validato: il contatto con il piano non cambia.\ncontrafforte = 10.0  #@param float min=0 max=14 step=0.5\ncontrafforte_sp = 4.0  #@param float min=2.5 max=6 step=0.5\nraggio_dorso = 12.0  #@param float min=4 max=40 step=1\ngioco_piede = 0.1  #@param float min=0 max=0.4 step=0.05\n# ---- header femmina in cima: due strisce affiancate (misurate: larga 2.5, alta 8.3) ----\nheader_pin = 8  #@param int min=2 max=10\nheader_h = 8.3  #@param float min=7 max=10 step=0.1\ncassa_l = 40.0  #@param float min=20 max=50 step=0.5\ncassa_a = 28.0  #@param float min=15 max=34 step=0.5\ncassa_p = 10.0  #@param float min=5 max=20 step=0.5\ncassa_r = 8.0  #@param float min=1 max=14 step=0.5\ncavo_da_membrana = 6.0  #@param float min=1 max=15 step=0.5\n# Incastro frontale PETG -> posteriore TPU duro (profilo ricavato dal powerbank di riferimento):\n# labbro continuo tutto attorno con un cordone, nel guscio TPU la gola. Il TPU si allarga sul\n# cordone e si richiude nella gola: niente viti passanti, niente clip. Misure piccole in\n# multipli dell'ugello 0.4, cos\u00ec ogni dettaglio \u00e8 un numero intero di linee.\nlabbro = 1.6  #@param float min=1.2 max=2.4 step=0.4\ncordone = 0.8  #@param float min=0.4 max=1.2 step=0.4\nincavo = 0.8  #@param float min=0.4 max=1.2 step=0.4\nincavo_extra = 0.4  #@param float min=0 max=1.2 step=0.4\ngioco_tpu = 0.2  #@param float min=0 max=0.4 step=0.1\n\nFR, BL, BW, CAVO = 1.6, 66.0, 36.0, 4.0\nW_in = max(BL + 2 * imbottitura + CAVO, 2 * (spalla + 0.2) + 2.0)\nW = W_in + 2 * parete\n# ---- profondit\u00e0: tutto si misura dall'albero dei servo (y = 0) ----\nCOMP = 3.4                                    # componenti dietro il PCB (header, USB-C)\nSEDE = 5.0                                    # faccia -> PCB (cornice del riferimento): il vetro resta 2.2 incassato\nd = SEDE + 1.6 + COMP + 0.4 + servo_w / 2     # fronte -> albero: cornice, PCB, componenti, aria, mezzo servo\nz_giu = asse + (alette_l - servo_l) / 2 + 1.6  # blocco del servo sotto l'albero (alette + linguetta)\nz_su = servo_l - asse + 0.4                    # corpo del servo sopra l'albero\ny_F = -d                                      # faccia dello schermo\ny_pcb = y_F + SEDE + 1.6                      # faccia posteriore PCB\ny_top = d                                     # retro in cima (= profondit\u00e0 delle gambe)\n# ---- altezza: la pi\u00f9 piccola che fa stare tutto ----\nPR = parete_retro - parete                                        # il retro TPU \u00e8 pi\u00f9 spesso, verso l'interno\nz_b = parete + max(imbottitura, gioco_tpu + labbro + 0.3)       # fondo batteria (sopra il labbro TPU)\nbat_h = batteria if trapezio else BW                             # batteria sdraiata / in piedi\nz_bt = z_b + bat_h + imbottitura                                 # cima batteria + spugna\nai, sw = cassa_a + 0.8, 1.6                                      # vano cassa + manicotto\nH = max(86.0 + 2 * parete + gioco + 2 * imbottitura + batteria + 0.5,\n        z_bt + 0.4 + 1.6 + 88.4 if trapezio else 0.0,                  # PCB sopra la batteria sdraiata\n        2 * (z_bt + 0.4 + z_giu) + alzata,                       # blocchi dei servo sopra la batteria\n        2 * (z_su + ai + 2 * sw + 8.56) - alzata)                # cassa sopra i servo, sotto i tubi BOOT/RESET\nH = math.ceil(H * 2) / 2\np = (H - alzata) / 2                          # quota perno (albero servo)\nz_c = H - parete - gioco - 43.0               # centro scheda (USB-C in alto)\nBloc = Plane(origin=(0, y_pcb, z_c), x_dir=(0, 0, 1), z_dir=(0, -1, 0)).location\nMIN = (Align.CENTER, Align.CENTER, Align.MIN)\n# ---- batteria ----\ny_bf = y_F + FR + 0.4 + imbottitura if trapezio else y_pcb + 0.4 + imbottitura   # faccia anteriore\ny_bb = y_bf + (BW if trapezio else batteria)                                     # faccia posteriore\n# ---- retro: y_o(z) lineare fra y_bot (z=0) e y_top (z=H); nel trapezio y_bot fa stare la batteria ----\ny_bot = y_top\nif trapezio:\n    need = y_bb + imbottitura + 0.3           # parete interna, all'altezza della cima batteria\n    for _ in range(4):\n        k = (y_bot - y_top) / H\n        n_off = parete_retro * math.sqrt(1 + k * k)\n        y_bot = max(y_top, (need + n_off - y_top * z_bt / H) / (1 - z_bt / H))\nk = (y_bot - y_top) / H\nn_off = parete_retro * math.sqrt(1 + k * k)\ntilt = math.degrees(math.atan(k))             # inclinazione del retro (0 = rettangolare)\ny_o = lambda z: y_bot + (y_top - y_bot) * z / H          # retro esterno\ny_i = lambda z: y_o(z) - n_off                           # retro interno\n# Piano di giunzione: dietro i blocchi dei servo, il mozzo e la feritoia USB-C.\nyb = servo_w / 2 + 1.5                        # retro dei blocchi dei servo\n# Incastro: il labbro TPU del retro entra nella frontale per Lh (vedi sotto), quindi il piano di\n# giunzione sta Lh dietro i blocchi dei servo, il mozzo e la feritoia USB-C.\nb_bordo, fl, f_ = 1.0, 0.4, 1.2               # parete PETG tra bordo e gola, fianco di presa, faccia dritta\ngi, c_, ie = gioco_tpu, cordone, incavo_extra\nLh = b_bordo + ie / 2 + fl + f_ + c_ + 0.6    # lunghezza del labbro TPU\ny_j = max(yb + 0.4, mozzo_r + 0.3 + 0.8, y_pcb + 1.6 + 7.5 / 2 + 0.8) + Lh\n\ndef box(x0, x1, y0, y1, z0, z1):\n    x0, x1 = sorted((x0, x1)); y0, y1 = sorted((y0, y1)); z0, z1 = sorted((z0, z1))\n    return Pos((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2) * Box(x1 - x0, y1 - y0, z1 - z0)\ndef cyl_y(x, z, r, y0, y1):\n    y0, y1 = sorted((y0, y1)); return Pos(x, (y0 + y1) / 2, z) * Rot(90, 0, 0) * Cylinder(r, y1 - y0)\ndef cyl_x(y, z, r, x0, x1):\n    x0, x1 = sorted((x0, x1)); return Pos((x0 + x1) / 2, y, z) * Rot(0, 90, 0) * Cylinder(r, x1 - x0)\ndef rr_y(w, h, r, y0, y1):                    # prisma a rettangolo raccordato lungo Y, centrato in (0, H/2)\n    y0, y1 = sorted((y0, y1))\n    return Pos(0, (y0 + y1) / 2, H / 2) * Rot(90, 0, 0) * extrude(RectangleRounded(w, h, max(0.3, r)), (y1 - y0) / 2, both=True)\ndef prism_yz(pts, w):                         # poligono nel piano YZ estruso lungo X, centrato\n    return extrude(Plane.YZ * Polygon(*pts, align=None), w / 2, both=True)\n\n# ---------------- guscio: monolite smussato, diviso sul piano y_j ----------------\nouter = prism_yz([(y_F, 0), (y_bot, 0), (y_top, H), (y_F, H)], W)\nouter = chamfer(outer.edges(), 1.0)\nHc, rc = H - 2 * parete, 2.5                  # vano interno a spigoli raccordati: il cordone gira senza strappi\ndz = 10.0\nbehind = prism_yz([(y_F - 5, -dz), (y_i(-dz), -dz), (y_i(H + dz), H + dz), (y_F - 5, H + dz)], W + 10)\nshell = outer - (rr_y(W_in, Hc, rc, y_F + FR, y_bot + 5) & behind)\nbezel = shell & box(-W, W, y_F - 1, y_j, -1, H + 1)\nW_t, Hc_t, rc_t = W_in - 2 * PR, Hc - 2 * PR, rc - PR                # vano del retro (pareti parete_retro)\ntub = (outer - (rr_y(W_t, Hc_t, rc_t, y_F + FR, y_bot + 5) & behind)) & box(-W, W, y_j, y_bot + 5, -1, H + 1)\n# (niente pi\u00f9 anello-cuscinetto sui fianchi: col suo incavo nella gamba bloccava la gamba prima\n# che la squadretta arrivasse in battuta. La gamba ora poggia solo sulla squadretta.)\n\n# ---------------- frontale (cornice schermo) ----------------\n# Misure prese dal case di riferimento (monitorVerticale.stl, raddrizzato di 15\u00b0):\n#   finestra = il VETRO intero (70.4 x 50.4), centrata sul PCB, cornice spessa SEDE = 5 mm;\n#   dietro, la sede del PCB 86.8 x 50.8 profonda 1.5 che lo centra da sola (niente pioli).\n# Riferimento locale Bloc: x lungo il PCB (86, verso l'USB-C), y sul lato corto, z verso lo schermo;\n# il PCB occupa z 0..1.6, la faccia frontale \u00e8 a z = 1.6 + SEDE.\nfuori = RectangleRounded(86 + 2 * gioco + 2.4, 50 + 2 * gioco + 2.4, 1.5)\nbezel += Bloc * (Pos(0, 0, 1.6) * extrude(fuori - Rectangle(finestra_l, finestra_w), SEDE - FR + 0.02))      # cornice: il PCB ci appoggia\nbezel += Bloc * (Pos(0, 0, 1.6 - 1.5) * extrude(fuori - Rectangle(86 + 2 * gioco, 50 + 2 * gioco), 1.52))  # bordo della sede\nbezel -= Bloc * (Pos(0, 0, 1.5) * extrude(Rectangle(finestra_l, finestra_w), SEDE + 0.2))                  # finestra\nbezel -= Bloc * extrude(Plane.XY.offset(1.6 + SEDE - 0.8) * Rectangle(finestra_l, finestra_w), 0.81, taper=-45)   # smusso 0.8 sul bordo\nbezel -= Bloc * (Pos(-39, 15, 1.5) * Cylinder(1.0, SEDE + 0.3, align=MIN))                                # microfono\n# Fermi in cima (come il riferimento, ma due, ai lati dell'USB-C): il bordo alto del PCB ci\n# entra sotto inclinandolo, poi la parte bassa si appoggia nella sede.\nfor sx in (-1, 1):\n    bezel += box(sx * 15, sx * 19, y_pcb + 0.3, y_pcb + 1.9, z_c + 43 - 4, H - parete + 0.01)\nusb = Bloc * (Pos(0, 0, -1.6) * extrude(Plane.YZ.offset(42) * SlotOverall(13, 7.5), gioco + parete + 2))\n# ---- incastro continuo al bordo della faccia (labbro TPU dentro la frontale PETG) ----\n# Sezione (x = fuori dalla faccia interna della parete PETG, a = dentro la frontale dal piano y_j):\n#   labbro TPU del retro, spesso `labbro`, a `gioco_tpu` dalla parete PETG, lungo Lh;\n#   CORDONE sulla faccia esterna del labbro (sporge `cordone`): fianco di presa ripido dal lato\n#   del bordo, faccia dritta 1.2, invito a 45\u00b0 verso la punta (\u00e8 quello che entra per primo);\n#   GOLA nella parete PETG, profonda `incavo`, pi\u00f9 alta del cordone di `incavo_extra`, a 1 mm dal\n#   bordo (quel millimetro di PETG \u00e8 quello che trattiene); bordo della frontale e punta del labbro\n#   smussati a 45\u00b0. Chiudendo, il labbro TPU si piega verso l'interno e scatta nella gola.\n#   Alla base il retro si ispessisce fino al labbro con uno smusso a 45\u00b0 (niente sbalzi in stampa).\n# Si apre facendo leva nella tacca sul fondo.\nwo, ho, ro = W_in - 2 * gi, Hc - 2 * gi, rc - gi\nwi, hi, ri = wo - 2 * labbro, ho - 2 * labbro, ro - labbro\ntb = max(0.0, labbro + gi - PR)                # fascia del retro dalla sua parete al labbro\nlabbro_tpu = rr_y(wo, ho, ro, y_j - Lh, y_j + 0.01) - rr_y(wi, hi, ri, y_j - Lh - 1, y_j + 1)\nif tb > 0:\n    fascia = rr_y(W_t + 0.02, Hc_t + 0.02, rc_t, y_j, y_j + tb + 0.01)\n    fascia -= extrude(Plane(origin=(0, y_j - 0.02, H / 2), x_dir=(1, 0, 0), z_dir=(0, 1, 0)) * RectangleRounded(wi, hi, max(0.3, ri)), tb + 0.05, taper=-45)\n    labbro_tpu += fascia\npath = (Plane(origin=(0, y_j, H / 2), x_dir=(1, 0, 0), z_dir=(0, 1, 0)) * RectangleRounded(W_in, Hc, rc)).wire()\ndef around(*pts):                              # profilo (x, a) fatto girare lungo tutto il bordo; a verso lo schermo\n    return sweep(Plane(origin=(W_in / 2, y_j, H / 2), x_dir=(1, 0, 0), z_dir=(0, 0, 1)) * Polygon(*[(x, -a) for x, a in pts], align=None), path=path)\na1 = b_bordo + ie / 2                          # inizio del cordone (fianco di presa)\nlabbro_tpu += around((-gi - 0.3, a1), (-gi, a1), (-gi + c_, a1 + fl), (-gi + c_, a1 + fl + f_), (-gi, a1 + fl + f_ + c_), (-gi - 0.3, a1 + fl + f_ + c_))\nlabbro_tpu -= around((-gi - 0.7, Lh + 0.3), (-gi + 0.3, Lh + 0.3), (-gi + 0.3, Lh - 0.7))   # punta smussata 0.4\ngA, gB = b_bordo, a1 + fl + f_ + ie / 2\ngola = around((-0.3, gA - 0.3), (0, gA), (incavo, gA + fl * incavo / c_), (incavo, gB), (0, gB + incavo), (-0.3, gB + incavo + 0.3))\nbezel -= gola                                  # gola nella parete PETG\nbezel -= extrude(Plane(origin=(0, y_j + 0.01, H / 2), x_dir=(1, 0, 0), z_dir=(0, -1, 0)) * RectangleRounded(W_in + 1.2, Hc + 1.2, rc + 0.6), 0.6, taper=45)  # invito sul bordo\ntub -= box(-6, 6, y_j - 0.01, y_j + 1.2, -0.1, 0.8)          # tacca di apertura sul fondo\nbezel -= usb\n\n# ---------------- servo IN VERTICALE, nella frontale (PETG), SENZA VITI ----------------\n# Albero lungo X sul perno (y = 0, z = p). Quote dal FONDO del servo (x = xs, verso il centro):\n# alette da `aletta` a `aletta + aletta_sp`, spalla della cassa a `spalla`, cima del mozzo a\n# `mozzo`, cima della squadretta a `h_squadretta`. Corpo servo_l lungo Z con l'albero a `asse`\n# dall'estremit\u00e0 bassa, alette lunghe alette_l, centrate sul corpo.\n# Il servo entra DA DENTRO (a retro aperto) e si spinge verso il fianco lungo X, come con le viti:\n# il mozzo passa nel foro della parete (chiuso: il labbro dell'incastro resta intero), le alette\n# vanno in battuta sul blocco. Al posto delle viti, ai due capi delle alette, due LINGUETTE a scatto\n# in PETG: lastrine lungo X, spesse lt, staccate dal blocco da una fessura fino alla radice vicino\n# alla parete; in punta un dente con invito che l'aletta scavalca piegandole verso l'esterno, poi\n# scatta dietro l'aletta e la tiene contro il blocco. In stampa (schermo sul piatto) la linguetta \u00e8\n# una parete verticale che si flette nel piano degli strati. Per smontare: far leva sulle linguette.\ng_s = 0.25                                    # gioco servo/blocco\nxs = W_in / 2 - 0.2 - spalla                  # |x| del fondo servo: la spalla resta 0.2 dentro la parete\nxa = xs + aletta                              # |x| faccia inferiore (interna) delle alette\nxb = xa + aletta_sp                           # |x| faccia delle alette in battuta sul blocco\nz0, z1 = p - asse, p - asse + servo_l         # corpo\nza0, za1 = z0 - (alette_l - servo_l) / 2, z1 + (alette_l - servo_l) / 2   # alette\nlt, lw, presa, fess = 1.2, 8.0, 0.6, 0.6      # linguetta: spessore, larghezza, presa del dente, fessura\nx_rad = W_in / 2 - 0.3                        # radice della linguetta\nx_punta = xa - 0.1 - 1.4                      # punta (il dente \u00e8 lungo 1.4, oltre la faccia interna dell'aletta)\nadds, cuts, lingue = [], [], []\nfor s in (-1, 1):\n    adds.append(box(s * xb, s * (W_in / 2 + 0.01), y_F + FR - 0.01, yb, za0 - 0.3 - lt, za1 + 0.3 + lt))   # blocco dal pannello\n    cuts.append(box(s * (xb - 0.1), s * (W_in / 2 + 0.1), -servo_w / 2 - g_s, servo_w / 2 + g_s, z0 - g_s, z1 + g_s))   # corpo\n    xw0, xw1 = s * (W_in / 2 - 0.1), s * (W / 2 + 0.1)             # mozzo e ingranaggio secondario: foro chiuso\n    cuts.append(cyl_x(0, p, mozzo_r + 0.3, xw0, xw1))\n    cuts.append(box(xw0, xw1, -3.8, 3.8, p, p + ingranaggio + 0.3))\n    for e in (-1, 1):                                             # e = -1 capo basso, +1 capo alto\n        zn = (za0 - 0.3) if e < 0 else (za1 + 0.3)                # faccia della linguetta verso l'aletta\n        cuts.append(box(s * (xb - 0.1), s * x_rad, -lw / 2 - fess, lw / 2 + fess, zn + e * (lt + 0.1), zn - e * fess))  # fessura\n        lingue.append(box(s * x_punta, s * x_rad + s * 0.01, -lw / 2, lw / 2, zn, zn + e * lt))                      # linguetta\n        pl = Plane(origin=(0, 0, 0), x_dir=(1, 0, 0), z_dir=(0, -1, 0))                                             # locale y = +Z\n        hz = zn - e * (0.3 + presa)                                                                                  # cima del dente\n        lingue.append(extrude(pl * Polygon((s * x_punta, zn), (s * (xa - 0.1), zn), (s * (xa - 0.1), hz), (s * (xa - 0.3), hz), align=None), lw / 2, both=True))   # dente: invito ~37\u00b0, faccia di presa dritta\nbezel = (bezel + Compound(children=adds)) - Compound(children=cuts)\nbezel += Compound(children=lingue)\n# FORCHETTA nel retro TPU per il fondo libero del servo (il PETG l\u00ec non si pu\u00f2 mettere: davanti e\n# dietro al servo passa la scheda quando si infila). Si monta chiudendo il retro:\n#   - tampone dietro al servo (0.05 di interferenza);\n#   - due dita lungo le estremit\u00e0 del corpo (sotto e sopra), con in punta un dentino che scavalca il\n#     corpo (invito a 45\u00b0) e scatta davanti alla faccia anteriore.\n# Tiene il fondo del servo avanti/indietro e su/gi\u00f9. Le dita stanno fuori dai connettori del PCB e\n# lontano dall'uscita del cavo (capo basso, vicino al fondo del servo).\nft, dd, rib = 1.2, 0.8, 3.0                    # spessore delle dita, presa del dentino, altezza della costola\nyf = -servo_w / 2 - 0.05                       # faccia di presa del dentino (davanti al servo)\ny_rib = 0.0                                    # costole e parte larga si fermano qui: davanti passano i connettori del PCB\nx_max = x_punta - 0.4 - xs                     # fin dove pu\u00f2 arrivare un dito (i denti delle linguette)\nfor s in (-1, 1):\n    X = lambda a, b: (s * (xs + a), s * (xs + b))\n    tub += box(*X(2, 14), servo_w / 2 - 0.05, y_i(p) + 1.0, p + 1, p + 9) & outer                            # tampone\n    for e in (-1, 1):\n        zf = (z0 - g_s) if e < 0 else (z1 + g_s)                        # faccia del dito verso il corpo\n        zo = zf + e * ft                                                # faccia esterna\n        y_back = y_i(zf) + 1.0\n        if e < 0:   # dito basso (lato mozzo): largo; fessura aperta in punta per il cavo del servo\n            dito = box(*X(1, x_max), yf - 1.4, y_back, zf, zo)\n            dito -= box(*X(3, 8.5), yf - 2, 8.0, zf - 1, zo + 1)                                          # fessura del cavo (aperta davanti)\n            dito -= box(*X(10, x_max - 1.5), 3.0, 11.0, zf - 1, zo + 1)                                   # asola per altri cavi\n            prese = ((1, 3), (8.5, x_max))\n        else:       # dito alto: stretto davanti (connettori del PCB), largo dietro\n            dito = box(*X(1, 6.5), yf - 1.4, y_back, zf, zo) + box(*X(1, x_max), y_rib, y_back, zf, zo)\n            dito -= box(*X(8.5, x_max - 1.5), 3.0, 11.0, zf - 1, zo + 1)                                  # asola per i cavi\n            prese = ((1, 6.5),)\n        dito += box(*X(x_max - 1.2, x_max), y_rib, y_back, zo, zo + e * rib)                              # costola: profilo a L\n        dito += box(*X(1, 2.2), y_rib, y_back, zo, zo + e * rib)                                          # seconda costola: profilo a U\n        tub += dito & outer\n        for a0, a1 in prese:\n            pl = Plane(origin=(s * (xs + (a0 + a1) / 2), 0, 0), x_dir=(0, 1, 0), z_dir=(1, 0, 0))            # locale: x = Y, y = Z\n            tub += extrude(pl * Polygon((yf - 1.4, zf), (yf, zf), (yf, zf - e * (g_s + dd)), (yf - 1.4 + g_s + dd, zf - e * (g_s + dd)), align=None), (a1 - a0) / 2, both=True)\n\n# ---------------- header femmina 2 x N in cima, incassato, con tappo TPU a scatto ----------------\n# Due strisce femmina (passo 2.54, larghe 2.5, alte header_h) affiancate, in una manica appesa al tetto,\n# vicino al fianco destro (guardando lo schermo) e con le strisce LUNGO LA PROFONDIT\u00c0: in stampa\n# (schermo sul piatto) il vano ha il soffitto largo solo quanto le due strisce (~5 mm), un ponte\n# facile invece di una volta di 20 mm. L\u00ec il PCB non c'\u00e8 (finisce a |x| 26.6 con la sua sede) e il\n# labbro TPU del retro comincia a y_j - Lh: la manica sta tra i due.\n# Dall'alto: sede della flangia del tappo (1.2), vano del tappo con la gola tutto attorno (0.4,\n# fianchi 45\u00b0, come l'incastro della scocca), battuta dell'header (0.4 per lato), poi l'header: si\n# spinge da dentro, supera 4 dentini a 45\u00b0 in fondo alla manica e resta chiuso tra battuta (sopra:\n# non esce tirando i Dupont) e dentini (sotto: non cade dentro infilandoli).\n# Il tappo TPU: flangia a filo del tetto + tappo col cordone che scatta nella gola; tacca per la leva.\nLb, Wb = header_pin * 2.54 + 0.2, 2 * 2.5 + 0.2  # lungo Y (le strisce), largo X (due file)\nFL, R_FL = 1.2, 0.8                             # flangia del tappo: spessa, bordo oltre il vano\nx_h, zt = W_in / 2 - 0.2 - Wb / 2, H\ny_h = min(y_j - Lh - 0.4 - 1.2 - Lb / 2, y_F + FR + 1.4 + Lb / 2)   # davanti al labbro TPU, dentro il pannello\nzhb = zt - 4.2 - header_h - 0.05                # fondo dell'header (faccia dei dentini)\ndef HB(dx, dy, z0, z1):                         # box centrato sul vano, mezze misure (dx, dy)\n    return box(x_h - dx, x_h + dx, y_h - dy, y_h + dy, z0, z1)\nbezel += HB(Wb / 2 + 1.2, Lb / 2 + 1.2, zhb - 1.6, zt - 1.0)                    # manica\ndef _anello(z0, l, w, grow):                    # cornice a rombo 45\u00b0 attorno a un rettangolo l x w (X x Y), alta 2*grow\n    a = extrude(Plane.XY.offset(z0) * Rectangle(l, w), grow, taper=-45)\n    return a + extrude(Plane.XY.offset(z0 + grow) * Rectangle(l + 2 * grow, w + 2 * grow), grow, taper=45)\nhcut = [HB(Wb / 2 + R_FL, Lb / 2 + R_FL, zt - FL, zt + 1),                       # sede flangia\n        HB(Wb / 2, Lb / 2, zt - 3.6, zt),                                          # vano tappo\n        HB(Wb / 2 - 0.4, Lb / 2 - 0.4, zt - 4.3, zt - 3.5),                        # luce sopra la battuta\n        HB(Wb / 2, Lb / 2, zhb - 1.7, zt - 4.2),                                   # header\n        Pos(x_h, y_h, 0) * _anello(zt - 2.8, Wb, Lb, 0.4),                         # gola\n        box(x_h - 1.5, x_h + 1.5, y_h - Lb / 2 - R_FL - 0.1, y_h - Lb / 2 + 1.5, zt - 2.0, zt + 1)]   # tacca per la leva, davanti\nbezel -= Compound(children=hcut)\nfor sx in (-1, 1):                              # dentini sui lati lunghi: faccia piatta sotto l'header, invito a 45\u00b0 verso il basso\n    for sy in (-1, 1):\n        yd = y_h + sy * (Lb / 2 - 2.5)\n        pl = Plane(origin=(x_h + sx * Wb / 2, yd + sx * 1.5, zhb), x_dir=(-sx, 0, 0), z_dir=(0, -sx, 0))   # locale y = -Z\n        bezel += extrude(pl * Polygon((-0.3, 0), (0.4, 0), (-0.3, 0.7), align=None), 3.0)\ntappo = HB(Wb / 2 + R_FL - 0.1, Lb / 2 + R_FL - 0.1, zt - FL, zt)\ntappo += HB(Wb / 2 - 0.1, Lb / 2 - 0.1, zt - 3.4, zt - FL + 0.01)\ntappo += Pos(x_h, y_h, 0) * _anello(zt - 2.75, Wb - 0.2, Lb - 0.2, 0.35)       # cordone\nheader_ref = HB(2.5, header_pin * 1.27, zhb + 0.05, zt - 4.2)\nheader_ref += HB(1.6, header_pin * 1.27 - 0.9, zhb - 3.0, zhb + 0.05)           # piedini saldati\n\n# ---------------- BOOT / RESET: tubi guida per una graffetta dal retro ----------------\n# Tutti attaccati al retro TPU: dalla parete posteriore fino a 1 mm dai pulsanti, attraverso\n# il piano di giunzione. Dove passano sotto labbro e fascia (in cima) il dorso \u00e8 spianato.\nfor by, lab in ((-11.57, \"B\"), (11.57, \"R\")):\n    pt = (Bloc * Location((39.74, by, 0))).position\n    tube = cyl_y(pt.X, pt.Z, 2.5, y_pcb + 3.5, y_bot + 5) & outer\n    tube -= box(pt.X - 3, pt.X + 3, y_j - Lh - 0.3, y_j + tb + 0.3, H - parete - gi - labbro - 0.3, H)   # il labbro TPU resta libero\n    tub += tube - cyl_y(pt.X, pt.Z, 1.1, y_pcb + 3.4, y_bot + 6)\n    nrm = Vector(0, 1, k).normalized()\n    zl = pt.Z - 6\n    txt = Plane(origin=(pt.X, y_o(zl), zl), x_dir=(-1, 0, 0), z_dir=nrm) * Text(lab, 4)\n    tub -= extrude(txt, 0.5, both=True)\n\n# ---------------- batteria ----------------\nif trapezio:\n    batt = Pos(0, (y_bf + y_bb) / 2, z_b) * extrude(RectangleRounded(BL, BW, 1.5), batteria)\nelse:                                          # in piedi, subito dietro il PCB: la sua spugna tiene il PCB\n    batt = Pos(0, y_bf, z_b + BW / 2) * Rot(-90, 0, 0) * extrude(RectangleRounded(BL, BW, 1.5), batteria)\n    for xr in (-20, 20):                       # costole TPU: dal retro premono la batteria (e lei il PCB)\n        tub += box(xr - 0.8, xr + 0.8, y_bb + imbottitura, y_i(6) + 0.3, 6, min(30.0, z_bt - 4)) & outer\n\n# ---------------- cassa audio ovale: sul retro TPU, sopra i servo ----------------\n# Vano 40 x 28, angoli r=8: sezione esatta (section_outline) dell'alloggio disegnato dall'utente.\n# Griglia incassata di 1.2 mm, 1 mm d'aria davanti alla membrana. Nel trapezio tutto \u00e8\n# costruito come su un retro dritto e poi inclinato con la parete.\ngk = 0.4\nzk = p + z_su + ai / 2 + sw                   # centro cassa: subito sopra il corpo dei servo\nrrect = lambda l, a, r: RectangleRounded(l, a, max(0.3, min(r, min(l, a) / 2 - 0.01)))\nYo, y_bi = y_o(zk), y_o(zk) - parete_retro   # retro esterno / interno nel riferimento \"dritto\"\nPK = Plane(origin=(0, 0, zk), x_dir=(1, 0, 0), z_dir=(0, 1, 0))      # piano XZ, normale verso il retro\nTILT = Pos(0, y_i(zk), zk) * Rot(tilt, 0, 0) * Pos(0, -y_i(zk), -zk)\nli = cassa_l + 2 * gk\nspk_add = Pos(0, y_bi + 0.01, 0) * extrude(PK * rrect(li + 2 * sw, ai + 2 * sw, cassa_r + gk + sw), -(1.5 + 1.0 + cassa_p + 0.01))  # manicotto+piastra\nspk_cut = Pos(0, y_bi - 1.5, 0) * extrude(PK * rrect(li, ai, cassa_r + gk), -(1.0 + cassa_p + 1))                                 # vano cassa\nspk_seat = Pos(0, y_bi - 1.5, 0) * extrude(PK * (rrect(li, ai, cassa_r + gk) - rrect(li - 5, ai - 5, cassa_r - 2.5)), -1.0)         # sede del bordo (1 mm d'aria)\nspk_wire = Pos(-(li / 2 + sw / 2), y_bi - 2.5 - cavo_da_membrana, zk) * Box(sw + 1, 4, 5)   # uscita cavo, fianco destro guardando la membrana\nol, oa = cassa_l - 6, cassa_a - 6                                    # luce griglia = membrana\nrecess = Pos(0, Yo + 0.01, 0) * extrude(PK * rrect(ol + 4, oa + 4, cassa_r - 1), -1.2)                                             # incasso esterno\nnsl = int(ol // 3.2)\nslots = [Pos(-(nsl - 1) * 1.6 + i * 3.2, 0) * Rectangle(1.6, oa + 2) for i in range(nsl)]\ngrille = (Pos(0, Yo + 0.02, 0) * extrude(PK * (Sketch() + slots), -(parete_retro + 1.5 + 0.1))) & (Pos(0, Yo + 0.02, 0) * extrude(PK * rrect(ol, oa, cassa_r - 3), -(parete_retro + 1.5 + 0.1)))\ntub += TILT * spk_add\ntub -= TILT * spk_cut\ntub += TILT * spk_seat\ntub -= TILT * spk_wire\ntub -= TILT * recess\ntub -= TILT * grille\ncassa = TILT * (Pos(0, y_bi - 2.5, 0) * extrude(PK * rrect(cassa_l, cassa_a, cassa_r), -cassa_p))\ncassa += TILT * (Pos(-cassa_l / 2 - 1, y_bi - 2.5 - cavo_da_membrana, zk) * Box(2, 2, 3))           # uscita cavo (riferimento)\n# ---------------- moduli extra sul retro TPU: MT3608 e MPU-6050 ----------------\n# Unico volume libero: sopra la batteria, sotto i blocchi dei servo, contro la parete posteriore.\n# Ogni scheda si appoggia piatta sulla parete e scatta sotto dei dentini con invito a 45\u00b0 (il TPU\n# cede); tra scheda e parete resta 1.2 per le saldature. I lati dove escono i fili restano aperti:\n# MT3608 fili ai lati corti (IN/OUT) -> bordi lunghi; MPU-6050 fili sul lato lungo in alto.\n# Misure delle schede: HW-045 37 x 17.2, GY-521 21.2 x 16.4 (tipiche, controllare col calibro).\n# L'MPU segue la parete: asse Z inclinato di `tilt` gradi (lo corregge la calibrazione a riposo).\nSCH, SOTTO, RIM, GAP_M = 1.6, 1.2, 1.2, 0.3\ndef _bordo(a0, a1, edge, dirn, along_x, y_ref, dente):\n    w_lip = SCH + SOTTO\n    pts = [(-GAP_M - RIM, -0.5), (-GAP_M, -0.5)]\n    pts += [(-GAP_M, w_lip), (0.8, w_lip), (-GAP_M, w_lip + 0.8 + GAP_M)] if dente else [(-GAP_M, w_lip + 0.8 + GAP_M)]\n    pts += [(-GAP_M - RIM, w_lip + 0.8 + GAP_M)]\n    if along_x:\n        pl = Plane(origin=(a0 if dirn > 0 else a1, y_ref, edge), x_dir=(0, 0, dirn), z_dir=(dirn, 0, 0))\n    else:\n        pl = Plane(origin=(edge, y_ref, a1 if dirn > 0 else a0), x_dir=(dirn, 0, 0), z_dir=(0, 0, -dirn))\n    return extrude(pl * Polygon(*pts, align=None), a1 - a0)\ndef supporto(xc, zc, L, A, lati):\n    y_ref = y_i(zc)\n    x0, x1, z0m, z1m = xc - L / 2, xc + L / 2, zc - A / 2, zc + A / 2\n    e = GAP_M + RIM\n    parti = []\n    for lato in lati:\n        if lato in (\"sotto\", \"sopra\"):\n            edge, dirn = (z0m, 1) if lato == \"sotto\" else (z1m, -1)\n            parti.append(_bordo(x0 - e, x1 + e, edge, dirn, True, y_ref, False))\n            parti.append(_bordo(xc - 4, xc + 4, edge, dirn, True, y_ref, True))\n        else:\n            edge, dirn = (x0, 1) if lato == \"sx\" else (x1, -1)\n            parti.append(_bordo(z0m - e, z1m + e, edge, dirn, False, y_ref, False))\n            parti.append(_bordo(zc - 4, zc + 4, edge, dirn, False, y_ref, True))\n    T = Pos(0, y_ref, zc) * Rot(tilt, 0, 0) * Pos(0, -y_ref, -zc)\n    ref = Pos(xc, y_ref - SOTTO - SCH / 2, zc) * Box(L, SCH, A)\n    return T * Compound(children=parti), T * ref\nMODULI = ((\"MT3608\", -16.0, 37.0, 17.2, (\"sotto\", \"sopra\"), 5.0), (\"MPU-6050\", 17.0, 21.2, 16.4, (\"sotto\", \"sx\", \"dx\"), 2.0))\nz_mod = z_bt + 1.4 + max(m[3] for m in MODULI) / 2                  # sopra la batteria (+ spugna) con 1.4 d'aria\nmoduli = []\nfor nome, xc, L, A, lati, hc in MODULI:\n    sup, ref = supporto(xc, z_mod, L, A, lati)\n    tub += sup & outer\n    T = Pos(0, y_i(z_mod), z_mod) * Rot(tilt, 0, 0) * Pos(0, -y_i(z_mod), -z_mod)\n    moduli += [ref, T * (Pos(xc, y_i(z_mod) - SOTTO - SCH - hc / 2, z_mod) * Box(L * 0.6, hc, A * 0.6))]   # scheda + componenti\nmoduli = Compound(children=moduli)\n\ntub += labbro_tpu                              # labbro e cordone per ultimi, o qualcosa li taglia\n\n# ---------------- gambe (profonde quanto il corpo in cima, centrate sul perno) ----------------\n# L'anima PETG va da p - nucleo_giu a p + nucleo_su. A ogni capo si infila un piedino TPU (stampato a\n# parte) con una coda di rondine a fianchi 45\u00b0, lungo Y, da dietro fino alla battuta davanti, e un dentino\n# che scatta in una scanalatura. Coda: collo 3.5, testa 6, alta 5.2.\n# La suola \u00e8 un arco lungo la profondit\u00e0: R22 in piedi (il contatto resta vicino all'asse della gamba,\n# niente leva sullo spigolo), R80 sotto (rema a gambe ritratte). Il capo curvo cala di\n# R - sqrt(R^2 - d^2) ai bordi: il piedino deve restare spesso almeno 1.6 mm anche l\u00ec.\nCODA = [(1.75, 1.2), (3.0, 2.45), (3.0, 4.2), (2.0, 5.2)]\ndef coda(xc, z_base, g, y0, y1, verso):\n    pts = [(u + g, h + (g if h > 4 else 0)) for u, h in CODA]\n    prof = [(-1.75 - g, -1.0)] + [(1.75 + g, -1.0)] + pts + [(-u, h) for u, h in reversed(pts)]\n    pl = Plane(origin=(xc, y1, z_base), x_dir=(1, 0, 0), z_dir=(0, -1, 0))   # locale y = +Z\n    sh = extrude(pl * Polygon(*prof, align=None), y1 - y0)\n    return sh if verso > 0 else sh.mirror(Plane(origin=(0, 0, z_base), z_dir=(0, 0, 1)))\ndef dente(xc, z_base, r, verso):\n    return Pos(xc, d - 4, z_base + verso * (5.2 + gioco_piede)) * Rot(0, 90, 0) * Cylinder(r, 4.0)\nzl0, zl1 = p - nucleo_giu, p + nucleo_su                    # capi dell'anima PETG (gamba a 0\u00b0)\ndef sagitta(R):\n    return R - math.sqrt(max(R * R - d * d, 0.0))\ndef capi(s):\n    # (quota del capo dell'anima, verso della coda, quota della suola, raggio) per il capo basso e alto\n    su = piede_su + (diff_su_dx if s > 0 else 0.0)\n    giu = piede_giu + (diff_giu_dx if s > 0 else 0.0)\n    return ((zl0, 1, p - giu, max(raggio_giu, d + 0.1)), (zl1, -1, p + su, max(raggio_su, d + 0.1)))\nG_CF = 0.2                                     # aria fra contrafforte e retro della gamba\ndef profilo_zoccolo(e, T, R):\n    # Fianco del piedino basso nel piano (y, u): y dal perno verso il retro, u dalla suola in su (T = spessore\n    # al centro). Suola R80 da -d a 0, fondo piatto fino alla punta, smusso 45\u00b0 da c (quello provato in Webots),\n    # retro dritto, spigolo alto dietro tondo r1, dorso concavo di raggio raggio_dorso tangente allo spigolo e al\n    # cappello tondo del contrafforte, fronte del contrafforte contro il retro della gamba, raccordo concavo rf\n    # sul piano d'appoggio (sta nello smusso da 1 mm dello spigolo basso della gamba). Tutto tangente.\n    c, r1, rf, ch = min(2.0, e / 3), 2.0, 1.0, 0.8\n    sag = R - math.sqrt(R * R - d * d)\n    yt, yf = d + e, d + G_CF                                     # retro della punta, fronte del contrafforte\n    r2 = contrafforte_sp / 2\n    C1 = (yt - r1, T - r1)                                       # centro dello spigolo alto dietro\n    C2 = (yf + r2, T + contrafforte - r2)                        # centro del cappello\n    P = lambda C, r, a: (C[0] + r * math.cos(a), C[1] + r * math.sin(a))\n    arc = lambda C, r, a0, a1: ThreePointArc(P(C, r, a0), P(C, r, (a0 + a1) / 2), P(C, r, a1))\n    cf = contrafforte > 2.0 and C2[0] + r2 < C1[0] and C2[1] > C1[1]\n    with BuildLine() as bl:\n        ThreePointArc((-d, sag), (-d / 2, R - math.sqrt(R * R - d * d / 4)), (0, 0))   # suola ad arco\n        Line((0, 0), (yt - c, 0))                                                         # fondo piatto\n        Line((yt - c, 0), (yt, c))                                                        # punta smussata\n        Line((yt, c), (yt, T - r1))                                                       # retro\n        if cf:\n            # centro del dorso: a raggio_dorso + r dai due centri, dalla parte alta dietro\n            Rr = raggio_dorso\n            mx, my = (C1[0] + C2[0]) / 2, (C1[1] + C2[1]) / 2\n            vx, vy = C1[0] - C2[0], C1[1] - C2[1]\n            L = math.hypot(vx, vy)\n            # distanze diverse (r1 != r2): punto sulla retta dei centri + perpendicolare, risolto a mano\n            a1, a2 = Rr + r1, Rr + r2\n            t = (a2 * a2 - a1 * a1 + L * L) / (2 * L)             # distanza da C2 lungo C2->C1\n            h = math.sqrt(max(a2 * a2 - t * t, 0.0))\n            ux, uy = vx / L, vy / L\n            Cc = (C2[0] + t * ux + h * uy, C2[1] + t * uy - h * ux)                      # lato alto-dietro\n            if Cc[1] < C1[1]:\n                Cc = (C2[0] + t * ux - h * uy, C2[1] + t * uy + h * ux)\n            g1 = math.atan2(Cc[1] - C1[1], Cc[0] - C1[0])                                # tangenza spigolo/dorso\n            g2 = math.atan2(Cc[1] - C2[1], Cc[0] - C2[0])                                # tangenza dorso/cappello\n            arc(C1, r1, 0.0, g1)\n            b1 = math.atan2(C1[1] - Cc[1], C1[0] - Cc[0]); b2 = math.atan2(C2[1] - Cc[1], C2[0] - Cc[0])\n            arc(Cc, Rr, b1, b2)                                                           # dorso concavo\n            arc(C2, r2, g2, math.pi)                                                      # cappello\n            Line((yf, C2[1]), (yf, T + rf))                                               # contro il retro della gamba\n            arc((yf - rf, T + rf), rf, 0.0, -math.pi / 2)                                 # raccordo concavo\n            Line((yf - rf, T), (-d + ch, T))                                              # sotto la gamba\n        else:\n            arc(C1, r1, 0.0, math.pi / 2)\n            Line((yt - r1, T), (-d + ch, T))\n        Line((-d + ch, T), (-d, T - ch))\n        Line((-d, T - ch), (-d, sag))\n    return make_face(bl.line), cf\ndef piede_zoccolo(xin, xo, z_base, z_suola, R, e):\n    w, xc = abs(xo - xin), (xin + xo) / 2\n    f, cf = profilo_zoccolo(e, abs(z_base - z_suola), R)\n    P = extrude(Plane.YZ * f.moved(Location((0, z_suola, 0))), w / 2, both=True).moved(Location((xc, 0, 0)))\n    try:                                                         # spigoli dei fianchi raccordati\n        P = fillet(P.edges().filter_by(lambda ed: abs(abs(ed.center().X - xc) - w / 2) < 1e-3), 0.8)\n    except Exception:\n        P = chamfer(P.edges().filter_by(lambda ed: abs(abs(ed.center().X - xc) - w / 2) < 1e-3), 0.8)\n    y_coda = d + G_CF + 1.0 if cf else d                         # la coda entra nel contrafforte\n    return P + coda(xc, z_base, 0.0, -d + 2.0, y_coda, 1) + dente(xc, z_base - gioco_piede, 0.5, 1)\ndef piedini(s):\n    xin, xo = s * (W / 2 + 1.0), s * (W / 2 + 1.0 + spessore_gamba)\n    xc = (xin + xo) / 2\n    out = []\n    for z_base, verso, z_suola, R in capi(s):\n        zs0, zs1 = (z_suola, z_base) if verso > 0 else (z_base, z_suola)\n        P = chamfer(box(xin, xo, -d, d, zs0, zs1).edges(), 0.8)\n        zr = z_suola + verso * R\n        P = P & cyl_x(0, zr, R, xin - s, xo + s)                                             # suola ad arco lungo Y\n        P += coda(xc, z_base, 0.0, -d + 2.0, d, verso) + dente(xc, z_base - verso * gioco_piede, 0.5, verso)\n        e = zoccolo_dx if (s > 0 and zoccolo_dx >= 0) else zoccolo\n        if verso > 0 and e > 0.5:                                                          # piedino basso con lo zoccolo\n            P = piede_zoccolo(xin, xo, z_base, z_suola, R, e)\n        out.append(P)\n    return out\nspessori_piedi = {('giu', 'su')[k]: round(abs(c[2] - c[0]) - sagitta(c[3]), 2) for k, c in enumerate(capi(-1))}\ndef gamba(s):\n    xin, xo = s * (W / 2 + 1.0), s * (W / 2 + 1.0 + spessore_gamba)\n    L = chamfer(box(xin, xo, -d, d, zl0, zl1).edges(), 1.0)\n    xc = (xin + xo) / 2\n    for z_base, verso in ((zl0, 1), (zl1, -1)):                                              # sedi dei piedini\n        L -= coda(xc, z_base, gioco_piede, -d + 2.0 - gioco_piede, d + 1.0, verso)\n        L -= dente(xc, z_base, 0.6, verso)\n    X = lambda q: xin + s * q\n    dh = (xs + h_squadretta) - (W / 2 + 1.0)                                                 # tasca: il fondo \u00e8 la cima della squadretta\n    L -= cyl_x(0, p, mozzo_r + 1.0, X(-0.1), X(dh))                                          # mozzo che sporge dal fianco + collare\n    sc = max(0.6, (xs + mozzo) - (W / 2 + 1.0) + 0.6)                                        # scarico piatto (non un incastro): la gamba gira\n    L -= cyl_x(0, p, ingranaggio + 1.5, X(-0.1), X(sc))                                          # e l'ingranaggio secondario non la tocca\n    arm = Plane.YZ.offset(0) * Rot(0, 0, 90) * SlotOverall(squadretta + 0.6, 6.4)\n    L -= Pos(X(-0.1), 0, p) * extrude(arm, s * (dh + 0.1))\n    L -= cyl_x(0, p, 2.6, X(dh - 0.1), X(spessore_gamba + 0.1))                              # accesso vite squadretta\n    xd = dh - sp_squadretta - 0.2                                                            # dentini subito dietro il braccio in battuta:\n    for dzz in (-1, 1):                                                                      # la squadretta ci passa a scatto e resta presa\n        zz = p + dzz * (squadretta / 2 - 1.8)\n        for sy in (-1, 1):\n            L += box(X(xd - 0.8), X(xd), sy * 3.2, sy * 2.9, zz - 1.0, zz + 1.0)\n    for dzz in (-1, 1):\n        L -= cyl_x(0, p + dzz * (squadretta / 2 - 3), 0.75, X(dh - 0.1), X(dh + 2.5))\n    for zz in (H / 4, 3 * H / 4):                                                           # segmenti alla TARS\n        L -= box(xo - s * 0.6, xo + s * 1, -2 * d, 2 * d, zz - 0.6, zz + 0.6)\n    return L\n\n# ---------------- riferimenti (non si stampano) ----------------\npcb = extrude(RectangleRounded(86, 50, 3.5), 1.6)\nfor bx in (-39, 39):\n    for by in (-21, 21):\n        pcb -= Pos(bx, by, 0) * Cylinder(1.6, 10)\nlcd = Pos(0, 0, 2.1) * Box(69.2, 50, 2.3, align=MIN)          # centrato, come nel riferimento\ncomp = [Pos(x, y, 0) * Box(sx, sy, h, align=(Align.CENTER, Align.CENTER, Align.MAX)) for x, y, sx, sy, h in (\n    (39.4, 0, 7.35, 8.94, 3.2), (39.74, -11.57, 3, 4, 2.5), (39.74, 11.57, 3, 4, 2.5), (-7.97, -17.5, 14, 15, 1.9),\n    (19.82, -22.2, 4.5, 5.6, 3.4), (8.0, -22.2, 7, 5.6, 3.4), (6.65, 22.2, 4.5, 5.6, 3.4), (-6.9, 22.2, 7, 5.6, 3.4), (-24.75, 22.2, 7, 5.6, 3.4))]\nscheda = Bloc * Compound(children=[pcb, lcd] + comp)\nservi = []\nhw = servo_w / 2\nfor s in (-1, 1):\n    xsq = xs + h_squadretta - sp_squadretta\n    servi += [box(s * xs, s * (xs + spalla), -hw, hw, z0, z1),\n              box(s * xa, s * (xa + aletta_sp), -hw, hw, za0, za1),\n              cyl_x(0, p, mozzo_r, s * (xs + spalla - 0.1), s * (xs + mozzo)),\n              box(s * (xs + spalla - 0.1), s * (xs + mozzo - 1.0), -3.5, 3.5, p, p + ingranaggio),\n              cyl_x(0, p, 3.4, s * (xs + mozzo - 0.1), s * xsq),                                 # collare della squadretta\n              Pos(s * (xsq + sp_squadretta / 2), 0, p) * Rot(0, 90, 0) * extrude(SlotOverall(squadretta, 5.5), sp_squadretta / 2, both=True)]\nservi = Compound(children=servi)\n\nmeta = dict(H=H, W=W, D=2 * d, p=p, alzata=alzata, xs=xs, spessore_gamba=spessore_gamba,\n            D_base=y_bot - y_F, tilt=tilt, y_j=y_j, trapezio=trapezio,\n            tasca_squadretta=(xs + h_squadretta) - (W / 2 + 1.0), mozzo_fuori=(xs + mozzo) - W / 2,\n            z_moduli=z_mod, reach_giu=piede_giu, reach_su=piede_su, nucleo=nucleo_giu + nucleo_su,\n            spessori_piedi=spessori_piedi)\n# 0..7 pezzi e riferimenti, 8 perno, 9 piedini TPU [sx gi\u00f9, sx su, dx gi\u00f9, dx su], 10 moduli e header (rif.),\n# 11 tappo TPU dell'header, ultimo quote\nresult = [bezel, tub, gamba(-1), gamba(1), scheda, batt, servi, cassa, Vector(0, 0, p),\n          Compound(children=piedini(-1) + piedini(1)), Compound(children=moduli.solids() + [header_ref]), tappo, meta]\n\n",
+        "_cb": {
+          "finestra_l": 71,
+          "nucleo_giu": 42,
+          "piede_su": 55,
+          "piede_giu": 52
+        }
+      },
+      "position": [
+        537,
+        1531
+      ],
+      "parent": null,
+      "preview": false,
+      "title": "Progetto TARS-PET"
+    },
+    {
+      "id": "n16",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        1167,
+        1440
+      ],
+      "parent": null,
+      "preview": true,
+      "color": "#6b717a",
+      "finish": "metal",
+      "title": "Frontale"
+    },
+    {
+      "id": "n35",
+      "type": "ExportSTL",
+      "params": {
+        "path": "tars_frontale.stl"
+      },
+      "position": [
+        1534,
+        2201
+      ],
+      "parent": null
+    },
+    {
+      "id": "n52",
+      "type": "ListItem",
+      "params": {
+        "index": 9
+      },
+      "position": [
+        867,
+        1403
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "n53",
+      "type": "Rotate",
+      "params": {
+        "angle": 90,
+        "axis": "X",
+        "about": "world"
+      },
+      "position": [
+        1167,
+        1075
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "n54",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        1534,
+        1195
+      ],
+      "parent": null,
+      "preview": true,
+      "color": "#2f3440",
+      "title": "Piedini TPU"
+    },
+    {
+      "id": "n55",
+      "type": "ListItem",
+      "params": {
+        "index": 10
+      },
+      "position": [
+        867,
+        4668
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "n56",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        1167,
+        4524
+      ],
+      "parent": null,
+      "preview": true,
+      "color": "#2b8a3e",
+      "title": "Moduli MT3608 + MPU-6050 + header"
+    },
+    {
+      "id": "n57",
+      "type": "ListItem",
+      "params": {
+        "index": 4
+      },
+      "position": [
+        1167,
+        3103
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "n58",
+      "type": "ExportSTL",
+      "params": {
+        "path": "tars_tpu_piedini_tappo.stl"
+      },
+      "position": [
+        1534,
+        3640
+      ],
+      "parent": null
+    },
+    {
+      "id": "n59",
+      "type": "ToMesh",
+      "params": {
+        "tolerance": 0.02
+      },
+      "position": [
+        1534,
+        3459
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "n60",
+      "type": "PrintCheck",
+      "params": {
+        "angle": 45,
+        "layer": 0.2,
+        "clearance": 0.2
+      },
+      "position": [
+        1918,
+        3409
+      ],
+      "parent": null,
+      "title": "Stampa piedini + tappo TPU"
+    },
+    {
+      "id": "n61",
+      "type": "Display",
+      "params": {},
+      "position": [
+        2227,
+        3450
+      ],
+      "parent": null
+    },
+    {
+      "id": "codeblock_1",
+      "type": "CodeBlock",
+      "params": {
+        "code": "# i due piedini bassi con lo zoccolo, orientati per la stampa (suola sul piatto, coda in su).\n# in_0 = piedini + tappo in fila da 'Orienta per stampa'. Quelli bassi sono i soli lunghi oltre 40 mm in Y:\n# 33 di gamba + lo zoccolo. Stampa senza supporti: fondo piatto sul piatto, contrafforte e coda in su.\ngiu = sorted([s for s in in_0.solids() if s.bounding_box().size.Y > 40], key=lambda s: s.center().Y)\nresult = Compound(children=giu)\n"
+      },
+      "position": [
+        1534,
+        3034
+      ],
+      "parent": null,
+      "title": "Stampa: 2 piedini bassi con zoccolo"
+    },
+    {
+      "id": "exportstl_1",
+      "type": "ExportSTL",
+      "params": {
+        "path": "tars_tpu_piedi_giu_zoccolo_14_giu52.stl"
+      },
+      "position": [
+        1918,
+        3223
+      ],
+      "parent": null
+    },
+    {
+      "id": "tomesh_1",
+      "type": "ToMesh",
+      "params": {
+        "tolerance": 0.02
+      },
+      "position": [
+        1918,
+        3042
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "printcheck_1",
+      "type": "PrintCheck",
+      "params": {
+        "angle": 45,
+        "layer": 0.2,
+        "clearance": 0.2
+      },
+      "position": [
+        2227,
+        3006
+      ],
+      "parent": null,
+      "title": "Stampa piedini bassi con zoccolo"
+    },
+    {
+      "id": "display_1",
+      "type": "Display",
+      "params": {},
+      "position": [
+        2586,
+        3047
+      ],
+      "parent": null
+    },
+    {
+      "id": "ad002_progetto",
+      "type": "CodeBlock",
+      "params": {
+        "code": "\n# TARS-PET SOTTILE \u2014 corpo monolite + 2 gambe-lastra su micro servo (SG92R / MG90S), ribaltabili di 180\u00b0.\n# Mondo: Z su, X larghezza, fronte (schermo) verso -Y, albero dei servo (= perno gambe) su y=0.\n# Trucco delle gambe: lastra alta quanto il corpo con il perno spostato di alzata/2\n# dal centro -> a 0\u00b0 \u00e8 a filo del corpo, ribaltata a 180\u00b0 sporge sotto di `alzata` e\n# solleva il corpo. Il perno sta SOPRA il baricentro (batteria in basso): pendolo stabile.\n# SERVO IN VERTICALE (corpo lungo Z): in profondit\u00e0 occupano 11.8 invece di 32.2. Il\n# perno deve stare a met\u00e0 profondit\u00e0 (le gambe ribaltate restano a filo), quindi la\n# profondit\u00e0 \u00e8 2 x (schermo + PCB + componenti dietro il PCB + mezzo servo) ~ 32 mm.\n# trapezio = 0: sezione rettangolare, batteria IN PIEDI sul fondo (servo sopra: corpo pi\u00f9 alto).\n# trapezio = 1: batteria SDRAIATA sul fondo, il retro si apre verso il basso (trapezio).\ntrapezio = 1  #@param int min=0 max=1\ngioco = 0.4  #@param float min=0.1 max=1.0 step=0.05\nparete = 2.0  #@param float min=1.6 max=3.0 step=0.1\nparete_retro = 2.4  #@param float min=1.6 max=3.6 step=0.4\nimbottitura = 1.0  #@param float min=0 max=3 step=0.1\nbatteria = 10.5  #@param float min=8 max=14 step=0.1\nfinestra_l = 70.4  #@param float min=66 max=76 step=0.2\nfinestra_w = 50.4  #@param float min=46 max=54 step=0.2\nalzata = 10.0  #@param float min=4 max=25 step=0.5\nspessore_gamba = 10.0  #@param float min=8 max=16 step=0.5\nsquadretta = 32.6  #@param float min=20 max=36 step=0.5\n# ---- SERVO Adeept AD002 (metallo, formato MG90S): quote dal datasheet TowerPro MG90S, DA MISURARE col calibro\n# quando arrivano (fondo -> alette, fondo -> cima squadretta, albero -> estremit\u00e0); tutte dal FONDO del servo lungo l'albero ----\nh_squadretta = 32.5  #@param float min=28 max=38 step=0.1\nspalla = 24.5  #@param float min=20 max=28 step=0.1\nmozzo = 28.4  #@param float min=24 max=32 step=0.1\naletta = 18.5  #@param float min=14 max=23 step=0.1\naletta_sp = 2.5  #@param float min=1.5 max=3.5 step=0.1\nalette_l = 32.5  #@param float min=30 max=36 step=0.1\nservo_l = 22.8  #@param float min=21 max=24.5 step=0.1\nservo_w = 12.4  #@param float min=11 max=13.5 step=0.1\nasse = 6.1  #@param float min=5 max=8 step=0.1\nmozzo_r = 6.1  #@param float min=5 max=7 step=0.1\nsp_squadretta = 1.8  #@param float min=1 max=3 step=0.1\ningranaggio = 11.5  #@param float min=5 max=13 step=0.1\n# ---- gamba = anima PETG corta + due piedini TPU intercambiabili (sim/README.md, gambe K3) ----\n# Tutte le quote dal perno. L'anima resta sempre la stessa; alzata, forma e presa le decidono i piedini.\n# piede_su: il capo che fa da piede in piedi (a 180\u00b0). piede_giu: quello che tocca a gambe ritratte (remata).\nnucleo_su = 40.0  #@param float min=30 max=50 step=0.5\nnucleo_giu = 40.0  #@param float min=30 max=45 step=0.5\npiede_su = 52.0  #@param float min=46 max=60 step=0.5\nraggio_su = 22.0  #@param float min=16.6 max=300 step=0.5\npiede_giu = 48.0  #@param float min=44 max=52 step=0.5\nraggio_giu = 80.0  #@param float min=16.6 max=300 step=5\ndiff_su_dx = 0.0  #@param float min=-4 max=4 step=0.5\n# capo basso destro pi\u00f9 lungo: +5 (55 mm) lo rovescia dalla schiena a faccia in gi\u00f9, e seduto resta\n# in piedi (Webots K3, 29/9: 3 su 3 dalla schiena, 0 cadute su 30 seduto <-> in piedi; 56 mm gi\u00e0 1 su 30).\ndiff_giu_dx = 0.0  #@param float min=-4 max=8 step=0.5\n# zoccolo sul piedino basso (29/9): un tallone che sporge dietro la gamba (verso +Y), con la punta alla quota della suola.\n# Allunga la leva solo a gambe quasi ritratte: dalla schiena il robot si rovescia e si rialza da solo\n# (sim/forme/rotola.py, Webots tars_pet_zoccolo.wbt: 12 e 14 mm 9 su 9, seduto <-> in piedi e remata come prima).\n# Serve su tutti e due i piedini bassi: su uno solo il robot si piega di lato.\nzoccolo = 14.0  #@param float min=0 max=20 step=0.5\nzoccolo_dx = -1.0  #@param float min=-1 max=20 step=0.5\n# Il piedino basso con lo zoccolo \u00e8 disegnato come un pezzo solo (profilo di fianco estruso, spigoli raccordati):\n# suola R80 davanti, fondo piatto dal centro fino alla punta (sul piatto di stampa), punta smussata a 45\u00b0,\n# retro dritto alto quanto il piedino, e un CONTRAFFORTE che sale dietro la gamba e raccoglie lo zoccolo in una\n# curva concava: la leva dello zoccolo si scarica sul retro dell'anima PETG invece che sulla coda di rondine.\n# Tutto il pezzo sta dentro l'inviluppo convesso dello zoccolo validato: il contatto con il piano non cambia.\ncontrafforte = 10.0  #@param float min=0 max=14 step=0.5\ncontrafforte_sp = 4.0  #@param float min=2.5 max=6 step=0.5\nraggio_dorso = 12.0  #@param float min=4 max=40 step=1\ngioco_piede = 0.1  #@param float min=0 max=0.4 step=0.05\n# ---- header femmina in cima: due strisce affiancate (misurate: larga 2.5, alta 8.3) ----\nheader_pin = 8  #@param int min=2 max=10\nheader_h = 8.3  #@param float min=7 max=10 step=0.1\n# 1/10: niente presa in cima sulla scocca AD002 (pin liberi finiti): 0 = tetto pieno, senza manica, vano n\u00e9 tappo\npresa_header = 0  #@param int min=0 max=1\ncassa_l = 40.0  #@param float min=20 max=50 step=0.5\ncassa_a = 28.0  #@param float min=15 max=34 step=0.5\ncassa_p = 10.0  #@param float min=5 max=20 step=0.5\ncassa_r = 8.0  #@param float min=1 max=14 step=0.5\ncavo_da_membrana = 6.0  #@param float min=1 max=15 step=0.5\n# Incastro frontale PETG -> posteriore TPU duro (profilo ricavato dal powerbank di riferimento):\n# labbro continuo tutto attorno con un cordone, nel guscio TPU la gola. Il TPU si allarga sul\n# cordone e si richiude nella gola: niente viti passanti, niente clip. Misure piccole in\n# multipli dell'ugello 0.4, cos\u00ec ogni dettaglio \u00e8 un numero intero di linee.\nlabbro = 1.6  #@param float min=1.2 max=2.4 step=0.4\ncordone = 0.8  #@param float min=0.4 max=1.2 step=0.4\nincavo = 0.8  #@param float min=0.4 max=1.2 step=0.4\nincavo_extra = 0.4  #@param float min=0 max=1.2 step=0.4\ngioco_tpu = 0.2  #@param float min=0 max=0.4 step=0.1\n\nFR, BL, BW, CAVO = 1.6, 66.0, 36.0, 4.0\nW_in = max(BL + 2 * imbottitura + CAVO, 2 * (spalla + 0.2) + 2.0)\nW = W_in + 2 * parete\n# ---- profondit\u00e0: tutto si misura dall'albero dei servo (y = 0) ----\nCOMP = 3.4                                    # componenti dietro il PCB (header, USB-C)\nSEDE = 5.0                                    # faccia -> PCB (cornice del riferimento): il vetro resta 2.2 incassato\nd = SEDE + 1.6 + COMP + 0.4 + servo_w / 2     # fronte -> albero: cornice, PCB, componenti, aria, mezzo servo\nz_giu = asse + (alette_l - servo_l) / 2 + 1.6  # blocco del servo sotto l'albero (alette + linguetta)\nz_su = servo_l - asse + 0.4                    # corpo del servo sopra l'albero\ny_F = -d                                      # faccia dello schermo\ny_pcb = y_F + SEDE + 1.6                      # faccia posteriore PCB\ny_top = d                                     # retro in cima (= profondit\u00e0 delle gambe)\n# ---- altezza: la pi\u00f9 piccola che fa stare tutto ----\nPR = parete_retro - parete                                        # il retro TPU \u00e8 pi\u00f9 spesso, verso l'interno\nz_b = parete + max(imbottitura, gioco_tpu + labbro + 0.3)       # fondo batteria (sopra il labbro TPU)\nbat_h = batteria if trapezio else BW                             # batteria sdraiata / in piedi\nz_bt = z_b + bat_h + imbottitura                                 # cima batteria + spugna\nai, sw = cassa_a + 0.8, 1.6                                      # vano cassa + manicotto\nH = max(86.0 + 2 * parete + gioco + 2 * imbottitura + batteria + 0.5,\n        z_bt + 0.4 + 1.6 + 88.4 if trapezio else 0.0,                  # PCB sopra la batteria sdraiata\n        2 * (z_bt + 0.4 + z_giu) + alzata,                       # blocchi dei servo sopra la batteria\n        2 * (z_su + ai + 2 * sw + 8.56) - alzata)                # cassa sopra i servo, sotto i tubi BOOT/RESET\nH = math.ceil(H * 2) / 2\np = (H - alzata) / 2                          # quota perno (albero servo)\nz_c = H - parete - gioco - 43.0               # centro scheda (USB-C in alto)\nBloc = Plane(origin=(0, y_pcb, z_c), x_dir=(0, 0, 1), z_dir=(0, -1, 0)).location\nMIN = (Align.CENTER, Align.CENTER, Align.MIN)\n# ---- batteria ----\ny_bf = y_F + FR + 0.4 + imbottitura if trapezio else y_pcb + 0.4 + imbottitura   # faccia anteriore\ny_bb = y_bf + (BW if trapezio else batteria)                                     # faccia posteriore\n# ---- retro: y_o(z) lineare fra y_bot (z=0) e y_top (z=H); nel trapezio y_bot fa stare la batteria ----\ny_bot = y_top\nif trapezio:\n    need = y_bb + imbottitura + 0.3           # parete interna, all'altezza della cima batteria\n    for _ in range(4):\n        k = (y_bot - y_top) / H\n        n_off = parete_retro * math.sqrt(1 + k * k)\n        y_bot = max(y_top, (need + n_off - y_top * z_bt / H) / (1 - z_bt / H))\nk = (y_bot - y_top) / H\nn_off = parete_retro * math.sqrt(1 + k * k)\ntilt = math.degrees(math.atan(k))             # inclinazione del retro (0 = rettangolare)\ny_o = lambda z: y_bot + (y_top - y_bot) * z / H          # retro esterno\ny_i = lambda z: y_o(z) - n_off                           # retro interno\n# Piano di giunzione: dietro i blocchi dei servo, il mozzo e la feritoia USB-C.\nyb = servo_w / 2 + 1.5                        # retro dei blocchi dei servo\n# Incastro: il labbro TPU del retro entra nella frontale per Lh (vedi sotto), quindi il piano di\n# giunzione sta Lh dietro i blocchi dei servo, il mozzo e la feritoia USB-C.\nb_bordo, fl, f_ = 1.0, 0.4, 1.2               # parete PETG tra bordo e gola, fianco di presa, faccia dritta\ngi, c_, ie = gioco_tpu, cordone, incavo_extra\nLh = b_bordo + ie / 2 + fl + f_ + c_ + 0.6    # lunghezza del labbro TPU\ny_j = max(yb + 0.4, mozzo_r + 0.3 + 0.8, y_pcb + 1.6 + 7.5 / 2 + 0.8) + Lh\n\ndef box(x0, x1, y0, y1, z0, z1):\n    x0, x1 = sorted((x0, x1)); y0, y1 = sorted((y0, y1)); z0, z1 = sorted((z0, z1))\n    return Pos((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2) * Box(x1 - x0, y1 - y0, z1 - z0)\ndef cyl_y(x, z, r, y0, y1):\n    y0, y1 = sorted((y0, y1)); return Pos(x, (y0 + y1) / 2, z) * Rot(90, 0, 0) * Cylinder(r, y1 - y0)\ndef cyl_x(y, z, r, x0, x1):\n    x0, x1 = sorted((x0, x1)); return Pos((x0 + x1) / 2, y, z) * Rot(0, 90, 0) * Cylinder(r, x1 - x0)\ndef rr_y(w, h, r, y0, y1):                    # prisma a rettangolo raccordato lungo Y, centrato in (0, H/2)\n    y0, y1 = sorted((y0, y1))\n    return Pos(0, (y0 + y1) / 2, H / 2) * Rot(90, 0, 0) * extrude(RectangleRounded(w, h, max(0.3, r)), (y1 - y0) / 2, both=True)\ndef prism_yz(pts, w):                         # poligono nel piano YZ estruso lungo X, centrato\n    return extrude(Plane.YZ * Polygon(*pts, align=None), w / 2, both=True)\n\n# ---------------- guscio: monolite smussato, diviso sul piano y_j ----------------\nouter = prism_yz([(y_F, 0), (y_bot, 0), (y_top, H), (y_F, H)], W)\nouter = chamfer(outer.edges(), 1.0)\nHc, rc = H - 2 * parete, 2.5                  # vano interno a spigoli raccordati: il cordone gira senza strappi\ndz = 10.0\nbehind = prism_yz([(y_F - 5, -dz), (y_i(-dz), -dz), (y_i(H + dz), H + dz), (y_F - 5, H + dz)], W + 10)\nshell = outer - (rr_y(W_in, Hc, rc, y_F + FR, y_bot + 5) & behind)\nbezel = shell & box(-W, W, y_F - 1, y_j, -1, H + 1)\nW_t, Hc_t, rc_t = W_in - 2 * PR, Hc - 2 * PR, rc - PR                # vano del retro (pareti parete_retro)\ntub = (outer - (rr_y(W_t, Hc_t, rc_t, y_F + FR, y_bot + 5) & behind)) & box(-W, W, y_j, y_bot + 5, -1, H + 1)\n# (niente pi\u00f9 anello-cuscinetto sui fianchi: col suo incavo nella gamba bloccava la gamba prima\n# che la squadretta arrivasse in battuta. La gamba ora poggia solo sulla squadretta.)\n\n# ---------------- frontale (cornice schermo) ----------------\n# Misure prese dal case di riferimento (monitorVerticale.stl, raddrizzato di 15\u00b0):\n#   finestra = il VETRO intero (70.4 x 50.4), centrata sul PCB, cornice spessa SEDE = 5 mm;\n#   dietro, la sede del PCB 86.8 x 50.8 profonda 1.5 che lo centra da sola (niente pioli).\n# Riferimento locale Bloc: x lungo il PCB (86, verso l'USB-C), y sul lato corto, z verso lo schermo;\n# il PCB occupa z 0..1.6, la faccia frontale \u00e8 a z = 1.6 + SEDE.\nfuori = RectangleRounded(86 + 2 * gioco + 2.4, 50 + 2 * gioco + 2.4, 1.5)\nbezel += Bloc * (Pos(0, 0, 1.6) * extrude(fuori - Rectangle(finestra_l, finestra_w), SEDE - FR + 0.02))      # cornice: il PCB ci appoggia\nbezel += Bloc * (Pos(0, 0, 1.6 - 1.5) * extrude(fuori - Rectangle(86 + 2 * gioco, 50 + 2 * gioco), 1.52))  # bordo della sede\nbezel -= Bloc * (Pos(0, 0, 1.5) * extrude(Rectangle(finestra_l, finestra_w), SEDE + 0.2))                  # finestra\nbezel -= Bloc * extrude(Plane.XY.offset(1.6 + SEDE - 0.8) * Rectangle(finestra_l, finestra_w), 0.81, taper=-45)   # smusso 0.8 sul bordo\nbezel -= Bloc * (Pos(-39, 15, 1.5) * Cylinder(1.0, SEDE + 0.3, align=MIN))                                # microfono\n# Fermi in cima (come il riferimento, ma due, ai lati dell'USB-C): il bordo alto del PCB ci\n# entra sotto inclinandolo, poi la parte bassa si appoggia nella sede.\nfor sx in (-1, 1):\n    bezel += box(sx * 15, sx * 19, y_pcb + 0.3, y_pcb + 1.9, z_c + 43 - 4, H - parete + 0.01)\nusb = Bloc * (Pos(0, 0, -1.6) * extrude(Plane.YZ.offset(42) * SlotOverall(13, 7.5), gioco + parete + 2))\n# ---- incastro continuo al bordo della faccia (labbro TPU dentro la frontale PETG) ----\n# Sezione (x = fuori dalla faccia interna della parete PETG, a = dentro la frontale dal piano y_j):\n#   labbro TPU del retro, spesso `labbro`, a `gioco_tpu` dalla parete PETG, lungo Lh;\n#   CORDONE sulla faccia esterna del labbro (sporge `cordone`): fianco di presa ripido dal lato\n#   del bordo, faccia dritta 1.2, invito a 45\u00b0 verso la punta (\u00e8 quello che entra per primo);\n#   GOLA nella parete PETG, profonda `incavo`, pi\u00f9 alta del cordone di `incavo_extra`, a 1 mm dal\n#   bordo (quel millimetro di PETG \u00e8 quello che trattiene); bordo della frontale e punta del labbro\n#   smussati a 45\u00b0. Chiudendo, il labbro TPU si piega verso l'interno e scatta nella gola.\n#   Alla base il retro si ispessisce fino al labbro con uno smusso a 45\u00b0 (niente sbalzi in stampa).\n# Si apre facendo leva nella tacca sul fondo.\nwo, ho, ro = W_in - 2 * gi, Hc - 2 * gi, rc - gi\nwi, hi, ri = wo - 2 * labbro, ho - 2 * labbro, ro - labbro\ntb = max(0.0, labbro + gi - PR)                # fascia del retro dalla sua parete al labbro\nlabbro_tpu = rr_y(wo, ho, ro, y_j - Lh, y_j + 0.01) - rr_y(wi, hi, ri, y_j - Lh - 1, y_j + 1)\nif tb > 0:\n    fascia = rr_y(W_t + 0.02, Hc_t + 0.02, rc_t, y_j, y_j + tb + 0.01)\n    fascia -= extrude(Plane(origin=(0, y_j - 0.02, H / 2), x_dir=(1, 0, 0), z_dir=(0, 1, 0)) * RectangleRounded(wi, hi, max(0.3, ri)), tb + 0.05, taper=-45)\n    labbro_tpu += fascia\npath = (Plane(origin=(0, y_j, H / 2), x_dir=(1, 0, 0), z_dir=(0, 1, 0)) * RectangleRounded(W_in, Hc, rc)).wire()\ndef around(*pts):                              # profilo (x, a) fatto girare lungo tutto il bordo; a verso lo schermo\n    return sweep(Plane(origin=(W_in / 2, y_j, H / 2), x_dir=(1, 0, 0), z_dir=(0, 0, 1)) * Polygon(*[(x, -a) for x, a in pts], align=None), path=path)\na1 = b_bordo + ie / 2                          # inizio del cordone (fianco di presa)\nlabbro_tpu += around((-gi - 0.3, a1), (-gi, a1), (-gi + c_, a1 + fl), (-gi + c_, a1 + fl + f_), (-gi, a1 + fl + f_ + c_), (-gi - 0.3, a1 + fl + f_ + c_))\nlabbro_tpu -= around((-gi - 0.7, Lh + 0.3), (-gi + 0.3, Lh + 0.3), (-gi + 0.3, Lh - 0.7))   # punta smussata 0.4\ngA, gB = b_bordo, a1 + fl + f_ + ie / 2\ngola = around((-0.3, gA - 0.3), (0, gA), (incavo, gA + fl * incavo / c_), (incavo, gB), (0, gB + incavo), (-0.3, gB + incavo + 0.3))\nbezel -= gola                                  # gola nella parete PETG\nbezel -= extrude(Plane(origin=(0, y_j + 0.01, H / 2), x_dir=(1, 0, 0), z_dir=(0, -1, 0)) * RectangleRounded(W_in + 1.2, Hc + 1.2, rc + 0.6), 0.6, taper=45)  # invito sul bordo\ntub -= box(-6, 6, y_j - 0.01, y_j + 1.2, -0.1, 0.8)          # tacca di apertura sul fondo\nbezel -= usb\n\n# ---------------- servo IN VERTICALE, nella frontale (PETG), SENZA VITI ----------------\n# Albero lungo X sul perno (y = 0, z = p). Quote dal FONDO del servo (x = xs, verso il centro):\n# alette da `aletta` a `aletta + aletta_sp`, spalla della cassa a `spalla`, cima del mozzo a\n# `mozzo`, cima della squadretta a `h_squadretta`. Corpo servo_l lungo Z con l'albero a `asse`\n# dall'estremit\u00e0 bassa, alette lunghe alette_l, centrate sul corpo.\n# Il servo entra DA DENTRO (a retro aperto) e si spinge verso il fianco lungo X, come con le viti:\n# il mozzo passa nel foro della parete (chiuso: il labbro dell'incastro resta intero), le alette\n# vanno in battuta sul blocco. Al posto delle viti, ai due capi delle alette, due LINGUETTE a scatto\n# in PETG: lastrine lungo X, spesse lt, staccate dal blocco da una fessura fino alla radice vicino\n# alla parete; in punta un dente con invito che l'aletta scavalca piegandole verso l'esterno, poi\n# scatta dietro l'aletta e la tiene contro il blocco. In stampa (schermo sul piatto) la linguetta \u00e8\n# una parete verticale che si flette nel piano degli strati. Per smontare: far leva sulle linguette.\ng_s = 0.25                                    # gioco servo/blocco\nxs = W_in / 2 - 0.2 - spalla                  # |x| del fondo servo: la spalla resta 0.2 dentro la parete\nxa = xs + aletta                              # |x| faccia inferiore (interna) delle alette\nxb = xa + aletta_sp                           # |x| faccia delle alette in battuta sul blocco\nz0, z1 = p - asse, p - asse + servo_l         # corpo\nza0, za1 = z0 - (alette_l - servo_l) / 2, z1 + (alette_l - servo_l) / 2   # alette\nlt, lw, presa, fess = 1.2, 8.0, 0.6, 0.6      # linguetta: spessore, larghezza, presa del dente, fessura\nx_rad = W_in / 2 - 0.3                        # radice della linguetta\nx_punta = xa - 0.1 - 1.4                      # punta (il dente \u00e8 lungo 1.4, oltre la faccia interna dell'aletta)\nadds, cuts, lingue = [], [], []\nfor s in (-1, 1):\n    adds.append(box(s * xb, s * (W_in / 2 + 0.01), y_F + FR - 0.01, yb, za0 - 0.3 - lt, za1 + 0.3 + lt))   # blocco dal pannello\n    cuts.append(box(s * (xb - 0.1), s * (W_in / 2 + 0.1), -servo_w / 2 - g_s, servo_w / 2 + g_s, z0 - g_s, z1 + g_s))   # corpo\n    xw0, xw1 = s * (W_in / 2 - 0.1), s * (W / 2 + 0.1)             # mozzo e ingranaggio secondario: foro chiuso\n    cuts.append(cyl_x(0, p, mozzo_r + 0.3, xw0, xw1))\n    cuts.append(box(xw0, xw1, -3.8, 3.8, p, p + ingranaggio + 0.3))\n    for e in (-1, 1):                                             # e = -1 capo basso, +1 capo alto\n        zn = (za0 - 0.3) if e < 0 else (za1 + 0.3)                # faccia della linguetta verso l'aletta\n        cuts.append(box(s * (xb - 0.1), s * x_rad, -lw / 2 - fess, lw / 2 + fess, zn + e * (lt + 0.1), zn - e * fess))  # fessura\n        lingue.append(box(s * x_punta, s * x_rad + s * 0.01, -lw / 2, lw / 2, zn, zn + e * lt))                      # linguetta\n        pl = Plane(origin=(0, 0, 0), x_dir=(1, 0, 0), z_dir=(0, -1, 0))                                             # locale y = +Z\n        hz = zn - e * (0.3 + presa)                                                                                  # cima del dente\n        lingue.append(extrude(pl * Polygon((s * x_punta, zn), (s * (xa - 0.1), zn), (s * (xa - 0.1), hz), (s * (xa - 0.3), hz), align=None), lw / 2, both=True))   # dente: invito ~37\u00b0, faccia di presa dritta\nbezel = (bezel + Compound(children=adds)) - Compound(children=cuts)\nbezel += Compound(children=lingue)\n# FORCHETTA nel retro TPU per il fondo libero del servo (il PETG l\u00ec non si pu\u00f2 mettere: davanti e\n# dietro al servo passa la scheda quando si infila). Si monta chiudendo il retro:\n#   - tampone dietro al servo (0.05 di interferenza);\n#   - due dita lungo le estremit\u00e0 del corpo (sotto e sopra), con in punta un dentino che scavalca il\n#     corpo (invito a 45\u00b0) e scatta davanti alla faccia anteriore.\n# Tiene il fondo del servo avanti/indietro e su/gi\u00f9. Le dita stanno fuori dai connettori del PCB e\n# lontano dall'uscita del cavo (capo basso, vicino al fondo del servo).\nft, dd, rib = 1.2, 0.8, 3.0                    # spessore delle dita, presa del dentino, altezza della costola\nyf = -servo_w / 2 - 0.05                       # faccia di presa del dentino (davanti al servo)\ny_rib = 0.0                                    # costole e parte larga si fermano qui: davanti passano i connettori del PCB\nx_max = x_punta - 0.4 - xs                     # fin dove pu\u00f2 arrivare un dito (i denti delle linguette)\nfor s in (-1, 1):\n    X = lambda a, b: (s * (xs + a), s * (xs + b))\n    tub += box(*X(2, 14), servo_w / 2 - 0.05, y_i(p) + 1.0, p + 1, p + 9) & outer                            # tampone\n    for e in (-1, 1):\n        zf = (z0 - g_s) if e < 0 else (z1 + g_s)                        # faccia del dito verso il corpo\n        zo = zf + e * ft                                                # faccia esterna\n        y_back = y_i(zf) + 1.0\n        if e < 0:   # dito basso (lato mozzo): largo; fessura aperta in punta per il cavo del servo\n            dito = box(*X(1, x_max), yf - 1.4, y_back, zf, zo)\n            dito -= box(*X(3, 8.5), yf - 2, 8.0, zf - 1, zo + 1)                                          # fessura del cavo (aperta davanti)\n            dito -= box(*X(10, x_max - 1.5), 3.0, 11.0, zf - 1, zo + 1)                                   # asola per altri cavi\n            prese = ((1, 3), (8.5, x_max))\n        else:       # dito alto: stretto davanti (connettori del PCB), largo dietro\n            dito = box(*X(1, 6.5), yf - 1.4, y_back, zf, zo) + box(*X(1, x_max), y_rib, y_back, zf, zo)\n            dito -= box(*X(8.5, x_max - 1.5), 3.0, 11.0, zf - 1, zo + 1)                                  # asola per i cavi\n            prese = ((1, 6.5),)\n        dito += box(*X(x_max - 1.2, x_max), y_rib, y_back, zo, zo + e * rib)                              # costola: profilo a L\n        dito += box(*X(1, 2.2), y_rib, y_back, zo, zo + e * rib)                                          # seconda costola: profilo a U\n        tub += dito & outer\n        for a0, a1 in prese:\n            pl = Plane(origin=(s * (xs + (a0 + a1) / 2), 0, 0), x_dir=(0, 1, 0), z_dir=(1, 0, 0))            # locale: x = Y, y = Z\n            tub += extrude(pl * Polygon((yf - 1.4, zf), (yf, zf), (yf, zf - e * (g_s + dd)), (yf - 1.4 + g_s + dd, zf - e * (g_s + dd)), align=None), (a1 - a0) / 2, both=True)\n\n# ---------------- header femmina 2 x N in cima, incassato, con tappo TPU a scatto ----------------\n# Due strisce femmina (passo 2.54, larghe 2.5, alte header_h) affiancate, in una manica appesa al tetto,\n# vicino al fianco destro (guardando lo schermo) e con le strisce LUNGO LA PROFONDIT\u00c0: in stampa\n# (schermo sul piatto) il vano ha il soffitto largo solo quanto le due strisce (~5 mm), un ponte\n# facile invece di una volta di 20 mm. L\u00ec il PCB non c'\u00e8 (finisce a |x| 26.6 con la sua sede) e il\n# labbro TPU del retro comincia a y_j - Lh: la manica sta tra i due.\n# Dall'alto: sede della flangia del tappo (1.2), vano del tappo con la gola tutto attorno (0.4,\n# fianchi 45\u00b0, come l'incastro della scocca), battuta dell'header (0.4 per lato), poi l'header: si\n# spinge da dentro, supera 4 dentini a 45\u00b0 in fondo alla manica e resta chiuso tra battuta (sopra:\n# non esce tirando i Dupont) e dentini (sotto: non cade dentro infilandoli).\n# Il tappo TPU: flangia a filo del tetto + tappo col cordone che scatta nella gola; tacca per la leva.\nLb, Wb = header_pin * 2.54 + 0.2, 2 * 2.5 + 0.2  # lungo Y (le strisce), largo X (due file)\nFL, R_FL = 1.2, 0.8                             # flangia del tappo: spessa, bordo oltre il vano\nx_h, zt = W_in / 2 - 0.2 - Wb / 2, H\ny_h = min(y_j - Lh - 0.4 - 1.2 - Lb / 2, y_F + FR + 1.4 + Lb / 2)   # davanti al labbro TPU, dentro il pannello\nzhb = zt - 4.2 - header_h - 0.05                # fondo dell'header (faccia dei dentini)\ndef HB(dx, dy, z0, z1):                         # box centrato sul vano, mezze misure (dx, dy)\n    return box(x_h - dx, x_h + dx, y_h - dy, y_h + dy, z0, z1)\nif presa_header:\n    bezel += HB(Wb / 2 + 1.2, Lb / 2 + 1.2, zhb - 1.6, zt - 1.0)                # manica\ndef _anello(z0, l, w, grow):                    # cornice a rombo 45\u00b0 attorno a un rettangolo l x w (X x Y), alta 2*grow\n    a = extrude(Plane.XY.offset(z0) * Rectangle(l, w), grow, taper=-45)\n    return a + extrude(Plane.XY.offset(z0 + grow) * Rectangle(l + 2 * grow, w + 2 * grow), grow, taper=45)\nhcut = [HB(Wb / 2 + R_FL, Lb / 2 + R_FL, zt - FL, zt + 1),                       # sede flangia\n        HB(Wb / 2, Lb / 2, zt - 3.6, zt),                                          # vano tappo\n        HB(Wb / 2 - 0.4, Lb / 2 - 0.4, zt - 4.3, zt - 3.5),                        # luce sopra la battuta\n        HB(Wb / 2, Lb / 2, zhb - 1.7, zt - 4.2),                                   # header\n        Pos(x_h, y_h, 0) * _anello(zt - 2.8, Wb, Lb, 0.4),                         # gola\n        box(x_h - 1.5, x_h + 1.5, y_h - Lb / 2 - R_FL - 0.1, y_h - Lb / 2 + 1.5, zt - 2.0, zt + 1)]   # tacca per la leva, davanti\nif presa_header:\n    bezel -= Compound(children=hcut)\n    for sx in (-1, 1):                              # dentini sui lati lunghi: faccia piatta sotto l'header, invito a 45\u00b0 verso il basso\n        for sy in (-1, 1):\n            yd = y_h + sy * (Lb / 2 - 2.5)\n            pl = Plane(origin=(x_h + sx * Wb / 2, yd + sx * 1.5, zhb), x_dir=(-sx, 0, 0), z_dir=(0, -sx, 0))   # locale y = -Z\n            bezel += extrude(pl * Polygon((-0.3, 0), (0.4, 0), (-0.3, 0.7), align=None), 3.0)\ntappo = HB(Wb / 2 + R_FL - 0.1, Lb / 2 + R_FL - 0.1, zt - FL, zt)\ntappo += HB(Wb / 2 - 0.1, Lb / 2 - 0.1, zt - 3.4, zt - FL + 0.01)\ntappo += Pos(x_h, y_h, 0) * _anello(zt - 2.75, Wb - 0.2, Lb - 0.2, 0.35)       # cordone\nheader_ref = HB(2.5, header_pin * 1.27, zhb + 0.05, zt - 4.2)\nheader_ref += HB(1.6, header_pin * 1.27 - 0.9, zhb - 3.0, zhb + 0.05)           # piedini saldati\n\n# ---------------- BOOT / RESET: tubi guida per una graffetta dal retro ----------------\n# Tutti attaccati al retro TPU: dalla parete posteriore fino a 1 mm dai pulsanti, attraverso\n# il piano di giunzione. Dove passano sotto labbro e fascia (in cima) il dorso \u00e8 spianato.\nfor by, lab in ((-11.57, \"B\"), (11.57, \"R\")):\n    pt = (Bloc * Location((39.74, by, 0))).position\n    tube = cyl_y(pt.X, pt.Z, 2.5, y_pcb + 3.5, y_bot + 5) & outer\n    tube -= box(pt.X - 3, pt.X + 3, y_j - Lh - 0.3, y_j + tb + 0.3, H - parete - gi - labbro - 0.3, H)   # il labbro TPU resta libero\n    tub += tube - cyl_y(pt.X, pt.Z, 1.1, y_pcb + 3.4, y_bot + 6)\n    nrm = Vector(0, 1, k).normalized()\n    zl = pt.Z - 6\n    txt = Plane(origin=(pt.X, y_o(zl), zl), x_dir=(-1, 0, 0), z_dir=nrm) * Text(lab, 4)\n    tub -= extrude(txt, 0.5, both=True)\n\n# ---------------- batteria ----------------\nif trapezio:\n    batt = Pos(0, (y_bf + y_bb) / 2, z_b) * extrude(RectangleRounded(BL, BW, 1.5), batteria)\nelse:                                          # in piedi, subito dietro il PCB: la sua spugna tiene il PCB\n    batt = Pos(0, y_bf, z_b + BW / 2) * Rot(-90, 0, 0) * extrude(RectangleRounded(BL, BW, 1.5), batteria)\n    for xr in (-20, 20):                       # costole TPU: dal retro premono la batteria (e lei il PCB)\n        tub += box(xr - 0.8, xr + 0.8, y_bb + imbottitura, y_i(6) + 0.3, 6, min(30.0, z_bt - 4)) & outer\n\n# ---------------- cassa audio ovale: sul retro TPU, sopra i servo ----------------\n# Vano 40 x 28, angoli r=8: sezione esatta (section_outline) dell'alloggio disegnato dall'utente.\n# Griglia incassata di 1.2 mm, 1 mm d'aria davanti alla membrana. Nel trapezio tutto \u00e8\n# costruito come su un retro dritto e poi inclinato con la parete.\ngk = 0.4\nzk = p + z_su + ai / 2 + sw                   # centro cassa: subito sopra il corpo dei servo\nrrect = lambda l, a, r: RectangleRounded(l, a, max(0.3, min(r, min(l, a) / 2 - 0.01)))\nYo, y_bi = y_o(zk), y_o(zk) - parete_retro   # retro esterno / interno nel riferimento \"dritto\"\nPK = Plane(origin=(0, 0, zk), x_dir=(1, 0, 0), z_dir=(0, 1, 0))      # piano XZ, normale verso il retro\nTILT = Pos(0, y_i(zk), zk) * Rot(tilt, 0, 0) * Pos(0, -y_i(zk), -zk)\nli = cassa_l + 2 * gk\nspk_add = Pos(0, y_bi + 0.01, 0) * extrude(PK * rrect(li + 2 * sw, ai + 2 * sw, cassa_r + gk + sw), -(1.5 + 1.0 + cassa_p + 0.01))  # manicotto+piastra\nspk_cut = Pos(0, y_bi - 1.5, 0) * extrude(PK * rrect(li, ai, cassa_r + gk), -(1.0 + cassa_p + 1))                                 # vano cassa\nspk_seat = Pos(0, y_bi - 1.5, 0) * extrude(PK * (rrect(li, ai, cassa_r + gk) - rrect(li - 5, ai - 5, cassa_r - 2.5)), -1.0)         # sede del bordo (1 mm d'aria)\nspk_wire = Pos(-(li / 2 + sw / 2), y_bi - 2.5 - cavo_da_membrana, zk) * Box(sw + 1, 4, 5)   # uscita cavo, fianco destro guardando la membrana\nol, oa = cassa_l - 6, cassa_a - 6                                    # luce griglia = membrana\nrecess = Pos(0, Yo + 0.01, 0) * extrude(PK * rrect(ol + 4, oa + 4, cassa_r - 1), -1.2)                                             # incasso esterno\nnsl = int(ol // 3.2)\nslots = [Pos(-(nsl - 1) * 1.6 + i * 3.2, 0) * Rectangle(1.6, oa + 2) for i in range(nsl)]\ngrille = (Pos(0, Yo + 0.02, 0) * extrude(PK * (Sketch() + slots), -(parete_retro + 1.5 + 0.1))) & (Pos(0, Yo + 0.02, 0) * extrude(PK * rrect(ol, oa, cassa_r - 3), -(parete_retro + 1.5 + 0.1)))\ntub += TILT * spk_add\ntub -= TILT * spk_cut\ntub += TILT * spk_seat\ntub -= TILT * spk_wire\ntub -= TILT * recess\ntub -= TILT * grille\ncassa = TILT * (Pos(0, y_bi - 2.5, 0) * extrude(PK * rrect(cassa_l, cassa_a, cassa_r), -cassa_p))\ncassa += TILT * (Pos(-cassa_l / 2 - 1, y_bi - 2.5 - cavo_da_membrana, zk) * Box(2, 2, 3))           # uscita cavo (riferimento)\n# ---------------- moduli extra sul retro TPU: MT3608 e MPU-6050 ----------------\n# Unico volume libero: sopra la batteria, sotto i blocchi dei servo, contro la parete posteriore.\n# Ogni scheda si appoggia piatta sulla parete e scatta sotto dei dentini con invito a 45\u00b0 (il TPU\n# cede); tra scheda e parete resta 1.2 per le saldature. I lati dove escono i fili restano aperti:\n# MT3608 fili ai lati corti (IN/OUT) -> bordi lunghi; MPU-6050 fili sul lato lungo in alto.\n# Misure delle schede: HW-045 37 x 17.2, GY-521 21.2 x 16.4 (tipiche, controllare col calibro).\n# L'MPU segue la parete: asse Z inclinato di `tilt` gradi (lo corregge la calibrazione a riposo).\nSCH, SOTTO, RIM, GAP_M = 1.6, 1.2, 1.2, 0.3\ndef _bordo(a0, a1, edge, dirn, along_x, y_ref, dente):\n    w_lip = SCH + SOTTO\n    pts = [(-GAP_M - RIM, -0.5), (-GAP_M, -0.5)]\n    pts += [(-GAP_M, w_lip), (0.8, w_lip), (-GAP_M, w_lip + 0.8 + GAP_M)] if dente else [(-GAP_M, w_lip + 0.8 + GAP_M)]\n    pts += [(-GAP_M - RIM, w_lip + 0.8 + GAP_M)]\n    if along_x:\n        pl = Plane(origin=(a0 if dirn > 0 else a1, y_ref, edge), x_dir=(0, 0, dirn), z_dir=(dirn, 0, 0))\n    else:\n        pl = Plane(origin=(edge, y_ref, a1 if dirn > 0 else a0), x_dir=(dirn, 0, 0), z_dir=(0, 0, -dirn))\n    return extrude(pl * Polygon(*pts, align=None), a1 - a0)\ndef supporto(xc, zc, L, A, lati):\n    y_ref = y_i(zc)\n    x0, x1, z0m, z1m = xc - L / 2, xc + L / 2, zc - A / 2, zc + A / 2\n    e = GAP_M + RIM\n    parti = []\n    for lato in lati:\n        if lato in (\"sotto\", \"sopra\"):\n            edge, dirn = (z0m, 1) if lato == \"sotto\" else (z1m, -1)\n            parti.append(_bordo(x0 - e, x1 + e, edge, dirn, True, y_ref, False))\n            parti.append(_bordo(xc - 4, xc + 4, edge, dirn, True, y_ref, True))\n        else:\n            edge, dirn = (x0, 1) if lato == \"sx\" else (x1, -1)\n            parti.append(_bordo(z0m - e, z1m + e, edge, dirn, False, y_ref, False))\n            parti.append(_bordo(zc - 4, zc + 4, edge, dirn, False, y_ref, True))\n    T = Pos(0, y_ref, zc) * Rot(tilt, 0, 0) * Pos(0, -y_ref, -zc)\n    ref = Pos(xc, y_ref - SOTTO - SCH / 2, zc) * Box(L, SCH, A)\n    return T * Compound(children=parti), T * ref\nMODULI = ((\"MT3608\", -16.0, 37.0, 17.2, (\"sotto\", \"sopra\"), 5.0), (\"MPU-6050\", 17.0, 21.2, 16.4, (\"sotto\", \"sx\", \"dx\"), 2.0))\nz_mod = z_bt + 1.4 + max(m[3] for m in MODULI) / 2                  # sopra la batteria (+ spugna) con 1.4 d'aria\nmoduli = []\nfor nome, xc, L, A, lati, hc in MODULI:\n    sup, ref = supporto(xc, z_mod, L, A, lati)\n    tub += sup & outer\n    T = Pos(0, y_i(z_mod), z_mod) * Rot(tilt, 0, 0) * Pos(0, -y_i(z_mod), -z_mod)\n    moduli += [ref, T * (Pos(xc, y_i(z_mod) - SOTTO - SCH - hc / 2, z_mod) * Box(L * 0.6, hc, A * 0.6))]   # scheda + componenti\nmoduli = Compound(children=moduli)\n\ntub += labbro_tpu                              # labbro e cordone per ultimi, o qualcosa li taglia\n\n# ---------------- gambe (profonde quanto il corpo in cima, centrate sul perno) ----------------\n# L'anima PETG va da p - nucleo_giu a p + nucleo_su. A ogni capo si infila un piedino TPU (stampato a\n# parte) con una coda di rondine a fianchi 45\u00b0, lungo Y, da dietro fino alla battuta davanti, e un dentino\n# che scatta in una scanalatura. Coda: collo 3.5, testa 6, alta 5.2.\n# La suola \u00e8 un arco lungo la profondit\u00e0: R22 in piedi (il contatto resta vicino all'asse della gamba,\n# niente leva sullo spigolo), R80 sotto (rema a gambe ritratte). Il capo curvo cala di\n# R - sqrt(R^2 - d^2) ai bordi: il piedino deve restare spesso almeno 1.6 mm anche l\u00ec.\nCODA = [(1.75, 1.2), (3.0, 2.45), (3.0, 4.2), (2.0, 5.2)]\ndef coda(xc, z_base, g, y0, y1, verso):\n    pts = [(u + g, h + (g if h > 4 else 0)) for u, h in CODA]\n    prof = [(-1.75 - g, -1.0)] + [(1.75 + g, -1.0)] + pts + [(-u, h) for u, h in reversed(pts)]\n    pl = Plane(origin=(xc, y1, z_base), x_dir=(1, 0, 0), z_dir=(0, -1, 0))   # locale y = +Z\n    sh = extrude(pl * Polygon(*prof, align=None), y1 - y0)\n    return sh if verso > 0 else sh.mirror(Plane(origin=(0, 0, z_base), z_dir=(0, 0, 1)))\ndef dente(xc, z_base, r, verso):\n    return Pos(xc, d - 4, z_base + verso * (5.2 + gioco_piede)) * Rot(0, 90, 0) * Cylinder(r, 4.0)\nzl0, zl1 = p - nucleo_giu, p + nucleo_su                    # capi dell'anima PETG (gamba a 0\u00b0)\ndef sagitta(R):\n    return R - math.sqrt(max(R * R - d * d, 0.0))\ndef capi(s):\n    # (quota del capo dell'anima, verso della coda, quota della suola, raggio) per il capo basso e alto\n    su = piede_su + (diff_su_dx if s > 0 else 0.0)\n    giu = piede_giu + (diff_giu_dx if s > 0 else 0.0)\n    return ((zl0, 1, p - giu, max(raggio_giu, d + 0.1)), (zl1, -1, p + su, max(raggio_su, d + 0.1)))\nG_CF = 0.2                                     # aria fra contrafforte e retro della gamba\ndef profilo_zoccolo(e, T, R):\n    # Fianco del piedino basso nel piano (y, u): y dal perno verso il retro, u dalla suola in su (T = spessore\n    # al centro). Suola R80 da -d a 0, fondo piatto fino alla punta, smusso 45\u00b0 da c (quello provato in Webots),\n    # retro dritto, spigolo alto dietro tondo r1, dorso concavo di raggio raggio_dorso tangente allo spigolo e al\n    # cappello tondo del contrafforte, fronte del contrafforte contro il retro della gamba, raccordo concavo rf\n    # sul piano d'appoggio (sta nello smusso da 1 mm dello spigolo basso della gamba). Tutto tangente.\n    c, r1, rf, ch = min(2.0, e / 3), 2.0, 1.0, 0.8\n    sag = R - math.sqrt(R * R - d * d)\n    yt, yf = d + e, d + G_CF                                     # retro della punta, fronte del contrafforte\n    r2 = contrafforte_sp / 2\n    C1 = (yt - r1, T - r1)                                       # centro dello spigolo alto dietro\n    C2 = (yf + r2, T + contrafforte - r2)                        # centro del cappello\n    P = lambda C, r, a: (C[0] + r * math.cos(a), C[1] + r * math.sin(a))\n    arc = lambda C, r, a0, a1: ThreePointArc(P(C, r, a0), P(C, r, (a0 + a1) / 2), P(C, r, a1))\n    cf = contrafforte > 2.0 and C2[0] + r2 < C1[0] and C2[1] > C1[1]\n    with BuildLine() as bl:\n        ThreePointArc((-d, sag), (-d / 2, R - math.sqrt(R * R - d * d / 4)), (0, 0))   # suola ad arco\n        Line((0, 0), (yt - c, 0))                                                         # fondo piatto\n        Line((yt - c, 0), (yt, c))                                                        # punta smussata\n        Line((yt, c), (yt, T - r1))                                                       # retro\n        if cf:\n            # centro del dorso: a raggio_dorso + r dai due centri, dalla parte alta dietro\n            Rr = raggio_dorso\n            mx, my = (C1[0] + C2[0]) / 2, (C1[1] + C2[1]) / 2\n            vx, vy = C1[0] - C2[0], C1[1] - C2[1]\n            L = math.hypot(vx, vy)\n            # distanze diverse (r1 != r2): punto sulla retta dei centri + perpendicolare, risolto a mano\n            a1, a2 = Rr + r1, Rr + r2\n            t = (a2 * a2 - a1 * a1 + L * L) / (2 * L)             # distanza da C2 lungo C2->C1\n            h = math.sqrt(max(a2 * a2 - t * t, 0.0))\n            ux, uy = vx / L, vy / L\n            Cc = (C2[0] + t * ux + h * uy, C2[1] + t * uy - h * ux)                      # lato alto-dietro\n            if Cc[1] < C1[1]:\n                Cc = (C2[0] + t * ux - h * uy, C2[1] + t * uy + h * ux)\n            g1 = math.atan2(Cc[1] - C1[1], Cc[0] - C1[0])                                # tangenza spigolo/dorso\n            g2 = math.atan2(Cc[1] - C2[1], Cc[0] - C2[0])                                # tangenza dorso/cappello\n            arc(C1, r1, 0.0, g1)\n            b1 = math.atan2(C1[1] - Cc[1], C1[0] - Cc[0]); b2 = math.atan2(C2[1] - Cc[1], C2[0] - Cc[0])\n            arc(Cc, Rr, b1, b2)                                                           # dorso concavo\n            arc(C2, r2, g2, math.pi)                                                      # cappello\n            Line((yf, C2[1]), (yf, T + rf))                                               # contro il retro della gamba\n            arc((yf - rf, T + rf), rf, 0.0, -math.pi / 2)                                 # raccordo concavo\n            Line((yf - rf, T), (-d + ch, T))                                              # sotto la gamba\n        else:\n            arc(C1, r1, 0.0, math.pi / 2)\n            Line((yt - r1, T), (-d + ch, T))\n        Line((-d + ch, T), (-d, T - ch))\n        Line((-d, T - ch), (-d, sag))\n    return make_face(bl.line), cf\ndef piede_zoccolo(xin, xo, z_base, z_suola, R, e):\n    w, xc = abs(xo - xin), (xin + xo) / 2\n    f, cf = profilo_zoccolo(e, abs(z_base - z_suola), R)\n    P = extrude(Plane.YZ * f.moved(Location((0, z_suola, 0))), w / 2, both=True).moved(Location((xc, 0, 0)))\n    try:                                                         # spigoli dei fianchi raccordati\n        P = fillet(P.edges().filter_by(lambda ed: abs(abs(ed.center().X - xc) - w / 2) < 1e-3), 0.8)\n    except Exception:\n        P = chamfer(P.edges().filter_by(lambda ed: abs(abs(ed.center().X - xc) - w / 2) < 1e-3), 0.8)\n    y_coda = d + G_CF + 1.0 if cf else d                         # la coda entra nel contrafforte\n    return P + coda(xc, z_base, 0.0, -d + 2.0, y_coda, 1) + dente(xc, z_base - gioco_piede, 0.5, 1)\ndef piedini(s):\n    xin, xo = s * (W / 2 + 1.0), s * (W / 2 + 1.0 + spessore_gamba)\n    xc = (xin + xo) / 2\n    out = []\n    for z_base, verso, z_suola, R in capi(s):\n        zs0, zs1 = (z_suola, z_base) if verso > 0 else (z_base, z_suola)\n        P = chamfer(box(xin, xo, -d, d, zs0, zs1).edges(), 0.8)\n        zr = z_suola + verso * R\n        P = P & cyl_x(0, zr, R, xin - s, xo + s)                                             # suola ad arco lungo Y\n        P += coda(xc, z_base, 0.0, -d + 2.0, d, verso) + dente(xc, z_base - verso * gioco_piede, 0.5, verso)\n        e = zoccolo_dx if (s > 0 and zoccolo_dx >= 0) else zoccolo\n        if verso > 0 and e > 0.5:                                                          # piedino basso con lo zoccolo\n            P = piede_zoccolo(xin, xo, z_base, z_suola, R, e)\n        out.append(P)\n    return out\nspessori_piedi = {('giu', 'su')[k]: round(abs(c[2] - c[0]) - sagitta(c[3]), 2) for k, c in enumerate(capi(-1))}\ndef gamba(s):\n    xin, xo = s * (W / 2 + 1.0), s * (W / 2 + 1.0 + spessore_gamba)\n    L = chamfer(box(xin, xo, -d, d, zl0, zl1).edges(), 1.0)\n    xc = (xin + xo) / 2\n    for z_base, verso in ((zl0, 1), (zl1, -1)):                                              # sedi dei piedini\n        L -= coda(xc, z_base, gioco_piede, -d + 2.0 - gioco_piede, d + 1.0, verso)\n        L -= dente(xc, z_base, 0.6, verso)\n    X = lambda q: xin + s * q\n    dh = (xs + h_squadretta) - (W / 2 + 1.0)                                                 # tasca: il fondo \u00e8 la cima della squadretta\n    L -= cyl_x(0, p, mozzo_r + 1.0, X(-0.1), X(dh))                                          # mozzo che sporge dal fianco + collare\n    sc = max(0.6, (xs + mozzo) - (W / 2 + 1.0) + 0.6)                                        # scarico piatto (non un incastro): la gamba gira\n    L -= cyl_x(0, p, ingranaggio + 1.5, X(-0.1), X(sc))                                          # e l'ingranaggio secondario non la tocca\n    arm = Plane.YZ.offset(0) * Rot(0, 0, 90) * SlotOverall(squadretta + 0.6, 6.4)\n    L -= Pos(X(-0.1), 0, p) * extrude(arm, s * (dh + 0.1))\n    L -= cyl_x(0, p, 2.6, X(dh - 0.1), X(spessore_gamba + 0.1))                              # accesso vite squadretta\n    xd = dh - sp_squadretta - 0.2                                                            # dentini subito dietro il braccio in battuta:\n    for dzz in (-1, 1):                                                                      # la squadretta ci passa a scatto e resta presa\n        zz = p + dzz * (squadretta / 2 - 1.8)\n        for sy in (-1, 1):\n            L += box(X(xd - 0.8), X(xd), sy * 3.2, sy * 2.9, zz - 1.0, zz + 1.0)\n    for dzz in (-1, 1):\n        L -= cyl_x(0, p + dzz * (squadretta / 2 - 3), 0.75, X(dh - 0.1), X(dh + 2.5))\n    for zz in (H / 4, 3 * H / 4):                                                           # segmenti alla TARS\n        L -= box(xo - s * 0.6, xo + s * 1, -2 * d, 2 * d, zz - 0.6, zz + 0.6)\n    return L\n\n# ---------------- riferimenti (non si stampano) ----------------\npcb = extrude(RectangleRounded(86, 50, 3.5), 1.6)\nfor bx in (-39, 39):\n    for by in (-21, 21):\n        pcb -= Pos(bx, by, 0) * Cylinder(1.6, 10)\nlcd = Pos(0, 0, 2.1) * Box(69.2, 50, 2.3, align=MIN)          # centrato, come nel riferimento\ncomp = [Pos(x, y, 0) * Box(sx, sy, h, align=(Align.CENTER, Align.CENTER, Align.MAX)) for x, y, sx, sy, h in (\n    (39.4, 0, 7.35, 8.94, 3.2), (39.74, -11.57, 3, 4, 2.5), (39.74, 11.57, 3, 4, 2.5), (-7.97, -17.5, 14, 15, 1.9),\n    (19.82, -22.2, 4.5, 5.6, 3.4), (8.0, -22.2, 7, 5.6, 3.4), (6.65, 22.2, 4.5, 5.6, 3.4), (-6.9, 22.2, 7, 5.6, 3.4), (-24.75, 22.2, 7, 5.6, 3.4))]\nscheda = Bloc * Compound(children=[pcb, lcd] + comp)\nservi = []\nhw = servo_w / 2\nfor s in (-1, 1):\n    xsq = xs + h_squadretta - sp_squadretta\n    servi += [box(s * xs, s * (xs + spalla), -hw, hw, z0, z1),\n              box(s * xa, s * (xa + aletta_sp), -hw, hw, za0, za1),\n              cyl_x(0, p, mozzo_r, s * (xs + spalla - 0.1), s * (xs + mozzo)),\n              box(s * (xs + spalla - 0.1), s * (xs + mozzo - 1.0), -3.5, 3.5, p, p + ingranaggio),\n              cyl_x(0, p, 3.4, s * (xs + mozzo - 0.1), s * xsq),                                 # collare della squadretta\n              Pos(s * (xsq + sp_squadretta / 2), 0, p) * Rot(0, 90, 0) * extrude(SlotOverall(squadretta, 5.5), sp_squadretta / 2, both=True)]\nservi = Compound(children=servi)\n\nmeta = dict(H=H, W=W, D=2 * d, p=p, alzata=alzata, xs=xs, spessore_gamba=spessore_gamba,\n            D_base=y_bot - y_F, tilt=tilt, y_j=y_j, trapezio=trapezio,\n            tasca_squadretta=(xs + h_squadretta) - (W / 2 + 1.0), mozzo_fuori=(xs + mozzo) - W / 2,\n            z_moduli=z_mod, reach_giu=piede_giu, reach_su=piede_su, nucleo=nucleo_giu + nucleo_su,\n            spessori_piedi=spessori_piedi)\n# 0..7 pezzi e riferimenti, 8 perno, 9 piedini TPU [sx gi\u00f9, sx su, dx gi\u00f9, dx su], 10 moduli e header (rif.),\n# 11 tappo TPU dell'header, ultimo quote\nresult = [bezel, tub, gamba(-1), gamba(1), scheda, batt, servi, cassa, Vector(0, 0, p),\n          Compound(children=piedini(-1) + piedini(1)), Compound(children=moduli.solids() + ([header_ref] if presa_header else [])), tappo, meta]\n\n",
+        "_cb": {
+          "finestra_l": 71,
+          "nucleo_giu": 42,
+          "piede_su": 55,
+          "piede_giu": 52
+        }
+      },
+      "position": [
+        537,
+        6695
+      ],
+      "parent": null,
+      "preview": false,
+      "title": "Progetto TARS-PET AD002"
+    },
+    {
+      "id": "ad002_sollevamento",
+      "type": "CodeBlock",
+      "params": {
+        "code": "# Copia di Sollevamento per la scocca AD002, spostata di dx_ad002 lungo X per vederla accanto all'altra.\n# Quanto le gambe sollevano il corpo all'angolo dato (0 = ritratte, 180 = in piedi).\n# in_0 = lista del progetto (l'ultimo elemento sono le quote).\nangolo = 180.0  #@param float min=0 max=180 step=1\ndx_ad002 = 150.0  #@param float min=0 max=400 step=5\nm = in_0[-1]\nt = math.radians(angolo)\nlow = min(y * math.sin(t) + z * math.cos(t) for y in (-m['D'] / 2, m['D'] / 2) for z in (-m['reach_giu'], m['reach_su']))\nresult = Vector(dx_ad002, 0, max(0.0, -(m['p'] + low)))\n"
+      },
+      "position": [
+        867,
+        7409
+      ],
+      "parent": null,
+      "title": "Sollevamento AD002"
+    },
+    {
+      "id": "ad002_perno",
+      "type": "ListItem",
+      "params": {
+        "index": 8
+      },
+      "position": [
+        867,
+        7095
+      ],
+      "parent": null
+    },
+    {
+      "id": "ad002_frontale_li",
+      "type": "ListItem",
+      "params": {
+        "index": 0
+      },
+      "position": [
+        867,
+        7882
+      ],
+      "parent": null
+    },
+    {
+      "id": "ad002_frontale",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        1167,
+        7534
+      ],
+      "parent": null,
+      "color": "#6b717a",
+      "title": "Frontale AD002"
+    },
+    {
+      "id": "ad002_posteriore_li",
+      "type": "ListItem",
+      "params": {
+        "index": 1
+      },
+      "position": [
+        867,
+        8039
+      ],
+      "parent": null
+    },
+    {
+      "id": "ad002_posteriore",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        1167,
+        7903
+      ],
+      "parent": null,
+      "color": "#8d949e",
+      "title": "Posteriore AD002"
+    },
+    {
+      "id": "ad002_gamba_sx_li",
+      "type": "ListItem",
+      "params": {
+        "index": 2
+      },
+      "position": [
+        867,
+        6938
+      ],
+      "parent": null
+    },
+    {
+      "id": "ad002_gamba_sx_rot",
+      "type": "Rotate",
+      "params": {
+        "angle": 90,
+        "axis": "X",
+        "about": "world"
+      },
+      "position": [
+        1167,
+        6804
+      ],
+      "parent": null
+    },
+    {
+      "id": "ad002_gamba_sx",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        1534,
+        6880
+      ],
+      "parent": null,
+      "color": "#b8bec7",
+      "title": "Gamba sx AD002"
+    },
+    {
+      "id": "ad002_gamba_dx_li",
+      "type": "ListItem",
+      "params": {
+        "index": 3
+      },
+      "position": [
+        867,
+        7252
+      ],
+      "parent": null
+    },
+    {
+      "id": "ad002_gamba_dx_rot",
+      "type": "Rotate",
+      "params": {
+        "angle": 90,
+        "axis": "X",
+        "about": "world"
+      },
+      "position": [
+        1167,
+        7169
+      ],
+      "parent": null
+    },
+    {
+      "id": "ad002_gamba_dx",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        1534,
+        7249
+      ],
+      "parent": null,
+      "color": "#b8bec7",
+      "title": "Gamba dx AD002"
+    },
+    {
+      "id": "ad002_servo_li",
+      "type": "ListItem",
+      "params": {
+        "index": 6
+      },
+      "position": [
+        867,
+        8307
+      ],
+      "parent": null
+    },
+    {
+      "id": "ad002_servo",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        1167,
+        8272
+      ],
+      "parent": null,
+      "color": "#2a5bd7",
+      "title": "Servo AD002"
+    },
+    {
+      "id": "ad002_orienta",
+      "type": "CodeBlock",
+      "params": {
+        "code": "# Pezzi orientati per la stampa, senza supporti: [frontale, posteriore, gamba sx, gamba dx, 4 piedini TPU + tappo header]\ndef bed(s):\n    b = s.bounding_box()\n    return Pos(-(b.min.X + b.max.X) / 2, -(b.min.Y + b.max.Y) / 2, -b.min.Z) * s\nfr, post, gsx, gdx = in_0[:4]\nresult = [bed(Rot(90, 0, 0) * fr),        # schermo sul piatto\n          bed(Rot(-90 - in_0[-1].get('tilt', 0.0), 0, 0) * post),     # schiena sul piatto (anche se inclinata)\n          bed(Rot(0, -90, 0) * gsx),      # faccia esterna sul piatto\n          bed(Rot(0, 90, 0) * gdx)]\n\n# piedini TPU in fila. Quelli bassi (R80, quasi piatti): suola sul piatto, coda in su. Quelli da in piedi\n# (R22): di fianco, perch\u00e9 sulla suola toccherebbero il piatto lungo una riga; la coda resta orizzontale\n# con due sbalzi da 1,75 mm, che il TPU fa senza supporti.\nH = in_0[-1]['H']\npz = [bed(Rot(0, 90, 0) * s if s.center().Z > H / 2 else s) for s in in_0[9].solids()]\npz.append(Pos(0, 36, 0) * bed(Rot(180, 0, 0) * in_0[11]))     # tappo dell'header: flangia sul piatto\nresult.append(Compound(children=[Pos(0, (i - 1.5) * 40, 0) * s for i, s in enumerate(pz[:4])] + [Pos(30, 0, 0) * s for s in pz[4:]]))"
+      },
+      "position": [
+        867,
+        6123
+      ],
+      "parent": null,
+      "preview": false,
+      "title": "Orienta per stampa AD002"
+    },
+    {
+      "id": "ad002_stampa0_li",
+      "type": "ListItem",
+      "params": {
+        "index": 0
+      },
+      "position": [
+        1167,
+        5736
+      ],
+      "parent": null
+    },
+    {
+      "id": "ad002_stampa0_stl",
+      "type": "ExportSTL",
+      "params": {
+        "path": "tars_frontale_ad002.stl"
+      },
+      "position": [
+        1534,
+        5681
+      ],
+      "parent": null
+    },
+    {
+      "id": "ad002_stampa0_mesh",
+      "type": "ToMesh",
+      "params": {
+        "tolerance": 0.02
+      },
+      "position": [
+        1534,
+        5500
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "ad002_stampa0_pc",
+      "type": "PrintCheck",
+      "params": {
+        "angle": 45,
+        "layer": 0.2,
+        "clearance": 0.2
+      },
+      "position": [
+        1918,
+        5456
+      ],
+      "parent": null,
+      "title": "Stampa frontale AD002"
+    },
+    {
+      "id": "ad002_stampa0_disp",
+      "type": "Display",
+      "params": {},
+      "position": [
+        2227,
+        5497
+      ],
+      "parent": null
+    },
+    {
+      "id": "ad002_stampa1_li",
+      "type": "ListItem",
+      "params": {
+        "index": 1
+      },
+      "position": [
+        1167,
+        6006
+      ],
+      "parent": null
+    },
+    {
+      "id": "ad002_stampa1_stl",
+      "type": "ExportSTL",
+      "params": {
+        "path": "tars_posteriore_ad002.stl"
+      },
+      "position": [
+        1534,
+        6019
+      ],
+      "parent": null
+    },
+    {
+      "id": "ad002_stampa1_mesh",
+      "type": "ToMesh",
+      "params": {
+        "tolerance": 0.02
+      },
+      "position": [
+        1534,
+        5838
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "ad002_stampa1_pc",
+      "type": "PrintCheck",
+      "params": {
+        "angle": 45,
+        "layer": 0.2,
+        "clearance": 0.2
+      },
+      "position": [
+        1918,
+        5794
+      ],
+      "parent": null,
+      "title": "Stampa posteriore AD002"
+    },
+    {
+      "id": "ad002_stampa1_disp",
+      "type": "Display",
+      "params": {},
+      "position": [
+        2227,
+        5835
+      ],
+      "parent": null
+    },
+    {
+      "id": "ad002_stampa2_li",
+      "type": "ListItem",
+      "params": {
+        "index": 2
+      },
+      "position": [
+        1167,
+        6276
+      ],
+      "parent": null
+    },
+    {
+      "id": "ad002_stampa2_stl",
+      "type": "ExportSTL",
+      "params": {
+        "path": "tars_gamba_sx_ad002.stl"
+      },
+      "position": [
+        1534,
+        6357
+      ],
+      "parent": null
+    },
+    {
+      "id": "ad002_stampa2_mesh",
+      "type": "ToMesh",
+      "params": {
+        "tolerance": 0.02
+      },
+      "position": [
+        1534,
+        6176
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "ad002_stampa2_pc",
+      "type": "PrintCheck",
+      "params": {
+        "angle": 45,
+        "layer": 0.2,
+        "clearance": 0.2
+      },
+      "position": [
+        1918,
+        6132
+      ],
+      "parent": null,
+      "title": "Stampa gamba sx AD002"
+    },
+    {
+      "id": "ad002_stampa2_disp",
+      "type": "Display",
+      "params": {},
+      "position": [
+        2227,
+        6173
+      ],
+      "parent": null
+    },
+    {
+      "id": "ad002_stampa3_li",
+      "type": "ListItem",
+      "params": {
+        "index": 3
+      },
+      "position": [
+        1167,
+        6547
+      ],
+      "parent": null
+    },
+    {
+      "id": "ad002_stampa3_stl",
+      "type": "ExportSTL",
+      "params": {
+        "path": "tars_gamba_dx_ad002.stl"
+      },
+      "position": [
+        1534,
+        6695
+      ],
+      "parent": null
+    },
+    {
+      "id": "ad002_stampa3_mesh",
+      "type": "ToMesh",
+      "params": {
+        "tolerance": 0.02
+      },
+      "position": [
+        1534,
+        6514
+      ],
+      "parent": null,
+      "preview": false
+    },
+    {
+      "id": "ad002_stampa3_pc",
+      "type": "PrintCheck",
+      "params": {
+        "angle": 45,
+        "layer": 0.2,
+        "clearance": 0.2
+      },
+      "position": [
+        1918,
+        6470
+      ],
+      "parent": null,
+      "title": "Stampa gamba dx AD002"
+    },
+    {
+      "id": "ad002_stampa3_disp",
+      "type": "Display",
+      "params": {},
+      "position": [
+        2227,
+        6511
+      ],
+      "parent": null
+    },
+    {
+      "id": "n12",
+      "type": "CodeBlock",
+      "params": {
+        "code": "# BILANCIO DEL BARICENTRO \u2014 masse reali dai volumi + componenti.\n# in_0 = lista del progetto: [frontale, posteriore, gamba sx, gamba dx, scheda, batteria, servi, cassa, perno, quote]\nm_batteria = 50.0  #@param float min=20 max=80 step=1\nm_scheda = 30.0  #@param float min=10 max=60 step=1\nm_servo = 9.0  #@param float min=5 max=20 step=0.1\nm_cassa = 12.0  #@param float min=2 max=40 step=0.5\ndensita = 1.27  #@param float min=0.9 max=1.5 step=0.01\ndensita_tpu = 1.21  #@param float min=0.9 max=1.5 step=0.01\nriempimento = 15.0  #@param float min=5 max=100 step=5\nq = in_0[-1]\nfr, post, gsx, gdx, scheda, batt, servi, cassa = in_0[:8]\nper = 1.2                                            # 3 perimetri da 0.4\ndef eff(t):                                          # frazione piena di una parete spessa t\n    return min(1.0, 2 * per / t + riempimento / 100 * max(0.0, 1 - 2 * per / t))\ndef pm(shape, mass):\n    c = shape.center(CenterOf.MASS)\n    return mass, Vector(c.X, c.Y, c.Z)\ng_tpu = densita_tpu * eff(2.0) / 1000\ng_guscio, g_gamba = densita * eff(2.0) / 1000, densita * eff(q['spessore_gamba']) / 1000\ncorpo = [(\"frontale\", *pm(fr, fr.volume * g_guscio)), (\"posteriore\", *pm(post, post.volume * g_tpu)),\n         (\"scheda+LCD\", m_scheda, scheda.center(CenterOf.BOUNDING_BOX)),\n         (\"batteria\", *pm(batt, m_batteria)), (\"2 servo\", 2 * m_servo, servi.center(CenterOf.BOUNDING_BOX)), (\"cassa audio\", *pm(cassa, m_cassa))]\ngambe = [(\"gamba sx\", *pm(gsx, gsx.volume * g_gamba)), (\"gamba dx\", *pm(gdx, gdx.volume * g_gamba))]\ndef cg(items):\n    M = sum(i[1] for i in items)\n    return M, Vector(sum(i[1] * i[2].X for i in items) / M, sum(i[1] * i[2].Y for i in items) / M, sum(i[1] * i[2].Z for i in items) / M)\nMc, Cc = cg(corpo)\np, H, D = q['p'], q['H'], q['D']\ng = q['reach_su'] - p                                # alzata vera: la danno i piedini\nflip = lambda v: Vector(v.X, -v.Y, 2 * p - v.Z)      # gamba ribaltata di 180\u00b0 attorno al perno\nMt0, Ct0 = cg(corpo + gambe)\nMt1, Ct1 = cg([(n, mm, Vector(c.X, c.Y, c.Z + g)) for n, mm, c in corpo] + [(n, mm, flip(c) + Vector(0, 0, g)) for n, mm, c in gambe])\nmargine = p - Cc.Z\npend = math.degrees(math.atan2(abs(Cc.Y), margine)) if margine > 0 else float('nan')\ntip_f = math.degrees(math.atan2(D / 2 + Ct1.Y, Ct1.Z)); tip_b = math.degrees(math.atan2(D / 2 - Ct1.Y, Ct1.Z))\nMg = sum(i[1] for i in gambe) / 2\nd_max = math.sqrt(max(0.0, (H - p) ** 2 + (D / 2) ** 2 - p ** 2))\ntau = Mc / 1000 * 9.81 * d_max / 1000 / 2 * 100 / 9.81   # kgf\u00b7cm per servo\nlines = [\"BILANCIO \u2014 TARS-PET (\" + f\"{H:.1f} mm di altezza, perno a {p:.1f} mm)\", \"\"]\nlines += [f\"  {n:<14}{mm:6.1f} g   z={c.Z:6.1f}  y={c.Y:+5.1f}\" for n, mm, c in corpo + gambe]\nlines += [\"\", f\"CORPO {Mc:.0f} g  -> baricentro z={Cc.Z:.1f}  y={Cc.Y:+.1f} mm\",\n          f\"  perno {margine:+.1f} mm SOPRA il baricentro \" + (\"-> pendolo STABILE\" if margine > 0 else \"-> INSTABILE, abbassa la zavorra\"),\n          f\"  appeso senza servo si inclinerebbe di {pend:.1f}\u00b0 (sbilancio avanti/dietro {Cc.Y:+.1f} mm)\",\n          \"\", f\"IN PIEDI (gambe a 180\u00b0) {Mt1:.0f} g, baricentro a {Ct1.Z:.1f} mm da terra, y={Ct1.Y:+.1f}\",\n          f\"  si ribalta oltre {tip_f:.0f}\u00b0 in avanti / {tip_b:.0f}\u00b0 indietro (piedi {D:.0f} mm di profondit\u00e0)\",\n          f\"  RITIRATO: appoggia sui 4 piedini bassi, baricentro a {Ct0.Z:.1f} mm\",\n          \"\", f\"SERVO: per alzarsi servono ~{tau:.2f} kgf\u00b7cm per servo (SG92R 2.5 kgf\u00b7cm -> margine x{2.5 / tau:.1f})\",\n          f\"  ogni gamba pesa ~{Mg:.0f} g ({riempimento:.0f}% riempimento)\"]\nresult = \"\\n\".join(lines)\n"
+      },
+      "position": [
+        867,
+        810
+      ],
+      "parent": null,
+      "preview": false,
+      "title": "Bilancio baricentro"
+    }
+  ],
+  "connections": [
+    {
+      "id": "l1",
+      "from_node": "n2",
+      "from_socket": "result",
+      "to_node": "n51",
+      "to_socket": "alzata"
+    },
+    {
+      "id": "l2",
+      "from_node": "n3",
+      "from_socket": "result",
+      "to_node": "n51",
+      "to_socket": "batteria"
+    },
+    {
+      "id": "l3",
+      "from_node": "n4",
+      "from_socket": "result",
+      "to_node": "n51",
+      "to_socket": "imbottitura"
+    },
+    {
+      "id": "l4",
+      "from_node": "n5",
+      "from_socket": "result",
+      "to_node": "n51",
+      "to_socket": "spessore_gamba"
+    },
+    {
+      "id": "l5",
+      "from_node": "n6",
+      "from_socket": "result",
+      "to_node": "n51",
+      "to_socket": "squadretta"
+    },
+    {
+      "id": "l6",
+      "from_node": "n7",
+      "from_socket": "result",
+      "to_node": "n51",
+      "to_socket": "cassa_l"
+    },
+    {
+      "id": "l7",
+      "from_node": "n8",
+      "from_socket": "result",
+      "to_node": "n51",
+      "to_socket": "cassa_a"
+    },
+    {
+      "id": "l8",
+      "from_node": "n9",
+      "from_socket": "result",
+      "to_node": "n51",
+      "to_socket": "cassa_p"
+    },
+    {
+      "id": "l9",
+      "from_node": "n51",
+      "from_socket": "result",
+      "to_node": "n11",
+      "to_socket": "in_0"
+    },
+    {
+      "id": "l10",
+      "from_node": "n1",
+      "from_socket": "result",
+      "to_node": "n11",
+      "to_socket": "angolo"
+    },
+    {
+      "id": "l11",
+      "from_node": "n51",
+      "from_socket": "result",
+      "to_node": "n12",
+      "to_socket": "in_0"
+    },
+    {
+      "id": "l12",
+      "from_node": "n12",
+      "from_socket": "result",
+      "to_node": "n13",
+      "to_socket": "value"
+    },
+    {
+      "id": "l13",
+      "from_node": "n51",
+      "from_socket": "result",
+      "to_node": "n14",
+      "to_socket": "list"
+    },
+    {
+      "id": "l14",
+      "from_node": "n51",
+      "from_socket": "result",
+      "to_node": "n15",
+      "to_socket": "list"
+    },
+    {
+      "id": "l15",
+      "from_node": "n15",
+      "from_socket": "result",
+      "to_node": "n16",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l16",
+      "from_node": "n11",
+      "from_socket": "result",
+      "to_node": "n16",
+      "to_socket": "offset"
+    },
+    {
+      "id": "l17",
+      "from_node": "n51",
+      "from_socket": "result",
+      "to_node": "n17",
+      "to_socket": "list"
+    },
+    {
+      "id": "l18",
+      "from_node": "n17",
+      "from_socket": "result",
+      "to_node": "n18",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l19",
+      "from_node": "n11",
+      "from_socket": "result",
+      "to_node": "n18",
+      "to_socket": "offset"
+    },
+    {
+      "id": "l20",
+      "from_node": "n51",
+      "from_socket": "result",
+      "to_node": "n19",
+      "to_socket": "list"
+    },
+    {
+      "id": "l21",
+      "from_node": "n19",
+      "from_socket": "result",
+      "to_node": "n20",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l22",
+      "from_node": "n14",
+      "from_socket": "result",
+      "to_node": "n20",
+      "to_socket": "pivot"
+    },
+    {
+      "id": "l23",
+      "from_node": "n1",
+      "from_socket": "result",
+      "to_node": "n20",
+      "to_socket": "angle"
+    },
+    {
+      "id": "l24",
+      "from_node": "n20",
+      "from_socket": "result",
+      "to_node": "n21",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l25",
+      "from_node": "n11",
+      "from_socket": "result",
+      "to_node": "n21",
+      "to_socket": "offset"
+    },
+    {
+      "id": "l26",
+      "from_node": "n51",
+      "from_socket": "result",
+      "to_node": "n22",
+      "to_socket": "list"
+    },
+    {
+      "id": "l27",
+      "from_node": "n22",
+      "from_socket": "result",
+      "to_node": "n23",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l28",
+      "from_node": "n14",
+      "from_socket": "result",
+      "to_node": "n23",
+      "to_socket": "pivot"
+    },
+    {
+      "id": "l29",
+      "from_node": "n1",
+      "from_socket": "result",
+      "to_node": "n23",
+      "to_socket": "angle"
+    },
+    {
+      "id": "l30",
+      "from_node": "n23",
+      "from_socket": "result",
+      "to_node": "n24",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l31",
+      "from_node": "n11",
+      "from_socket": "result",
+      "to_node": "n24",
+      "to_socket": "offset"
+    },
+    {
+      "id": "l32",
+      "from_node": "n51",
+      "from_socket": "result",
+      "to_node": "n25",
+      "to_socket": "list"
+    },
+    {
+      "id": "l33",
+      "from_node": "n25",
+      "from_socket": "result",
+      "to_node": "n26",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l34",
+      "from_node": "n11",
+      "from_socket": "result",
+      "to_node": "n26",
+      "to_socket": "offset"
+    },
+    {
+      "id": "l35",
+      "from_node": "n51",
+      "from_socket": "result",
+      "to_node": "n27",
+      "to_socket": "list"
+    },
+    {
+      "id": "l36",
+      "from_node": "n27",
+      "from_socket": "result",
+      "to_node": "n28",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l37",
+      "from_node": "n11",
+      "from_socket": "result",
+      "to_node": "n28",
+      "to_socket": "offset"
+    },
+    {
+      "id": "l38",
+      "from_node": "n51",
+      "from_socket": "result",
+      "to_node": "n29",
+      "to_socket": "list"
+    },
+    {
+      "id": "l39",
+      "from_node": "n29",
+      "from_socket": "result",
+      "to_node": "n30",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l40",
+      "from_node": "n11",
+      "from_socket": "result",
+      "to_node": "n30",
+      "to_socket": "offset"
+    },
+    {
+      "id": "l41",
+      "from_node": "n51",
+      "from_socket": "result",
+      "to_node": "n31",
+      "to_socket": "list"
+    },
+    {
+      "id": "l42",
+      "from_node": "n31",
+      "from_socket": "result",
+      "to_node": "n32",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l43",
+      "from_node": "n11",
+      "from_socket": "result",
+      "to_node": "n32",
+      "to_socket": "offset"
+    },
+    {
+      "id": "l44",
+      "from_node": "n51",
+      "from_socket": "result",
+      "to_node": "n33",
+      "to_socket": "in_0"
+    },
+    {
+      "id": "l45",
+      "from_node": "n33",
+      "from_socket": "result",
+      "to_node": "n34",
+      "to_socket": "list"
+    },
+    {
+      "id": "l46",
+      "from_node": "n34",
+      "from_socket": "result",
+      "to_node": "n35",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l47",
+      "from_node": "n34",
+      "from_socket": "result",
+      "to_node": "n36",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l48",
+      "from_node": "n36",
+      "from_socket": "result",
+      "to_node": "n37",
+      "to_socket": "mesh"
+    },
+    {
+      "id": "l49",
+      "from_node": "n37",
+      "from_socket": "report",
+      "to_node": "n38",
+      "to_socket": "value"
+    },
+    {
+      "id": "l50",
+      "from_node": "n33",
+      "from_socket": "result",
+      "to_node": "n39",
+      "to_socket": "list"
+    },
+    {
+      "id": "l51",
+      "from_node": "n39",
+      "from_socket": "result",
+      "to_node": "n40",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l52",
+      "from_node": "n39",
+      "from_socket": "result",
+      "to_node": "n41",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l53",
+      "from_node": "n41",
+      "from_socket": "result",
+      "to_node": "n42",
+      "to_socket": "mesh"
+    },
+    {
+      "id": "l54",
+      "from_node": "n42",
+      "from_socket": "report",
+      "to_node": "n43",
+      "to_socket": "value"
+    },
+    {
+      "id": "l55",
+      "from_node": "n33",
+      "from_socket": "result",
+      "to_node": "n44",
+      "to_socket": "list"
+    },
+    {
+      "id": "l56",
+      "from_node": "n44",
+      "from_socket": "result",
+      "to_node": "n45",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l57",
+      "from_node": "n44",
+      "from_socket": "result",
+      "to_node": "n46",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l58",
+      "from_node": "n46",
+      "from_socket": "result",
+      "to_node": "n47",
+      "to_socket": "mesh"
+    },
+    {
+      "id": "l59",
+      "from_node": "n47",
+      "from_socket": "report",
+      "to_node": "n48",
+      "to_socket": "value"
+    },
+    {
+      "id": "l60",
+      "from_node": "n33",
+      "from_socket": "result",
+      "to_node": "n49",
+      "to_socket": "list"
+    },
+    {
+      "id": "l61",
+      "from_node": "n49",
+      "from_socket": "result",
+      "to_node": "n50",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l62",
+      "from_node": "n51",
+      "from_socket": "result",
+      "to_node": "n52",
+      "to_socket": "list"
+    },
+    {
+      "id": "l63",
+      "from_node": "n52",
+      "from_socket": "result",
+      "to_node": "n53",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l64",
+      "from_node": "n14",
+      "from_socket": "result",
+      "to_node": "n53",
+      "to_socket": "pivot"
+    },
+    {
+      "id": "l65",
+      "from_node": "n1",
+      "from_socket": "result",
+      "to_node": "n53",
+      "to_socket": "angle"
+    },
+    {
+      "id": "l66",
+      "from_node": "n53",
+      "from_socket": "result",
+      "to_node": "n54",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l67",
+      "from_node": "n11",
+      "from_socket": "result",
+      "to_node": "n54",
+      "to_socket": "offset"
+    },
+    {
+      "id": "l68",
+      "from_node": "n51",
+      "from_socket": "result",
+      "to_node": "n55",
+      "to_socket": "list"
+    },
+    {
+      "id": "l69",
+      "from_node": "n55",
+      "from_socket": "result",
+      "to_node": "n56",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l70",
+      "from_node": "n11",
+      "from_socket": "result",
+      "to_node": "n56",
+      "to_socket": "offset"
+    },
+    {
+      "id": "l71",
+      "from_node": "n33",
+      "from_socket": "result",
+      "to_node": "n57",
+      "to_socket": "list"
+    },
+    {
+      "id": "l72",
+      "from_node": "n57",
+      "from_socket": "result",
+      "to_node": "n58",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l73",
+      "from_node": "n57",
+      "from_socket": "result",
+      "to_node": "n59",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l74",
+      "from_node": "n59",
+      "from_socket": "result",
+      "to_node": "n60",
+      "to_socket": "mesh"
+    },
+    {
+      "id": "l75",
+      "from_node": "n60",
+      "from_socket": "report",
+      "to_node": "n61",
+      "to_socket": "value"
+    },
+    {
+      "id": "l76",
+      "from_node": "n57",
+      "from_socket": "result",
+      "to_node": "codeblock_1",
+      "to_socket": "in_0"
+    },
+    {
+      "id": "l77",
+      "from_node": "codeblock_1",
+      "from_socket": "result",
+      "to_node": "exportstl_1",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l78",
+      "from_node": "codeblock_1",
+      "from_socket": "result",
+      "to_node": "tomesh_1",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l79",
+      "from_node": "tomesh_1",
+      "from_socket": "result",
+      "to_node": "printcheck_1",
+      "to_socket": "mesh"
+    },
+    {
+      "id": "l80",
+      "from_node": "printcheck_1",
+      "from_socket": "report",
+      "to_node": "display_1",
+      "to_socket": "value"
+    },
+    {
+      "id": "l81",
+      "from_node": "n2",
+      "from_socket": "result",
+      "to_node": "ad002_progetto",
+      "to_socket": "alzata"
+    },
+    {
+      "id": "l82",
+      "from_node": "n3",
+      "from_socket": "result",
+      "to_node": "ad002_progetto",
+      "to_socket": "batteria"
+    },
+    {
+      "id": "l83",
+      "from_node": "n4",
+      "from_socket": "result",
+      "to_node": "ad002_progetto",
+      "to_socket": "imbottitura"
+    },
+    {
+      "id": "l84",
+      "from_node": "n5",
+      "from_socket": "result",
+      "to_node": "ad002_progetto",
+      "to_socket": "spessore_gamba"
+    },
+    {
+      "id": "l85",
+      "from_node": "n6",
+      "from_socket": "result",
+      "to_node": "ad002_progetto",
+      "to_socket": "squadretta"
+    },
+    {
+      "id": "l86",
+      "from_node": "n7",
+      "from_socket": "result",
+      "to_node": "ad002_progetto",
+      "to_socket": "cassa_l"
+    },
+    {
+      "id": "l87",
+      "from_node": "n8",
+      "from_socket": "result",
+      "to_node": "ad002_progetto",
+      "to_socket": "cassa_a"
+    },
+    {
+      "id": "l88",
+      "from_node": "n9",
+      "from_socket": "result",
+      "to_node": "ad002_progetto",
+      "to_socket": "cassa_p"
+    },
+    {
+      "id": "l89",
+      "from_node": "ad002_progetto",
+      "from_socket": "result",
+      "to_node": "ad002_sollevamento",
+      "to_socket": "in_0"
+    },
+    {
+      "id": "l90",
+      "from_node": "n1",
+      "from_socket": "result",
+      "to_node": "ad002_sollevamento",
+      "to_socket": "angolo"
+    },
+    {
+      "id": "l91",
+      "from_node": "ad002_progetto",
+      "from_socket": "result",
+      "to_node": "ad002_perno",
+      "to_socket": "list"
+    },
+    {
+      "id": "l92",
+      "from_node": "ad002_progetto",
+      "from_socket": "result",
+      "to_node": "ad002_frontale_li",
+      "to_socket": "list"
+    },
+    {
+      "id": "l93",
+      "from_node": "ad002_frontale_li",
+      "from_socket": "result",
+      "to_node": "ad002_frontale",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l94",
+      "from_node": "ad002_sollevamento",
+      "from_socket": "result",
+      "to_node": "ad002_frontale",
+      "to_socket": "offset"
+    },
+    {
+      "id": "l95",
+      "from_node": "ad002_progetto",
+      "from_socket": "result",
+      "to_node": "ad002_posteriore_li",
+      "to_socket": "list"
+    },
+    {
+      "id": "l96",
+      "from_node": "ad002_posteriore_li",
+      "from_socket": "result",
+      "to_node": "ad002_posteriore",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l97",
+      "from_node": "ad002_sollevamento",
+      "from_socket": "result",
+      "to_node": "ad002_posteriore",
+      "to_socket": "offset"
+    },
+    {
+      "id": "l98",
+      "from_node": "ad002_progetto",
+      "from_socket": "result",
+      "to_node": "ad002_gamba_sx_li",
+      "to_socket": "list"
+    },
+    {
+      "id": "l99",
+      "from_node": "ad002_gamba_sx_li",
+      "from_socket": "result",
+      "to_node": "ad002_gamba_sx_rot",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l100",
+      "from_node": "ad002_perno",
+      "from_socket": "result",
+      "to_node": "ad002_gamba_sx_rot",
+      "to_socket": "pivot"
+    },
+    {
+      "id": "l101",
+      "from_node": "n1",
+      "from_socket": "result",
+      "to_node": "ad002_gamba_sx_rot",
+      "to_socket": "angle"
+    },
+    {
+      "id": "l102",
+      "from_node": "ad002_gamba_sx_rot",
+      "from_socket": "result",
+      "to_node": "ad002_gamba_sx",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l103",
+      "from_node": "ad002_sollevamento",
+      "from_socket": "result",
+      "to_node": "ad002_gamba_sx",
+      "to_socket": "offset"
+    },
+    {
+      "id": "l104",
+      "from_node": "ad002_progetto",
+      "from_socket": "result",
+      "to_node": "ad002_gamba_dx_li",
+      "to_socket": "list"
+    },
+    {
+      "id": "l105",
+      "from_node": "ad002_gamba_dx_li",
+      "from_socket": "result",
+      "to_node": "ad002_gamba_dx_rot",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l106",
+      "from_node": "ad002_perno",
+      "from_socket": "result",
+      "to_node": "ad002_gamba_dx_rot",
+      "to_socket": "pivot"
+    },
+    {
+      "id": "l107",
+      "from_node": "n1",
+      "from_socket": "result",
+      "to_node": "ad002_gamba_dx_rot",
+      "to_socket": "angle"
+    },
+    {
+      "id": "l108",
+      "from_node": "ad002_gamba_dx_rot",
+      "from_socket": "result",
+      "to_node": "ad002_gamba_dx",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l109",
+      "from_node": "ad002_sollevamento",
+      "from_socket": "result",
+      "to_node": "ad002_gamba_dx",
+      "to_socket": "offset"
+    },
+    {
+      "id": "l110",
+      "from_node": "ad002_progetto",
+      "from_socket": "result",
+      "to_node": "ad002_servo_li",
+      "to_socket": "list"
+    },
+    {
+      "id": "l111",
+      "from_node": "ad002_servo_li",
+      "from_socket": "result",
+      "to_node": "ad002_servo",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l112",
+      "from_node": "ad002_sollevamento",
+      "from_socket": "result",
+      "to_node": "ad002_servo",
+      "to_socket": "offset"
+    },
+    {
+      "id": "l113",
+      "from_node": "ad002_progetto",
+      "from_socket": "result",
+      "to_node": "ad002_orienta",
+      "to_socket": "in_0"
+    },
+    {
+      "id": "l114",
+      "from_node": "ad002_orienta",
+      "from_socket": "result",
+      "to_node": "ad002_stampa0_li",
+      "to_socket": "list"
+    },
+    {
+      "id": "l115",
+      "from_node": "ad002_stampa0_li",
+      "from_socket": "result",
+      "to_node": "ad002_stampa0_stl",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l116",
+      "from_node": "ad002_stampa0_li",
+      "from_socket": "result",
+      "to_node": "ad002_stampa0_mesh",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l117",
+      "from_node": "ad002_stampa0_mesh",
+      "from_socket": "result",
+      "to_node": "ad002_stampa0_pc",
+      "to_socket": "mesh"
+    },
+    {
+      "id": "l118",
+      "from_node": "ad002_stampa0_pc",
+      "from_socket": "report",
+      "to_node": "ad002_stampa0_disp",
+      "to_socket": "value"
+    },
+    {
+      "id": "l119",
+      "from_node": "ad002_orienta",
+      "from_socket": "result",
+      "to_node": "ad002_stampa1_li",
+      "to_socket": "list"
+    },
+    {
+      "id": "l120",
+      "from_node": "ad002_stampa1_li",
+      "from_socket": "result",
+      "to_node": "ad002_stampa1_stl",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l121",
+      "from_node": "ad002_stampa1_li",
+      "from_socket": "result",
+      "to_node": "ad002_stampa1_mesh",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l122",
+      "from_node": "ad002_stampa1_mesh",
+      "from_socket": "result",
+      "to_node": "ad002_stampa1_pc",
+      "to_socket": "mesh"
+    },
+    {
+      "id": "l123",
+      "from_node": "ad002_stampa1_pc",
+      "from_socket": "report",
+      "to_node": "ad002_stampa1_disp",
+      "to_socket": "value"
+    },
+    {
+      "id": "l124",
+      "from_node": "ad002_orienta",
+      "from_socket": "result",
+      "to_node": "ad002_stampa2_li",
+      "to_socket": "list"
+    },
+    {
+      "id": "l125",
+      "from_node": "ad002_stampa2_li",
+      "from_socket": "result",
+      "to_node": "ad002_stampa2_stl",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l126",
+      "from_node": "ad002_stampa2_li",
+      "from_socket": "result",
+      "to_node": "ad002_stampa2_mesh",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l127",
+      "from_node": "ad002_stampa2_mesh",
+      "from_socket": "result",
+      "to_node": "ad002_stampa2_pc",
+      "to_socket": "mesh"
+    },
+    {
+      "id": "l128",
+      "from_node": "ad002_stampa2_pc",
+      "from_socket": "report",
+      "to_node": "ad002_stampa2_disp",
+      "to_socket": "value"
+    },
+    {
+      "id": "l129",
+      "from_node": "ad002_orienta",
+      "from_socket": "result",
+      "to_node": "ad002_stampa3_li",
+      "to_socket": "list"
+    },
+    {
+      "id": "l130",
+      "from_node": "ad002_stampa3_li",
+      "from_socket": "result",
+      "to_node": "ad002_stampa3_stl",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l131",
+      "from_node": "ad002_stampa3_li",
+      "from_socket": "result",
+      "to_node": "ad002_stampa3_mesh",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l132",
+      "from_node": "ad002_stampa3_mesh",
+      "from_socket": "result",
+      "to_node": "ad002_stampa3_pc",
+      "to_socket": "mesh"
+    },
+    {
+      "id": "l133",
+      "from_node": "ad002_stampa3_pc",
+      "from_socket": "report",
+      "to_node": "ad002_stampa3_disp",
+      "to_socket": "value"
+    }
+  ]
+}

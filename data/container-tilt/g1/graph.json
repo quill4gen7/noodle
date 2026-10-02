@@ -1,0 +1,371 @@
+{
+  "name": "container-tilt",
+  "nodes": [
+    {
+      "id": "t",
+      "type": "NumberSlider",
+      "params": {
+        "value": 1.0,
+        "_ui": {
+          "value": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        }
+      },
+      "position": [
+        60,
+        640
+      ],
+      "parent": null
+    },
+    {
+      "id": "outer",
+      "type": "Sphere",
+      "params": {
+        "radius": 20
+      },
+      "position": [
+        60,
+        60
+      ],
+      "parent": null
+    },
+    {
+      "id": "inner",
+      "type": "Sphere",
+      "params": {
+        "radius": 18
+      },
+      "position": [
+        60,
+        180
+      ],
+      "parent": null
+    },
+    {
+      "id": "shell",
+      "type": "Subtract",
+      "params": {},
+      "position": [
+        300,
+        100
+      ],
+      "parent": null
+    },
+    {
+      "id": "lid",
+      "type": "Box",
+      "params": {
+        "width": 60,
+        "height": 60,
+        "depth": 40,
+        "centered": true
+      },
+      "position": [
+        60,
+        300
+      ],
+      "parent": null
+    },
+    {
+      "id": "lidup",
+      "type": "Move",
+      "params": {
+        "z": 20
+      },
+      "position": [
+        300,
+        300
+      ],
+      "parent": null
+    },
+    {
+      "id": "bowl",
+      "type": "Subtract",
+      "params": {},
+      "position": [
+        520,
+        160
+      ],
+      "parent": null
+    },
+    {
+      "id": "seat",
+      "type": "Move",
+      "params": {
+        "z": 20
+      },
+      "position": [
+        740,
+        160
+      ],
+      "parent": null
+    },
+    {
+      "id": "b1",
+      "type": "Sphere",
+      "params": {
+        "radius": 4
+      },
+      "position": [
+        60,
+        420
+      ],
+      "parent": null
+    },
+    {
+      "id": "b2",
+      "type": "Sphere",
+      "params": {
+        "radius": 4
+      },
+      "position": [
+        60,
+        500
+      ],
+      "parent": null
+    },
+    {
+      "id": "b3",
+      "type": "Sphere",
+      "params": {
+        "radius": 4
+      },
+      "position": [
+        60,
+        580
+      ],
+      "parent": null
+    },
+    {
+      "id": "m1",
+      "type": "Move",
+      "params": {
+        "x": 2,
+        "z": 45
+      },
+      "position": [
+        300,
+        420
+      ],
+      "parent": null
+    },
+    {
+      "id": "m2",
+      "type": "Move",
+      "params": {
+        "x": -5,
+        "y": 3,
+        "z": 60
+      },
+      "position": [
+        300,
+        500
+      ],
+      "parent": null
+    },
+    {
+      "id": "m3",
+      "type": "Move",
+      "params": {
+        "x": 6,
+        "y": -4,
+        "z": 75
+      },
+      "position": [
+        300,
+        580
+      ],
+      "parent": null
+    },
+    {
+      "id": "drop",
+      "type": "Drop",
+      "params": {
+        "t": 1.0,
+        "material": "plastic",
+        "settle": true,
+        "collide": false
+      },
+      "position": [
+        740,
+        460
+      ],
+      "parent": null,
+      "preview": true
+    },
+    {
+      "id": "pivot",
+      "type": "ConstructPoint",
+      "params": {
+        "x": 20,
+        "y": 0,
+        "z": 20
+      },
+      "position": [
+        520,
+        640
+      ],
+      "parent": null
+    },
+    {
+      "id": "motion",
+      "type": "ContainerMotion",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "rx": 0,
+        "ry": 135,
+        "rz": 0,
+        "cycles": 0,
+        "duration": 1.4,
+        "delay": 1.0,
+        "easing": "smooth"
+      },
+      "position": [
+        740,
+        620
+      ],
+      "parent": null
+    }
+  ],
+  "connections": [
+    {
+      "id": "c1",
+      "from_node": "outer",
+      "from_socket": "result",
+      "to_node": "shell",
+      "to_socket": "a"
+    },
+    {
+      "id": "c2",
+      "from_node": "inner",
+      "from_socket": "result",
+      "to_node": "shell",
+      "to_socket": "b"
+    },
+    {
+      "id": "c3",
+      "from_node": "lid",
+      "from_socket": "result",
+      "to_node": "lidup",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c4",
+      "from_node": "shell",
+      "from_socket": "result",
+      "to_node": "bowl",
+      "to_socket": "a"
+    },
+    {
+      "id": "c5",
+      "from_node": "lidup",
+      "from_socket": "result",
+      "to_node": "bowl",
+      "to_socket": "b"
+    },
+    {
+      "id": "c6",
+      "from_node": "bowl",
+      "from_socket": "result",
+      "to_node": "seat",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c7",
+      "from_node": "b1",
+      "from_socket": "result",
+      "to_node": "m1",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c8",
+      "from_node": "b2",
+      "from_socket": "result",
+      "to_node": "m2",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c9",
+      "from_node": "b3",
+      "from_socket": "result",
+      "to_node": "m3",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c10",
+      "from_node": "m1",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c11",
+      "from_node": "m2",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c12",
+      "from_node": "m3",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c13",
+      "from_node": "seat",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "container"
+    },
+    {
+      "id": "c14",
+      "from_node": "t",
+      "from_socket": "result",
+      "to_node": "drop",
+      "to_socket": "t"
+    },
+    {
+      "id": "cpiv",
+      "from_node": "pivot",
+      "from_socket": "point",
+      "to_node": "motion",
+      "to_socket": "pivot"
+    },
+    {
+      "id": "cmot",
+      "from_node": "motion",
+      "from_socket": "motion",
+      "to_node": "drop",
+      "to_socket": "motion"
+    }
+  ],
+  "groups": [
+    {
+      "title": "The bowl (immovable collider)",
+      "bounding": [
+        20,
+        20,
+        900,
+        360
+      ],
+      "color": "#3f589e"
+    },
+    {
+      "title": "What falls in",
+      "bounding": [
+        20,
+        380,
+        900,
+        320
+      ],
+      "color": "#8a5f3d"
+    }
+  ]
+}

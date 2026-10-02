@@ -1,0 +1,24 @@
+{
+  "label": "preview",
+  "created": "2026-10-02T13:04:49",
+  "version": "6bc44426d0849bb1",
+  "hash": "7ccd4f9f860642d9",
+  "pieces": [
+    {
+      "id": "jar",
+      "title": "Thread",
+      "type": "Thread"
+    },
+    {
+      "id": "anim",
+      "title": "Animate",
+      "type": "Animate",
+      "animated": true
+    }
+  ],
+  "timeline": {
+    "seconds": 1.0
+  },
+  "gen": "g1",
+  "graph": "jar-cap-unscrew"
+}

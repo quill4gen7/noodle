@@ -1,0 +1,30 @@
+{
+  "label": "preview",
+  "created": "2026-10-02T13:04:50",
+  "version": "2655fa0b7ac890e5",
+  "hash": "ccbb1e8404f7f31a",
+  "pieces": [
+    {
+      "id": "pivot",
+      "title": "Construct Point",
+      "type": "ConstructPoint"
+    },
+    {
+      "id": "drop",
+      "title": "Drop",
+      "type": "Drop",
+      "bodies": [
+        "Move",
+        "Move",
+        "Move",
+        "Move"
+      ],
+      "animated": true
+    }
+  ],
+  "timeline": {
+    "seconds": 3.854
+  },
+  "gen": "g1",
+  "graph": "container-tilt"
+}
