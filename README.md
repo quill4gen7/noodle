@@ -32,6 +32,30 @@ browser at 60fps — no re-run.</em></p>
   <img src="docs/asset/noodle-lego-brick-editor.png" alt="noodle node editor building a parametric LEGO brick with embossed NOODLE text" width="880">
 </p>
 
+**▶ [Live preview](https://quill4gen7.github.io/noodle/)** — the read-only 3D viewer running on
+GitHub Pages: orbit real generations, hide pieces, play their timelines. No install.
+
+<p align="center">
+  <img src="docs/asset/noodle-view-tracks.gif" alt="noodle /view page: a jar pour plays as a whole, then the Tracce panel plays the cap and the falling bolts one at a time" width="880">
+</p>
+<p align="center"><em><strong>A link instead of a screenshot.</strong> <code>cad_snapshot</code> freezes a run as
+<code>/view/&lt;graph&gt;/gN</code>: orbit it, hide or solo pieces, and play its movements —
+together, or one track at a time (≡ Tracce).</em></p>
+
+<p align="center">
+  <img src="docs/asset/noodle-sections.gif" alt="▦ Sezioni on a 572-line CodeBlock: the front shell's sections are clicked one after another and each preview shows the part at that step" width="880">
+</p>
+<p align="center"><em><strong>▦ Sezioni.</strong> An agent's 572-line CodeBlock, read as the nodes it already
+contains — unchanged. The front shell comes out as a chain of steps, each with its own
+preview, timing, inputs and outputs.</em></p>
+
+<p align="center">
+  <img src="docs/asset/noodle-live-sync.gif" alt="An agent changes a gear's teeth over the API while the editor is open: the node glows, the editor merges the edit and Live re-runs it" width="880">
+</p>
+<p align="center"><em><strong>Live sync.</strong> An agent edits the graph over the API while you have it open:
+the editor merges the change (three-way, never overwriting yours), flags the node, and
+Live re-runs it.</em></p>
+
 > **New here?** Start the app, open the node editor, and pick one of the bundled
 > example projects — **rounded-box**, **flange**, **bolt-flange** — from *Your
 > projects*. They seed automatically on the first run.
@@ -56,6 +80,17 @@ browser at 60fps — no re-run.</em></p>
   agent, so your local Claude Code can reproduce it, fix it on a safe branch and
   open a PR. Bug reports and "make it blue" alike. [See below](#feedback-that-turns-into-a-pr).
 - **Live per-node preview** with a per-node "eye" (auto / on / off).
+- **Generations and `/view` links**: freeze a run and share a read-only 3D page —
+  pieces you can hide/solo/invert, timelines with one track per movement.
+- **▦ Sezioni**: a long CodeBlock read as the nodes it contains (sections, chains
+  of steps, the names flowing between them), with per-section timing and preview —
+  the code is never rewritten. Agents get it as `cad_codeblock_sections`.
+- **Safe with an agent in the loop**: every save names its base version, a
+  concurrent agent edit is merged instead of overwritten; each run has its own
+  files, can be cancelled, and never publishes a half-written result.
+- **📦 Bake export**: every visible node as its own STEP + STL in one zip, and a
+  library that says which node wrote each file and whether it is still current.
+- **Works offline**: three.js, litegraph and Ace are vendored — no CDN at boot.
 
 ## Feedback that turns into a PR
 
