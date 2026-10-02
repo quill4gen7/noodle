@@ -6,9 +6,9 @@
 <title>noodle — code</title>
 <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
 <link rel="apple-touch-icon" href="/static/icon.svg">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.36.2/ace.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.36.2/mode-python.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.36.2/theme-one_dark.js"></script>
+<script src="/static/vendor/ace-1.36.2/ace.js"></script>
+<script src="/static/vendor/ace-1.36.2/mode-python.js"></script>
+<script src="/static/vendor/ace-1.36.2/theme-one_dark.js"></script>
 <style>
 :root {
   --bg-0: #0b0e14;
@@ -315,8 +315,8 @@ body { font-family:var(--font); background:var(--bg-0); color:var(--text); }
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    "three": "/static/vendor/three-0.170.0/build/three.module.min.js",
+    "three/addons/": "/static/vendor/three-0.170.0/examples/jsm/"
   }
 }
 </script>
@@ -331,7 +331,7 @@ let aceEditor = null;
 // ── Ace Editor (read-only build123d viewer) ──
 function initAce() {
   // let Ace lazy-load any mode/theme it needs from the same CDN as the preloads
-  ace.config.set('basePath', 'https://cdnjs.cloudflare.com/ajax/libs/ace/1.36.2/');
+  ace.config.set('basePath', '/static/vendor/ace-1.36.2/');
   aceEditor = ace.edit('ace-editor');
   try { aceEditor.setTheme('ace/theme/one_dark'); } catch (e) { /* theme is cosmetic */ }
   aceEditor.setOptions({
