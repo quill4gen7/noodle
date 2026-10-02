@@ -29,6 +29,19 @@ from . import catalog
 from .catalog import wires_compatible
 
 
+def codeblock_output(node, socket_name: str) -> dict | None:
+    """The `#@out` declaration {name, type} behind a CodeBlock's per-instance
+    output socket `socket_name`, or None (not a CodeBlock / not declared)."""
+    if getattr(node, "type", None) != "CodeBlock":
+        return None
+    code = (node.params or {}).get("code") or ""
+    if "#@out" not in code:
+        return None
+    from .transpiler import parse_codeblock_outputs  # lazy: avoid cycle
+    return next((o for o in parse_codeblock_outputs(code)
+                 if o["name"] == socket_name), None)
+
+
 @dataclass
 class Node:
     id: str
@@ -56,6 +69,10 @@ class Node:
     # restores their extra/spare connection slots on reload. Ignored by the
     # engine (several connections to one socket already fan out by themselves).
     multi: list[str] = field(default_factory=list)
+    # Editor-only: the node is folded down to its title bar (litegraph's
+    # `flags.collapsed`). Persisted so a graph tidied by collapsing stays tidy;
+    # `layout` measures a collapsed node as its title bar alone.
+    collapsed: bool = False
 
     def to_dict(self) -> dict:
         d = {
@@ -81,6 +98,8 @@ class Node:
             d["title"] = self.title
         if self.multi:
             d["multi"] = list(self.multi)
+        if self.collapsed:
+            d["collapsed"] = True
         return d
 
     @staticmethod
@@ -100,6 +119,7 @@ class Node:
             size=list(d["size"]) if d.get("size") else None,
             title=(d.get("title") or None),
             multi=list(d.get("multi", [])),
+            collapsed=bool(d.get("collapsed", False)),
         )
 
 
@@ -180,6 +200,10 @@ class Graph:
         out = ndef.output(socket_name) if socket_name else (
             ndef.outputs[0] if ndef.outputs else None)
         static = out.wire_type if out else catalog.WIRE_DATA
+        if out is None and socket_name:
+            cb = codeblock_output(node, socket_name)
+            if cb is not None:
+                return cb["type"]
         first = ndef.outputs[0].name if ndef.outputs else None
         follows = getattr(ndef, "output_follows", None)
         if follows and out is not None and (socket_name is None or socket_name == first):
@@ -286,6 +310,9 @@ class Graph:
 
             out = src_def.output(c.from_socket)
             inp = dst_def.input(c.to_socket)
+            if out is None and codeblock_output(node_by_id[c.from_node],
+                                                c.from_socket) is not None:
+                out = True      # a CodeBlock's `#@out` socket (per instance)
             if out is None:
                 raise ValidationError(
                     f"Connection {c.id}: node {c.from_node} ({src_def.type}) "

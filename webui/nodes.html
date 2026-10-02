@@ -6,8 +6,8 @@
 <title>noodle — nodes</title>
 <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
 <link rel="apple-touch-icon" href="/static/icon.svg">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/litegraph.js@0.7.18/css/litegraph.css">
-<script src="https://cdn.jsdelivr.net/npm/litegraph.js@0.7.18/build/litegraph.min.js"></script>
+<link rel="stylesheet" href="/static/vendor/litegraph-0.7.18/css/litegraph.css">
+<script src="/static/vendor/litegraph-0.7.18/build/litegraph.min.js"></script>
 <style>
 :root{
   --bg-0:#0b0e14; --bg-1:#0f1318; --bg-2:#151a22; --bg-3:#1a2030;
@@ -18,7 +18,7 @@
 *{margin:0;padding:0;box-sizing:border-box;}
 html,body{height:100%;overflow:hidden;}
 body{font-family:var(--font);background:var(--bg-0);color:var(--text);}
-.app{display:grid;grid-template-rows:48px 1fr 24px;height:100vh;}
+.app{display:grid;grid-template-rows:48px 1fr 24px;height:100vh;height:100dvh;}
 /* toolbar */
 .toolbar{background:var(--bg-1);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;padding:0 12px;}
 .toolbar h1{font-size:15px;font-weight:700;color:var(--text);letter-spacing:-.5px;margin-right:8px;font-family:var(--mono,monospace);}
@@ -37,7 +37,10 @@ body{font-family:var(--font);background:var(--bg-0);color:var(--text);}
 /* workspace */
 .workspace{display:flex;overflow:hidden;}
 .graph-pane{flex:1.4;position:relative;min-width:240px;}
-#graph-canvas{width:100%;height:100%;display:block;}
+#graph-canvas{width:100%;height:100%;display:block;touch-action:none;}
+.empty-guide{position:absolute;inset:15%;display:flex;flex-direction:column;justify-content:center;gap:14px;
+  padding:24px;background:var(--bg-1);border:1px solid var(--border);border-radius:12px;font-size:14px;line-height:1.5;}
+:focus-visible{outline:2px solid var(--green);outline-offset:2px;}
 .split{width:5px;background:var(--border);cursor:col-resize;}
 .split:hover{background:var(--accent);}
 .right-pane{flex:1;display:flex;flex-direction:column;min-width:240px;background:var(--bg-0);}
@@ -174,6 +177,9 @@ body{font-family:var(--font);background:var(--bg-0);color:var(--text);}
   font-size:13px;color:var(--border);}
 .menu-sep{height:1px;background:var(--border);margin:5px 4px;}
 .menu-head{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-dim);padding:4px 9px 2px;}
+.menu-sortbar{display:flex;gap:6px;align-items:center;}
+.menu-sortbar .menu-search{flex:1;min-width:0;}
+.menu-sortbar select{background:var(--bg-3);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:4px 6px;font-size:12px;margin:2px 0 4px;cursor:pointer;}
 .menu-search{width:100%;margin:2px 0 4px;background:var(--bg-3);border:1px solid var(--border);border-radius:5px;
   color:var(--text);padding:6px 8px;font-size:12px;}
 .menu-search:focus{outline:none;border-color:var(--accent);}
@@ -282,6 +288,62 @@ body{font-family:var(--font);background:var(--bg-0);color:var(--text);}
 .log-line .node-link{color:var(--accent-hover);cursor:pointer;text-decoration:underline;}
 .tab-badge{font-size:9px;background:var(--err);color:#fff;border-radius:8px;padding:0 5px;margin-left:3px;display:none;}
 .tab-badge.visible{display:inline;}
+
+/* ── touch ── tablets & phones (see the JS block of the same name). body.touch-ui
+   = the last pointer was not a mouse: bigger targets, the floating graph tools,
+   litegraph menus that scroll instead of running off-screen. */
+.split{touch-action:none;}
+.touch-tools{position:absolute;left:10px;bottom:10px;z-index:5;display:none;gap:6px;}
+body.touch-ui .touch-tools{display:flex;}
+.touch-tools .tb-btn{box-shadow:0 4px 14px rgba(0,0,0,.45);}
+.mtabs{display:none;}
+body.touch-ui .tb-btn,body.touch-ui .tb-icon{min-height:38px;min-width:38px;justify-content:center;font-size:13px;}
+body.touch-ui .menu-item{padding:11px 10px;font-size:13px;}
+body.touch-ui .tab{padding:11px 14px;}
+body.touch-ui .cmdk-item{padding:12px 11px;}
+body.touch-ui #sel-toolbar{flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 16px);}
+body.touch-ui #sel-toolbar button{padding:10px 12px;font-size:13px;}
+body.touch-ui .vp-tools .tb-icon{min-width:40px;height:36px;}
+body.touch-ui .split{position:relative;}
+body.touch-ui .split::after{content:"";position:absolute;top:0;bottom:0;left:-9px;right:-9px;z-index:4;}
+body.touch-ui:has(.litecontextmenu) #sel-toolbar{display:none !important;}
+body.touch-ui .litecontextmenu{max-height:calc(100dvh - 24px);overflow-y:auto;overscroll-behavior:contain;}
+body.touch-ui .litecontextmenu .litemenu-entry{padding:9px 14px 9px 10px;font-size:14px;}
+body.touch-ui .litegraph.litesearchbox{max-width:calc(100vw - 16px);}
+body.touch-ui .litegraph.litesearchbox .lite-search-item{padding:9px 6px;}
+/* iOS zooms the whole page into any focused field under 16px */
+body.touch-ui input,body.touch-ui textarea,body.touch-ui select{font-size:16px;}
+/* "⌘K" means nothing without a keyboard: say what it opens */
+body.touch-ui .toolbar [onclick="openPalette()"]{font-size:0;}
+body.touch-ui .toolbar [onclick="openPalette()"]::after{content:"☰ Comandi";font-size:13px;}
+/* narrow screens: one pane at a time, switched by the Grafo / 3D / Pannello tabs */
+@media (max-width:800px){
+  .app{grid-template-rows:auto 1fr 24px;}
+  .toolbar{flex-wrap:wrap;row-gap:6px;padding:6px 8px;}
+  .toolbar .spacer,.tb-sep,.brand h1,#status,
+  .toolbar a.tb-icon[href="/ui"],.toolbar [onclick="openShortcuts()"]{display:none;}
+  .workspace{flex-direction:column;}
+  .mtabs{display:flex;flex:0 0 auto;background:var(--bg-1);border-bottom:1px solid var(--border);}
+  .mtabs button{flex:1;background:none;border:none;border-bottom:2px solid transparent;color:var(--text-dim);
+    font:600 13px var(--font);padding:11px 0;cursor:pointer;}
+  .mtabs button.on{color:var(--accent);border-bottom-color:var(--accent);}
+  .split{display:none;}
+  .graph-pane,.right-pane{flex:1 1 auto !important;width:auto !important;min-width:0;min-height:0;}
+  body:not([data-mtab="graph"]) .graph-pane,
+  body:not([data-mtab="graph"]) #sel-toolbar{display:none !important;}
+  body[data-mtab="graph"] .right-pane{display:none;}
+  body[data-mtab="view"] .panel{display:none;}
+  body[data-mtab="panel"] .viewer-wrap{display:none;}
+  body[data-mtab="panel"] .panel{flex:1;height:auto;min-height:0;}
+  /* fixed widths: a status flipping Saved → Save failed must not re-wrap the bar and jump the canvas */
+  #btn-project{max-width:150px;} #project-name{max-width:110px;}
+  .doc-status{width:100px;} .doc-status .lbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .toolbar [onclick="exportStep()"]{display:none;}              /* in the ⌘K palette */
+  #sel-toolbar .count,#sel-toolbar .sep{display:none;}
+  body.touch-ui #sel-toolbar{flex-wrap:nowrap;}
+  body.touch-ui #sel-toolbar button{padding:10px 8px;}
+  .tabs{overflow-x:auto;}
+}
 </style>
 </head>
 <body>
@@ -295,7 +357,12 @@ body{font-family:var(--font);background:var(--bg-0);color:var(--text);}
           <span id="project-name">— no graph —</span><span class="caret">▾</span>
         </button>
         <div class="menu" id="project-menu">
-          <input class="menu-search" id="project-search" placeholder="Search projects…" oninput="renderProjectList()">
+          <div class="menu-sortbar">
+            <input class="menu-search" id="project-search" placeholder="Search projects…" oninput="renderProjectList()">
+            <select id="project-sort" title="Sort projects" onchange="setProjectSort(this.value)">
+              <option value="date">Recent</option><option value="name">A–Z</option>
+            </select>
+          </div>
           <div class="menu-list" id="project-list"></div>
           <div class="menu-sep"></div>
           <button class="menu-item" onclick="promptNewGraph()"><span class="ic">＋</span>New project…<span class="k">Ctrl+N</span></button>
@@ -309,6 +376,7 @@ body{font-family:var(--font);background:var(--bg-0);color:var(--text);}
     <!-- ZONA ESECUZIONE -->
     <div class="tb-zone">
       <button class="tb-btn primary" id="btn-run" onclick="runGraph()" title="Run the graph (Ctrl+Enter)">▶ Run</button>
+      <button class="tb-btn" id="btn-stop" onclick="stopRun()" disabled title="Cancel the current run">■ Stop</button>
       <button class="tb-btn toggle js-live-btn" id="btn-live" onclick="toggleLive()" title="Auto-run on every change — and drags (Move/Rotate/Scale, a Drop timeline) replay live in the viewport while you hold them. Settings ⚙ turns that anticipation off.">Live</button>
       <button class="tb-btn toggle js-cost-btn" id="btn-cost" onclick="toggleCost()" title="Show each node's cost from the last run (blue = served by the cache)">Costi</button>
       <button class="tb-btn" id="btn-arrange" onclick="arrangeGraph()" title="Riordina i nodi: da sinistra a destra per profondità, senza sovrapposizioni, gruppi tenuti insieme (Ctrl+Shift+A)">⊞ Riordina</button>
@@ -321,7 +389,7 @@ body{font-family:var(--font);background:var(--bg-0);color:var(--text);}
       <button class="tb-icon" id="btn-undo" onclick="undo()" title="Undo (Ctrl+Z)" disabled>↶</button>
       <button class="tb-icon" id="btn-redo" onclick="redo()" title="Redo (Ctrl+Shift+Z)" disabled>↷</button>
       <button class="tb-icon" onclick="openPalette()" title="Command palette (Ctrl+K)">⌘K</button>
-      <button class="tb-btn" onclick="exportStep()" title="Export the model as STEP">⬇ STEP</button>
+      <button class="tb-btn" onclick="exportStep()" title="Save and export the model">⬇ Export</button>
       <a class="tb-icon" href="/library" title="File library — download exports &amp; upload assets">📁</a>
       <button class="tb-icon" id="btn-feedback" style="display:none" onclick="openFeedback()" title="Send feedback / report">🐞</button>
       <div class="menu-wrap" style="position:relative">
@@ -343,7 +411,15 @@ body{font-family:var(--font);background:var(--bg-0);color:var(--text);}
   <div class="sys-banner" id="sys-banner"></div>
 
   <div class="workspace">
-    <div class="graph-pane"><canvas id="graph-canvas"></canvas></div>
+    <div class="graph-pane"><canvas id="graph-canvas" aria-label="Node graph editor"></canvas>
+      <section class="empty-guide" id="empty-guide" aria-label="Get started">
+        <h2>Nodes → solid</h2>
+        <p>1. Open an example from Your projects.<br>2. Change a parameter and press Run.<br>3. Export your model as STEP or STL.</p>
+        <button class="tb-btn primary" onclick="document.getElementById('btn-project').click()">Open a project or example</button>
+        <button class="tb-btn" onclick="promptNewGraph()">New empty project</button>
+        <p class="hint">In an empty graph, double-click to search for Box. Connect nodes to build your model.</p>
+      </section>
+    </div>
     <div class="split" id="split"></div>
     <div class="right-pane">
       <div class="viewer-wrap">
@@ -379,7 +455,7 @@ body{font-family:var(--font);background:var(--bg-0);color:var(--text);}
         </div>
       </div>
       <div class="panel">
-        <div class="tabs">
+        <div class="tabs" role="tablist" aria-label="Project details">
           <div class="tab active" data-tab="code" onclick="showTab('code')">Code</div>
           <div class="tab" data-tab="view" onclick="showTab('view')">View / Data</div>
           <div class="tab" data-tab="panels" onclick="showTab('panels')">Panels <span id="panel-count" class="panel-badge"></span></div>
@@ -478,8 +554,8 @@ body{font-family:var(--font);background:var(--bg-0);color:var(--text);}
 
 <script type="importmap">
 { "imports": {
-  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  "three": "/static/vendor/three-0.170.0/build/three.module.min.js",
+  "three/addons/": "/static/vendor/three-0.170.0/examples/jsm/"
 } }
 </script>
 
@@ -487,7 +563,7 @@ body{font-family:var(--font);background:var(--bg-0);color:var(--text);}
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';        // sub-shape picker modal
 import { TransformControls } from 'three/addons/controls/TransformControls.js'; // on-canvas gizmo
-import { CadViewer, PALETTE, nodeNum, meshFromData, setQuality } from '/static/viewer.js';   // shared main viewport
+import { CadViewer, PALETTE, nodeNum, meshFromData, setQuality, poseAnim } from '/static/viewer.js';   // shared main viewport
 
 const API = '';
 const LiteGraph = window.LiteGraph;
@@ -515,6 +591,46 @@ let highlighted = [];      // nodes currently flagged with an error
 let liveMode = false;      // auto-run on every change
 let liveTimer = null;      // debounce handle
 let runAbort = null;       // AbortController for the in-flight run
+let sessionEpoch = 0, openSequence = 0;
+let saveChain = Promise.resolve(), runTask = null, runPending = false, runContext = null;
+
+async function fetchTimed(url, options = {}, timeout = 15000){
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(), timeout);
+  try { return await fetch(url, {...options, signal: controller.signal}); }
+  finally { clearTimeout(timer); }
+}
+function previewStale(){
+  const el = document.getElementById('viewer-stats');
+  el.textContent = 'Preview out of date — Run to update'; el.classList.add('visible');
+}
+window.stopRun = function(){
+  runPending = false; clearTimeout(liveTimer);
+  if (runContext){
+    const {name, id, es, glowId} = runContext;
+    fetchTimed(`${API}/api/graph/${encodeURIComponent(name)}/runs/${encodeURIComponent(id)}/cancel`,
+      {method:'POST'}, 5000).catch(()=>{});
+    finishProgress(es); endExecGlow(glowId);
+  }
+  if (runAbort) runAbort.abort();
+  setStatus('stopped');
+};
+function resetProjectSession(){
+  sessionEpoch++; openSequence++; stopRun();
+  clearTimeout(serverSaveTimer); clearTimeout(histTimer); clearTimeout(thumbTimer);
+  clearTimeout(gizmoRunTimer);
+  loadingGraph = true; stopAllPlay();
+  if (gizmoNode) exitGizmoEdit();
+  if (sketchNode) exitCurveDrawMode();
+  lastView = null; lastRunJSON = null; lastObservedJSON = null; thumbWanted = false;
+  previewMeshes = {}; previewAnims = {}; lastNodeErrors = {};
+  if (viewer){ viewer.clear(); viewer.resetFraming(); }
+  renderLegend([]);
+  document.getElementById('viewer-stats').textContent = 'Run to generate a preview';
+  document.getElementById('body-code').textContent = '// Run the graph to generate code';
+  document.getElementById('body-view').textContent = 'No execution yet.';
+  document.getElementById('body-panels').textContent = 'No execution yet.';
+}
 let loadingGraph = false;  // suppress live triggers while rebuilding the graph
 // Drag anticipation: replay a drag locally in Three.js instead of waiting for a
 // round trip. It is not a mode of its own — it is how Live behaves while you are
@@ -743,6 +859,8 @@ function registerNodes(defs){
       if (def.type === 'CodeBlock'){
         const cb = this.addWidget('button', '✎ Edit code', null, ()=> openCodeEditor(this));
         cb.isCodeBtn = true;
+        // ▦ the block read as the nodes it contains (cad_nodes/sections.py), read-only
+        this.addWidget('button', '▦ Sezioni', null, ()=> openSectionsView(this));
         syncCodeblockParams(this);   // surface any #@param in the default code
       }
       // Eye on every geometry node (auto/on/off). Data/math/panel nodes can't draw.
@@ -1522,9 +1640,43 @@ function syncCodeblockParams(node){
       }
     }
   }
+  syncCodeblockOutputs(node, code);
   resizeNode(node);
   updateCbWired(node);
   node.setDirtyCanvas && node.setDirtyCanvas(true, true);
+}
+
+// `#@out name: type` -> an extra named OUTPUT socket (after `result`, which is
+// always slot 0). Mirrors transpiler.parse_codeblock_outputs — keep in sync.
+const CB_OUT_ALIASES = {shape:'solid', part:'solid', brep:'solid', compound:'solid',
+  sketch:'surface', face:'surface', wire:'curve', edge:'curve', line:'curve',
+  number:'data', float:'data', int:'data', bool:'data', str:'data', list:'data', any:'data',
+  point:'vector', location:'plane'};
+const CB_OUT_TYPES = ['solid','surface','curve','plane','vector','selection','mesh','data','tree'];
+function parseCbOutputs(code){
+  const out = [], seen = new Set(['result']);
+  for (const line of String(code||'').split('\n')){
+    const m = line.match(/^\s*#@out\s+([A-Za-z_]\w*)\s*(?::\s*|\s+)?(\w+)?/);
+    if (!m || seen.has(m[1])) continue;
+    let t = (m[2] || 'data').toLowerCase();
+    t = CB_OUT_ALIASES[t] || t;
+    if (!CB_OUT_TYPES.includes(t)) t = 'data';
+    seen.add(m[1]); out.push({name:m[1], type:t});
+  }
+  return out;
+}
+function syncCodeblockOutputs(node, code){
+  const decls = parseCbOutputs(code);
+  const want = new Map(decls.map(d => [d.name, d.type]));
+  for (let i = (node.outputs||[]).length - 1; i >= 0; i--){
+    const s = node.outputs[i];
+    if (s.cbOut && want.get(s.name) !== s.type) node.removeOutput(i);   // gone or retyped
+  }
+  for (const d of decls){
+    if ((node.outputs||[]).some(s => s.cbOut && s.name === d.name)) continue;
+    node.addOutput(d.name, d.type);
+    node.outputs[node.outputs.length - 1].cbOut = true;
+  }
 }
 
 function makeCbWidget(node, d, val){
@@ -1620,7 +1772,7 @@ function openCodeEditor(node){
         '</div>'+
       '</div>';
     document.body.appendChild(ov);
-    ov.addEventListener('mousedown', e => { if (e.target === ov) ov.style.display = 'none'; });
+    ov.addEventListener('pointerdown', e => { if (e.target === ov) ov.style.display = 'none'; });
     document.getElementById('ce-cancel').onclick = () => { ov.style.display = 'none'; };
   }
   const ta = document.getElementById('ce-text');
@@ -1634,6 +1786,224 @@ function openCodeEditor(node){
   ov.style.display = 'flex';
   ta.focus();
 }
+
+// ════════════════════════════════════════════════════════════════════
+// ▦ Sezioni — a CodeBlock read as the nodes it already contains. READ-ONLY:
+// the block is analysed (GET …/codeblock/{id}/sections) and, on demand, run
+// from an instrumented copy (POST …/sections/run) for per-section time, the
+// numbers each section leaves and one section's shapes. Nothing is written
+// back: the agent keeps writing one block, the user sees its structure.
+// ════════════════════════════════════════════════════════════════════
+const SEC_KIND = {
+  params: ['Parametri', '#8b5cf6'], quote: ['Quote', '#64748b'], funcs: ['Funzioni', '#0ea5e9'],
+  part: ['Pezzo', '#22c55e'], chain: ['Lavorazione', '#f59e0b'],
+};
+const _secEsc = t => String(t ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let _secState = null;      // {node, name, id, code, a, run, sel, viewer}
+
+async function openSectionsView(node){
+  if (!currentName) return;
+  let ov = document.getElementById('sections-view');
+  if (!ov){
+    ov = document.createElement('div'); ov.id = 'sections-view';
+    ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', 'Sezioni del CodeBlock');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:210;display:none;background:var(--bg-0);'+
+      'flex-direction:column;font-size:13px';
+    ov.innerHTML =
+      '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap">'+
+        '<b id="sv-title" style="color:var(--accent)"></b><span id="sv-meta" style="color:var(--text-dim)"></span>'+
+        '<span style="flex:1"></span>'+
+        '<span id="sv-legend" style="display:flex;gap:10px;font-size:11px;color:var(--text-dim)"></span>'+
+        '<button class="tb-btn" id="sv-time" title="Esegue una copia del blocco e misura ogni sezione (non salva nulla)">⏱ Misura</button>'+
+        '<button class="tb-btn" id="sv-close" title="Chiudi (Esc)">✕</button>'+
+      '</div>'+
+      '<div style="flex:1;display:flex;min-height:0">'+
+        '<div id="sv-graph" style="flex:1;overflow:auto;position:relative"></div>'+
+        '<div id="sv-side" style="width:420px;max-width:45vw;border-left:1px solid var(--border);display:flex;flex-direction:column;min-height:0;background:var(--bg-1)">'+
+          '<div id="sv-prev" style="height:260px;position:relative;border-bottom:1px solid var(--border);display:none"><canvas></canvas>'+
+            '<div id="sv-prev-msg" style="position:absolute;left:8px;top:6px;font-size:11px;color:var(--text-dim)"></div></div>'+
+          '<div id="sv-detail" style="flex:1;overflow:auto;padding:12px;line-height:1.5"></div>'+
+        '</div>'+
+      '</div>';
+    document.body.appendChild(ov);
+    document.getElementById('sv-close').onclick = closeSectionsView;
+    document.getElementById('sv-time').onclick = () => runSections(null);
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && ov.style.display === 'flex') closeSectionsView();
+    });
+    document.getElementById('sv-legend').innerHTML = Object.values(SEC_KIND).map(([t, c]) =>
+      `<span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${c};margin-right:4px"></span>${t}</span>`).join('');
+  }
+  // the analysis reads the SAVED block: save what is on the canvas first
+  if (!(await persistToServer())) { toast('error', 'Salvataggio non riuscito: le sezioni leggono il blocco salvato'); return; }
+  const id = graphIdOf(node), name = currentName;
+  const codeW = (node.widgets||[]).find(x => x.cadParam === 'code');
+  const code = (codeW ? codeW.value : node.properties.code) || '';
+  let a;
+  try {
+    const r = await fetchTimed(`${API}/api/graph/${encodeURIComponent(name)}/codeblock/${encodeURIComponent(id)}/sections`);
+    a = await r.json();
+    if (!r.ok) throw new Error(a.detail || r.status);
+  } catch(e){ toast('error', 'Sezioni: ' + e.message); return; }
+  _secState = {node, name, id, code, a, run: null, sel: null, viewer: _secState && _secState.viewer};
+  document.getElementById('sv-title').textContent = '▦ ' + (node.title || 'CodeBlock');
+  document.getElementById('sv-meta').textContent =
+    `${a.sections.length} sezioni · ${a.lines} righe · ${a.params} parametri · ` +
+    (a.headers ? 'divise dalle intestazioni del blocco' : 'raggruppate per variabile') +
+    (a.error ? ' · ERRORE: ' + a.error : '');
+  ov.style.display = 'flex';
+  drawSectionsGraph();
+  showSectionDetail(null);
+}
+function closeSectionsView(){
+  const ov = document.getElementById('sections-view'); if (ov) ov.style.display = 'none';
+}
+
+// Columns by dependency: Parametri / Quote / Funzioni on the left, then every
+// section one column right of the deepest section it takes a shape from.
+function drawSectionsGraph(){
+  const {a, run, sel} = _secState, box = document.getElementById('sv-graph');
+  const S = a.sections, byId = Object.fromEntries(S.map(s => [s.id, s]));
+  const base = s => ['params', 'quote', 'funcs'].includes(s.kind);
+  const depth = {};
+  for (const s of S){
+    if (base(s)) { depth[s.id] = 0; continue; }
+    let d = 1;
+    for (const e of a.edges) if (e.to === s.id && byId[e.from] && !base(byId[e.from]) && depth[e.from] != null)
+      d = Math.max(d, depth[e.from] + 1);
+    depth[s.id] = d;
+  }
+  const BW = 200, BH = 58, GX = 48, GY = 14, PAD = 20;
+  const cols = {}; for (const s of S) (cols[depth[s.id]] ||= []).push(s);
+  const pos = {};
+  for (const [c, list] of Object.entries(cols)) list.forEach((s, i) =>
+    pos[s.id] = {x: PAD + (+c) * (BW + GX), y: PAD + i * (BH + GY)});
+  const W = PAD * 2 + (Math.max(...Object.keys(cols).map(Number)) + 1) * (BW + GX);
+  const H = PAD * 2 + Math.max(...Object.values(cols).map(l => l.length)) * (BH + GY);
+  const touches = e => sel && (e.from === sel || e.to === sel);
+  let svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg" style="display:block">`;
+  for (const e of a.edges){
+    const f = pos[e.from], t = pos[e.to]; if (!f || !t) continue;
+    const fromBase = base(byId[e.from]);
+    if (fromBase && !touches(e)) continue;               // params/quote edges only for the selection
+    const x1 = f.x + BW, y1 = f.y + BH / 2, x2 = t.x, y2 = t.y + BH / 2, mx = (x1 + x2) / 2;
+    const hot = touches(e);
+    svg += `<path d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" fill="none" stroke="${hot ? 'var(--accent)' : '#4b5563'}" `+
+      `stroke-width="${hot ? 2 : 1.2}" opacity="${hot ? 1 : .7}"><title>${_secEsc(e.names.join(', '))}</title></path>`;
+    if (hot) svg += `<text x="${mx}" y="${(y1 + y2) / 2 - 4}" fill="var(--text-dim)" font-size="10" text-anchor="middle">`+
+      `${_secEsc(e.names.slice(0, 3).join(', ') + (e.names.length > 3 ? ' +' + (e.names.length - 3) : ''))}</text>`;
+  }
+  for (const s of S){
+    const p = pos[s.id], [kt, kc] = SEC_KIND[s.kind] || ['', '#888'];
+    const t = run && run.timings ? run.timings[s.id] : null;
+    const failed = run && run.failed_in === s.id;
+    const meta = `${kt} · ${s.lines} righe` + (t != null ? ` · ⏱ ${t < 0.01 ? '<0.01' : t.toFixed(2)} s` : '') +
+                 (s.unused ? ' · non usata' : '');
+    svg += `<g class="sv-box" data-id="${s.id}" style="cursor:pointer" opacity="${s.unused ? .55 : 1}">`+
+      `<rect x="${p.x}" y="${p.y}" width="${BW}" height="${BH}" rx="8" fill="var(--bg-1)" `+
+        `stroke="${failed ? '#ef4444' : (sel === s.id ? 'var(--accent)' : kc)}" stroke-width="${sel === s.id || failed ? 2.5 : 1.4}" `+
+        `${s.unused ? 'stroke-dasharray="5 4"' : ''}/>`+
+      `<rect x="${p.x}" y="${p.y}" width="6" height="${BH}" rx="3" fill="${kc}"/>`+
+      `<text x="${p.x + 14}" y="${p.y + 22}" fill="var(--text)" font-size="12.5" font-weight="600">${_secEsc(s.title.length > 25 ? s.title.slice(0, 24) + '…' : s.title)}</text>`+
+      `<text x="${p.x + 14}" y="${p.y + 42}" fill="var(--text-dim)" font-size="11">${_secEsc(meta)}</text>`+
+      `<title>${_secEsc(s.title + (s.subtitle ? '\n' + s.subtitle : ''))}</title></g>`;
+  }
+  svg += '</svg>';
+  box.innerHTML = svg;
+  box.querySelectorAll('.sv-box').forEach(g => g.onclick = () => showSectionDetail(g.dataset.id));
+  if (sel && pos[sel]){                               // keep the chosen section in view
+    const p = pos[sel];
+    if (p.x < box.scrollLeft || p.x + BW > box.scrollLeft + box.clientWidth) box.scrollLeft = Math.max(0, p.x - 40);
+    if (p.y < box.scrollTop || p.y + BH > box.scrollTop + box.clientHeight) box.scrollTop = Math.max(0, p.y - 40);
+  }
+}
+
+function _secCode(ranges){
+  const L = _secState.code.split('\n');
+  return ranges.map(([a, b]) => L.slice(a - 1, b).map((l, i) =>
+    `<span style="color:var(--text-dim);user-select:none">${String(a + i).padStart(4)}  </span>${_secEsc(l)}`).join('\n')).join('\n<span style="color:var(--text-dim)">   …</span>\n');
+}
+function showSectionDetail(sid){
+  const st = _secState; st.sel = sid; drawSectionsGraph();
+  const el = document.getElementById('sv-detail'), a = st.a;
+  const title = id => { const s = a.sections.find(x => x.id === id); return s ? s.title : id; };
+  const link = id => `<a href="#" data-sec="${id}" style="color:var(--accent)">${_secEsc(title(id))}</a>`;
+  if (!sid){
+    document.getElementById('sv-prev').style.display = 'none';
+    const outs = Object.entries(a.outputs || {}).map(([n, id]) => `<div><code>${_secEsc(n)}</code> ← ${link(id)}</div>`).join('');
+    const items = (a.result_items || []).map(it => `<div><code>result[${it.index}]</code> ${_secEsc(it.expr)}` +
+      (it.section ? ` ← ${link(it.section)}` : '') + '</div>').join('');
+    el.innerHTML = `<div style="color:var(--text-dim);margin-bottom:8px">Il blocco non cambia: questa è solo una lettura della sua struttura. `+
+      `Clicca una sezione per il suo codice, cosa usa e cosa passa avanti; ⏱ Misura esegue una copia e misura ogni sezione.</div>`+
+      (outs ? `<b>Uscite</b>${outs}` : '') + (items ? `<b style="display:block;margin-top:8px">Elementi di result</b>${items}` : '');
+  } else {
+    const s = a.sections.find(x => x.id === sid), [kt, kc] = SEC_KIND[s.kind] || ['', '#888'];
+    const inc = a.edges.filter(e => e.to === sid), out = a.edges.filter(e => e.from === sid);
+    const vals = st.run && st.run.values && st.run.values[sid];
+    const t = st.run && st.run.timings ? st.run.timings[sid] : null;
+    const chip = n => `<code style="background:var(--bg-3);padding:1px 5px;border-radius:4px;margin:0 3px 3px 0;display:inline-block">${_secEsc(n)}</code>`;
+    el.innerHTML =
+      `<div style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:2px;background:${kc}"></span>`+
+        `<b>${_secEsc(s.title)}</b></div>`+
+      (s.subtitle ? `<div style="color:var(--text-dim)">${_secEsc(s.subtitle)}</div>` : '')+
+      `<div style="color:var(--text-dim);margin:4px 0 8px">${kt} · righe ${s.ranges.map(([a, b]) => a === b ? a : a + '–' + b).join(', ')}${t != null ? ` · ⏱ ${t.toFixed(3)} s` : ''}${s.unused ? ' · <b>non usata</b> da altre sezioni' : ''}</div>`+
+      (['part', 'chain'].includes(s.kind) ? `<button class="tb-btn" id="sv-preview">▶ Anteprima di questa sezione</button> ` : '')+
+      `<button class="tb-btn" id="sv-incode" title="Apre l'editor del codice su queste righe">✎ Nel codice</button>`+
+      (s.chain && s.chain.length ? `<div style="margin-top:8px"><b>Continua a lavorare su</b> ${s.chain.map(chip).join('')}</div>` : '')+
+      (s.produces && s.produces.length ? `<div style="margin-top:6px"><b>Passa avanti</b><br>${s.produces.map(chip).join('')}</div>` : '')+
+      (inc.length ? `<div style="margin-top:6px"><b>Usa</b>${inc.map(e => `<div>${link(e.from)}: ${e.names.map(chip).join('')}</div>`).join('')}</div>` : '')+
+      (out.length ? `<div style="margin-top:6px"><b>Usata da</b>${out.map(e => `<div>${link(e.to)}: ${e.names.map(chip).join('')}</div>`).join('')}</div>` : '')+
+      (s.functions && s.functions.length ? `<div style="margin-top:6px"><b>Funzioni</b><br>${s.functions.map(chip).join('')}</div>` : '')+
+      (vals && Object.keys(vals).length ? `<div style="margin-top:6px"><b>Valori</b><div style="font-family:var(--mono);font-size:12px">`+
+        Object.entries(vals).map(([k, v]) => `${_secEsc(k)} = ${_secEsc(v)}`).join('<br>') + '</div></div>' : '')+
+      `<pre style="margin-top:10px;background:var(--bg-0);border:1px solid var(--border);border-radius:6px;padding:8px;`+
+        `font-family:var(--mono);font-size:11.5px;line-height:1.45;overflow:auto;white-space:pre">${_secCode(s.ranges)}</pre>`;
+    const pv = document.getElementById('sv-preview'); if (pv) pv.onclick = () => runSections(sid);
+    document.getElementById('sv-incode').onclick = () => {
+      closeSectionsView(); openCodeEditor(st.node);
+      const ta = document.getElementById('ce-text'), L = ta.value.split('\n');
+      const [a0, b0] = s.ranges[0];
+      const start = L.slice(0, a0 - 1).join('\n').length + (a0 > 1 ? 1 : 0);
+      const end = L.slice(0, b0).join('\n').length;
+      ta.setSelectionRange(start, end);
+      ta.scrollTop = Math.max(0, (a0 - 3) * (parseFloat(getComputedStyle(ta).lineHeight) || 20));
+    };
+  }
+  el.querySelectorAll('a[data-sec]').forEach(x => x.onclick = ev => { ev.preventDefault(); showSectionDetail(x.dataset.sec); });
+}
+
+async function runSections(sid){
+  const st = _secState; if (!st) return;
+  const btn = document.getElementById('sv-time'), msg = document.getElementById('sv-prev-msg');
+  btn.disabled = true; btn.textContent = '⏳ eseguo…';
+  if (sid){ document.getElementById('sv-prev').style.display = 'block'; msg.textContent = 'eseguo una copia del blocco…'; }
+  let r;
+  try {
+    const q = sid ? `?section=${encodeURIComponent(sid)}` : '';
+    const res = await fetchTimed(`${API}/api/graph/${encodeURIComponent(st.name)}/codeblock/${encodeURIComponent(st.id)}/sections/run${q}`,
+      {method: 'POST'}, 600000);
+    r = await res.json();
+    if (!res.ok) throw new Error(r.detail || res.status);
+  } catch(e){ toast('error', 'Sezioni: ' + e.message); btn.disabled = false; btn.textContent = '⏱ Misura'; return; }
+  btn.disabled = false; btn.textContent = '⏱ Misura';
+  if (_secState !== st) return;                       // closed or reopened meanwhile
+  st.run = r;
+  if (!r.success) toast('error', `Il blocco si ferma${r.failed_in ? ' nella sezione «' + (st.a.sections.find(s => s.id === r.failed_in) || {}).title + '»' : ''}: ${r.error || ''}`);
+  showSectionDetail(st.sel);
+  if (sid){
+    document.getElementById('sv-prev').style.display = 'block';
+    const cv = document.querySelector('#sv-prev canvas');
+    if (!st.viewer){ st.viewer = new CadViewer(cv); }
+    st.viewer.resize(); st.viewer.resetFraming();
+    const pv = (r.view && r.view.previews) || {};
+    const res2 = st.viewer.renderPreviews(pv, {onEmpty: () => {}});
+    msg.textContent = Object.keys(pv).length
+      ? Object.keys(pv).map(k => k.split(':').slice(1).join(':')).join(', ') +
+        (res2.size ? ` · ${res2.size.x.toFixed(0)} × ${res2.size.y.toFixed(0)} × ${res2.size.z.toFixed(0)} mm` : '')
+      : 'questa sezione non lascia forme da mostrare';
+  }
+}
+window.openSectionsView = openSectionsView;
 
 // ════════════════════════════════════════════════════════════════════
 // Curve editor — a reusable control-point curve widget. One data model:
@@ -1826,7 +2196,7 @@ function openCurveEditor(node, name){
           '<span style="font-size:11px;color:var(--text-dim)">click add · drag move · dbl-click corner/smooth · shift/right-click delete</span>'+
         '</div>'+
         '<canvas id="cv-canvas" width="480" height="340" style="background:#0c1118;'+
-          'border:1px solid #1f2a3a;border-radius:6px;cursor:crosshair"></canvas>'+
+          'border:1px solid #1f2a3a;border-radius:6px;cursor:crosshair;max-width:100%;touch-action:none"></canvas>'+
         '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
           '<span id="cv-presets" style="display:flex;gap:4px"></span><span style="flex:1"></span>'+
           '<label style="font-size:12px;color:var(--text-dim);display:flex;align-items:center;gap:4px">'+
@@ -1837,7 +2207,7 @@ function openCurveEditor(node, name){
         '</div>'+
       '</div>';
     document.body.appendChild(ov);
-    ov.addEventListener('mousedown', e=>{ if(e.target===ov) ov.style.display='none'; });
+    ov.addEventListener('pointerdown', e=>{ if(e.target===ov) ov.style.display='none'; });
   }
   const cv = document.getElementById('cv-canvas'), ctx = cv.getContext('2d');
   const W=cv.width, H=cv.height, pad=14;
@@ -1872,8 +2242,14 @@ function openCurveEditor(node, name){
   cv.oncontextmenu = e=>{ e.preventDefault();
     const r=cv.getBoundingClientRect(), h=hit(e.clientX-r.left,e.clientY-r.top);
     if(h && h.handle==null){ const p=get(); if(p.length>2){ p.splice(h.i,1); st.sel=null; commit(p);} draw(); } };
-  cv.onmousedown = e=>{
-    const r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  // pointer events + CSS→canvas px scaling: a finger drags anchors too, and the
+  // canvas may be drawn narrower than its 480px on a phone (max-width:100%)
+  const cvPt = e=>{ const r=cv.getBoundingClientRect();
+    return [(e.clientX-r.left-cv.clientLeft)*cv.width/(cv.clientWidth||cv.width),
+            (e.clientY-r.top-cv.clientTop)*cv.height/(cv.clientHeight||cv.height)]; };
+  cv.onpointerdown = e=>{
+    try { cv.setPointerCapture(e.pointerId); } catch(_){}
+    const [mx,my]=cvPt(e);
     const h=hit(mx,my); const p=get();
     if (e.shiftKey && h && h.handle==null){ if(p.length>2){p.splice(h.i,1);commit(p);} st.sel=null; draw(); return; }
     if (h){ st.sel=h.i; st.drag=h; draw(); return; }
@@ -1884,8 +2260,8 @@ function openCurveEditor(node, name){
     if(mode()==='bezier') curveAutoHandles(p);
     st.sel=idx; st.drag={i:idx,handle:null}; commit(p); draw();
   };
-  cv.onmousemove = e=>{
-    const r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  cv.onpointermove = e=>{
+    const [mx,my]=cvPt(e);
     if (!st.drag){ const h=hit(mx,my); const nv=h?h.i:null; if(nv!==st.hover){st.hover=nv; draw();} return; }
     const p=get(), a=p[st.drag.i];
     const [cx,cy]=toCurve(mx,my);
@@ -1906,7 +2282,7 @@ function openCurveEditor(node, name){
     commit(p); draw();
   };
   const endDrag=()=>{ if(st.drag){ st.drag=null; commit(curveNorm(node.properties[name])); } };
-  cv.onmouseup = endDrag; cv.onmouseleave = ()=>{ endDrag(); st.hover=null; draw(); };
+  cv.onpointerup = endDrag; cv.onpointercancel = endDrag; cv.onpointerleave = ()=>{ endDrag(); st.hover=null; draw(); };
   cv.ondblclick = e=>{
     const r=cv.getBoundingClientRect(), h=hit(e.clientX-r.left,e.clientY-r.top);
     if(h && h.handle==null){ const p=get(); const a=p[h.i];
@@ -2020,6 +2396,7 @@ function sketchDeletePoint(idx){
   commitSketchPts(); refreshSketchVisual(); refreshSketchBarButtons();
 }
 function buildSketchGroup(){
+  if (viewer) viewer.invalidate();
   sketchGroup = new THREE.Group();
   const geo = new THREE.PlaneGeometry(400,400);
   const mat = new THREE.MeshBasicMaterial({color:0x39d3ff, transparent:true, opacity:0.05,
@@ -2036,6 +2413,7 @@ function buildSketchGroup(){
   refreshSketchVisual();
 }
 function refreshSketchVisual(){
+  if (viewer) viewer.invalidate();
   if (!sketchGroup) return;
   while (sketchMarkers.children.length) sketchMarkers.remove(sketchMarkers.children[0]);
   const world = sketchPts.map(p=>sketchLocalToWorld(p, sketchPlaneAxis));
@@ -2097,6 +2475,7 @@ function enterCurveDrawMode(node, name){
   if (lcanvas && lcanvas.selectNode) lcanvas.selectNode(node);
 }
 function exitCurveDrawMode(){
+  if (viewer) viewer.invalidate();
   if (!sketchNode) return;
   const node = sketchNode;
   commitSketchPts();
@@ -2226,7 +2605,7 @@ function toGraphJSON(name){
   const nodes = [], connections = [], idMap = {};
   nodeIndex = {};
   for (const n of lgraph._nodes){
-    const id = 'n'+n.id; idMap[n.id] = id; nodeIndex[id] = n;
+    const id = graphIdOf(n); idMap[n.id] = id; nodeIndex[id] = n;
     const params = {};
     const nd = {id, type:n.cadType, params, position:[Math.round(n.pos[0]),Math.round(n.pos[1])]};
     // A user-given name. Only stored when it differs from the type's own label,
@@ -2257,6 +2636,7 @@ function toGraphJSON(name){
     if (n.previewFinish) nd.finish = n.previewFinish;
     if (n.wireframe) nd.wireframe = true;
     if (n.multiInputs && n.multiInputs.size) nd.multi = [...n.multiInputs];
+    if (n.flags && n.flags.collapsed) nd.collapsed = true;   // folded to its title bar
     nodes.push(nd);
   }
   for (const k in lgraph.links){
@@ -2295,6 +2675,7 @@ function createNodeFromData(nd){
   if (nd.finish) node.previewFinish = nd.finish;
   if (nd.wireframe) node.wireframe = true;
   if (nd.multi) for (const nm of nd.multi) node.multiInputs.add(nm);
+  if (nd.collapsed) node.flags.collapsed = true;   // set, not collapse(): that one toggles
   if (nd.params && nd.params.selection){ node.selectionData = nd.params.selection; updateSelectBtn(node); }
   if (nd.params && nd.params.trace){ node.traceData = nd.params.trace; updateTraceBtn(node); }
   if (nd.params && nd.params._ui) node.properties._ui = Object.assign({}, nd.params._ui);   // slider ⚙ config
@@ -2385,12 +2766,23 @@ function fromGraphJSON(data){
   const _unionIds = new Set((data.nodes||[]).filter(n=>n.type==='Union').map(n=>n.id));
   for (const c of (data.connections||[]))
     if (_unionIds.has(c.to_node) && (c.to_socket==='a' || c.to_socket==='b')) c.to_socket = 'shapes';
+  // Keep every node's ON-DISK id. litegraph numbers nodes 1..N in load order,
+  // and the save wrote those numbers back — so a file whose ids were not already
+  // 1..N in order came back renumbered (n51 -> n49 -> n48 across saves), and an
+  // agent holding "n51" edited the wrong node or none. A numeric id `nK` becomes
+  // runtime id K (so 'n'+node.id still names it); any other id (`drop`) is kept
+  // on node._gid and the node gets a fresh runtime number above all of them.
+  let _maxId = 0;
+  for (const nd of (data.nodes||[])){ const m = /^n([1-9]\d*)$/.exec(nd.id||''); if (m) _maxId = Math.max(_maxId, +m[1]); }
   for (const nd of (data.nodes||[])){
     if (nd.type === 'Panel'){
       if (hasIncoming.has(nd.id)){ nd.type = 'Display'; if (nd.params){ delete nd.params.text; delete nd.params.mode; } }
       else nd.type = 'Input';
     }
     const node = createNodeFromData(nd); if(!node) continue;
+    const m = /^n([1-9]\d*)$/.exec(nd.id||'');
+    if (m) node.id = +m[1];
+    else { node.id = ++_maxId; if (nd.id) node._gid = nd.id; }
     lgraph.add(node);
     map[nd.id] = node;
   }
@@ -2494,10 +2886,20 @@ window.newGraph = async function(name){
   name = (name||'').trim();
   if(!name){ setStatus('enter a name','err'); return; }
   if (!(await guardUnsaved())) return;
-  lgraph.clear(); if (viewer) viewer.resetFraming();
-  await fetch(`${API}/api/graph/${name}`, {method:'POST',headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({name, nodes:[], connections:[]})});
+  if (projectNames.includes(name)){ toast('error','A project with this name already exists'); return; }
+  const epoch = sessionEpoch;
+  let version = null;
+  try {
+    const res = await fetchTimed(`${API}/api/graph/${encodeURIComponent(name)}`, {method:'POST',headers:{'Content-Type':'application/json','If-None-Match':'*'},
+      body: JSON.stringify({name, nodes:[], connections:[]})});
+    if (!res.ok) throw new Error(JSON.stringify((await res.json()).detail));
+    version = (await res.json().catch(()=>({}))).version;
+  } catch(e){ toast('error','Create failed: '+e.message); return; }
+  if (epoch !== sessionEpoch) return;
+  resetProjectSession(); lgraph.clear(); loadingGraph = false;
+  syncLoaded(name, version, {name, nodes:[], connections:[]});   // live sync
   currentName = name;
+  localStorage.setItem('noodle:last', name);
   setCurrentName(name);
   lastSavedJSON = JSON.stringify(toGraphJSON(name));
   lastRunJSON = null;              // nothing on screen belongs to this graph yet
@@ -2508,28 +2910,68 @@ window.newGraph = async function(name){
 };
 
 // Single writer to the server, shared by manual Save + autosave.
-async function persistToServer(){
-  if (!currentName) return false;
-  const payload = toGraphJSON(currentName);
-  const json = JSON.stringify(payload);
-  setDocState('saving');
-  let res;
-  try{
-    res = await fetch(`${API}/api/graph/${currentName}`, {method:'POST',
-      headers:{'Content-Type':'application/json'}, body: json});
-  }catch(e){ setDocState('failed'); log('save: '+e.message,'err'); return false; }
-  if(!res.ok){ const e=await res.json().catch(()=>({})); setDocState('failed');
-    log('save: '+JSON.stringify(e.detail||e),'err'); return false; }
-  lastSavedJSON = json; clearDraft(currentName); setDocState('saved');
-  nodeByGraphId = Object.assign({}, nodeIndex);   // saved disk ids now equal serialized ids
-  thumbWanted = true; maybeThumb();               // the library's picture of this graph
-  return true;
+// Single writer, two guarantees. From the live sync block: every save names the
+// version it was edited from, so if an agent wrote the graph meanwhile the
+// server answers 409 and we MERGE, never overwrite. From the session work:
+// writes are serialized in call order, bound to the project they were captured
+// for (sessionEpoch), and a failed write never poisons the queue. The 409
+// merge-then-save-again retry stays INSIDE this queued step: calling
+// persistToServer from there would queue behind itself and never run.
+function persistToServer(snapshot = null){
+  if (!currentName) return Promise.resolve(false);
+  const name = currentName, epoch = sessionEpoch;
+  // Capture NOW: a queued save writes what the graph was when it was asked for.
+  let json = snapshot || JSON.stringify(toGraphJSON(name));
+  const index = {...nodeIndex};
+  const current = ()=>epoch === sessionEpoch && name === currentName;
+  const fail = (msg)=>{
+    if (!current()) return false;
+    lastObservedJSON = JSON.stringify(toGraphJSON(name));
+    setDocState('failed'); saveDraft(name, lastObservedJSON);
+    log('save: '+msg, 'err');
+    return false;
+  };
+  const write = async ()=>{
+    for (let retry = 0; ; retry++){
+      if (!current()) return false;
+      if (!syncMaySave()) return false;           // merging, or conflicts to resolve
+      if (syncCanSkipEcho(json)){ setDocState('saved'); return true; }   // disk already has it
+      setDocState('saving');
+      syncSaveStarted();
+      let res;
+      try {
+        res = await fetchTimed(`${API}/api/graph/${encodeURIComponent(name)}${syncBaseQuery()}`, {method:'POST',
+          headers:{'Content-Type':'application/json'}, body:json});
+      } catch(e){ return fail(e.message); }
+      if (res.status === 409){
+        if (!current()) return false;
+        const merged = await syncOnStaleSave(res);
+        if (!merged || retry >= 2) return false;
+        json = JSON.stringify(toGraphJSON(name));   // the merged canvas
+        continue;
+      }
+      if (!res.ok){ const e = await res.json().catch(()=>({})); return fail(JSON.stringify(e.detail || e)); }
+      const version = (await res.json().catch(()=>({}))).version;
+      if (!current()) return false;
+      syncSaved(JSON.parse(json), version);
+      lastSavedJSON = json; nodeByGraphId = index;   // saved disk ids now equal serialized ids
+      const cur = JSON.stringify(toGraphJSON(name));
+      lastObservedJSON = cur;
+      if (cur === json){ clearDraft(name); setDocState('saved'); }
+      else { saveDraft(name, cur); setDocState('dirty'); scheduleServerSave(); }
+      thumbWanted = true; maybeThumb();               // the library's picture of this graph
+      return true;
+    }
+  };
+  saveChain = saveChain.then(write, write);
+  return saveChain;
 }
 
 window.saveGraph = async function(){
-  if(!currentName){ setStatus('create or open a graph first','err'); return; }
+  if(!currentName){ setStatus('create or open a graph first','err'); return false; }
   const ok = await persistToServer();
-  if (ok){ await refreshGraphList(); setStatus('saved ✓','ok'); }
+  if (ok){ setStatus('saved ✓','ok'); }
+  return ok;
 };
 
 // ── workflow thumbnail: the picture the library lists you by ───────────────
@@ -2558,6 +3000,8 @@ function maybeThumb(){
 async function postThumb(){
   if (!currentName || !viewer) return;
   const name = currentName;
+  if (lastRunJSON === null || lastRunJSON !== lastSavedJSON ||
+      JSON.stringify(toGraphJSON(name)) !== lastRunJSON) return;
   // Must be read back in one go, before the browser composites the frame away.
   const url = viewer.snapshot();
   if (!url) return;      // empty viewport: keep the last good picture, don't blank it
@@ -2572,7 +3016,9 @@ async function postThumb(){
 
 // ── live mode: debounced auto-run on any graph change ──
 function scheduleLive(){
-  if(!liveMode || loadingGraph) return;
+  if (loadingGraph) return;
+  if (currentName) previewStale();
+  if(!liveMode) return;
   clearTimeout(liveTimer);
   liveTimer = setTimeout(()=>{ runGraph(); }, 120);
 }
@@ -2580,6 +3026,7 @@ window.toggleLive = function(){
   liveMode = !liveMode;
   document.querySelectorAll('.js-live-btn').forEach(b=>b.classList.toggle('on', liveMode));
   if(liveMode) scheduleLive();
+  else { clearTimeout(liveTimer); runPending = false; }
 };
 window.toggleCost = function(){
   showCost = !showCost;
@@ -2725,7 +3172,7 @@ const FINISHES = [
 // switches its target. No new state, no new serialization: it is a view onto the
 // per-node fields that already exist.
 function piecesOf(node){
-  const p = lastView && lastView.previews && lastView.previews['n' + node.id];
+  const p = lastView && lastView.previews && lastView.previews[graphIdOf(node)];
   if (!p || !p.bodies || !p.bodies.length) return null;
   const by = new Map();
   for (const b of p.bodies){
@@ -2927,6 +3374,7 @@ function recordHistory(){                 // commit the current state as a new u
   if (histBase != null){ undoStack.push(histBase); if (undoStack.length > HIST_MAX) undoStack.shift(); }
   histBase = cur; redoStack.length = 0;
   updateUndoButtons();
+  checkDirty();
 }
 function scheduleHistory(){ clearTimeout(histTimer); histTimer = setTimeout(recordHistory, 300); }
 
@@ -2943,13 +3391,13 @@ function applyHistorySnapshot(json){
 // edits. Only positions (and group boxes) come back, so no geometry is touched —
 // deliberately no scheduleLive(): moving a node cannot change the model, and a
 // re-run here would cost seconds for nothing.
-async function arrangeGraph(){
+async function arrangeGraph(groups){   // groups === 'auto': also propose group boxes
   if (!currentName){ toast('info','Apri un progetto prima'); return; }
   if (!lgraph._nodes.length){ toast('info','Il grafo è vuoto'); return; }
   const btn = document.getElementById('btn-arrange');
   if (btn) btn.disabled = true;
   try {
-    const res = await fetch(`/api/graph/${encodeURIComponent(currentName)}/arrange`, {
+    const res = await fetch(`/api/graph/${encodeURIComponent(currentName)}/arrange${groups === 'auto' ? '?groups=auto' : ''}`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify(toGraphJSON(currentName)),
     });
@@ -2960,6 +3408,9 @@ async function arrangeGraph(){
     recordHistory();          // pushes the PRE-arrange state, so Ctrl+Z puts it back
     const s = data.summary || {};
     setStatus(`riordinati ${s.moved||0} nodi in ${s.columns||0} colonne`, 'ok');
+    if (s.groups_created) toast('info', s.groups_created.length
+      ? `${s.groups_created.length} gruppi proposti: ${s.groups_created.slice(0, 6).join(', ')}${s.groups_created.length > 6 ? '…' : ''}`
+      : 'Tutti i nodi sono già in un gruppo');
     if (s.group_overlaps)     // the nodes are fine; some group boxes still cross
       toast('info', `${s.group_overlaps} riquadri di gruppo si intersecano ancora`);
   } catch (e){
@@ -2996,7 +3447,7 @@ const CLIP_KEY = 'noodle:nodeclip';
 function copySelected(){
   const ns = selectedNodes(); if (!ns.length) return;
   const full = toGraphJSON(currentName || 'clip');
-  const ids = new Set(ns.map(n => 'n'+n.id));
+  const ids = new Set(ns.map(n => graphIdOf(n)));
   const nodes = full.nodes.filter(nd => ids.has(nd.id));
   const connections = (full.connections||[]).filter(c => ids.has(c.from_node) && ids.has(c.to_node));
   graphClipboard = {nodes, connections};
@@ -3078,6 +3529,7 @@ document.addEventListener('keydown', (e)=>{
   const bar = document.createElement('div'); bar.id = 'sel-toolbar';
   bar.innerHTML =
     '<span class="count"></span>'+
+    '<button data-act="rename" title="Rename (F2)">✎ Rename</button>'+
     '<button data-act="view" title="Group view — cycle the render of the selected nodes: auto (terminals only) → on (force-show) → off (hide)">👁 Auto</button>'+
     '<span class="sep"></span>'+
     '<button data-act="bypass" title="Toggle bypass (Ctrl+B)">⊘ Bypass</button>'+
@@ -3095,34 +3547,48 @@ document.addEventListener('keydown', (e)=>{
     else if (act === 'group')  groupSelected();
     else if (act === 'clone')  cloneSelected();
     else if (act === 'delete') deleteSelected();
+    else if (act === 'rename'){ const ns = selectedNodes(); if (ns.length === 1) renameNode(ns[0]); }
   });
   const countEl = bar.querySelector('.count');
   const viewBtn = bar.querySelector('[data-act="view"]');
   const bypassBtn = bar.querySelector('[data-act="bypass"]');
+  const renameBtn = bar.querySelector('[data-act="rename"]');
+  const groupBtn = bar.querySelector('[data-act="group"]');
   (function loop(){
     requestAnimationFrame(loop);
     if (!lcanvas){ bar.style.display = 'none'; return; }
     syncIsolate();    // isolate: force-preview the selection on change + refresh filter
-    // only for a real multi-selection (2+ nodes) or a selected group
+    // only for a real multi-selection (2+ nodes) or a selected group — on touch
+    // also for ONE node: there is no Del/F2/Ctrl+B to reach for (── touch ──)
     const selNodes = Object.values(lcanvas.selected_nodes || {});
     const grp = lcanvas.selected_group;
-    if (selNodes.length < 2 && !grp){ bar.style.display = 'none'; return; }
+    const minSel = touchUI() ? 1 : 2;
+    if (selNodes.length < minSel && !grp){ bar.style.display = 'none'; return; }
     // bounding rectangle of the selection (group box, or the nodes)
-    let x0, x1, yTop;
-    if (selNodes.length >= 2){
-      x0=Infinity; x1=-Infinity; yTop=Infinity;
+    let x0, x1, yTop, yBot;
+    if (selNodes.length >= minSel){
+      x0=Infinity; x1=-Infinity; yTop=Infinity; yBot=-Infinity;
       for (const n of selNodes){
         x0 = Math.min(x0, n.pos[0]); x1 = Math.max(x1, n.pos[0]+n.size[0]);
         yTop = Math.min(yTop, n.pos[1] - LiteGraph.NODE_TITLE_HEIGHT);
+        yBot = Math.max(yBot, n.pos[1] + n.size[1]);
       }
     } else {
-      x0 = grp.pos[0]; x1 = grp.pos[0] + grp.size[0]; yTop = grp.pos[1];
+      x0 = grp.pos[0]; x1 = grp.pos[0] + grp.size[0]; yTop = grp.pos[1]; yBot = grp.pos[1] + grp.size[1];
     }
     const ds = lcanvas.ds, r = lcanvas.canvas.getBoundingClientRect();
     let cx = ((x0+x1)/2 + ds.offset[0]) * ds.scale + r.left;   // top-centre
     let cy = (yTop + ds.offset[1]) * ds.scale + r.top - 8;
-    cx = Math.max(r.left+60, Math.min(r.right-60, cx));
+    const hw = Math.max(60, (bar.offsetWidth || 0) / 2 + 4);   // keep the whole bar on screen
+    cx = Math.max(r.left+hw, Math.min(r.right-hw, cx));
     cy = Math.max(r.top+34, cy);
+    if (touchUI()){        // a finger drags nodes by the title: sit ABOVE it, else below the selection
+      const bh = bar.offsetHeight || 44;
+      cy = (yTop + ds.offset[1]) * ds.scale + r.top - 8 - bh;
+      if (cy < r.top + 4) cy = Math.min((yBot + ds.offset[1]) * ds.scale + r.top + 8, r.bottom - bh - 4);
+    }
+    renameBtn.style.display = selNodes.length === 1 ? '' : 'none';
+    groupBtn.style.display = (touchUI() && selNodes.length === 1) ? 'none' : '';
     bar.style.display = 'flex';
     bar.style.left = cx + 'px';
     bar.style.top  = cy + 'px';
@@ -3153,99 +3619,24 @@ function onParamChange(node){
   // Playing and nothing could anticipate it: scheduleLive()'s debounce is reset
   // every frame and would never fire, so the sweep would be invisible until stop.
   if (playActive()){ playPump(); return; }
-  if (liveMode) scheduleLive();
+  scheduleLive();  // also marks a stale preview with Live off
 }
 
 // ── Drop live replay ────────────────────────────────────────────────────────
-// The engine ships the WHOLE fall with the preview (previews[id].anim: bounce
-// segments + topple steps, world coordinates, and the t it was baked at), so
-// the browser can play any t of the timeline as pure matrix math — the same
-// physics, anticipated at 60fps while the slider drags; the exact re-bake
-// lands when the drag settles.
-function dropMatrixAt(anim, t){
-  const M = new THREE.Matrix4();
-  const n = new THREE.Vector3(anim.n[0], anim.n[1], anim.n[2]);
-  const tau = Math.min(Math.max(+t || 0, 0), 1) * anim.T;
-  const h0 = anim.h0;
-  if (tau < anim.Tb || !(anim.steps||[]).length){      // still in the air
-    const f = anim.Tb > 0 ? tau / anim.Tb : 1;
-    let h = 0;
-    if (h0 <= 0) h = h0 * (1 - f);
-    else {
-      let tn = f * anim.tot_n;
-      for (const [d, up] of anim.segs){
-        if (tn <= d){ h = h0 * Math.max((up == null ? 1 - tn*tn : up*tn - tn*tn), 0); break; }
-        tn -= d;
-      }
-    }
-    return M.makeTranslation(n.x*(h-h0), n.y*(h-h0), n.z*(h-h0));
-  }
-  M.makeTranslation(-h0*n.x, -h0*n.y, -h0*n.z);        // landed…
-  let left = tau - anim.Tb;
-  for (const s of anim.steps){                         // …then the topples, in order
-    let deg = s.deg, partial = false;
-    if (left >= s.du - 1e-12){ left -= s.du; }
-    else { const fr = Math.max(0, left / s.du); deg = s.deg * fr * fr; partial = true; }
-    const ax = new THREE.Vector3(s.ax[0], s.ax[1], s.ax[2]).normalize();
-    M.premultiply(new THREE.Matrix4().makeTranslation(-s.p[0], -s.p[1], -s.p[2]))
-     .premultiply(new THREE.Matrix4().makeRotationAxis(ax, deg * Math.PI/180))
-     .premultiply(new THREE.Matrix4().makeTranslation(s.p[0], s.p[1], s.p[2]));
-    if (partial) break;
-  }
-  return M;
-}
-
-// A collide body ships a KEYFRAME plan instead (kind "keys"): pybullet ran the
-// whole scene once, and here we interpolate (lerp + slerp) the pose at any t.
-function keyInterp(anim, tau){
-  const T = anim.times; if (!T || !T.length) return null;
-  const q = (i)=> new THREE.Quaternion(anim.quat[i][0], anim.quat[i][1], anim.quat[i][2], anim.quat[i][3]);
-  if (tau <= T[0])            return { p: anim.pos[0], q: q(0) };
-  if (tau >= T[T.length-1])   return { p: anim.pos[T.length-1], q: q(T.length-1) };
-  let lo = 0, hi = T.length - 1;
-  while (hi - lo > 1){ const mid = (lo+hi)>>1; if (T[mid] <= tau) lo = mid; else hi = mid; }
-  const f = (tau - T[lo]) / ((T[hi] - T[lo]) || 1);
-  const p = [0,1,2].map(i => anim.pos[lo][i]*(1-f) + anim.pos[hi][i]*f);
-  return { p, q: q(lo).slerp(q(hi), f) };
-}
-
-// Move one Scene body (baked at anim.t) to tNew. Its world vertices sit at pose
-// (pB,qB); target is (pT,qT). The rigid delta is Δq = qT·qB⁻¹, and the child's
-// offset = pT − Δq·pB, so vertex y → Δq·(y−pB) + pT.
-function sceneBodyPose(anim, tNew, child){
-  const T = anim.T || 1;
-  const at = keyInterp(anim, Math.min(Math.max(tNew,0),1) * T);
-  const bk = keyInterp(anim, Math.min(Math.max(anim.t,0),1) * T);
-  if (!at || !bk) return;
-  const dq = at.q.clone().multiply(bk.q.clone().invert());
-  const pB = new THREE.Vector3(bk.p[0], bk.p[1], bk.p[2]);
-  const pT = new THREE.Vector3(at.p[0], at.p[1], at.p[2]);
-  child.quaternion.copy(dq);
-  child.position.copy(pT).sub(pB.clone().applyQuaternion(dq));
-}
+// The engine ships the WHOLE timeline with the preview (previews[id].anim), so
+// the browser can play any t as pure matrix math — anticipated at 60fps while
+// the slider drags; the exact re-bake lands when the drag settles. The math
+// (dropMatrixAt / keyInterp / sceneBodyPose / poseAnim) lives in viewer.js,
+// shared with the /view page's timeline player.
 
 // Seat `node`'s preview at timeline position tNew, relative to its baked t. A
 // single Drop is one mesh moved by M(tNew)·M(tBaked)⁻¹; a collide Scene is a
 // group whose bodies each carry their own keyframe plan.
 function applyDropAnim(node, tNew){
+  if (viewer) viewer.invalidate();
   const m = previewMeshOf(node);
   if (!m) return false;
-  if (m.userData && m.userData.isScene){
-    let any = false;
-    for (const child of m.children){
-      const a = child.userData && child.userData.anim;
-      if (a && a.kind === 'keys'){ sceneBodyPose(a, tNew, child); any = true; }
-    }
-    return any;
-  }
-  const anim = previewAnimOf(node);
-  if (!anim) return false;
-  // One part falling into a `container` is still a simulated scene — it just has
-  // a single body, so it arrives as a plain preview carrying a keyframe plan.
-  if (anim.kind === 'keys'){ sceneBodyPose(anim, tNew, m); return true; }
-  const rel = dropMatrixAt(anim, tNew).multiply(dropMatrixAt(anim, anim.t).invert());
-  rel.decompose(m.position, m.quaternion, m.scale);
-  return true;
+  return poseAnim(m, previewAnimOf(node), tNew);
 }
 
 // The nodes that ship a scrubbable timeline with their preview: Drop (a fall it
@@ -3277,6 +3668,7 @@ function applyDropTargets(node){
 // from the params baked into the current mesh. Returns false if not applicable.
 // A timeline node replays its shipped plan the same way (dropMatrixAt/keys).
 function applyLocalTransform(node){
+  if (viewer) viewer.invalidate();
   if (!node) return false;
   if (TIMELINE_NODES.has(node.cadType)) return applyDropAnim(node, +node.properties.t);
   if (!['Move','Rotate','Scale'].includes(node.cadType)) return false;
@@ -3401,6 +3793,7 @@ function enterGizmoEdit(node){
 }
 
 function exitGizmoEdit(){
+  if (viewer) viewer.invalidate();
   if (!gizmoNode) return;
   const node = gizmoNode; gizmoNode = null;
   if (node._gizmoPrevMode !== undefined){
@@ -3431,6 +3824,7 @@ function gizmoWriteParam(node, name, raw){
 // the gizmo moved: map its delta onto the node's bound param(s), give immediate
 // optimistic feedback (reuse applyLocalTransform), then debounce an exact re-run.
 function gizmoDragUpdate(){
+  if (viewer) viewer.invalidate();
   if (!gizmoNode || !gizmoParamStart) return;
   const node = gizmoNode, g = node._gizmo;
   if (g.kind === 'rotate'){
@@ -3518,16 +3912,18 @@ function showGizmoHint(node){
 // which is most of them once the memo cache is warm.
 const PROGRESS_GRACE_MS = 2000;
 
-function openProgress(runId, glowId){
+function openProgress(runId, glowId, name = currentName){
+  const epoch = sessionEpoch;
   if (!window.EventSource) return null;
   try {
-    const es = new EventSource(`${API}/api/graph/${currentName}/progress?run=${encodeURIComponent(runId)}`);
+    const es = new EventSource(`${API}/api/graph/${encodeURIComponent(name)}/progress?run=${encodeURIComponent(runId)}`);
     es._seen = 0; es._glowId = glowId; es._done = false; es._closed = false;
     es.onmessage = (m)=>{
       es._seen++;
       let ev = null;
       try { ev = JSON.parse(m.data); } catch(e){ return; }
-      if (!ev) return;
+      if (!ev || epoch !== sessionEpoch) return;
+      if (ev.k === 'phase' && runContext && runContext.id === runId){ runContext.phase = ev.phase; return; }
       if (ev.k === 'done'){ es._done = true; finishProgress(es); return; }
       // Late events from a SUPERSEDED run must not paint the run that replaced
       // it — the glow they belong to is gone.
@@ -3558,42 +3954,67 @@ function closeProgress(es, glowId){
   es._grace = setTimeout(()=>finishProgress(es), PROGRESS_GRACE_MS);
 }
 
-window.runGraph = async function(){
+window.runGraph = function(){
+  if (loadingGraph || !currentName) return Promise.resolve();
+  runPending = true;
+  if (runTask) return runTask;
+  runTask = (async ()=>{
+    document.getElementById('btn-stop').disabled = false;
+    try {
+      while (runPending){ runPending = false; await executeCurrentGraph(); }
+    } catch(e){ setStatus('execution failed','err'); log(e.message,'err'); }
+    finally { runTask = null; runContext = null; document.getElementById('btn-stop').disabled = true; }
+  })();
+  return runTask;
+};
+async function executeCurrentGraph(){
+  const name = currentName, epoch = sessionEpoch;
+  const json = JSON.stringify(toGraphJSON(name));
+  runAbort = new AbortController();
+  const signal = runAbort.signal;
+  const sameSession = ()=>name === currentName && epoch === sessionEpoch && !signal.aborted;
+  const current = ()=>sameSession() && (window.__noodleShot || playActive() || json === JSON.stringify(toGraphJSON(name)));
   // The agent's screenshot page is a READER, never a writer. It saved like any
   // user, so a shot taken with a stale in-memory graph wrote that stale copy
   // over the file on disk — taking a picture destroyed the user's work, and
   // silently. /execute runs the graph ON DISK, which is exactly what an agent
   // wants rendered, so skipping the save is also the more correct behaviour.
-  if (!window.__noodleShot) await window.saveGraph();
-  if(!currentName) return;
-  if(runAbort) runAbort.abort();          // supersede any in-flight run
-  runAbort = new AbortController();
-  const signal = runAbort.signal;
+  if (!window.__noodleShot && !(await persistToServer(json))){
+    if (sameSession()) setStatus('Save failed — execution not started','err');
+    return;
+  }
+  if (!current()) return;
   clearHighlights();
   const _rt0 = performance.now();
   const _elapsed = ()=> ((performance.now()-_rt0)/1000).toFixed(1)+'s';
   const _verb = liveMode ? 'live' : 'running';
   setStatus(_verb+'…');
   // live ticking clock so a long run visibly reads as "thinking", not frozen
-  const _tick = setInterval(()=> setStatus(_verb+'… '+_elapsed()), 250);
+  const _tick = setInterval(()=> {
+    if (sameSession()) setStatus((runContext?.phase || _verb)+'… '+_elapsed());
+  }, 250);
   // Subscribe BEFORE asking for the run, so no node's start event is missed. The
   // worker appends one per node as it goes; the server tails the file to us.
   const _runId = (crypto.randomUUID ? crypto.randomUUID()
                                     : String(Date.now()) + Math.random().toString(16).slice(2));
   const _glowId = beginExecGlow();
-  const es = openProgress(_runId, _glowId);
+  const es = openProgress(_runId, _glowId, name);
+  runContext = {name, id:_runId, es, glowId:_glowId, phase:'queued'};
   let res;
   try {
-    res = await fetch(`${API}/api/graph/${currentName}/execute?run=${encodeURIComponent(_runId)}`,
-                      {method:'POST', signal});
+    res = await fetch(`${API}/api/graph/${encodeURIComponent(name)}/execute?run=${encodeURIComponent(_runId)}`,
+                      {method:'POST', signal, headers:{'Content-Type':'application/json'},
+                       body:window.__noodleShot ? undefined : json});
   } catch(e){
     clearInterval(_tick); closeProgress(es, _glowId);
-    if(e.name === 'AbortError') return;    // a newer change took over
+    if(e.name === 'AbortError' || !sameSession()) return;
     setStatus('execution failed','err'); log('execute: '+e.message,'err'); return;
   }
   clearInterval(_tick); closeProgress(es, _glowId);
+  if (!current()){ if (sameSession()) previewStale(); return; }
   if(!res.ok){
     const e = await res.json();
+    if (!current()) return;
     const d = e.detail || e;
     const det = d.error_detail;
     document.getElementById('body-code').textContent = (d.code||'');
@@ -3618,10 +4039,11 @@ window.runGraph = async function(){
   let data;
   try { data = await res.json(); }
   catch(e){ if(e.name === 'AbortError') return; throw e; }
+  if (!current() || (data.run_id && data.run_id !== _runId)){ if (sameSession()) previewStale(); return; }
   document.getElementById('body-code').textContent = data.code || '';
   document.getElementById('body-view').textContent = JSON.stringify(stripMesh(data.view), null, 2);
   renderPanels(data.view);
-  renderPreviews(data.view);   // draw whatever succeeded
+  renderPreviews(data.view, JSON.parse(json));   // bake params from THIS snapshot, not a later edit
   // per-node errors: flag the culprits but keep the rest of the graph rendered
   const nerr = data.node_errors || {};
   lastNodeErrors = nerr;   // remembered for the feedback report
@@ -3645,17 +4067,60 @@ window.runGraph = async function(){
   if (nids.length){ setStatus(`done · ${nids.length} node error(s) · ${_elapsed()}`, 'err'); }
   else if ((data.warnings||[]).length){ setStatus(`done ⚠ · ${_elapsed()}`,'err'); }
   else { setStatus(`done ✓ · ${_elapsed()}`,'ok'); }
-  log('executed '+currentName,'ok');
+  log('executed '+name,'ok');
   // What is on screen now provably came from what is on disk now (runGraph saved
   // before executing) — the one moment a thumbnail can be taken truthfully.
-  lastRunJSON = lastSavedJSON;
+  lastRunJSON = json;
+  if (!window.__noodleShot && json !== JSON.stringify(toGraphJSON(name))) previewStale();
   maybeThumb();
-};
+}
 
-window.exportStep = function(){
-  if(!currentName){ setStatus('save first','err'); return; }
-  // Real STEP export: transpile + execute + write .step (not the cached STL).
-  window.open(`${API}/api/graph/${currentName}/export/step`, '_blank');
+// ⬇ Export. The default is the 📦 bake: every node whose eye is on — exactly
+// what the viewport shows — each as its own STEP + STL, zipped with a
+// manifest.json. The single-format choices export the graph's RESULT as before.
+// Every export also lands in the project's exports/ with a provenance line in
+// exports/index.jsonl, so the library (📁) says which node it came from.
+function downloadBlob(blob, filename){
+  const url = URL.createObjectURL(blob), a = document.createElement('a');
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 60000);
+}
+function filenameOf(res, fallback){
+  const cd = res.headers.get('Content-Disposition') || '';
+  const m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cd);
+  return m ? decodeURIComponent(m[1]) : fallback;
+}
+window.exportStep = async function(preset){
+  if(!currentName){ toast('info','Create or open a project first'); return; }
+  const epoch = sessionEpoch;
+  const fmt = preset || await confirmModal('Export model',
+    '<b>📦 Everything visible</b> bakes every node with its eye on into its own STEP + STL, '+
+    'zipped. The single formats export the graph\'s final result. The graph is saved first; '+
+    'every file also lands in the 📁 library, tagged with the node it came from.',
+    [{id:'bundle',label:'📦 Everything visible (STEP+STL .zip)',cls:'primary'},
+     {id:'step',label:'STEP'},{id:'stl',label:'STL'},{id:'gltf',label:'glTF'},{id:'cancel',label:'Cancel'}]);
+  // confirmModal resolves null on Cancel / Esc / overlay click
+  if (!fmt || fmt === 'cancel' || epoch !== sessionEpoch) return;
+  const name = currentName, json = JSON.stringify(toGraphJSON(name));
+  if (!(await persistToServer(json)) || epoch !== sessionEpoch) return;
+  const bundle = fmt === 'bundle';
+  const modal = buildModal('<h3>'+(bundle ? 'Baking every visible node…' : 'Exporting '+fmt.toUpperCase()+'…')+
+    '</h3><p role="status">'+(bundle ? 'One STEP + one STL per previewed node, then zipped. ' : '')+
+    'Building the saved snapshot. Please wait.</p>');
+  try {
+    const res = await fetchTimed(`${API}/api/graph/${encodeURIComponent(name)}/export/${bundle ? 'bundle' : fmt}`,
+      {method:'POST', headers:{'Content-Type':'application/json'}, body:json}, bundle ? 240000 : 150000);
+    if (!res.ok){
+      const d = await res.json().catch(()=>({}));
+      throw new Error(typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail || res.statusText));
+    }
+    const blob = await res.blob();
+    if (epoch !== sessionEpoch) return;
+    const file = filenameOf(res, name+'.'+(bundle ? 'zip' : fmt));
+    downloadBlob(blob, file);
+    toast('success','Export ready: '+file, {label:'📁 Library', run:()=>{ location.href='/library?p='+encodeURIComponent(name); }});
+  } catch(e){ if (epoch === sessionEpoch) toast('error','Export failed: '+e.message); }
+  finally { modal.close(); }
 };
 
 function stripMesh(v){
@@ -3675,17 +4140,31 @@ function stripMesh(v){
 let projectNames = [];   // cached for the project menu + palette
 let projectThumbs = {};  // name -> thumbnail mtime (0 = none), doubles as cache-buster
 async function refreshGraphList(){
-  const res = await fetch(`${API}/api/projects`);
+  const res = await fetchTimed(`${API}/api/projects`);
+  if (!res.ok) throw new Error('Could not load projects');
   const list = (await res.json()).filter(p=>p.backend==='nodegraph');
   projectNames = list.map(p=>p.name).sort();
   projectThumbs = Object.fromEntries(list.map(p=>[p.name, p.thumb||0]));
+  projectMtimes = Object.fromEntries(list.map(p=>[p.name, p.mtime||0]));
   renderProjectList();
 }
+// Sort order of the workflow list — shared with the home page (same key).
+let projectMtimes = {};
+function projectSort(){
+  try{ return localStorage.getItem('noodle:sort:workflows') === 'name' ? 'name' : 'date'; }catch(_){ return 'date'; }
+}
+window.setProjectSort = function(v){
+  try{ localStorage.setItem('noodle:sort:workflows', v); }catch(_){}
+  renderProjectList();
+};
 window.renderProjectList = function(){
   const list = document.getElementById('project-list'); if (!list) return;
   const q = (document.getElementById('project-search').value||'').toLowerCase();
   list.innerHTML = '';
   const names = projectNames.filter(n=>n.toLowerCase().includes(q));
+  const order = projectSort(), sel = document.getElementById('project-sort');
+  if (sel) sel.value = order;
+  if (order === 'date') names.sort((a,b)=>(projectMtimes[b]||0)-(projectMtimes[a]||0) || a.localeCompare(b));
   if (!names.length){ list.innerHTML = '<div class="menu-status">No projects</div>'; }
   for (const n of names){
     const b = document.createElement('button'); b.className = 'menu-item';
@@ -3702,10 +4181,17 @@ window.renderProjectList = function(){
 
 window.openGraph = async function(name){
   if(!name || name===currentName) { closeMenus(); return; }
-  if (!(await guardUnsaved())) return;
-  const res = await fetch(`${API}/api/graph/${name}`);
-  if(!res.ok){ setStatus('open failed','err'); return; }
-  const data = await res.json();
+  const seq = ++openSequence;
+  if (!(await guardUnsaved()) || seq !== openSequence) return;
+  let data, version;
+  try {
+    const res = await fetchTimed(`${API}/api/graph/${encodeURIComponent(name)}/version?graph=1`, {cache:'no-store'});
+    if (!res.ok) throw new Error('Could not open project');
+    ({version, graph: data} = await res.json());
+  } catch(e){ toast('error','Open failed: '+e.message); return; }
+  if (seq !== openSequence) return;
+  resetProjectSession();
+  syncLoaded(name, version, data);   // BEFORE fromGraphJSON, which migrates `data` in place
   fromGraphJSON(data);
   currentName = name; if (viewer) viewer.resetFraming();   // frame the freshly opened graph once
   setCurrentName(name);
@@ -3718,10 +4204,14 @@ window.openGraph = async function(name){
   maybeRestoreDraft(name);
   refreshAssets(true);   // prime the Import-node asset picker for this project
   syncRefImages();   // draw any RefImage reference quads now currentName is set
+  if (liveMode) scheduleLive();
 };
 
 window.showTab = function(t){
-  for (const el of document.querySelectorAll('.tab')) el.classList.toggle('active', el.dataset.tab===t);
+  for (const el of document.querySelectorAll('.tab')){
+    const active=el.dataset.tab===t;
+    el.classList.toggle('active',active); el.setAttribute('aria-selected',String(active)); el.tabIndex=active?0:-1;
+  }
   document.getElementById('body-code').style.display   = t==='code'?'block':'none';
   document.getElementById('body-view').style.display   = t==='view'?'block':'none';
   document.getElementById('body-panels').style.display = t==='panels'?'block':'none';
@@ -3772,7 +4262,7 @@ window.sendCopilot = async function(){
   aiAppend('assistant', reply);
   copilotHistory.push({role:'assistant', content:reply});
   if(res.changed){
-    await openGraph(currentName);   // reload the copilot's edits onto the canvas
+    await syncPullNow();            // merge the copilot's edits onto the canvas
     await runGraph();               // re-render the geometry
     log('copilot updated the graph','ok');
   }
@@ -3835,7 +4325,7 @@ function fmtPanel(v){ return panelLines(v).join('\n'); }
 let lastPanels = {};   // id -> typed panel value, from the most recent view.json
 function drawDisplayBody(ctx, node){
   const pad = 8, lh = 14, top = noteTextTop(node), w = node.size[0] - pad*2;
-  const val = lastPanels['n' + node.id];
+  const val = lastPanels[graphIdOf(node)];
   ctx.save();
   ctx.font = '11px var(--mono, monospace)';
   ctx.textBaseline = 'top';
@@ -3929,7 +4419,7 @@ function openInlineNoteEditor(node){
   setTimeout(()=>{
     if (inlineEditor && inlineEditor.el === el){
       el.focus(); el.select();
-      document.addEventListener('mousedown', onOutside, true);
+      document.addEventListener('pointerdown', onOutside, true);
     }
   }, 60);
 }
@@ -3949,7 +4439,7 @@ function closeInlineNoteEditor(commit){
   if (!inlineEditor) return;
   const { node, param, el, onOutside } = inlineEditor;
   inlineEditor = null;                           // clear first so handlers become no-ops
-  if (onOutside) document.removeEventListener('mousedown', onOutside, true);
+  if (onOutside) document.removeEventListener('pointerdown', onOutside, true);
   if (commit) node.properties[param] = el.value;
   el.remove();
   if (commit){
@@ -4154,6 +4644,7 @@ function initViewer(){
   // r0.169+ : the visual is a separate helper object you add to the scene
   viewer.scene.add(transformControls.getHelper ? transformControls.getHelper() : transformControls);
   transformControls.enabled = false;
+  transformControls.addEventListener('change', ()=>viewer.invalidate());
   transformControls.addEventListener('dragging-changed', e=>{ viewer.controls.enabled = !e.value; });
   transformControls.addEventListener('objectChange', ()=> gizmoDragUpdate());
   // when the viewer swaps perspective⇄ortho it rebuilds the active camera; the
@@ -4236,14 +4727,15 @@ window.toggleProjection = function(){
 //   syncIsolateForce()  — force-preview the selection, restore the rest, re-run
 function applyIsolate(){
   if(!isolateSel){
-    if(_isoDirty){ for(const id in previewMeshes){ const m=previewMeshes[id]; if(m) m.visible=true; } _isoDirty=false; }
+    if(_isoDirty){ for(const id in previewMeshes){ const m=previewMeshes[id]; if(m) m.visible=true; } _isoDirty=false; if(viewer) viewer.invalidate(); }
     return;
   }
-  const sel = new Set(selectedNodes().map(n=>'n'+n.id));
+  const sel = new Set(selectedNodes().map(n=>graphIdOf(n)));
   const hasSel = sel.size > 0;                 // nothing picked -> nothing to isolate to
   for(const id in previewMeshes){
     const m = previewMeshes[id]; if(!m) continue;
-    m.visible = !hasSel || sel.has(id);
+    const visible = !hasSel || sel.has(id);
+    if (m.visible !== visible){ m.visible = visible; if(viewer) viewer.invalidate(); }
   }
   _isoDirty = hasSel;
 }
@@ -4307,10 +4799,12 @@ function nodeFor(id){ return nodeByGraphId[id] || nodeIndex[id] || null; }
 // nothing while its mesh sat under `n29`, and a Number Slider (runtime 31) hit
 // `n31` — the TORUS's mesh. A miss loses the 60fps scrub; a false hit hands a
 // node someone else's geometry to transform.
+// Since fromGraphJSON keeps on-disk ids (a numeric `nK` IS runtime id K, any
+// other id rides on node._gid), the two namespaces no longer drift apart and
+// this is O(1) — toGraphJSON calls it once per node, every second.
 function graphIdOf(node){
   if (!node) return null;
-  for (const gid in nodeByGraphId) if (nodeByGraphId[gid] === node) return gid;
-  return 'n' + node.id;      // never saved in this session: ids really are the editor's
+  return node._gid || ('n' + node.id);
 }
 function previewMeshOf(node){ const g = graphIdOf(node); return (g && previewMeshes[g]) || null; }
 function previewAnimOf(node){ const g = graphIdOf(node); return (g && previewAnims[g]) || null; }
@@ -4328,8 +4822,10 @@ function clearPreviewDots(){
 }
 // Draw the execution view via the shared viewer, then apply node-editor glue:
 // per-node title dots, baked-param snapshots (for gizmo/fastDrag), and the legend.
-function renderPreviews(view){
+function renderPreviews(view, bakedGraph = null){
+  const baked = bakedGraph && Object.fromEntries(bakedGraph.nodes.map(n=>[n.id,n.params]));
   lastView = view;                       // cache so colour/wireframe changes re-render instantly
+  if (!viewer) return;
   clearPreviewDots();
   const setStats = (txt)=>{ const st=document.getElementById('viewer-stats'); st.innerHTML=txt; st.classList.add('visible'); };
   const r = viewer.renderPreviews((view && view.previews) || {}, {
@@ -4351,7 +4847,7 @@ function renderPreviews(view){
   for(const id of r.order){
     const n = nodeIndex[id], color = r.colors[id];
     // the title dot cannot show a sentinel: rainbow gets one stand-in swatch
-    if(n){ n._baked = {...n.properties};
+    if(n){ n._baked = {...((baked && baked[id]) || n._baked || n.properties)};
            n.boxcolor = (color === 'rainbow') ? '#9b6dd6' : color; }   // snapshot + title dot
     legend.push({id, color, label:(n && (n.title||n.cadType)) || id, wire: !!(n && n.wireframe)});
   }
@@ -4380,13 +4876,14 @@ function _applyRefSize(mesh, node, tex){
 }
 function syncRefImages(){
   if (!viewer || !lgraph) return;
+  viewer.invalidate();
   if (!refGroup.parent) viewer.scene.add(refGroup);
   const seen = new Set();
   for (const n of lgraph._nodes){
     if (n.cadType !== 'RefImage') continue;
     const p = n.properties || {}, path = p.path;
     if (!path || path === '(no file)' || !currentName) continue;
-    const id = 'n' + n.id; seen.add(id);
+    const id = graphIdOf(n); seen.add(id);
     let m = refMeshes[id];
     if (!m){
       m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
@@ -4428,7 +4925,7 @@ function syncRefImages(){
     m.material.opacity = (p.opacity == null ? 0.6 : +p.opacity);
   }
   for (const id in refMeshes) if (!seen.has(id)){   // drop quads whose node is gone
-    refGroup.remove(refMeshes[id]); refMeshes[id].geometry.dispose(); delete refMeshes[id];
+    refGroup.remove(refMeshes[id]); refMeshes[id].geometry.dispose(); refMeshes[id].material.dispose(); delete refMeshes[id];
   }
 }
 
@@ -4493,7 +4990,7 @@ function flashNode(n){
 }
 function broadcastReveal(node){
   if (!xlink || !node || _xlinkEcho) return;
-  xlink.postMessage({cmd:'reveal', graph: currentName, node_id: 'n' + node.id});
+  xlink.postMessage({cmd:'reveal', graph: currentName, node_id: graphIdOf(node)});
 }
 
 // ── sub-shape selection picker (modal 3D viewer) ───────────────────────────
@@ -4783,7 +5280,7 @@ window.openSelectionPicker = async function(node, kind){
   try {
     await saveGraph();
     if (!currentName) return;
-    const srcId = 'n'+src.id;
+    const srcId = graphIdOf(src);
     setStatus(`loading ${pluralKind(kind)}…`);
     let data;
     try {
@@ -5316,6 +5813,7 @@ window.closeTracer = function(commit){
 function initGraph(){
   lgraph = new LGraph();
   const canvas = document.getElementById('graph-canvas');
+  touchPreInit();                         // pointer events: must precede bindEvents
   lcanvas = new LGraphCanvas(canvas, lgraph);
   lcanvas.onSearchBox = nodeSearchRows;   // find nodes by label/alias, not just type path
   lcanvas.background_image = null;
@@ -5353,28 +5851,288 @@ function initGraph(){
   lgraph.start();
   initCrossView();
   initGroupRename();      // dbl-click a group title -> rename
+  initGraphClarity();     // lineage, derived titles, minimap, stale notice (own block)
+  initTouch(canvas);      // pinch, long-press menu, slot snapping, HiDPI (── touch ──)
   resizeGraph();
 }
+// The backing store is sized in DEVICE pixels (sharp on HiDPI); litegraph keeps
+// thinking in CSS pixels — initTouch folds the ratio into ds.toCanvasContext.
 function resizeGraph(){
   const canvas = document.getElementById('graph-canvas');
   const r = canvas.parentElement.getBoundingClientRect();
-  canvas.width = r.width; canvas.height = r.height;
-  if (lcanvas) lcanvas.resize();
+  const dpr = TOUCH.dpr = graphDpr();
+  const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
+  if (lcanvas) lcanvas.resize(w, h); else { canvas.width = w; canvas.height = h; }
 }
 
-// ── split handle ──
+// ── split handle ── (pointer events, so a finger drags it too)
 (function(){
   const split=document.getElementById('split'), gp=document.querySelector('.graph-pane');
   let drag=false;
-  split.addEventListener('mousedown',e=>{drag=true;document.body.style.cursor='col-resize';e.preventDefault();});
-  document.addEventListener('mousemove',e=>{
+  split.addEventListener('pointerdown',e=>{
+    drag=true; document.body.style.cursor='col-resize'; e.preventDefault();
+    try { split.setPointerCapture(e.pointerId); } catch(_){}
+  });
+  split.addEventListener('pointermove',e=>{
     if(!drag)return;
     const ws=document.querySelector('.workspace').getBoundingClientRect();
     gp.style.flex='none'; gp.style.width=Math.max(240,Math.min(ws.width-245, e.clientX-ws.left))+'px';
     resizeGraph(); resizeViewer();
   });
-  document.addEventListener('mouseup',()=>{drag=false;document.body.style.cursor='';});
+  const endDrag=()=>{drag=false;document.body.style.cursor='';};
+  split.addEventListener('pointerup',endDrag); split.addEventListener('pointercancel',endDrag);
 })();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── touch ── tablets & phones. litegraph 0.7.18 is mouse-first; this block
+// makes it usable with a finger WITHOUT patching its source and without
+// changing any mouse/keyboard gesture:
+//  • 'pointer' events (touchPreInit). With the default 'mouse' method a finger
+//    can tap but never drag. Caveat: litegraph's pointer path INVERTS isPrimary
+//    in processMouseDown (`!e.isPrimary`), which kills double-click for the
+//    mouse too — so every event litegraph handles is shown isPrimary=undefined,
+//    exactly what a MouseEvent looked like before the switch;
+//  • two fingers pan + pinch-zoom; the second finger never reaches litegraph
+//    (its pointer_is_double path would pop the context menu);
+//  • long-press (500ms, <8px) = right-click; "＋ Nodo" opens the node search;
+//    "Seleziona" turns a one-finger drag into a box selection (= Ctrl+drag);
+//  • fat-finger slots: a touch near a slot snaps onto it, at press and at drop;
+//  • HiDPI: the backing store is in device pixels and the ratio is folded into
+//    ds.toCanvasContext, so ds.scale/offset and every event coordinate stay in
+//    CSS pixels. onDrawOverlay/onRenderBackground (screen space) get an
+//    identity transform in DEVICE pixels — scale by TOUCH.dpr there;
+//  • body.touch-ui (last pointer was not a mouse) drives the bigger CSS
+//    targets and, under 800px, the one-pane layout with Grafo/3D/Pannello tabs.
+// ═══════════════════════════════════════════════════════════════════════════
+const TOUCH = { dpr: 1, ui: false, selectMode: false };
+function graphDpr(){ return Math.max(1, Math.min(window.devicePixelRatio || 1, 2)); }
+function touchUI(){ return TOUCH.ui; }
+function touchPreInit(){ LiteGraph.pointerevents_method = 'pointer'; }
+function setTouchUI(on){
+  on = !!on;
+  if (on === TOUCH.ui) return;
+  TOUCH.ui = on;
+  document.body.classList.toggle('touch-ui', on);
+  // the search box and litegraph's prompt close when the pointer LEAVES them;
+  // a lifted finger always leaves, so on touch an outside tap closes them instead
+  LiteGraph.search_hide_on_mouse_leave = !on;
+  LiteGraph.dialog_close_on_mouse_leave = !on;
+  if (!on && TOUCH.selectMode) setSelectMode(false);
+  requestAnimationFrame(()=>{ resizeGraph(); resizeViewer(); });   // targets/layout changed size
+}
+function setSelectMode(on){
+  TOUCH.selectMode = !!on;
+  const b = document.getElementById('tt-select');
+  if (b) b.classList.toggle('on', TOUCH.selectMode);
+}
+// Forget whatever one-pointer gesture litegraph started (a node drag, a canvas
+// pan, a wire…): a second finger or a long-press takes the gesture over. The
+// pointer's own pointerup still reaches litegraph afterwards (it must: that is
+// what clears pointer_is_down) and finds nothing left to finish.
+function abortLitegraphGesture(){
+  const c = lcanvas; if (!c) return;
+  c.node_dragged = null; c.dragging_canvas = false; c.resizing_node = null;
+  c.dragging_rectangle = null; c.node_widget = null; c.node_capturing_input = null;
+  c.selected_group = null; c.selected_group_resizing = false;
+  c.connecting_node = c.connecting_output = c.connecting_input = c.connecting_pos = null;
+  c.connecting_slot = -1; c.last_mouse_dragging = false;
+  c.setDirty(true, true);
+}
+// A finger is ~40 CSS px; a slot is a 10px dot. Move the event's graph point onto
+// the nearest slot within reach (inputs AND outputs at press; only the opposite
+// kind while a wire is being dropped), so litegraph's own hit tests just pass.
+function snapToSlot(c, e, want){
+  const s = c.ds.scale || 1, R = Math.min(36, Math.max(12, 22 / s)), RY = Math.min(10, R);
+  const x = e.canvasX, y = e.canvasY;
+  let best = null, bd = Infinity;
+  for (const n of (c.visible_nodes || [])){
+    if (!n || (n.flags && n.flags.collapsed) || (want && n === c.connecting_node)) continue;
+    if (x < n.pos[0] - R || x > n.pos[0] + n.size[0] + R || y < n.pos[1] - RY || y > n.pos[1] + n.size[1] + RY) continue;
+    for (const isIn of [true, false]){
+      const list = isIn ? n.inputs : n.outputs;
+      if (!list || (want === 'in' && !isIn) || (want === 'out' && isIn)) continue;
+      for (let i = 0; i < list.length; i++){
+        const p = n.getConnectionPos(isIn, i);
+        const dx = Math.abs(x - p[0]), dy = Math.abs(y - p[1]);
+        if (dx > R || dy > RY) continue;
+        const d = dx * dx + 4 * dy * dy;       // rows are close together, columns are not
+        if (d < bd){ bd = d; best = p; }
+      }
+    }
+  }
+  if (best){ e.canvasX = best[0]; e.canvasY = best[1]; }
+}
+// "＋ Nodo": litegraph's node search, centred on the view (the node lands there).
+function touchAddNode(){
+  if (!lcanvas) return;
+  const r = lcanvas.canvas.getBoundingClientRect();
+  const x = r.left + r.width / 2, y = r.top + Math.min(r.height * 0.3, 160);
+  LGraphCanvas.active_canvas = lcanvas;
+  // the prototype, not the instance: initGroupRename's wrapper would turn a
+  // centre that happens to sit on a group title into a rename
+  LGraphCanvas.prototype.showSearchBox.call(lcanvas, {
+    clientX: x, clientY: y, layerX: x - r.left, layerY: y - r.top,
+    preventDefault(){}, stopPropagation(){} });
+}
+// Phones: one pane at a time. body[data-mtab] = graph | view | panel.
+function setMobileTab(t){
+  document.body.dataset.mtab = t;
+  for (const b of document.querySelectorAll('.mtabs button')) b.classList.toggle('on', b.dataset.mtab === t);
+  requestAnimationFrame(()=>{ resizeGraph(); resizeViewer(); });
+}
+
+function initTouch(canvas){
+  const lc = lcanvas;
+  // ── HiDPI (see resizeGraph): graph space = CSS px × dpr on the backing store
+  lc.ds.toCanvasContext = function(ctx){
+    ctx.scale(TOUCH.dpr, TOUCH.dpr);
+    LiteGraph.DragAndScale.prototype.toCanvasContext.call(this, ctx);
+  };
+  lc.ds.computeVisibleArea = function(viewport){     // cull in CSS px, not device px
+    if (!this.element){ this.visible_area.fill(0); return; }
+    let w = this.element.width / TOUCH.dpr, h = this.element.height / TOUCH.dpr;
+    let x0 = -this.offset[0], y0 = -this.offset[1];
+    if (viewport){ x0 += viewport[0] / this.scale; y0 += viewport[1] / this.scale; w = viewport[2]; h = viewport[3]; }
+    this.visible_area[0] = x0; this.visible_area[1] = y0;
+    this.visible_area[2] = w / this.scale; this.visible_area[3] = h / this.scale;
+  };
+  const renderInfo = lc.renderInfo;
+  lc.renderInfo = function(ctx, x, y){
+    ctx.save(); ctx.scale(TOUCH.dpr, TOUCH.dpr);
+    renderInfo.call(this, ctx, x || 10, y || (this.canvas.height / TOUCH.dpr - 80));
+    ctx.restore();
+  };
+  lc.centerOnNode = function(node){                   // stock one halves by canvas.width
+    const r = this.canvas.getBoundingClientRect();
+    this.ds.offset[0] = -node.pos[0] - node.size[0] * 0.5 + (r.width * 0.5) / this.ds.scale;
+    this.ds.offset[1] = -node.pos[1] - node.size[1] * 0.5 + (r.height * 0.5) / this.ds.scale;
+    this.setDirty(true, true);
+  };
+  // ── fat-finger slots
+  const adjust = lc.adjustMouseEvent;
+  lc.adjustMouseEvent = function(e){
+    adjust.call(this, e);
+    if (!e.pointerType || e.pointerType === 'mouse' || TOUCH.selectMode) return;
+    if (e.type === 'pointerdown') snapToSlot(this, e, null);
+    else if (this.connecting_node && (e.type === 'pointermove' || e.type === 'pointerup'))
+      snapToSlot(this, e, this.connecting_output ? 'in' : 'out');
+  };
+
+  // ── pointer router: window capture runs before litegraph's canvas/document ones
+  const pts = new Map();   // non-mouse pointers that went down on the graph: id -> [x, y]
+  let lgId = null;         // the pointer litegraph is tracking
+  let pinch = null;        // {d, c} while two fingers are down
+  let tail = false;        // a pinch ended with a finger still down: swallow it
+  let lp = null;           // pending long-press
+  const shadow = (e, k, v)=>{ try { Object.defineProperty(e, k, {value: v, configurable: true}); } catch(_){} };
+  const pinchState = ()=>{
+    const [a, b] = [...pts.values()];
+    return { d: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, c: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] };
+  };
+  let eatTimer = null;
+  const eatClick = ev=>{ ev.stopPropagation(); ev.preventDefault(); };
+  const stopEating = ()=>{ clearTimeout(eatTimer); eatTimer = null; removeEventListener('click', eatClick, true); };
+  const cancelLongPress = ()=>{ if (lp){ clearTimeout(lp.timer); lp = null; } };
+  const fireLongPress = ()=>{
+    const p = lp; lp = null;
+    if (!p || pts.size !== 1) return;   // on a widget too: a slider being dragged is past 8px by now
+    const r = canvas.getBoundingClientRect(), ds = lc.ds;
+    const gx = (p.x - r.left) / ds.scale - ds.offset[0], gy = (p.y - r.top) / ds.scale - ds.offset[1];
+    const node = lgraph.getNodeOnPos(gx, gy, lc.visible_nodes, 5);
+    abortLitegraphGesture();
+    if (node && !lc.selected_nodes[node.id]) lc.selectNodes([node]);
+    try { navigator.vibrate && navigator.vibrate(12); } catch(_){}
+    // ContextMenu insists on a real Mouse/PointerEvent with a target: reuse the press
+    p.ev.canvasX = gx; p.ev.canvasY = gy;
+    LGraphCanvas.active_canvas = lc;
+    lc.processContextMenu(node, p.ev);
+    // the menu opens UNDER the finger: the click that lifting it produces would
+    // land on a menu entry. Swallow clicks until shortly after the lift (onUp).
+    addEventListener('click', eatClick, true);
+    eatTimer = setTimeout(stopEating, 5000);
+  };
+  const closeStrayDialogs = (e)=>{
+    for (const d of document.querySelectorAll('.litegraph.graphdialog'))
+      if (!d.contains(e.target) && typeof d.close === 'function') d.close();
+  };
+
+  addEventListener('pointerdown', e=>{
+    const mouse = e.pointerType === 'mouse';
+    setTouchUI(!mouse);
+    if (!mouse) closeStrayDialogs(e);
+    if (e.target !== canvas) return;
+    if (mouse){ lgId = e.pointerId; shadow(e, 'isPrimary', undefined); return; }
+    pts.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pts.size > 1){                    // a second finger: the view gesture takes over
+      e.stopImmediatePropagation(); e.preventDefault();
+      cancelLongPress(); abortLitegraphGesture();
+      if (pts.size === 2) pinch = pinchState();
+      return;
+    }
+    lgId = e.pointerId; shadow(e, 'isPrimary', undefined);
+    if (TOUCH.selectMode) shadow(e, 'ctrlKey', true);   // litegraph: Ctrl+drag = box select
+    cancelLongPress();
+    lp = { id: e.pointerId, x: e.clientX, y: e.clientY, ev: e, timer: setTimeout(fireLongPress, 500) };
+  }, true);
+
+  addEventListener('pointermove', e=>{
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, [e.clientX, e.clientY]);
+    if (lp && lp.id === e.pointerId && Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 8) cancelLongPress();
+    if (pinch){
+      e.stopImmediatePropagation(); e.preventDefault();
+      if (pts.size < 2) return;
+      const now = pinchState(), ds = lc.ds, r = canvas.getBoundingClientRect();
+      ds.offset[0] += (now.c[0] - pinch.c[0]) / ds.scale;      // pan with the centre…
+      ds.offset[1] += (now.c[1] - pinch.c[1]) / ds.scale;
+      ds.changeScale(ds.scale * now.d / pinch.d, [now.c[0] - r.left, now.c[1] - r.top]);   // …zoom about it
+      pinch = now;
+      lc.setDirty(true, true);
+      return;
+    }
+    if (tail || e.pointerId !== lgId) e.stopImmediatePropagation();
+  }, true);
+
+  const onUp = e=>{
+    const mine = pts.has(e.pointerId);
+    if (e.pointerId === lgId){
+      lgId = null;
+      if (mine && TOUCH.selectMode) shadow(e, 'ctrlKey', true);   // tap adds to the selection
+      if (e.type === 'pointercancel'){ abortLitegraphGesture(); lc.pointer_is_down = false; }
+    } else if (mine) e.stopImmediatePropagation();
+    if (!mine) return;
+    pts.delete(e.pointerId);
+    if (lp && lp.id === e.pointerId) cancelLongPress();
+    if (eatTimer){ clearTimeout(eatTimer); eatTimer = setTimeout(stopEating, 350); }
+    if (pinch && pts.size < 2){ pinch = null; tail = pts.size > 0; }
+    if (!pts.size) tail = false;
+  };
+  addEventListener('pointerup', onUp, true);
+  addEventListener('pointercancel', onUp, true);
+
+  // ── floating touch tools on the graph pane
+  const tools = document.createElement('div');
+  tools.className = 'touch-tools';
+  tools.innerHTML =
+    '<button class="tb-btn" id="tt-add" title="Aggiungi un nodo (anche: doppio tap sul canvas)">+ Nodo</button>'+
+    '<button class="tb-btn toggle" id="tt-select" title="Selezione: trascina un dito per un rettangolo, tocca per aggiungere un nodo">Seleziona</button>';
+  canvas.parentElement.appendChild(tools);
+  tools.querySelector('#tt-add').addEventListener('click', touchAddNode);
+  tools.querySelector('#tt-select').addEventListener('click', ()=> setSelectMode(!TOUCH.selectMode));
+
+  // ── phone layout tabs (shown by CSS under 800px only)
+  const tabs = document.createElement('div');
+  tabs.className = 'mtabs';
+  tabs.innerHTML = '<button data-mtab="graph">Grafo</button><button data-mtab="view">3D</button><button data-mtab="panel">Pannello</button>';
+  const ws = document.querySelector('.workspace');
+  ws.insertBefore(tabs, ws.firstChild);
+  tabs.addEventListener('click', e=>{ const b = e.target.closest('button'); if (b) setMobileTab(b.dataset.mtab); });
+  setMobileTab('graph');
+
+  setTouchUI(matchMedia('(pointer: coarse)').matches);
+  // any layout change (toolbar wrap, tab switch, touch-ui sizes) re-fits the backing store
+  if (window.ResizeObserver) new ResizeObserver(()=> resizeGraph()).observe(canvas.parentElement);
+}
 window.addEventListener('resize', ()=>{ resizeGraph(); resizeViewer(); });
 // picker modal controls
 document.getElementById('picker-confirm').addEventListener('click', ()=>closePicker(true));
@@ -5409,9 +6167,10 @@ document.addEventListener('keydown', e=>{   // Esc cancels the trace editor
  * ============================================================ */
 let lastSavedJSON = null;      // normalized graph last confirmed on disk
 let docState = 'none';         // none | saved | dirty | saving | failed
-let serverSaveTimer = null;
+let serverSaveTimer = null, lastObservedJSON = null;
 
 function setCurrentName(name){
+  document.getElementById('empty-guide').style.display = name ? 'none' : 'flex';
   document.getElementById('project-name').textContent = name || '— no graph —';
   document.getElementById('sb-graph').textContent = name || 'no graph';
   renderProjectList();
@@ -5448,29 +6207,40 @@ function maybeRestoreDraft(name){
 function checkDirty(){
   if (loadingGraph || !currentName || lastSavedJSON===null) return;
   let cur; try{ cur = JSON.stringify(toGraphJSON(currentName)); }catch(_){ return; }
+  if (cur === lastObservedJSON) return;
+  lastObservedJSON = cur;
+  clearTimeout(serverSaveTimer);
   if (cur === lastSavedJSON){
-    if (docState==='dirty') setDocState('saved');
-  } else if (docState!=='saving') {
-    if (docState!=='dirty') setDocState('dirty');
-    saveDraft(currentName, cur);          // instant local safety net
-    scheduleServerSave();                  // debounced server autosave
+    if (docState!=='saving') setDocState('saved');
+    clearDraft(currentName);
+  } else {
+    saveDraft(currentName, cur);
+    if (docState!=='saving') setDocState('dirty');
+    scheduleServerSave();
   }
 }
 function scheduleServerSave(){
   clearTimeout(serverSaveTimer);
-  serverSaveTimer = setTimeout(()=>{ if (docState==='dirty') persistToServer().then(ok=>ok&&refreshGraphList()); }, 2500);
+  const epoch = sessionEpoch;
+  serverSaveTimer = setTimeout(()=>{
+    serverSaveTimer = null;
+    if (epoch === sessionEpoch && docState==='dirty') persistToServer();
+  }, 2500);
 }
 async function guardUnsaved(){
+  checkDirty();
+  if (docState==='saving'){ await saveChain; checkDirty(); }
   if (docState!=='dirty' && docState!=='failed') return true;
   const choice = await confirmModal('Unsaved changes',
     'You have unsaved changes in “'+currentName+'”. Save before continuing?',
     [{id:'save',label:'Save',cls:'primary'},{id:'discard',label:'Discard',cls:'danger'},{id:'cancel',label:'Cancel'}]);
-  if (choice==='cancel') return false;
   if (choice==='save') return await persistToServer();
-  clearDraft(currentName); return true;   // discard
+  if (choice==='discard'){ clearDraft(currentName); return true; }
+  return false;   // cancel, overlay click, Esc
 }
 window.addEventListener('beforeunload', e=>{
-  if (docState==='dirty' || docState==='saving'){ e.preventDefault(); e.returnValue=''; return ''; }
+  checkDirty();
+  if (docState==='dirty' || docState==='saving' || docState==='failed'){ e.preventDefault(); e.returnValue=''; return ''; }
 });
 window.promptNewGraph = async function(){
   closeMenus();
@@ -5484,10 +6254,26 @@ window.deleteCurrentGraph = async function(){
     'Permanently delete “'+currentName+'” from disk? This cannot be undone.',
     [{id:'del',label:'Delete',cls:'danger'},{id:'cancel',label:'Cancel'}]);
   if (ok!=='del') return;
-  const gone = currentName;
-  await fetch(`${API}/api/projects/${gone}`, {method:'DELETE'});
+  const gone = currentName, epoch = sessionEpoch;
+  await saveChain;
+  if (epoch !== sessionEpoch) return;
+  stopRun();
+  if (runTask) await runTask;
+  if (epoch !== sessionEpoch) return;
+  try {
+    let res;
+    for (let attempt=0;attempt<15;attempt++){
+      res = await fetchTimed(`${API}/api/projects/${encodeURIComponent(gone)}`, {method:'DELETE'});
+      if (res.status !== 409) break;
+      await sleep(200);
+    }
+    if (!res.ok) throw new Error((await res.json()).detail || 'Server refused deletion');
+  } catch(e){ toast('error','Delete failed: '+e.message); return; }
+  if (epoch !== sessionEpoch) return;
   clearDraft(gone); localStorage.removeItem('noodle:last');
-  lgraph.clear(); currentName=null; lastSavedJSON=null; setCurrentName(null); setDocState('none');
+  resetProjectSession(); lgraph.clear(); loadingGraph = false;
+  currentName=null; lastSavedJSON=null; setCurrentName(null); setDocState('none');
+  histInit();
   await refreshGraphList();
   toast('success','Deleted “'+gone+'”');
 };
@@ -5545,12 +6331,29 @@ function toast(kind, msg, action){
 
 // generic modal helpers (return a Promise) ------------------------
 function buildModal(html){
+  const previous = document.activeElement;
   const ov=document.createElement('div'); ov.className='modal-overlay open';
-  ov.innerHTML='<div class="modal">'+html+'</div>';
+  ov.innerHTML='<div class="modal" role="dialog" aria-modal="true" tabindex="-1">'+html+'</div>';
+  const dialog = ov.firstElementChild, heading = dialog.querySelector('h3');
+  if (heading){ heading.id = 'modal-'+crypto.randomUUID(); dialog.setAttribute('aria-labelledby',heading.id); }
   document.body.appendChild(ov);
+  const focusable = ()=>Array.from(dialog.querySelectorAll('button:not(:disabled), input, select, textarea, [tabindex="0"]'));
+  setTimeout(()=>{ if(ov.isConnected) (focusable()[0] || dialog).focus(); },0);
   ov.addEventListener('click', e=>{ if(e.target===ov) close('cancel'); });
-  let resolver; const p=new Promise(r=>resolver=r);
-  function close(v){ ov.remove(); resolver(v); }
+  ov.addEventListener('keydown', e=>{
+    e.stopPropagation();
+    if(e.key==='Escape'){ e.preventDefault(); close('cancel'); }
+    if(e.key==='Tab'){
+      const list=focusable(), first=list[0]||dialog, last=list[list.length-1]||dialog;
+      if(e.shiftKey && (document.activeElement===first || document.activeElement===dialog)){ e.preventDefault(); last.focus(); }
+      else if(!e.shiftKey && (document.activeElement===last || document.activeElement===dialog)){ e.preventDefault(); first.focus(); }
+    }
+  });
+  let resolver, closed=false; const p=new Promise(r=>resolver=r);
+  function close(v){
+    if(closed) return; closed=true; ov.remove();
+    if(previous && previous.isConnected) previous.focus(); resolver(v);
+  }
   return {ov, close, p};
 }
 function confirmModal(title, body, buttons){
@@ -5559,7 +6362,7 @@ function confirmModal(title, body, buttons){
   for(const b of buttons){ const el=document.createElement('button');
     el.className='tb-btn '+(b.cls==='primary'?'primary':b.cls==='danger'?'danger':'');
     el.textContent=b.label; el.onclick=()=>m.close(b.id); bar.appendChild(el); }
-  return m.p;
+  return m.p.then(v => (v === 'cancel' || v == null) ? null : v);
 }
 function promptModal(title, label, def){
   const m=buildModal(`<h3>${title}</h3><p>${label}</p>`+
@@ -5570,7 +6373,7 @@ function promptModal(title, label, def){
   m.ov.querySelector('#__pc').onclick=()=>m.close(null);
   m.ov.querySelector('#__po').onclick=()=>m.close(inp.value.trim());
   inp.addEventListener('keydown',e=>{ if(e.key==='Enter')m.close(inp.value.trim()); if(e.key==='Escape')m.close(null); });
-  return m.p;
+  return m.p.then(v=>v === 'cancel' ? null : v);
 }
 function showRestoreModal(name, d){
   const cur = JSON.parse(lastSavedJSON), dr = JSON.parse(d.json);
@@ -5706,7 +6509,7 @@ window.importModel = function(){
         const r=await fetch(`${API}/api/graph/${encodeURIComponent(currentName)}/import`,{method:'POST',body:fd});
         if(!r.ok) throw new Error((await r.json().catch(()=>({}))).detail||r.statusText);
         const d=await r.json();
-        await openGraph(currentName);     // reload so the new Import node shows on the canvas
+        await syncPullNow();              // merge so the new Import node shows on the canvas
         toast(`Imported <code>${d.file}</code> as ${d.node_type}.`,'success');
         runGraph();
       }catch(e){ setStatus('import failed','err'); toast('Import failed: '+(e.message||e),'error'); }
@@ -5838,8 +6641,10 @@ function refreshHealthText(){
 async function pollHealth(){
   if (restarting) return;
   try{
-    const r=await fetch(`${API}/api/system/health`,{cache:'no-store'});
-    backendOnline = r.ok; setHealth(r.ok?'online':'offline');
+    const r=await fetchTimed(`${API}/api/system/health`,{cache:'no-store'}, 3000);
+    const state = r.ok ? await r.json() : {};
+    backendOnline = r.ok; setHealth(r.ok ? (state.busy || state.queued ? 'busy' : 'online') : 'offline');
+    if (state.queued) document.getElementById('health').title = `Backend busy · ${state.queued} queued`;
   }catch(_){ backendOnline=false; setHealth('offline'); }
   refreshHealthText();
 }
@@ -5899,11 +6704,14 @@ function paletteCommands(){
     {ic:'＋',label:'New project…', k:'Ctrl+N', run:()=>promptNewGraph()},
     {ic:'⬆',label:'Import model (STEP/STL/SVG/DXF)…', k:'', run:()=>importModel()},
     {ic:'⛶', label:'Fit to view', k:'F', run:()=>frameView()},
+    ...clarityCommands(),
     {ic:'▦', label:'Toggle grid', k:'', run:()=>toggleGrid()},
     {ic:'⧉', label:'Toggle perspective / orthographic', k:'O', run:()=>toggleProjection()},
     {ic:'◎', label:'Isolate selected shapes', k:'I', run:()=>toggleIsolate()},
     {ic:'📁', label:'Open file library', k:'', run:()=>{ location.href='/library'; }},
-    {ic:'⬇', label:'Export STEP', k:'', run:()=>exportStep()},
+    {ic:'📦', label:'Export everything visible (STEP+STL zip)', k:'', run:()=>exportStep('bundle')},
+    {ic:'⬇', label:'Export STEP (result)', k:'', run:()=>exportStep('step')},
+    {ic:'⬇', label:'Export…', k:'', run:()=>exportStep()},
     {ic:'⛌', label:'Open backend console', k:'', run:()=>openConsole()},
     {ic:'⟳', label:'Restart backend…', k:'', run:()=>confirmRestart()},
     {ic:'🐞',label:'Send feedback / report…', k:'', run:()=>openFeedback()},
@@ -5948,6 +6756,674 @@ function renderPalette(keepSel){
 function runPalette(i){ const c=palItems[i]; closePalette(); if(c) c.run(); }
 
 /* ============================================================ *
+ *  Graph clarity — BEGIN                                       *
+ *  Readability aids for a big graph. Self-contained: the only  *
+ *  hooks outside this block are one call in initGraph(), the   *
+ *  collapsed flag in toGraphJSON/createNodeFromData, one       *
+ *  spread in paletteCommands() and arrangeGraph('auto').       *
+ *  1 lineage highlight · 4 derived titles · 6 minimap          *
+ * ============================================================ */
+// Toggles, each remembered per browser (a convenience, not graph state).
+const CLARITY_KEYS = {lineage: 'noodle:settings:lineage', minimap: 'noodle:settings:minimap', autoTitle: 'noodle:settings:autoTitle'};
+// The minimap defaults OFF on a phone-width pane: 190×130 there is a third of
+// the canvas, right where one-finger pans and long-presses land.
+const clarity = {lineage: true, minimap: !matchMedia('(max-width: 800px)').matches,
+                 autoTitle: true, mm: null, mmDrag: false};
+for (const k in CLARITY_KEYS){
+  try { const v = localStorage.getItem(CLARITY_KEYS[k]); if (v != null) clarity[k] = v === '1'; } catch(_){}
+}
+function toggleClarity(k){
+  clarity[k] = !clarity[k];
+  try { localStorage.setItem(CLARITY_KEYS[k], clarity[k] ? '1' : '0'); } catch(_){}
+  _derived.t = 0;
+  lcanvas && lcanvas.setDirty(true, true);
+  setStatus(({lineage:'lignaggio', minimap:'minimappa', autoTitle:'titoli derivati'})[k] + (clarity[k] ? ' on' : ' off'), 'ok');
+}
+function clarityCommands(){
+  const on = k => clarity[k] ? ' ✓' : '';
+  return [
+    {ic:'⊞', label:'Riordina + gruppi automatici', k:'', run:()=>arrangeGraph('auto')},
+    {ic:'⇄', label:'Evidenzia lignaggio della selezione' + on('lineage'), k:'', run:()=>toggleClarity('lineage')},
+    {ic:'▣', label:'Minimappa' + on('minimap'), k:'', run:()=>toggleClarity('minimap')},
+    {ic:'≡', label:'Titoli derivati (ListItem…)' + on('autoTitle'), k:'', run:()=>toggleClarity('autoTitle')},
+  ];
+}
+
+// ── 1. lineage: everything the selection depends on and everything it feeds ──
+const _lin = {key: null, up: new Set(), down: new Set(), all: new Set()};
+function lineageOf(sel){
+  const key = sel.map(n => n.id).sort().join(',') + '|' + (lgraph._version || 0) + '|' + Object.keys(lgraph.links || {}).length;
+  if (key === _lin.key) return _lin;
+  const walk = (start, dir) => {
+    const seen = new Set(), stack = start.slice();
+    while (stack.length){
+      const n = stack.pop();
+      const slots = dir === 'up' ? (n.inputs || []).map(s => s.link).filter(l => l != null)
+                                 : (n.outputs || []).flatMap(s => s.links || []);
+      for (const lid of slots){
+        const l = lgraph.links[lid]; if (!l) continue;
+        const m = lgraph.getNodeById(dir === 'up' ? l.origin_id : l.target_id);
+        if (m && !seen.has(m)){ seen.add(m); stack.push(m); }
+      }
+    }
+    return seen;
+  };
+  _lin.key = key; _lin.up = walk(sel, 'up'); _lin.down = walk(sel, 'down');
+  _lin.all = new Set([...sel, ..._lin.up, ..._lin.down]);
+  return _lin;
+}
+function _nodeRect(n){
+  const th = LiteGraph.NODE_TITLE_HEIGHT || 30;
+  const w = n.flags.collapsed ? (n._collapsed_width || LiteGraph.NODE_COLLAPSED_WIDTH || n.size[0]) : n.size[0];
+  const h = n.flags.collapsed ? th : n.size[1] + th;
+  return [n.pos[0] - 4, n.pos[1] - th - 4, w + 8, h + 8];
+}
+function drawLineage(ctx, c){
+  if (!clarity.lineage) return;
+  const sel = Object.values(c.selected_nodes || {});
+  if (!sel.length || c.node_dragged) return;
+  const lin = lineageOf(sel);
+  if (lin.all.size >= lgraph._nodes.length) return;      // everything is lineage: nothing to dim
+  const s = c.ds.scale || 1, va = c.visible_area;
+  ctx.save();
+  // One veil over the view with a hole per lineage node (even-odd), so the
+  // rest recedes without a draw call per dimmed node.
+  ctx.beginPath();
+  ctx.rect(va[0], va[1], va[2], va[3]);
+  for (const n of lin.all){ const r = _nodeRect(n); ctx.rect(r[0], r[1], r[2], r[3]); }
+  ctx.fillStyle = 'rgba(8,10,16,0.62)';
+  ctx.fill('evenodd');
+  // Re-draw the lineage's own wires on top of the veil: upstream cyan, downstream amber.
+  ctx.lineWidth = 3 / Math.min(s, 1.5);
+  for (const id in lgraph.links){
+    const l = lgraph.links[id]; if (!l) continue;
+    const a = lgraph.getNodeById(l.origin_id), b = lgraph.getNodeById(l.target_id);
+    if (!a || !b || !lin.all.has(a) || !lin.all.has(b)) continue;
+    const p = a.getConnectionPos(false, l.origin_slot), q = b.getConnectionPos(true, l.target_slot);
+    const d = Math.hypot(q[0] - p[0], q[1] - p[1]) * 0.25;
+    ctx.strokeStyle = lin.down.has(b) ? 'rgba(245,158,11,0.95)' : 'rgba(56,189,248,0.95)';
+    ctx.beginPath(); ctx.moveTo(p[0], p[1]);
+    ctx.bezierCurveTo(p[0] + d, p[1], q[0] - d, q[1], q[0], q[1]);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ── 4. derived titles: a nameless ListItem says what it picks and for whom ──
+const _derived = {t: 0, map: new Map()};
+const _measure = document.createElement('canvas').getContext('2d');
+function _userTitle(n){ return n && n.cadType && n.title && n.title !== defaultTitleOf(n.cadType) ? n.title : ''; }
+function _fit(text, width){
+  _measure.font = (LiteGraph.NODE_TEXT_SIZE || 14) + 'px Arial';
+  if (_measure.measureText(text).width <= width) return text;
+  while (text.length > 4 && _measure.measureText(text + '…').width > width) text = text.slice(0, -1);
+  return text.trimEnd() + '…';
+}
+function _srcOf(n, name){
+  const i = (n.inputs || []).findIndex(s => (s.cadName || s.name) === name && s.link != null);
+  const inp = i >= 0 ? n.inputs[i] : (n.inputs || []).find(s => s.link != null);
+  const l = inp && lgraph.links[inp.link];
+  return l ? lgraph.getNodeById(l.origin_id) : null;
+}
+// Nearest user-named node downstream: [names at the smallest depth].
+function _namedBelow(n, maxDepth){
+  let front = [n]; const seen = new Set([n]);
+  for (let d = 0; d < maxDepth && front.length; d++){
+    const next = [], names = [];
+    for (const m of front) for (const o of (m.outputs || [])) for (const lid of (o.links || [])){
+      const l = lgraph.links[lid], t = l && lgraph.getNodeById(l.target_id);
+      if (!t || seen.has(t)) continue;
+      seen.add(t); next.push(t);
+      const u = _userTitle(t); if (u && !names.includes(u)) names.push(u);
+    }
+    if (names.length) return names;
+    front = next;
+  }
+  return [];
+}
+function _namedAbove(n, maxDepth){
+  let m = n;
+  for (let d = 0; d < maxDepth; d++){
+    m = _srcOf(m, null); if (!m) return '';
+    const u = _userTitle(m); if (u) return u;
+    // A nameless feeder (a ListItem) is often shared with ONE named sibling:
+    // ExportSTL and ToMesh -> PrintCheck "Stampa frontale" off the same pick.
+    const sib = _namedBelow(m, 3); if (sib.length === 1) return sib[0];
+  }
+  return '';
+}
+function _short(t){ return t.length > 14 ? t.split(/\s+/)[0] : t; }
+function derivedTitle(n){
+  if (!clarity.autoTitle || !n.cadType || _userTitle(n) || n.cadType === 'Note') return '';
+  const now = performance.now();
+  if (now - _derived.t > 400){ _derived.t = now; _derived.map = new Map(); }
+  if (_derived.map.has(n)) return _derived.map.get(n);
+  let out = '';
+  const def = catalog[n.cadType];
+  const idxW = (n.widgets || []).find(w => w.cadParam === 'index');
+  const isPick = idxW && (n.inputs || []).some(s => (s.cadName || s.name) === 'list');
+  if (isPick){
+    const up = _srcOf(n, 'list');
+    const below = _namedBelow(n, 4);
+    const head = `${_short(_userTitle(up) || (up ? defaultTitleOf(up.cadType) : '?'))}[${idxW.value}]`;
+    out = below.length ? `${head} → ${below[0]}${below.length > 1 ? ' +' + (below.length - 1) : ''}` : head;
+  } else if (def && def.category !== 'input' && (n.inputs || []).some(s => s.link != null)){
+    const below = _namedBelow(n, 3);
+    const ctx = below.length === 1 ? below[0] : _namedAbove(n, 3);
+    if (ctx) out = `${defaultTitleOf(n.cadType)} · ${ctx}`;
+  }
+  if (out) out = _fit(out, n.size[0] - (LiteGraph.NODE_TITLE_HEIGHT || 30) - 10);
+  _derived.map.set(n, out);
+  return out;
+}
+
+// ── 6. minimap: the whole graph in a corner, click or drag to go there ──
+function drawMinimap(ctx){
+  const c = lcanvas, nodes = lgraph && lgraph._nodes;
+  clarity.mm = null;
+  if (!clarity.minimap || !nodes || nodes.length < 2) return;
+  const cv = c.canvas, dpr = cv.width / (cv.clientWidth || cv.width);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const n of nodes){ const r = _nodeRect(n); x0 = Math.min(x0, r[0]); y0 = Math.min(y0, r[1]); x1 = Math.max(x1, r[0] + r[2]); y1 = Math.max(y1, r[1] + r[3]); }
+  const W = 190 * dpr, H = 130 * dpr, pad = 10 * dpr, inner = 6 * dpr;
+  const mx = cv.width - W - pad, my = cv.height - H - pad;
+  const s = Math.min((W - 2 * inner) / (x1 - x0 || 1), (H - 2 * inner) / (y1 - y0 || 1));
+  const ox = mx + (W - (x1 - x0) * s) / 2 - x0 * s, oy = my + (H - (y1 - y0) * s) / 2 - y0 * s;
+  clarity.mm = {mx, my, W, H, s, ox, oy, dpr};
+  const sel = c.selected_nodes || {};
+  const lin = clarity.lineage && Object.keys(sel).length ? lineageOf(Object.values(sel)).all : null;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = 'rgba(11,14,20,0.85)'; ctx.strokeStyle = '#2a3446'; ctx.lineWidth = dpr;
+  ctx.fillRect(mx, my, W, H); ctx.strokeRect(mx + .5, my + .5, W - 1, H - 1);
+  for (const g of (lgraph._groups || [])){
+    const b = g._bounding; if (!b) continue;
+    ctx.fillStyle = (g.color || '#335') + '55';
+    ctx.fillRect(ox + b[0] * s, oy + b[1] * s, b[2] * s, b[3] * s);
+  }
+  for (const n of nodes){
+    const r = _nodeRect(n);
+    ctx.fillStyle = sel[n.id] ? '#22d3ee' : (sync.flash[graphIdOf(n)] ? '#f59e0b' : (lin && !lin.has(n) ? '#2b3240' : '#6b7a92'));
+    ctx.fillRect(ox + r[0] * s, oy + r[1] * s, Math.max(r[2] * s, 1.5 * dpr), Math.max(r[3] * s, 1.5 * dpr));
+  }
+  const va = c.visible_area;
+  ctx.save(); ctx.beginPath(); ctx.rect(mx, my, W, H); ctx.clip();
+  ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 1.2 * dpr;
+  ctx.strokeRect(ox + va[0] * s, oy + va[1] * s, va[2] * s, va[3] * s);
+  ctx.restore();
+  ctx.restore();
+}
+function _mmHit(e){
+  const m = clarity.mm, cv = lcanvas && lcanvas.canvas; if (!m || !cv) return null;
+  const r = cv.getBoundingClientRect();
+  const px = (e.clientX - r.left) * m.dpr, py = (e.clientY - r.top) * m.dpr;
+  if (px < m.mx || py < m.my || px > m.mx + m.W || py > m.my + m.H) return null;
+  return [(px - m.ox) / m.s, (py - m.oy) / m.s];
+}
+function _mmGo(g){
+  const c = lcanvas, va = c.visible_area;
+  c.ds.offset[0] += (va[0] + va[2] / 2) - g[0];
+  c.ds.offset[1] += (va[1] + va[3] / 2) - g[1];
+  c.setDirty(true, true);
+}
+function initMinimap(){
+  const pane = lcanvas.canvas.parentElement;
+  const down = e => {
+    const g = _mmHit(e); if (!g) return;
+    e.stopPropagation(); e.preventDefault();
+    if (e.type === 'mousedown' && clarity.mmDrag) return;   // the pointerdown twin
+    clarity.mmDrag = true; _mmGo(g);
+  };
+  // Capture on the PARENT: it runs before litegraph's own listeners on the canvas.
+  pane.addEventListener('pointerdown', down, true);
+  pane.addEventListener('mousedown', down, true);
+  window.addEventListener('pointermove', e => {
+    if (!clarity.mmDrag || !clarity.mm) return;
+    const m = clarity.mm, r = lcanvas.canvas.getBoundingClientRect();
+    _mmGo([((e.clientX - r.left) * m.dpr - m.ox) / m.s, ((e.clientY - r.top) * m.dpr - m.oy) / m.s]);
+  }, true);
+  const up = () => { clarity.mmDrag = false; };
+  window.addEventListener('pointerup', up, true); window.addEventListener('mouseup', up, true);
+  const _ov = lcanvas.onDrawOverlay;
+  lcanvas.onDrawOverlay = function(ctx){ if (_ov) _ov.call(this, ctx); drawMinimap(ctx); };
+}
+
+function initGraphClarity(){
+  // Collapsing from the node menu happens in a DOM menu, not on the canvas, so
+  // the canvas pointerup that normally snapshots history never sees it.
+  const _collapse = LGraphNode.prototype.collapse;
+  LGraphNode.prototype.collapse = function(force){
+    const r = _collapse.call(this, force);
+    if (!loadingGraph) scheduleHistory();
+    return r;
+  };
+  // Our overlays sit UNDER the selection ring drawn by the original hook.
+  const _fg = lcanvas.onDrawForeground;
+  lcanvas.onDrawForeground = function(ctx, rect){
+    const s = this.ds.scale || 1;
+    drawLineage(ctx, this);
+    drawSyncFlash(ctx, s);
+    if (_fg) _fg.call(this, ctx, rect);
+  };
+  // Derived titles are DISPLAY only: toGraphJSON reads node.title, never this.
+  const _gt = LGraphNode.prototype.getTitle;
+  LGraphNode.prototype.getTitle = function(){ return derivedTitle(this) || _gt.call(this); };
+  // Canvas right-click: the same toggles as the ⌘K palette.
+  lcanvas.getExtraMenuOptions = () => [null, ...clarityCommands().map(c => ({content: c.ic + ' ' + c.label, callback: c.run}))];
+  initMinimap();
+  initLiveSync();
+}
+/* ============================ Graph clarity — END ============ */
+
+/* ============================================================ *
+ *  Live sync — BEGIN                                           *
+ *  The editor and an agent (API / MCP / copilot) writing the   *
+ *  same graph.json. Every save names its base version; the     *
+ *  server refuses a stale one (409). A 1.5s poll of            *
+ *  /version notices outside writes and MERGES them into the    *
+ *  canvas (server-side merge3: cad_nodes/graph_merge.py):      *
+ *  one-sided changes apply, true conflicts keep the human's    *
+ *  value and are asked about per node. Undo snapshots are      *
+ *  rebased so Ctrl+Z never takes an agent's edit back out.     *
+ * ============================================================ */
+const sync = {
+  name: null, version: null, baseRaw: null,   // the disk version the canvas is based on
+  epoch: 0,             // bumped by every save: a poll that straddles one is stale
+  merging: false, polling: false,
+  needsWrite: false,    // the loaded file needed an editor-side migration
+  conflicts: [],        // unresolved, per node; saving is held until they are
+  flash: {},            // graph id -> time the "changed by agent" glow ends
+  extTimes: [],         // when outside edits arrived (the "AI is editing" pill)
+};
+const _clone = o => o == null ? o : JSON.parse(JSON.stringify(o));
+
+function syncNeedsMigration(raw){
+  const ns = (raw && raw.nodes) || [];
+  if (ns.some(n => n.type === 'Panel')) return true;
+  const unions = new Set(ns.filter(n => n.type === 'Union').map(n => n.id));
+  return ((raw && raw.connections) || []).some(c => unions.has(c.to_node) && (c.to_socket === 'a' || c.to_socket === 'b'));
+}
+function syncLoaded(name, version, raw){
+  sync.name = name; sync.version = version || null; sync.baseRaw = _clone(raw);
+  sync.needsWrite = syncNeedsMigration(raw); sync.epoch++;
+  sync.conflicts = []; sync.flash = {}; renderConflicts();
+}
+function syncBaseQuery(){
+  return (sync.version && sync.name === currentName) ? `?base_version=${encodeURIComponent(sync.version)}` : '';
+}
+// A save of exactly what the disk already holds would only bump the version
+// (and 409 an agent that is holding it) — e.g. every Live run saves first.
+function syncCanSkipEcho(json){
+  return json === lastSavedJSON && !!sync.version && sync.name === currentName && !sync.needsWrite;
+}
+function syncMaySave(){
+  if (sync.merging) return false;
+  if (sync.conflicts.length){ renderConflicts(); setDocState('dirty'); return false; }
+  return true;
+}
+function syncSaveStarted(){ sync.epoch++; }
+function syncSaved(payload, version){
+  sync.epoch++;
+  if (version){ sync.version = version; sync.baseRaw = _clone(payload); sync.name = currentName; }
+  sync.needsWrite = false;
+}
+// A 409 on save: merge the disk version in. True = merged cleanly, and the
+// queued write in persistToServer saves the merged canvas again (bounded there).
+async function syncOnStaleSave(res){
+  const body = await res.json().catch(()=>({}));
+  const d = body.detail || {};
+  setDocState('dirty');
+  const ok = d.graph ? await syncPull(currentName, {version: d.version, graph: d.graph}) : false;
+  if (ok && !sync.conflicts.length) return true;
+  if (!ok) scheduleServerSave();              // busy right now: try again shortly
+  return false;
+}
+
+// Is the human in the middle of something a canvas update would disrupt?
+let _syncPointer = false;
+function syncBusy(){
+  const c = lcanvas; if (!c) return true;
+  if (_syncPointer || c.node_dragged || c.dragging_canvas || c.connecting_node ||
+      c.resizing_node || c.dragging_rectangle || c.node_widget || c.node_capturing_input) return true;
+  if (gizmoNode || sketchNode) return true;
+  return !!document.querySelector('.modal-overlay, #picker.open, #tracer.open, .graphdialog, .litesearchbox');
+}
+
+async function syncPoll(){
+  if (window.__noodleShot || !currentName || sync.name !== currentName) return;
+  if (sync.polling || sync.merging || docState === 'saving') return;
+  const name = currentName, epoch = sync.epoch;
+  sync.polling = true;
+  try {
+    const r = await fetch(`${API}/api/graph/${encodeURIComponent(name)}/version`, {cache:'no-store'});
+    if (!r.ok) return;
+    const {version} = await r.json();
+    if (name !== currentName || epoch !== sync.epoch || docState === 'saving') return;
+    if (version && version !== sync.version) await syncPull(name);
+  } catch(_){ /* offline: the health pill already says so */ }
+  finally { sync.polling = false; }
+}
+window.syncPullNow = async function(){ if (currentName) await syncPull(currentName); };
+
+// Bring the canvas up to date with `given` ({version, graph}) or the disk.
+// Returns true once the canvas is based on that version.
+async function syncPull(name, given){
+  if (sync.merging) return false;
+  sync.merging = true;
+  try {
+    let v, theirs;
+    if (given){ v = given.version; theirs = given.graph; }
+    else {
+      const r = await fetch(`${API}/api/graph/${encodeURIComponent(name)}/version?graph=1`, {cache:'no-store'});
+      if (!r.ok) return false;
+      ({version: v, graph: theirs} = await r.json());
+    }
+    if (name !== currentName || !theirs) return false;
+    if (v === sync.version) return true;
+    if (syncBusy()) return false;             // the next poll tries again
+    const mine = toGraphJSON(name), mineStr = JSON.stringify(mine);
+    const wasDirty = mineStr !== lastSavedJSON;
+    let m;
+    if (!sync.baseRaw || !lastSavedJSON){      // nothing to merge against: take theirs if clean
+      if (wasDirty) return false;
+      m = {graph: theirs, conflicts: [], changed: [], ops: null, base_next: theirs};
+    } else {
+      const r = await fetch(`${API}/api/graph/${encodeURIComponent(name)}/merge`, {method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({base_mine: JSON.parse(lastSavedJSON), mine, base_theirs: sync.baseRaw, theirs})});
+      if (!r.ok) return false;
+      m = await r.json();
+    }
+    // The human changed something while we were away: start over next tick.
+    if (name !== currentName || syncBusy() || JSON.stringify(toGraphJSON(name)) !== mineStr) return false;
+
+    applyMergedGraph(m.graph);
+    sync.version = v; sync.baseRaw = _clone(theirs); sync.epoch++;
+    sync.needsWrite = syncNeedsMigration(theirs);
+    rebaseHistory(m.ops);
+    if (wasDirty || m.conflicts.length){
+      lastSavedJSON = JSON.stringify(m.base_next);   // what is on disk, in our spelling
+      lastObservedJSON = null;                       // let checkDirty re-arm the autosave
+    } else {
+      lastSavedJSON = JSON.stringify(toGraphJSON(name));
+      clearDraft(name); setDocState('saved');
+    }
+    sync.conflicts = m.conflicts || [];
+    renderConflicts();
+    announceExternal(m.changed || [], sync.conflicts.length);
+    if (!sync.conflicts.length && (m.changed || []).length) scheduleLive();
+    return true;
+  } catch(e){ log('live sync: '+(e.message||e), 'err'); return false; }
+  finally { sync.merging = false; }
+}
+
+// ── put a merged graph on the canvas: patch in place when only values moved,
+//    rebuild (keeping viewport + selection) when the structure changed ──
+const SYNC_FIELDS = ['title','position','collapsed','bypassed','preview','color','finish','wireframe'];
+const SYNC_NOPATCH = new Set(['code','_cb','_ui','selection','trace']);
+const _jeq = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+function _connKeys(g){
+  return (g.connections||[]).map(c => [c.from_node,c.from_socket,c.to_node,c.to_socket].join('|')).sort();
+}
+function _liveByGid(){ const o = {}; for (const n of lgraph._nodes) o[graphIdOf(n)] = n; return o; }
+
+function patchPlan(cur, next, live){
+  if (!_jeq(_connKeys(cur), _connKeys(next)) || !_jeq(cur.groups||[], next.groups||[])) return null;
+  const a = {}; for (const n of cur.nodes) a[n.id] = n;
+  if (cur.nodes.length !== next.nodes.length) return null;
+  const plan = [];
+  for (const y of next.nodes){
+    const x = a[y.id], node = live[y.id];
+    if (!x || !node || x.type !== y.type || !_jeq(x.multi||[], y.multi||[]) || !_jeq(x.size, y.size)) return null;
+    const px = x.params||{}, py = y.params||{}, params = [];
+    for (const k of new Set([...Object.keys(px), ...Object.keys(py)])){
+      if (_jeq(px[k], py[k])) continue;
+      if (SYNC_NOPATCH.has(k) || !(k in py)) return null;
+      const hasW = (node.widgets||[]).some(w => w.cadParam === k) || node._noteParam === k;
+      if (!hasW) return null;
+      params.push(k);
+    }
+    const fields = SYNC_FIELDS.filter(f => !_jeq(x[f], y[f]));
+    if (params.length || fields.length) plan.push({node, nd: y, params, fields});
+  }
+  return plan;
+}
+function patchNode({node, nd, params, fields}){
+  for (const k of params){
+    const v = nd.params[k];
+    // ALL of them: a bounded number is two widgets (the slider and its ✎ field).
+    for (const w of (node.widgets||[])) if (w.cadParam === k) w.value = v;
+    node.properties[k] = v;
+  }
+  for (const f of fields){
+    const v = nd[f];
+    if (f === 'title'){ node.title = v || defaultTitleOf(node.cadType); resizeNode(node); }
+    else if (f === 'position') node.pos = [v[0], v[1]];
+    else if (f === 'collapsed') node.flags.collapsed = !!v;
+    else if (f === 'bypassed'){ node.bypassed = !!v; node.mode = v ? LiteGraph.NEVER : LiteGraph.ALWAYS; }
+    else if (f === 'preview'){
+      node.previewMode = v === true ? 'on' : v === false ? 'off' : 'auto';
+      for (const w of (node.widgets||[])) if (w.isEye) w.name = eyeLabel(node.previewMode);
+    }
+    else if (f === 'color') node.previewColor = v || undefined;
+    else if (f === 'finish') node.previewFinish = v || undefined;
+    else if (f === 'wireframe') node.wireframe = !!v;
+  }
+}
+function applyMergedGraph(merged){
+  const cur = toGraphJSON(currentName);
+  const plan = patchPlan(cur, merged, _liveByGid());
+  if (plan){
+    for (const p of plan) patchNode(p);
+    if (plan.some(p => p.fields.some(f => f === 'color' || f === 'finish' || f === 'wireframe'))) refreshDisplay();
+    refreshAllSubtypes();
+    lgraph.setDirtyCanvas(true, true);
+    return 'patch';
+  }
+  const sel = selectedNodes().map(graphIdOf);
+  histSuspend = true;
+  try { fromGraphJSON(_clone(merged)); } finally { histSuspend = false; }
+  const live = _liveByGid(), back = sel.map(i => live[i]).filter(Boolean);
+  if (back.length && lcanvas.selectNodes) lcanvas.selectNodes(back);
+  return 'rebuild';
+}
+
+// Replay theirs' changes onto every undo/redo snapshot, so stepping back
+// through the human's own history never un-does the agent's edit.
+function applyOps(g, ops){
+  const find = id => (g.nodes||[]).find(n => n.id === id);
+  for (const o of ops || []){
+    if (o.op === 'rename'){
+      for (const n of g.nodes||[]) if (n.id === o.from) n.id = o.to;
+      for (const c of g.connections||[]){ if (c.from_node === o.from) c.from_node = o.to; if (c.to_node === o.from) c.to_node = o.to; }
+    } else if (o.op === 'node_set'){
+      const n = find(o.id); if (!n) continue;
+      if (o.field.startsWith('params.')){
+        const k = o.field.slice(7); n.params = n.params || {};
+        if (o.absent) delete n.params[k]; else n.params[k] = _clone(o.value);
+      } else if (o.value == null) delete n[o.field]; else n[o.field] = _clone(o.value);
+    } else if (o.op === 'node_add'){
+      if (!find(o.node.id)) (g.nodes = g.nodes || []).push(_clone(o.node));
+    } else if (o.op === 'node_del'){
+      g.nodes = (g.nodes||[]).filter(n => n.id !== o.id);
+      g.connections = (g.connections||[]).filter(c => c.from_node !== o.id && c.to_node !== o.id);
+    } else if (o.op === 'conn_add'){
+      const c = o.conn, k = [c.from_node,c.from_socket,c.to_node,c.to_socket].join('|');
+      if (find(c.from_node) && find(c.to_node) && !_connKeys(g).includes(k)) (g.connections = g.connections || []).push(_clone(c));
+    } else if (o.op === 'conn_del'){
+      const k = o.key.join('|');
+      g.connections = (g.connections||[]).filter(c => [c.from_node,c.from_socket,c.to_node,c.to_socket].join('|') !== k);
+    } else if (o.op === 'groups'){
+      if (o.value && o.value.length) g.groups = _clone(o.value); else delete g.groups;
+    }
+  }
+  return g;
+}
+function rebaseHistory(ops){
+  if (ops === null){ histInit(); return; }     // no merge was possible: history restarts
+  const re = s => { try { return JSON.stringify(applyOps(JSON.parse(s), ops)); } catch(_){ return s; } };
+  for (let i = 0; i < undoStack.length; i++) undoStack[i] = re(undoStack[i]);
+  for (let i = 0; i < redoStack.length; i++) redoStack[i] = re(redoStack[i]);
+  histBase = histSnapshot();                   // the merged canvas is the present
+  updateUndoButtons();
+}
+
+// ── telling the human, without getting in their way ──
+function announceExternal(changed, nConflicts){
+  const now = performance.now();
+  for (const id of changed) sync.flash[id] = now + 2600;
+  sync.extTimes = sync.extTimes.filter(t => now - t < 20000).concat(now);
+  const burst = sync.extTimes.length >= 2;
+  const pill = document.getElementById('sync-pill');
+  if (pill){
+    pill.classList.toggle('on', burst);
+    clearTimeout(pill._t); pill._t = setTimeout(()=> pill.classList.remove('on'), 12000);
+  }
+  if (!burst && changed.length && !nConflicts)
+    toast('info', `${changed.length} ${changed.length === 1 ? 'nodo aggiornato' : 'nodi aggiornati'} dall'esterno (agente/API)`);
+  if (changed.length) syncFlashLoop();
+}
+function syncFlashLoop(){
+  const live = Object.values(sync.flash).some(t => t > performance.now());
+  lcanvas && lcanvas.setDirty(true, false);
+  if (live) requestAnimationFrame(syncFlashLoop); else sync.flash = {};
+}
+function drawSyncFlash(ctx, scale){
+  const now = performance.now(), th = LiteGraph.NODE_TITLE_HEIGHT || 30;
+  let live = null;
+  for (const id in sync.flash){
+    const left = sync.flash[id] - now; if (left <= 0) continue;
+    live = live || _liveByGid();
+    const n = live[id]; if (!n) continue;
+    const a = Math.min(1, left / 900);
+    const w = n.flags.collapsed ? (n._collapsed_width || n.size[0]) : n.size[0];
+    const h = n.flags.collapsed ? th : n.size[1] + th;
+    ctx.save();
+    ctx.globalAlpha = a; ctx.strokeStyle = '#f59e0b'; ctx.shadowColor = '#f59e0b';
+    ctx.lineWidth = 3 / scale; ctx.shadowBlur = 16 / scale;
+    ctx.beginPath();
+    const x = n.pos[0] - 5, y = n.pos[1] - th - 5;
+    if (ctx.roundRect) ctx.roundRect(x, y, w + 10, h + 10, 10); else ctx.rect(x, y, w + 10, h + 10);
+    ctx.stroke(); ctx.restore();
+  }
+}
+
+// ── conflicts: one row per node, keep mine / take theirs ──
+function _fmt(v){ const s = typeof v === 'string' ? v : JSON.stringify(v); return s == null ? '—' : (s.length > 28 ? s.slice(0, 27) + '…' : s); }
+function _esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function renderConflicts(){
+  const box = document.getElementById('sync-conflicts'); if (!box) return;
+  const cs = sync.conflicts;
+  box.classList.toggle('on', cs.length > 0);
+  if (!cs.length){ box.innerHTML = ''; return; }
+  const row = (c, i) => {
+    let what, mineL = 'Tieni il mio', theirsL = 'Prendi il loro';
+    if (c.kind === 'fields') what = c.fields.map(f => `<div class="f"><b>${_esc(f.field.replace(/^params\./,''))}</b> tuo ${_esc(_fmt(f.mine))} · loro ${_esc(_fmt(f.theirs))}</div>`).join('');
+    else if (c.kind === 'deleted_by_them'){ what = '<div class="f">eliminato dall\'agente, ma tu l\'hai modificato</div>'; theirsL = 'Elimina'; }
+    else if (c.kind === 'deleted_by_you'){ what = '<div class="f">l\'hai eliminato, l\'agente l\'ha modificato</div>'; mineL = 'Resta eliminato'; theirsL = 'Ripristina'; }
+    else what = c.fields.map(f => `<div class="f"><b>${_esc(f.field)}</b>: collegato da entrambi</div>`).join('');
+    return `<div class="c"><div class="t">«${_esc(c.label || c.id)}» <span>${_esc(c.id)}</span></div>${what}` +
+      `<div class="b"><button data-i="${i}" data-k="mine">${mineL}</button><button data-i="${i}" data-k="theirs">${theirsL}</button></div></div>`;
+  };
+  box.innerHTML = `<div class="h">⚠ Modifiche in conflitto con l'agente — il salvataggio attende la tua scelta</div>` +
+    cs.map(row).join('') +
+    `<div class="b all"><button data-k="all-mine">Tieni tutti i miei</button><button data-k="all-theirs">Prendi tutti i loro</button></div>`;
+  box.querySelectorAll('button').forEach(b => b.onclick = () => {
+    const k = b.dataset.k;
+    if (k === 'all-mine' || k === 'all-theirs') resolveConflicts(sync.conflicts.slice(), k === 'all-theirs');
+    else resolveConflicts([sync.conflicts[+b.dataset.i]], k === 'theirs');
+  });
+}
+function resolveConflicts(list, takeTheirs){
+  if (takeTheirs){
+    const g = toGraphJSON(currentName);
+    const find = id => g.nodes.find(n => n.id === id);
+    for (const c of list){
+      if (c.kind === 'fields'){
+        const n = find(c.id), t = c.theirs_node; if (!n || !t) continue;
+        for (const f of c.fields){
+          if (f.field.startsWith('params.')){
+            const k = f.field.slice(7); n.params = n.params || {};
+            if (t.params && k in t.params) n.params[k] = _clone(t.params[k]); else delete n.params[k];
+          } else if (t[f.field] == null) delete n[f.field]; else n[f.field] = _clone(t[f.field]);
+        }
+      } else if (c.kind === 'deleted_by_them'){
+        g.nodes = g.nodes.filter(n => n.id !== c.id);
+        g.connections = g.connections.filter(k => k.from_node !== c.id && k.to_node !== c.id);
+      } else if (c.kind === 'deleted_by_you' && c.theirs_node && !find(c.id)){
+        g.nodes.push(_clone(c.theirs_node));
+        for (const k of (sync.baseRaw && sync.baseRaw.connections) || [])
+          if ((k.from_node === c.id || k.to_node === c.id) && find(k.from_node) && find(k.to_node)) g.connections.push(_clone(k));
+      } else if (c.kind === 'wire' && c.theirs_connection){
+        const tc = c.theirs_connection;
+        g.connections = g.connections.filter(k => !(k.to_node === tc.to_node && k.to_socket === tc.to_socket));
+        g.connections.push(_clone(tc));
+      }
+    }
+    applyMergedGraph(g);
+    recordHistory();                 // choosing is the human's own, undoable step
+  }
+  sync.conflicts = sync.conflicts.filter(c => !list.includes(c));
+  renderConflicts();
+  if (!sync.conflicts.length){ lastObservedJSON = null; scheduleServerSave(); scheduleLive(); }
+}
+
+
+// Styles for the live-sync pill + conflict box (injected, so the stylesheet
+// — and the touch/media-query work in it — is left alone).
+const SYNC_CSS = `
+#sync-pill{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:20;display:none;
+  background:rgba(245,158,11,.14);border:1px solid #f59e0b;color:#fbbf24;border-radius:14px;
+  padding:4px 12px;font-size:12px;pointer-events:none;animation:syncPulse 1.6s ease-in-out infinite;}
+#sync-pill.on{display:block;}
+@keyframes syncPulse{50%{opacity:.55;}}
+#sync-conflicts{position:absolute;left:10px;bottom:10px;z-index:21;display:none;max-width:min(420px,calc(100% - 20px));
+  max-height:60%;overflow:auto;background:var(--bg-2);border:1px solid #f59e0b;border-radius:8px;padding:8px 10px;
+  font-size:12px;color:var(--text);box-shadow:0 6px 24px rgba(0,0,0,.45);}
+#sync-conflicts.on{display:block;}
+#sync-conflicts .h{color:#fbbf24;font-weight:600;margin-bottom:6px;}
+#sync-conflicts .c{border-top:1px solid var(--border);padding:6px 0;}
+#sync-conflicts .t span{color:var(--text-dim);font-family:var(--mono);font-size:11px;margin-left:4px;}
+#sync-conflicts .f{color:var(--text-dim);margin:2px 0 0 8px;font-family:var(--mono);font-size:11px;}
+#sync-conflicts .f b{color:var(--text);font-weight:500;}
+#sync-conflicts .b{display:flex;gap:6px;margin-top:5px;}
+#sync-conflicts .b.all{border-top:1px solid var(--border);padding-top:7px;}
+#sync-conflicts button{background:var(--bg-3);color:var(--text);border:1px solid var(--border);border-radius:5px;
+  padding:3px 9px;font-size:11px;cursor:pointer;}
+#sync-conflicts button:hover{border-color:#f59e0b;}
+`;
+function initLiveSync(){
+  if (!document.getElementById('sync-css')){
+    const st = document.createElement('style'); st.id = 'sync-css'; st.textContent = SYNC_CSS; document.head.appendChild(st);
+  }
+  const pane = document.querySelector('.graph-pane');
+  if (pane && !document.getElementById('sync-pill')){
+    const pill = document.createElement('div'); pill.id = 'sync-pill';
+    pill.textContent = '🤖 L\'agente sta modificando il grafo…';
+    const box = document.createElement('div'); box.id = 'sync-conflicts';
+    pane.appendChild(pill); pane.appendChild(box);
+  }
+  const canvas = lcanvas && lcanvas.canvas;
+  if (canvas){
+    canvas.addEventListener('pointerdown', ()=>{ _syncPointer = true; }, true);
+    canvas.addEventListener('mousedown', ()=>{ _syncPointer = true; }, true);
+  }
+  const up = ()=>{ _syncPointer = false; };
+  window.addEventListener('pointerup', up, true); window.addEventListener('mouseup', up, true);
+  window.addEventListener('pointercancel', up, true);
+  // Introspection for headless tests (scratch playwright scripts): module
+  // scope is otherwise unreachable from page.evaluate.
+  window.__noodleSync = { state: sync, persist: persistToServer, recordHistory, graphIdOf,
+    get lgraph(){ return lgraph; }, get lcanvas(){ return lcanvas; }, get docState(){ return docState; } };
+  if (!window.__noodleShot){
+    setInterval(syncPoll, 1500);
+    window.addEventListener('focus', syncPoll);
+    document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) syncPoll(); });
+  }
+}
+/* ============================== Live sync — END ============== */
+
+/* ============================================================ *
  *  Global shortcuts (work even with focus in inputs)           *
  * ============================================================ */
 document.addEventListener('keydown', e=>{
@@ -5962,6 +7438,22 @@ document.addEventListener('keydown', e=>{
 // ── boot ──
 (async function(){
   initGraph();
+  const tabs = Array.from(document.querySelectorAll('.tab'));
+  tabs.forEach((tab,i)=>{
+    tab.setAttribute('role','tab'); tab.setAttribute('aria-controls','body-'+tab.dataset.tab);
+    tab.setAttribute('aria-selected',String(i===0)); tab.tabIndex=i===0?0:-1;
+    const panel=document.getElementById('body-'+tab.dataset.tab); panel.setAttribute('role','tabpanel');
+    tab.addEventListener('keydown',e=>{
+      let n=i;
+      if(e.key==='ArrowRight') n=(i+1)%tabs.length;
+      else if(e.key==='ArrowLeft') n=(i+tabs.length-1)%tabs.length;
+      else if(e.key==='Home') n=0;
+      else if(e.key==='End') n=tabs.length-1;
+      else if(e.key!=='Enter' && e.key!==' ') return;
+      e.preventDefault(); tabs[n].click(); tabs[n].focus();
+    });
+  });
+  document.querySelectorAll('button[title]').forEach(b=>{ if(!b.hasAttribute('aria-label')) b.setAttribute('aria-label',b.title); });
   // Never let a viewport failure (e.g. WebGL unavailable) block node registration
   // or graph editing — the editor must stay usable even without the 3D preview.
   try { initViewer(); } catch(e){ log('3D viewer disabled: '+(e.message||e), 'err'); }
@@ -5969,34 +7461,40 @@ document.addEventListener('keydown', e=>{
   document.querySelectorAll('.js-cost-btn').forEach(b=>b.classList.toggle('on', showCost));
   setHealth('busy'); setDocState('none');
   try{
-    // wire-type compatibility from the backend cast registry (single source of
-    // truth); falls back to the literal INPUT_ACCEPTS if the endpoint is absent.
-    try{
-      const wt = await (await fetch(`${API}/api/wiretypes`)).json();
-      if (wt && wt.input_accepts) INPUT_ACCEPTS = wt.input_accepts;
-    }catch(e){ log('wiretypes: using built-in fallback','err'); }
-    // personal search aliases (projects/_aliases.json) — merged with the
-    // catalog's built-in ones by nodeSearchRows. Absent file = {}, never fatal.
-    try{
-      const ua = await (await fetch(`${API}/api/aliases`)).json();
-      USER_ALIASES = (ua && ua.aliases) || {};
-    }catch(e){ log('aliases: none loaded','err'); }
-    const defs = await (await fetch(`${API}/api/nodes`)).json();
+    const getJSON = async (path, timeout=15000)=>{
+      const res = await fetchTimed(`${API}/api/${path}`, {}, timeout);
+      if (!res.ok) throw new Error('Could not load '+path);
+      return res.json();
+    };
+    const [wt, ua, defs] = await Promise.all([
+      getJSON('wiretypes', 3000).catch(()=>null),
+      getJSON('aliases', 3000).catch(()=>null),
+      getJSON('nodes'), refreshGraphList(),
+    ]);
+    if (wt && wt.input_accepts) INPUT_ACCEPTS = wt.input_accepts;
+    USER_ALIASES = (ua && ua.aliases) || {};
     registerNodes(defs);
     log(`registered ${defs.length} node types`);
-    await refreshGraphList();
     refreshCopilotStatus();
     // open from the landing page (?p=name / ?new=1), else restore last session
     const qs = new URLSearchParams(location.search);
     const want = qs.get('p');
     if (qs.has('new')) { promptNewGraph(); }
-    else if (want && projectNames.includes(want)) { await openGraph(want); }
+    else if (want && projectNames.includes(want)) {
+      await openGraph(want);
+      // ?node=<graph id>: the library's "from node …" link lands on that node
+      const focus = qs.get('node');
+      if (focus) setTimeout(()=>locateNode(focus), 300);
+    }
     else {
       const last = localStorage.getItem('noodle:last');
       if (last && projectNames.includes(last)) await openGraph(last);
     }
     setStatus('ready','ok');
-  }catch(e){ setStatus('init failed','err'); log('init: '+e.message,'err'); }
+  }catch(e){
+    setStatus('init failed','err'); log('init: '+e.message,'err');
+    showBanner('Could not load the editor. <button class="tb-btn" onclick="location.reload()">Retry</button>');
+  }
   // background loops
   setInterval(checkDirty, 1000);
   pollHealth(); setInterval(pollHealth, 4000);

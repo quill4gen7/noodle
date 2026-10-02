@@ -9,6 +9,12 @@ and an **MCP server** exposing the same operations.
 This file is the orientation doc for an AI agent picking up the project. It
 covers what it is, how to run it, how it's laid out, and how to change it safely.
 
+> **Using noodle rather than changing it** — building or editing a model for
+> the user? You want the MCP tools (or their HTTP twins) and the guide they
+> serve: `cad_help` / `GET /api/agent/help`, source `cad_nodes/AGENT_HELP.md`,
+> with detail topics (`screenshots`, `retroeng`, `print`, `threads`, `fluid`).
+> Never hand-edit a project's graph.json — see §6e for why the API exists.
+
 ---
 
 ## 1. Run it
@@ -99,6 +105,10 @@ server.py            FastAPI HTTP API (port 8090). Routes under /api/* :
                        source map), PATCH /api/graph/{name}/param (clamped
                        single-param edit; `_cb.<name>` targets a CodeBlock
                        override), /api/graph/{name}/codeblock/{id}/scan,
+                       /api/graph/{name}/export/{fmt} (the RESULT, one file) and
+                       /export/bundle (📦 every PREVIEWED node → STEP + STL, zipped
+                       — §9d); both also publish into exports/ with a provenance
+                       line in exports/index.jsonl,
                        POST /api/graph/{name}/arrange (tidy node positions; with
                        a graph body = stateless and returns it, without = load/
                        arrange/save — §6c),
@@ -106,20 +116,31 @@ server.py            FastAPI HTTP API (port 8090). Routes under /api/* :
                        /api/aliases (GET the personal add-node search aliases)
                        + PUT /api/aliases/{node_type} (replace one node's, []
                        clears) — stored in projects/_aliases.json, see §6,
-                       /api/agent/help (self-contained remote-agent guide =
-                       cad_nodes/AGENT_HELP.md, also MCP cad_help/cad://help —
-                       keep it in sync when the API surface changes),
+                       /api/agent/help[?topic=] (self-contained remote-agent
+                       guide = cad_nodes/AGENT_HELP.md, also MCP cad_help/
+                       cad://help; the `## topic:` sections after its marker
+                       are served only on request — keep it in sync when the
+                       API surface changes; a test fails if it names a cad_*
+                       tool that does not exist),
+                       the agent editing surface (§6e): GET /api/graph/{name}/
+                       compact|validate, POST .../ops|set_param|edit_code,
+                       POST .../execute?lean=1 (+ body {overrides}), GET
+                       /api/nodes?query=|compact=1 and /api/nodes/{type},
                        /api/agent/tags (ToAgent provenance index, §7b),
                        /api/graph/{name}/slice_summary|section_outline (§7b),
                        /api/graph/{name}/screenshot (PNG of the viewport, §9 —
                        the agent's eyes; also MCP cad_screenshot),
                        /api/graph/{name}/progress?run=<id> (SSE: per-node execution
-                       events, tailed from the workdir's progress.jsonl — see
-                       transpiler `_ev`. `run` is the id the caller is about to POST
-                       to /execute?run=; each run opens the file with a header line
-                       naming itself and closes it with a `done` line, so the stream
-                       knows whose events it is reading and when to hang up. Omit it
-                       and you get the next run that starts — the MCP/curl path),
+                       events, tailed from projects/<name>/.runs/<hash>/progress.jsonl
+                       — see transpiler `_ev` and cad_nodes/job_files.py. `run` is the
+                       id the caller is about to POST to /execute?run=; each run owns
+                       its own script/view/progress so two concurrent jobs cannot
+                       overwrite each other. A root progress.jsonl is only an atomic
+                       "latest run" pointer. The run closes with a `done` line so the
+                       stream hangs up. POST /runs/{run}/cancel writes a cancel file.
+                       Omit `run` and you get the next run that starts — MCP/curl),
+                       POST /api/graph/{name}/execute may take a graph snapshot body
+                       (the editor does; MCP/curl with no body run the file on disk),
                        /api/system/health|logs|restart.
                        NOTE every route that reaches the executor goes through
                        `off_loop()` — execute, render, download, export,
@@ -176,6 +197,9 @@ webui/
                        white. No refraction of the glow and no caustics: those need
                        rays. Costs ~0-1fps (glass dominates); off unless HQ and
                        something declares itself emissive.
+  view.html          the `/view/<graph>/<gen>` read-only viewer of a frozen
+                       GENERATION (§9c): hide / solo / invert pieces, state in
+                       the URL hash. What an agent links instead of screenshots.
   index.html         the `/ui` code view — generated build123d source (read-only
                        text) + STL preview. Parameter literals are highlighted
                        and click-to-edit via a terminal-style inline editor that
@@ -194,12 +218,11 @@ webui/
                        RUNS ARE IDENTIFIED, NOT INFERRED — three bugs were paid for here
                        and every one of them read as "the glow stops at random":
                        (1) runGraph mints a `run` id and passes it to BOTH
-                       /progress?run= and /execute?run=, because progress.jsonl lives at
-                       ONE path per project and two warm runs write near-identical bytes
-                       — the old tailer watched the file SIZE and, when a run rewrote it
-                       to the same length inside one 50ms poll, dropped the whole run
-                       (measured: 5/5 nodes on voronoi-3d-lattice; big graphs survived,
-                       small fast ones lost everything). (2) The stream is NOT closed
+                       /progress?run= and /execute?run=. Each run now has its own files
+                       under `.runs/`; the root progress.jsonl is only a latest-run
+                       pointer. The old tailer watched ONE shared file's SIZE and, when
+                       a run rewrote it to the same length inside one 50ms poll, dropped
+                       the whole run (measured: 5/5 nodes on voronoi-3d-lattice). (2) The stream is NOT closed
                        when the POST resolves: the browser dispatches that GET up to
                        ~90ms AFTER the POST and needs ~90ms more to connect, so a warm
                        ~350ms run was over before its stream arrived — only run 1 glowed
@@ -329,6 +352,19 @@ cad_nodes/
   slice_summary.py   retro-engineering perception (§7b): slice_summary
                        (symbolic cross-sections; STEP exact, STL arc-fitted)
                        + section_outline (one exact section, edge by edge).
+                       Both take node=<ref> (executor) to slice ONE node.
+  measure.py         geometry FACTS by node reference (n5 | n51.body | n51[3]):
+                       props / interference / distance / section(+svg) / probe
+                       / summary. Worker-side; executor.measure_graph runs the
+                       memo'd program + an epilogue reading the named vars.
+                       POST /api/graph/{name}/measure, MCP cad_measure.
+  lint.py            soft graph findings (pure Python): slider vs #@param
+                       mismatch, hidden/dead `_cb` overrides, CodeBlock syntax
+                       (block-relative line/col), unassigned #@out. Attached to
+                       execute results as `lint`; GET .../lint, MCP cad_lint.
+                       CodeBlock `#@out name: type` = extra named output
+                       sockets (transpiler.parse_codeblock_outputs, mirrored by
+                       parseCbOutputs in nodes.html); `result` stays socket 0.
   toposort.py        topological sort + cycle detection.
   layout.py          ★ node SIZE model + automatic `arrange()` (§6c). The one
                        place that knows how big a node is server-side.
@@ -687,7 +723,7 @@ thirds of the material within one — so orientation decides **where the part br
     rainbow bolts pour out and fall to the bed. Verified in the browser: dragging that
     one slider moves the cap and all seven scene bodies at 60fps, with exactly one
     re-bake at settle. Both lanes — a solid stays a solid.
-- Tests: `tests/test_print.py`.
+- Tests: `tests/test_print.py`. Agent-facing usage: AGENT_HELP topic `print`.
 
 ## 5e. Voronoi 3D + universal Populate
 
@@ -822,7 +858,8 @@ whole story:
   itself and places the thread BEFORE the boolean. Free bonus: a **list** of points
   drills a whole pattern of tapped holes in one node.
 - Example: `examples/bolt-and-nut.json` (a bolt whose thread ADDS to its shank, a
-  nut whose thread CUTS). Tests: `tests/test_thread.py`.
+  nut whose thread CUTS). Tests: `tests/test_thread.py`. Agent-facing usage:
+  AGENT_HELP topic `threads`.
 
 ## 5h. Fluids (category `fluid`) — moving air, and what it does to a part
 
@@ -906,7 +943,8 @@ quality, and the memo cache pays for it once. Full notes and every measurement i
   Panel is wired in.
 - Examples: `examples/wind-drop.json` (the same plate twice, one facing the gust and one
   edge-on: 59mm of drift and flat on the bed against 0.1mm and still standing) and
-  `examples/wind-tunnel.json`. Tests: `tests/test_fluid.py`.
+  `examples/wind-tunnel.json`. Tests: `tests/test_fluid.py`. Agent-facing
+  usage: AGENT_HELP topic `fluid`.
 
 ## 5b. Lists & fan-out (Grasshopper-style)
 
@@ -1162,11 +1200,38 @@ it in a panel at the left, one click away.
   the result stays tall and narrow (`retromy`: 2010×8179). Naming them is the fix,
   and now it is available.
 
+**Straighter wires, auto groups** (`layout.py`, measured over the 52 examples +
+59 saved projects + tars-pet-sg92r): ordering now routes a long wire through one
+dummy per column it crosses and keeps the best of 12 sweeps by crossing count;
+placement (`_align`) pulls each node to the weighted centre of its neighbours
+(weight = 1/source fan-out, so a hub does not drag chains apart) and re-packs each
+column in order with pool-adjacent-violators. Groups are rigid rectangles packed
+first-fit (two band orders tried, shorter kept) so boxes never cut across. Totals:
+crossings 1038 → 763, wire length −6.5 %, height +7 %; sg92r 75 → 49 crossings.
+Uniform weights in the ORDERING step measured better (763 vs 844) — keep them.
+`arrange(groups="auto")` (`?groups=auto`, `api.propose_groups`, ⌘K "Riordina +
+gruppi automatici") adds `propose_groups()`: "Parametri" (every input source,
+lifted into the panel — a group titled Parametri/Parameters/Params made only of
+sources IS the panel), connected hubs (fan-out ≥ 3), one box per remaining chain
+titled by its most downstream user name, else `<hub>[index]`. Opt-in only.
+
+**Editor readability** ("Graph clarity" block in nodes.html): selecting nodes
+dims everything outside their lineage (one even-odd veil + the lineage wires
+redrawn, upstream cyan / downstream amber); nameless ListItems and chain nodes
+DISPLAY a derived title (`Progetto[5] → Batteria`, `Export STL · Stampa frontale`)
+via `getTitle` — never saved; a minimap in the canvas corner (click/drag to
+navigate). All three toggle from ⌘K or the canvas right-click, remembered in
+localStorage. `flags.collapsed` is now persisted as `collapsed: true`.
+
 **Apply / reload rules:**
 - Backend Python change → `docker restart noodle` (process caches imports;
   the read-only mount alone isn't enough).
-- Frontend (`webui/*.html`) change → hard-refresh the browser (Ctrl+Shift+R);
-  the file is static and cached.
+- Frontend (`webui/*`) change → a plain reload is enough: `_revalidate_ui` in
+  server.py serves /static and the pages with `Cache-Control: no-cache` (ETag →
+  304). Without it a browser kept an OLD viewer.js under a NEW page and the
+  module import failed — a blank editor and viewer (paid for when `poseAnim`
+  moved into viewer.js). A browser that cached before that header existed
+  still needs ONE hard refresh.
 - Verify engine logic fast in the container (§2) before restarting.
 
 **Gotchas:**
@@ -1182,6 +1247,102 @@ it in a panel at the left, one click away.
   `2>/dev/null` and read stdout.
 - The copilot/MCP both go through `cad_nodes.api`; new capabilities belong there
   so all three surfaces (UI, MCP, copilot) get them.
+
+### 6e. The agent editing surface — why it exists, and its invariants
+
+Real use, four sessions of an agent designing a robot enclosure: it never touched
+MCP or the CLI. It went through `docker exec` + curl and **hand-edited graph.json
+with string replace** — because the tools answered 300KB of generated code per
+run, accepted any param silently, and had no way to change one line of a
+CodeBlock. The editor and the agent then overwrote each other's saves. The
+surface below is the answer; all of it lives in `cad_nodes/api.py`, with thin
+MCP (one contiguous section of `mcp_server.py`) and HTTP twins.
+
+- **Params are validated at the edge** (`_apply_param`): catalog name or a
+  CodeBlock `#@param` (bare name → the `_cb` override), `_`-prefixed editor
+  state and `selection`/`trace` pass through; everything else is an error that
+  LISTS the valid names. Out-of-range numbers clamp (as the editor's typed field
+  does) and say so in `notes` — except an input slider's `value`, whose catalog
+  range is only the default drag window: there the `_ui` window WIDENS to fit
+  (tars-pet keeps a 0-100 slider at 180). Stored graphs are never rejected —
+  saves and `validate` only REPORT (`check_params`).
+- **Nodes are addressed by id OR exact title** (`resolve_node`); id wins, an
+  ambiguous title is an error naming the ids.
+- **One implementation of every edit**: the `_op_*` functions mutate an
+  in-memory Graph; the single-call functions are load → op → save, and
+  `apply_ops` is load → many ops → validate → ONE save, or nothing (errors name
+  the op index). Ids are never renumbered.
+- **New nodes without a position are placed** (`_place_new`) with `layout`'s
+  real sizes: right of their upstream after a batch, else right of the graph,
+  nudged down until nothing overlaps. `arrange()` is still the real layout.
+- **Lean reads**: `summarize_execute` (no code/stdout/meshes, floats to 6
+  significant/4 decimals — 930KB → 6KB on a 61-node graph), `get_graph_compact`,
+  `compact_catalog` (the copilot's prompt uses it too). The HTTP `/execute`
+  default payload is UNCHANGED — `nodes.html` reads `data.code` for its Code
+  tab — the lean shape is `?lean=1`.
+- **Versions**: every write call takes an optional `base_version` (stale → 409,
+  `api.StaleGraphError`) and returns the new `version` — `graph_version()` reads
+  `store.version()`, the content hash of §6f.
+- Tests: `tests/test_agent_api.py`, `tests/test_mcp_agent.py`,
+  `tests/test_server_agent_routes.py`.
+
+### 6f. Live sync — the editor and an agent on the same graph
+
+graph.json has two writers: the editor's saves and an agent (API/MCP/copilot).
+The incident: an agent wrote the graph while the editor was open, the editor's
+next save put its older canvas back, and the agent kept telling the user "reload
+before saving". Three pieces fix it:
+
+- **Versions** (`cad_nodes/graph_version.py`): version = hash of graph.json's
+  bytes (covers every writer, needs no state, cannot miss a same-size edit the
+  way mtime can). `POST /api/graph/{name}` and `GraphStore.save` take an optional
+  `base_version`; a stale one is refused with **409** + the current
+  `{version, graph}`. No base = overwrite, as before. `GET …/version[?graph=1]`.
+- **Merge** (`cad_nodes/graph_merge.py`, `POST …/merge`, stateless): three-way,
+  field by field, each side diffed against ITS OWN spelling of the base (the
+  editor writes every widget value, an agent may omit defaults). A true conflict
+  keeps the human's value and is reported; position/collapse/size are quiet.
+- **Editor** (nodes.html, "Live sync" block): every save carries its base; a
+  1.5s poll of `/version` merges outside writes into the canvas — patched in
+  place when only values moved, rebuilt (viewport + selection kept) otherwise;
+  deferred while the human is dragging or has a modal open. Changed nodes glow
+  amber, a pill shows while edits keep arriving, conflicts get a keep-mine /
+  take-theirs box and hold saving until answered. Undo snapshots are rebased
+  with the merge's `ops`, so Ctrl+Z never takes an agent's edit back out. A save
+  of what disk already holds is skipped (every Live run saves first, and the
+  echo would only bump the version under an agent).
+- **Stable ids**: litegraph numbers nodes 1..N in load order and the save used
+  to write those back (n51 → n49 → n48). `fromGraphJSON` now pins runtime id K
+  to disk id `nK` (other ids ride on `node._gid`); `graphIdOf()` is the only way
+  from a node to its id.
+- Found on the way: `openGraph(currentName)` returns early for the open graph,
+  so the copilot's and Import's "reload" were no-ops (then reverted by the next
+  save) — they now `syncPullNow()`; and `checkDirty` re-armed the 2.5s autosave
+  debounce every second, so an idle dirty graph never autosaved.
+
+### 6g. Touch (tablets/phones) — the `── touch ──` block in nodes.html
+
+litegraph runs on **pointer events** (`touchPreInit`, before `new LGraphCanvas`).
+Everything finger-specific lives in one JS block and one CSS block named
+`── touch ──`; gestures: one finger = mouse left button, two = pan + pinch-zoom,
+long-press = right-click, double-tap = node search, "+ Nodo" / "Seleziona"
+floating buttons. Traps worth knowing before touching canvas code:
+
+- litegraph 0.7.18's pointer path **inverts `isPrimary`** in processMouseDown, so
+  a window-capture router shows every event litegraph handles with
+  `isPrimary=undefined` (= a MouseEvent). Without it double-click dies — for the
+  mouse too. Non-primary fingers never reach litegraph.
+- The graph canvas backing store is in **device pixels** (`TOUCH.dpr`, ≤2): the
+  ratio is folded into `ds.toCanvasContext`, so `ds.scale/offset`, events and
+  graph-space drawing (`onDrawForeground`) stay in CSS px. **Screen-space**
+  hooks (`onDrawOverlay`, `onRenderBackground`) get an identity transform in
+  device px — `ctx.scale(TOUCH.dpr, TOUCH.dpr)` first; size with the CSS rect,
+  not `canvas.width` (see the `renderInfo`/`centerOnNode` overrides).
+- `body.touch-ui` = the last pointer was not a mouse; it drives bigger targets
+  and the single-node selection bar. Under 800px the layout is one pane at a
+  time (`body[data-mtab]` = graph | view | panel).
+- Use `pointerdown`, not `mousedown`, for outside-click handlers: litegraph's
+  preventDefault on pointerdown suppresses the compat mouse events.
 
 ## 7. The AI copilot — scope & guardrails
 
@@ -1227,8 +1388,8 @@ STL at +2.2% — see `projects/retro_nodes` and `projects/retromy`):
    `.../section_outline?axis=z&pos=…`: ONE exact section, edge by edge.
    Mesh gotcha: a single section can drop loops near tangent surfaces —
    confirm with nearby sections or with per-section areas.
-3. **Rebuild** with catalog nodes via `cad_nodes.api` (add_node / connect /
-   set_param). Proceduralize, don't trace: constant section → Extrude; N equal
+3. **Rebuild** with catalog nodes via `cad_nodes.api` — one `apply_ops`
+   batch (§6e). Proceduralize, don't trace: constant section → Extrude; N equal
    circles in a regular layout → ArrayLinear/ArrayPolar with a count slider,
    not copies; small rounds → a downstream Fillet; overall dims → sliders.
    The user's stated intent about what to parameterize wins over defaults.
@@ -1236,6 +1397,8 @@ STL at +2.2% — see `projects/retro_nodes` and `projects/retromy`):
    (`slice_summary` without `path`) and diff the two summaries as text;
    comparing per-section AREAS localizes residuals; bbox + volume checksum
    is the final seal.
+
+The agent-facing version of this loop is AGENT_HELP topic `retroeng`.
 
 Not yet built (see PLAN_RETROENG.md): vision contact-sheet, gcode stripper,
 numeric `cad_compare`.
@@ -1269,9 +1432,21 @@ thought to measure; a picture shows what you did not.**
   bloom, same camera code. A numpy rasterizer was considered and rejected — it
   would be free to drift from the thing users actually look at, and blind to
   precisely the work that went into glass/emissive/rainbow/bloom.
-- **No GPU**: SwiftShader, verified pixel-identical to hardware GL.
-- **The browser is kept WARM**, like the execution worker: ~10s cold, **~1.5s**
+- **No GPU needed**: SwiftShader, verified pixel-identical to hardware GL. A GPU
+  is opt-in: `NOODLE_BROWSER_GPU=vulkan|gl` + the `docker-compose.gpu.yml`
+  overlay (CDI device AND the Vulkan/EGL manifests — the device alone silently
+  stays on SwiftShader). On podman: `podman-compose -f docker-compose.yml -f
+  docker-compose.gpu.yml --podman-run-args="--userns=keep-id:uid=1000,gid=1000"
+  up -d --force-recreate`.
+- **The browser is kept WARM**, like the execution worker: ~5-10s cold, **~0.7s**
   warm with `run=0`. Take extra angles freely; re-run only when geometry changed.
+- **…and the page is FROZEN between shots** (`_freeze`: a CDP debugger pause).
+  It is the real editor, whose animate loop redraws 60×/s forever; left warm
+  and running after one shot it held ~11 cores on SwiftShader for ten hours.
+  `Page.setWebLifecycleState frozen` does NOT work (headless pages are always
+  visible, and Chromium only freezes hidden ones — it answers OK anyway). A
+  FAILED shot closes the page instead of parking it: a half-booted page used to
+  fail every later shot until a restart.
 - **The warm page must not show you the PREVIOUS graph.** It only re-navigated
   when the URL changed, so shooting the same project twice reused whatever was on
   screen — edit a graph, shoot it with `run=0`, and you were handed the geometry
@@ -1319,6 +1494,16 @@ thought to measure; a picture shows what you did not.**
   WebGL2 through SwiftShader (ANGLE/Vulkan), verified. Measured cost of the whole
   feature: **1.87GB -> 2.6GB** (+730MB); installing both browsers made it 3.35GB.
   A missing browser is a **503**, not a 500.
+- **`node` may name ANY geometry node**, not only a drawn one: `api.screenshot`
+  resolves it by id or title and, when its eye is not on, turns it on in
+  graph.json for the shot and restores it in a `finally` (the shot page reads
+  the graph from disk, so there is no in-memory way). A node with nothing
+  drawable (a slider) is a 400 before any browser work.
+- **A failed capture is never a 200.** `api._check_png` rejects anything that
+  is not a PNG or is under 200 bytes (`ScreenshotFailed`), and the route maps
+  every non-HTTP failure to a **502** with the reason — an agent doing
+  `curl -o shot.png` used to save an error body as its "picture".
+- Agent-facing usage: AGENT_HELP topic `screenshots`.
 - Tests: `tests/test_screenshot.py` (pure-Python: camera planning, the clamps,
   and that HTTP/MCP expose one operation rather than two).
 
@@ -1356,3 +1541,155 @@ when absent). Roadmap item 2 of `PLAN_NODE_CAD.md`.
   A workflow that cannot produce one is broken, and you see it from the gallery
   without opening it.
 - Tests: `tests/test_thumbnail.py`.
+
+## 9c. Generations + the read-only viewer — a link instead of a screenshot
+
+`/view/<graph>/<gen>` (`webui/view.html`) is a read-only 3D viewer for a
+**generation**: a frozen copy of one run — `view.json` + the `graph.json` that
+made it + a meta (label, date, graph version, content hash, piece names) — under
+`projects/<graph>/gens/g<N>/`. An agent sends the user that link instead of
+screenshots: the user orbits the real scene, and the link keeps showing THAT
+result while the workflow moves on.
+
+- **Made by** `api.snapshot` = `POST /api/graph/{name}/snapshot?label=&run=` =
+  MCP `cad_snapshot` (returns `{gen, url, pieces, reused}`); listed by
+  `GET .../gens` / `cad_list_gens`; files at `GET .../gens/{gen}/{view|graph|meta}`
+  (immutable, cached a year). `run=1` (default) executes first, so the gen is the
+  graph as SAVED, not whatever last ran — through `off_loop()`. A result identical
+  to the newest gen (same previews hash, same label) is returned with
+  `reused: true` instead of piling up duplicates. Numbers are never reused
+  (`mkdir` claims them), so a link means one thing forever. The absolute URL uses
+  `NOODLE_PUBLIC_URL` if set, else the request's base (HTTP) / localhost (MCP).
+- **The page reads only the frozen copy** — never `/api/graph/{name}/view`, which is
+  live — and writes nothing. It renders through the shared `CadViewer`, with
+  colour/finish/wireframe taken from the FROZEN graph. A badge says when the live
+  workflow has changed since (graph version differs). `/view/<graph>` opens the
+  newest gen and rewrites the URL to the fixed `/gN` one.
+- **Pieces**: one row per drawn node; a node whose preview holds several pieces
+  expands — fanned-out lists (`parts` → the one merged buffer is split into
+  geometry groups with a material each, and a hidden part is
+  `material.visible=false`) and collide scenes (`bodies` → the Group's children).
+  Visibility lives at LEAF level, which is what makes **Inverti** well defined.
+  Click/dblclick (solo) in the list, click in 3D to select, H hide, Alt+click hide,
+  I invert, A all, F frame visible (measured on visible leaves only — `Box3.
+  setFromObject` counts hidden children, hence `CadViewer.frame(box)`).
+- **State in the hash**: `#hide=n3,n7.2` (a bare node id = all its pieces), kept in
+  sync as the user clicks — so an agent can send a link already set up (lid
+  hidden), and "Copia link" hands back exactly what the user is looking at.
+- **Touch / narrow screens**: under 760px the header folds into a `⋯` menu (info,
+  share via `navigator.share` → copy, ortho, editor) and the pieces become a bottom
+  sheet — tap the handle to collapse, drag it to resize; a ResizeObserver keeps the
+  canvas out from under it. On `pointer:coarse` rows are 44px, every row carries an
+  explicit ● (toggle) and ◎ (solo) button, and a tap toggles at once: a finger has no
+  double-click, so the 220ms wait that tells a mouse click from a dblclick would only
+  be lag. A tap in 3D selects and opens a floating bar (Nascondi / Solo / ✕) — the
+  touch twin of `H`. Tap vs orbit: 12px / 500ms tolerance for a finger, 5px for a
+  mouse, never during a pinch; double tap = frame the visible pieces.
+- Tests: `tests/test_generations.py`.
+- **Timelines play.** A generation of a graph with `Animate` / `Drop` nodes carries
+  their plans (`previews[id].anim`, a scene's `bodies[i].anim`), and `/view` shows a
+  ▶ player — so a movement (lid open ⇄ closed) is ONE link, not one per pose. One
+  clock drives every plan through `poseAnim()`, the SAME function the editor's live
+  scrub uses: `dropMatrixAt` / `keyInterp` / `sceneBodyPose` / `poseAnim` moved from
+  nodes.html into viewer.js for exactly that reason (two copies would drift).
+  `t` is each plan's own normalised 0..1, one pass lasts the longest plan's `T`,
+  with a 0.6s pause at the ends. Mode defaults to `pingpong` when every plan is an
+  Animate (kinematics) and `loop` as soon as a Drop is involved (a fall played
+  backwards is nonsense). Hash: `t=`, `play=1`, `mode=`; they are read ONCE at load
+  (`HASH0`) because the first `writeHash()` runs before the timeline exists and
+  used to eat `play=1`. "Inquadra" frames the union over the whole movement
+  (sampled), so an opening lid never swings out of the frame. The clock follows
+  wall time (dt capped at 0.5s): a slow device skips frames rather than slowing the
+  motion — the glass jar runs at ~1.7fps on SwiftShader, fine on a real GPU.
+  `api.snapshot` reports `timeline: {seconds}` and marks `animated` pieces.
+- **One track per movement (≡ Tracce).** Every animated node is also a TRACK
+  with its own `t`, slider and ▶ (played alone, over its own `T`); the master
+  slider still moves them all. Why: choreographing a sequence on one clock
+  (`delay` + `hold` arithmetic) is what an agent got wrong on `walle` — it chained
+  Animate(open) → Animate(close), which does NOT sequence: the downstream one
+  moves its input frozen at the upstream's `t`, and only the last plan replays,
+  so the lid stayed shut and the head folded through it. Now the agent makes one
+  Animate per moving part and the USER plays the order; `lint.py` flags the chain
+  (`animate_chain`). Hash: `tt=<id>:<t>,…` (only tracks that differ from the
+  master `t`), `tracks=1` (panel open). Framing restores every track's own `t`.
+  Example project: `projects/cassone-demo` (a chest whose lid opens on a hinge).
+- **The viewer draws on demand** (`CadViewer.invalidate()`, no continuous loop):
+  anything that changes the scene from outside the viewer must ask for a frame.
+  `/view` does it in `poseTrack()` (every timeline pose) and `apply()` (hidden
+  pieces); without it the ▶ player moves the meshes and the canvas stays still.
+
+
+## 9d. Exports — the bake bundle and the per-workflow index
+
+**The 📦 bake** (`⬇ Export` in the editor, default choice; `⬇ STEP+STL` on each home
+card; `POST /api/graph/{name}/export/bundle`; `api.export_all`; MCP `cad_export_all`)
+exports what the viewport SHOWS, not `__result__`: every entry of `__previews__` (the
+one dict `Transpiler._previewed` fills) becomes `NN_<title>_<id>.step` + `.stl`, zipped
+with a `manifest.json`. Runtime in `cad_nodes/bake.py` (runs in the worker). It bakes the
+SAVED params — a Drop/Animate comes out posed at its slider's `t`, and a Drop's moving
+container (`_noodle_extra`) gets its own `_container` pair. What a format cannot hold
+is recorded in the manifest (`skipped`), never raised: a mesh-lane node has no B-Rep, so
+STL only (MeshToSolid is the explicit, slow bridge — §5c); a curve gets STEP only;
+points get nothing. The bake must never re-parent what it exports: on the warm
+worker the previewed shapes are the memo cache's own objects, shared with
+`__result__`, and `Compound(children=...)` moves them under the new compound —
+after one bake the next ⬇ STEP of the result failed. `bake._as_brep` uses
+`Compound(list)`, and wraps a single shape that has a parent (build123d cannot
+STEP-export it directly); `tests/test_bake.py`. The home card exports the graph ON DISK (no body); the editor saves
+first and posts its snapshot.
+
+**The index** — `projects/<name>/exports/index.jsonl`, `cad_nodes/export_index.py`.
+Every file in exports/ says who wrote it: an Export node (`_out(path, node_id)` in the
+PREAMBLE appends the line from inside the worker — the generated script cannot import
+cad_nodes), the ⬇ button (`exports/<name>.<ext>`), or a bundle
+(`exports/<name>_<date>.zip`, with the node list inside). JSONL and O_APPEND because
+TWO processes write it; `load()` folds it (last line per file wins, deleted files drop
+out) and, given the current graph, adds the node's current title, whether it still
+exists, and `fresh` = `graph_key` unchanged. `graph_key` hashes types + params (minus
+`_ui`) + bypass + wiring only, so moving or restyling a node does not mark exports
+stale; the executor hands it to the worker as `__GRAPH_KEY__`. A file older than the
+index still finds its Export node by file name (`guessed`). The library (`/library`)
+shows it all, with search, `?p=<project>` focus, and a link per node to
+`/nodes?p=<project>&node=<id>`, which selects and flashes that node.
+
+Sorting: home and the editor's project menu share `localStorage noodle:sort:workflows`
+(`date` = graph.json mtime, the `/api/projects` `mtime` field; or `name`); the library
+keeps its own `noodle:sort:library`. Tests: `tests/test_export_index.py`.
+
+## 9e. ▦ Sezioni — a CodeBlock read as the nodes it already contains
+
+Agents write long CodeBlocks (the TARS-pet body: ~570 lines, 18 sections). Asking
+them to build the same thing out of catalogue nodes would make their work heavier;
+instead noodle READS the block. `cad_nodes/sections.py` (pure `ast`, no build123d):
+
+- **Sections** come from the block's own header comments (`# ---- servo ----`,
+  `# ======== frontale ========`, ≥ 2 of them), else statements are grouped by the
+  variable they build, with `#@param` lines → *Parametri*, pure arithmetic of
+  params → *Quote*, `def`s → *Funzioni*; a single-assignment wrapper of one group
+  (`dummy = Compound(ghost)`, `result = body`) joins that group.
+- **Kinds**: params | quote | funcs | part | **chain** — a section that keeps working
+  on a shape an earlier section made (`bezel -= …`), i.e. one step of a part, as a
+  feature tree would show it. Detected through `x += …` anywhere in the statement
+  and in-place mutators (`ghost.append`).
+- **Edges**: straight-line reaching definitions per statement; names a compound
+  statement binds before use (loop / comprehension targets, inner assignments) are
+  local, so `for sx in …` never "reads" another section's `sx`; calling a helper adds
+  its free variables at the call site (Python binds them when it runs). Also
+  `outputs` (#@out / result → section), `result_items` (each item of a
+  `result = [...]` list → the section that makes it) and `unused` sections.
+- **The run** (`executor.codeblock_sections_run`, `POST …/sections/run`): the block
+  and ONLY its ancestors, all previews off, the block's code replaced by
+  `sections.instrument()` — a COPY with `__sec_mark__('sN', locals())` after every
+  contiguous range of every section (+ a nonce comment so its memo key is unique,
+  upstream stays cached). Per-section time = sum of its ranges; numbers each
+  section leaves; for `?section=sN` its shapes (what it hands on first, scratch lists
+  only if nothing else) as `view.previews`; `failed_in` = first section whose marker
+  never ran. `execute_code(publish=False)`: no view.json, no root progress pointer.
+- **UI**: ▦ Sezioni under ✎ Edit code opens a read-only full-screen view: columns
+  by dependency (Parametri/Quote/Funzioni left; their edges drawn only for the
+  selection), colour by kind, dashed = unused, ⏱ Misura, per-section code, uses /
+  used by / values, ▶ Anteprima in its own CadViewer, ✎ Nel codice selects the lines.
+  It saves the canvas first (the analysis reads the saved block).
+- Next steps (not built): edit a section's lines from its node; per-section memo
+  so a change re-runs from that section on; explode into real wired CodeBlocks.
+- Tests: `tests/test_sections.py` (analysis), `tests/test_sections_run.py` (image).

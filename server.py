@@ -32,8 +32,10 @@ from cad_nodes import api, catalog, layout
 from cad_nodes.graph import Graph, ValidationError
 from cad_nodes.screenshot import ScreenshotUnavailable
 from cad_nodes.transpiler import transpile, transpile_with_map
-from cad_nodes.executor import execute_graph, export_graph, extract_subshapes_for_node
+from cad_nodes.executor import execute_graph, extract_subshapes_for_node, warm_status
+from cad_nodes import export_index
 from cad_nodes.store import GraphStore, stamp_agent_tags, validate_graph_id
+from cad_nodes.job_files import atomic_write, progress_file, run_dir
 from cad_nodes.copilot import run_chat, copilot_status
 from cad_nodes import fonts as fontlib
 
@@ -70,6 +72,24 @@ app = FastAPI(title="noodle", version="0.1.0")
 
 # Serve webui static files
 app.mount("/static", StaticFiles(directory="/app/webui"), name="static")
+
+
+# The pages are ES modules importing each other by NAME (nodes.html and view.html
+# both `import { …, poseAnim } from '/static/viewer.js'`). Served with no
+# Cache-Control, a browser may keep an OLD viewer.js heuristically while taking the
+# new page — and a single missing export kills the whole module: the page loaded
+# blank ("does not provide an export named 'poseAnim'", reproduced). `no-cache`
+# is not "no store": the browser still keeps the file, it just asks first, and an
+# unchanged one comes back as a body-less 304 on its ETag. So the UI can never be
+# half old, half new after an update, for the price of one tiny round trip.
+@app.middleware("http")
+async def _revalidate_ui(request: Request, call_next):
+    response = await call_next(request)
+    p = request.url.path
+    if (p.startswith("/static/") or p in ("/", "/ui", "/nodes", "/library")
+            or p.startswith("/view/")) and "cache-control" not in response.headers:
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -227,7 +247,7 @@ async def off_loop(fn, *args, **kwargs):
 # ---------------------------------------------------------------------------
 @app.get("/health")
 async def health():
-    return {"status": "ok", "version": APP_VERSION}
+    return {"status": "ok", "version": APP_VERSION, **warm_status()}
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +261,7 @@ async def system_health():
         "version": "0.1.0",
         "uptime_s": round(time.time() - _BOOT_TIME, 1),
         "pid": os.getpid(),
+        **warm_status(),
     }
 
 
@@ -481,6 +502,68 @@ async def webui_library():
 
 
 # ---------------------------------------------------------------------------
+# Generations + the read-only viewer (/view/<name>/<gen>)
+# ---------------------------------------------------------------------------
+# A generation is a frozen copy of one run (view + graph) under
+# projects/<name>/gens/g<N>/ — see api.snapshot. The viewer page reads ONLY that
+# copy, so a link an agent sends keeps showing that result while the workflow
+# it came from keeps changing.
+def _public_base(request: Request) -> str:
+    return os.environ.get("NOODLE_PUBLIC_URL") or str(request.base_url)
+
+
+def _gen_http(fn, *args, **kwargs):
+    try:
+        return fn(*args, **kwargs)
+    except KeyError as e:
+        raise HTTPException(404, str(e.args[0] if e.args else e)) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/graph/{name}/snapshot")
+async def snapshot_graph(request: Request, name: str, label: str = "",
+                         run: bool = True):
+    """Freeze the current result as a new generation; returns its viewer `url`."""
+    require_project(name)
+    store = GraphStore(PROJECTS_DIR)
+    try:
+        # off the loop: with run=1 this executes the graph (see off_loop)
+        return await off_loop(api.snapshot, store, name, label=label, run=run,
+                              base_url=_public_base(request))
+    except KeyError as e:
+        raise HTTPException(404, str(e.args[0] if e.args else e)) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/graph/{name}/gens")
+async def list_generations(request: Request, name: str):
+    require_project(name)
+    return {"gens": _gen_http(api.list_gens, GraphStore(PROJECTS_DIR), name,
+                              base_url=_public_base(request))}
+
+
+@app.get("/api/graph/{name}/gens/{gen}/{part}")
+async def get_generation(name: str, gen: str, part: str):
+    """part = view | graph | meta. Immutable once written, so cacheable."""
+    require_project(name)
+    data = _gen_http(GraphStore(PROJECTS_DIR).load_gen, name, gen, part)
+    return Response(json.dumps(data), media_type="application/json",
+                    headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+@app.get("/view/{name}", response_class=HTMLResponse)
+@app.get("/view/{name}/{gen}", response_class=HTMLResponse)
+async def webui_view(name: str, gen: str = ""):
+    """The read-only viewer. Without a gen it opens the newest one."""
+    page = Path("/app/webui/view.html")
+    if not page.exists():
+        return HTMLResponse("<h1>noodle</h1><p>Viewer not found</p>", status_code=404)
+    return page.read_text()
+
+
+# ---------------------------------------------------------------------------
 # Projects CRUD
 # ---------------------------------------------------------------------------
 @app.get("/api/projects")
@@ -493,8 +576,11 @@ async def list_projects():
             if meta_path.exists():
                 meta = json.loads(meta_path.read_text())
             thumb = d / THUMB_NAME
+            gpath = d / "graph.json"
             projects.append({
                 "name": d.name,
+                # last save of the graph: what "sort by date" orders by
+                "mtime": int(gpath.stat().st_mtime) if gpath.exists() else 0,
                 "backend": meta.get("backend", "nodegraph"),
                 "description": meta.get("description", ""),
                 # the listing carries the thumbnail's mtime rather than a bare
@@ -508,6 +594,10 @@ async def list_projects():
 @app.delete("/api/projects/{name}")
 async def delete_project(name: str):
     d = require_project(name)
+    # Do not remove a cancellation marker until the worker acknowledged it.
+    for claim in d.glob('.runs/*/claimed'):
+        if not (claim.parent / 'complete').exists() and time.time() - claim.stat().st_mtime < 300:
+            raise HTTPException(409, 'A run is active or stopping. Retry after it finishes.')
     shutil.rmtree(d)
     return {"status": "deleted"}
 
@@ -606,12 +696,26 @@ def _load_graph(name: str) -> Graph:
 
 
 @app.get("/api/nodes")
-async def node_catalog(category: str = ""):
-    """Full node catalog (optionally filtered by category)."""
+async def node_catalog(category: str = "", compact: bool = False, query: str = ""):
+    """Full node catalog (optionally filtered by category). `?compact=1` (or any
+    `query=`) returns plain text instead, one signature line per type —
+    `Type [category] in:(...) out:(...) params:(name=default, ...)` — filtered
+    by a case-insensitive substring `query`. That is the agent's shape."""
+    if compact or query:
+        return PlainTextResponse(api.compact_catalog(query=query, category=category))
     nodes = catalog.as_json()
     if category:
         nodes = [n for n in nodes if n.get("category") == category]
     return nodes
+
+
+@app.get("/api/nodes/{node_type}")
+async def node_definition(node_type: str):
+    """One node type for an agent: sockets, params (type/default/range/options),
+    description — without the codegen templates."""
+    if node_type not in catalog.REGISTRY:
+        raise HTTPException(404, f"Unknown node type '{node_type}'")
+    return api.node_def_for_agent(node_type)
 
 
 def _read_aliases() -> dict[str, list[str]]:
@@ -669,25 +773,47 @@ async def wire_types():
 
 
 @app.post("/api/graph/{name}")
-async def save_graph(name: str, graph: dict):
-    """Create/overwrite a node graph project."""
+async def save_graph(name: str, graph: dict, request: Request, base_version: Optional[str] = None):
+    """Create/overwrite a node graph project.
+
+    `base_version` (query, or a top-level body key) is the version the writer
+    edited: if graph.json has changed since, the write is REFUSED with 409 and
+    the current `{version, graph}` so the writer can merge. Omitted = overwrite,
+    as always. The response carries the new `version`. See graph_version.py.
+    """
+    from cad_nodes.graph_version import StaleGraphError, check_base, write_graph
+    base_version = graph.pop("base_version", None) or base_version
     graph.setdefault("name", name)
     try:
-        Graph.from_dict(graph).validate()
+        g = Graph.from_dict(graph)
+        warnings = api.validate_graph(g)     # bad sockets list the real ones
     except ValidationError as e:
         raise HTTPException(400, f"Invalid graph: {e}") from e
+    # Soft: stored params the catalog does not know / cannot coerce. Reported,
+    # not refused — a hand-edited or older graph must still save.
+    param_issues = api.check_params(g)
 
     d = project_dir(name)
+    if request.headers.get('if-none-match') == '*' and (d / 'graph.json').exists():
+        raise HTTPException(409, 'A project with this name already exists')
+    try:
+        check_base(d / "graph.json", base_version)
+    except StaleGraphError as e:
+        raise HTTPException(409, _stale_detail(e)) from e
     d.mkdir(parents=True, exist_ok=True)
     stamp_agent_tags(graph.get("nodes", []))  # date the 'To Agent' tags
-    (d / "graph.json").write_text(json.dumps(graph, indent=2))
-    (d / "meta.json").write_text(json.dumps({
+    version = write_graph(d / "graph.json", json.dumps(graph, indent=2))
+    atomic_write(d / "meta.json", json.dumps({
         "backend": "nodegraph",
         "description": graph.get("description", ""),
     }, indent=2))
-    return {"status": "saved", "name": name,
-            "nodes": len(graph.get("nodes", [])),
-            "connections": len(graph.get("connections", []))}
+    out = {"status": "saved", "name": name, "version": version,
+           "nodes": len(graph.get("nodes", [])),
+           "connections": len(graph.get("connections", [])),
+           "warnings": warnings}
+    if param_issues:
+        out["param_issues"] = param_issues
+    return out
 
 
 @app.get("/api/graph/{name}")
@@ -724,7 +850,8 @@ async def patch_graph_param(name: str, payload: ParamPatch):
 
 
 @app.post("/api/graph/{name}/arrange")
-async def arrange_graph(name: str, graph: Optional[dict] = Body(default=None)):
+async def arrange_graph(name: str, graph: Optional[dict] = Body(default=None),
+                        groups: Optional[str] = None):
     """Tidy node positions — left-to-right by dependency depth, on the nodes' REAL
     on-canvas sizes, so the result cannot contain overlapping nodes (§6c).
 
@@ -740,8 +867,13 @@ async def arrange_graph(name: str, graph: Optional[dict] = Body(default=None)):
     Returns `{status, summary, graph?}`. `summary.group_overlaps` > 0 means some
     group boxes still cut across each other (their members interleave in the
     dependency order); the nodes are still correctly placed.
+
+    `?groups=auto` also proposes and adds group boxes (Parametri, shared hubs,
+    one per output chain) for nodes not already grouped — see
+    layout.propose_groups. Without it nothing is invented.
     """
     require_project(name)
+    opts = {"groups": groups} if groups else {}
     if graph is not None:
         graph.setdefault("name", name)
         try:
@@ -750,17 +882,81 @@ async def arrange_graph(name: str, graph: Optional[dict] = Body(default=None)):
         except (ValidationError, KeyError, ValueError) as e:
             raise HTTPException(400, f"Invalid graph: {e}") from e
         try:
-            summary = layout.arrange(g)
+            summary = layout.arrange(g, **opts)
         except (ValueError, AssertionError) as e:
             raise HTTPException(400, str(e)) from e
         return {"status": "ok", "summary": summary, "graph": g.to_dict()}
 
     store = GraphStore(PROJECTS_DIR)
     try:
-        summary = api.arrange(store, name)
+        summary = api.arrange(store, name, **opts)
     except (ValueError, AssertionError, KeyError) as e:
         raise HTTPException(400, str(e)) from e
     return {"status": "ok", "summary": summary}
+
+
+# --- agent editing: compact reads, small validated edits, atomic batches ------
+# Thin wrappers over cad_nodes.api — the same operations as the MCP tools of the
+# same names (cad_get_graph, cad_set_param, cad_edit_code, cad_apply_ops,
+# cad_validate). Each write loads, applies, validates and saves ONCE, so an agent
+# never has to hand-edit graph.json. `base_version` is optional (optimistic
+# concurrency: a stale base is refused with 409 — see cad_nodes/graph_version.py).
+def _agent_call(fn, *args, **kwargs):
+    """Run an api op, mapping its errors to HTTP: stale -> 409, bad input -> 400."""
+    try:
+        return fn(*args, **kwargs)
+    except api.StaleGraphError as e:
+        raise HTTPException(409, str(e)) from e
+    except KeyError as e:
+        raise HTTPException(400, str(e.args[0]) if e.args else str(e)) from e
+    except (ValueError, ValidationError, AssertionError) as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/graph/{name}/compact")
+async def graph_compact(name: str, node: str = "", positions: bool = False):
+    """The graph as an agent reads it (api.get_graph_compact): no positions or
+    `_ui` state, long code elided; `node=<id|title>` for one node in full."""
+    require_project(name)
+    return _agent_call(api.get_graph_compact, GraphStore(PROJECTS_DIR), name,
+                       positions, node or None)
+
+
+@app.get("/api/graph/{name}/validate")
+async def graph_validate(name: str):
+    """Check without running: wiring errors, soft warnings, param issues."""
+    require_project(name)
+    return api.validation_report(_load_graph(name))
+
+
+@app.post("/api/graph/{name}/set_param")
+async def graph_set_param(name: str, body: dict = Body(...)):
+    """`{node: <id or exact title>, params: {name: value}, base_version?}` —
+    validated against the catalog; unknown names / bad types are a 400."""
+    require_project(name)
+    return _agent_call(api.set_param, GraphStore(PROJECTS_DIR), name,
+                       body.get("node") or body.get("node_id", ""),
+                       body.get("params") or {}, body.get("base_version"))
+
+
+@app.post("/api/graph/{name}/edit_code")
+async def graph_edit_code(name: str, body: dict = Body(...)):
+    """`{node, old, new, base_version?}` — exact str-replace in a CodeBlock's
+    code; exactly one match or a 400 and nothing saved."""
+    require_project(name)
+    return _agent_call(api.edit_code, GraphStore(PROJECTS_DIR), name,
+                       body.get("node", ""), body.get("old", ""),
+                       body.get("new", ""), body.get("param", "code"),
+                       base_version=body.get("base_version"))
+
+
+@app.post("/api/graph/{name}/ops")
+async def graph_apply_ops(name: str, body: dict = Body(...)):
+    """`{ops: [...], base_version?}` — an atomic batch (api.apply_ops /
+    OPS_HELP): all applied and saved once, or a 400 naming the failing op."""
+    require_project(name)
+    return _agent_call(api.apply_ops, GraphStore(PROJECTS_DIR), name,
+                       body.get("ops"), body.get("base_version"))
 
 
 @app.post("/api/graph/{name}/codeblock/{node_id}/scan")
@@ -773,6 +969,31 @@ async def scan_codeblock_params(name: str, node_id: str):
         return {"params": api.scan_codeblock(store, name, node_id)}
     except (ValueError, KeyError) as e:
         raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/graph/{name}/codeblock/{node_id}/sections")
+async def codeblock_sections(name: str, node_id: str):
+    """The block read as the nodes it contains (cad_nodes/sections.py): sections
+    from its own headers (or grouped by what each statement builds), kinds,
+    line ranges, names flowing between them. Pure analysis, no run."""
+    require_project(name)
+    try:
+        return api.codeblock_sections(GraphStore(PROJECTS_DIR), name, node_id)
+    except (ValueError, KeyError) as e:
+        raise HTTPException(400, str(e.args[0] if isinstance(e, KeyError) else e)) from e
+
+
+@app.post("/api/graph/{name}/codeblock/{node_id}/sections/run")
+async def codeblock_sections_run(name: str, node_id: str, section: str | None = None):
+    """Run the block (and only what feeds it) from an instrumented copy: time and
+    numbers per section, and with `?section=sN` the shapes that section built,
+    as `view.previews`. The graph, view.json and the latest run are untouched."""
+    require_project(name)
+    try:
+        return await off_loop(api.codeblock_sections_run, GraphStore(PROJECTS_DIR),
+                              name, node_id, section)
+    except (ValueError, KeyError) as e:
+        raise HTTPException(400, str(e.args[0] if isinstance(e, KeyError) else e)) from e
 
 
 # Map an imported file's extension to the Import node that reads it.
@@ -945,6 +1166,11 @@ async def api_screenshot(
         raise HTTPException(503, str(e)) from e
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
+    except Exception as e:  # noqa: BLE001 - ScreenshotFailed, browser timeouts...
+        # Never a 200 with a broken body: `curl -o shot.png` would save an
+        # error as a "picture". A failed capture says so, with the reason.
+        logger.error("screenshot '%s' failed: %s: %s", name, type(e).__name__, e)
+        raise HTTPException(502, f"screenshot failed: {type(e).__name__}: {e}") from e
     logger.info("screenshot '%s' %s %dx%d (%d bytes, ran=%s)",
                 name, view, meta["width"], meta["height"], meta["bytes"],
                 meta["ran"])
@@ -957,34 +1183,69 @@ async def api_screenshot(
 
 
 @app.post("/api/graph/{name}/execute")
-async def execute_graph_project(name: str, run: str | None = None):
+async def execute_graph_project(name: str, run: str | None = None,
+                                lean: bool = False, include_code: bool = False,
+                                body: Optional[dict] = Body(default=None)):
     """`run` is a caller-chosen id for this run. The editor generates one, opens
     /progress?run=<id> with it and then POSTs here, so the progress stream can
-    match its events to this exact run instead of inferring them from the file."""
+    match its events to this exact run instead of inferring them from the file.
+
+    `?lean=1` is the agent's shape (api.summarize_execute): no generated code
+    (add `include_code=1` for it), no meshes, rounded floats — a few KB instead
+    of ~1MB on a real graph. The default full shape is what the editor reads
+    (it shows `code` in its Code tab), so it stays as it was.
+
+    Body `{"overrides": {node_id_or_title: {param: value}}}` runs with those
+    values changed in memory only — the saved graph is not touched. A body that
+    is itself a graph (`nodes`, `connections`) runs THAT snapshot instead of the
+    file on disk: the editor sends exactly what it saved, so a later edit can
+    never slip into this run."""
     d = require_project(name)
-    graph = _load_graph(name)
+    body = body or {}
+    if "nodes" in body:
+        try:
+            graph = Graph.from_dict({k: v for k, v in body.items() if k != "overrides"})
+            graph.validate()
+        except (ValidationError, KeyError, TypeError, ValueError) as e:
+            raise HTTPException(400, f"Invalid graph: {e}") from e
+    else:
+        graph = _load_graph(name)
+    try:
+        extra = api.apply_overrides(graph, body.get("overrides"))
+    except (ValueError, KeyError) as e:
+        raise HTTPException(400, str(e.args[0] if isinstance(e, KeyError) else e)) from e
     logger.info("execute graph '%s' (%d nodes)", name, len(graph.nodes))
     try:
         # Live run: skip the STL export (regenerated on demand by /download).
         # Off the event loop — see off_loop() for why every engine call is.
         result = await off_loop(execute_graph, graph, d, write_stl=False, run_id=run)
+    except FileExistsError as e:
+        raise HTTPException(409, 'Run ID already used') from e
     except ValidationError as e:
         logger.error("execute '%s' invalid graph: %s", name, e)
         raise HTTPException(400, str(e)) from e
+    if result.get('cancelled'):
+        raise HTTPException(409, 'Execution cancelled')
     if not result["success"]:
         logger.error("execute '%s' failed: %s", name, result.get("errors") or result.get("error_detail"))
         raise HTTPException(400, {
             "message": "Graph execution failed",
             "errors": result.get("errors"),
             "error_detail": result.get("error_detail"),
-            "code": result.get("code"),
+            **({"code": result.get("code")} if (include_code or not lean) else {}),
         })
     node_errors = result.get("node_errors", {})
     if node_errors:
         for nid, err in node_errors.items():
             logger.error("execute '%s' node %s: %s", name, nid, err)
+    if lean:
+        return {"status": "executed", "run_id": result.get("run_id"),
+                **api.summarize_execute({**result, **extra},
+                                        include_code=include_code)}
     return {
+        **extra,
         "status": "executed",
+        "run_id": result.get('run_id'),
         "view": result["view"],
         "code": result["code"],
         "warnings": result.get("warnings", []),
@@ -996,6 +1257,16 @@ async def execute_graph_project(name: str, run: str | None = None):
         # Always offered — /download regenerates the STL on demand if it's stale.
         "stl": f"/api/projects/{name}/download",
     }
+
+
+@app.post('/api/graph/{name}/runs/{run}/cancel')
+async def cancel_graph_run(name: str, run: str):
+    d = require_project(name)
+    # May arrive before execute: the marker also cancels a job still in transit.
+    job = run_dir(d, run)
+    job.mkdir(parents=True, exist_ok=True)
+    (job / 'cancel').touch()
+    return {'status': 'cancellation requested', 'run_id': run}
 
 
 async def _tail_progress(path: Path, want_run: str | None = None, request: Request | None = None):
@@ -1025,7 +1296,8 @@ async def _tail_progress(path: Path, want_run: str | None = None, request: Reque
     since_beat = 0.0
     # With no run id to wait for (MCP, curl, an older editor), keep the old
     # intent: ignore whatever is already on disk and report the NEXT run.
-    if want_run is None:
+    waiting_next = want_run is None
+    if waiting_next:
         seen_run = _run_id_of(path)
 
     while quiet < _PROGRESS_MAX_IDLE:
@@ -1049,7 +1321,16 @@ async def _tail_progress(path: Path, want_run: str | None = None, request: Reque
             yield ": ping\n\n"
 
         try:
-            lines = path.read_text().splitlines()
+            # Each run writes its own .runs/<id>/progress.jsonl; the project-root
+            # file only names the latest run, so a subscriber with no run id
+            # follows that pointer to the run's own file.
+            active = path
+            if want_run is None:
+                latest = _run_id_of(path) if waiting_next else seen_run
+                if latest:
+                    active = progress_file(path.parent, latest)
+            text = active.read_text()
+            lines = text.splitlines()
         except OSError:
             quiet += 0.05
             continue
@@ -1066,6 +1347,10 @@ async def _tail_progress(path: Path, want_run: str | None = None, request: Reque
             quiet += 0.05
             continue
         run = head.get("r")
+        if waiting_next and run == seen_run:
+            quiet += 0.05
+            continue
+        waiting_next = False
 
         if run != seen_run:          # a different run owns the file now
             if want_run is not None and run != want_run:
@@ -1077,7 +1362,7 @@ async def _tail_progress(path: Path, want_run: str | None = None, request: Reque
 
         # A half-written final line is skipped and picked up whole next poll.
         body = lines[1:]
-        if not path.read_text().endswith("\n") and body:
+        if not text.endswith("\n") and body:
             body = body[:-1]
         if len(body) <= sent:
             quiet += 0.05
@@ -1122,16 +1407,22 @@ async def graph_progress(request: Request, name: str, run: str | None = None):
     """
     d = require_project(name)
     return StreamingResponse(
-        _tail_progress(d / "progress.jsonl", run, request),
+        _tail_progress(progress_file(d, run) if run else d / "progress.jsonl", run, request),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
 @app.get("/api/agent/help")
-async def agent_help_route():
-    """Self-contained orientation guide for a remote agent (markdown text)."""
-    return PlainTextResponse(api.agent_help(), media_type="text/markdown")
+async def agent_help_route(topic: str = ""):
+    """Self-contained orientation guide for a remote agent (markdown text).
+    `?topic=<name>` returns one detail section (screenshots, retroeng, print,
+    threads, fluid) instead of the core guide."""
+    try:
+        text = api.agent_help(topic)
+    except ValueError as e:
+        raise HTTPException(404, str(e)) from e
+    return PlainTextResponse(text, media_type="text/markdown")
 
 
 @app.get("/api/agent/tags")
@@ -1191,6 +1482,42 @@ async def graph_subshapes(name: str, node_id: str, kind: str = "edge"):
     return data
 
 
+# ---------------------------------------------------------------------------
+# Geometry facts + graph lint (cad_nodes/measure.py, cad_nodes/lint.py).
+# Self-contained block: imports are local so it never touches the header.
+# ---------------------------------------------------------------------------
+@app.post("/api/graph/{name}/measure")
+async def graph_measure(name: str, body: dict = Body(...)):
+    """Geometry facts about node outputs, by reference (n5 | n51.body | n51[3]).
+    Body: {"queries": [{"op": "props", "node": "n5", "each"?: true},
+    {"op": "interference", "a": "n5", "b": "n7"} | {"op": "interference",
+    "node": "n51"} (every pair of a list value) | {"nodes": [...]},
+    {"op": "distance", "a", "b"}, {"op": "section", "node", "axis": "z",
+    "offset": 3.0, "svg"?: true, "outline"?: true}, {"op": "probe", "node",
+    "points": [[x,y,z], …]}, {"op": "summary", "node", "n": 10}]}.
+    Returns {"success", "results": [one per query, each may carry "error"],
+    "node_errors"}. Unsaved graphs: pass "graph" in the body instead."""
+    from cad_nodes.executor import measure_graph
+    d = require_project(name)
+    graph = Graph.from_dict(body["graph"]) if body.get("graph") else _load_graph(name)
+    try:
+        data = await off_loop(measure_graph, graph, d, body.get("queries"))
+    except (ValidationError, ValueError) as e:
+        raise HTTPException(400, str(e)) from e
+    if not data.get("success"):
+        raise HTTPException(400, {"message": "Measure failed", "error": data.get("error")})
+    return data
+
+
+@app.get("/api/graph/{name}/lint")
+async def graph_lint(name: str):
+    """Soft findings (never errors): slider vs #@param mismatches, hidden _cb
+    overrides, CodeBlocks that will not compile, unassigned #@out. Pure Python —
+    no engine run, so it is cheap to call right after editing code."""
+    from cad_nodes.lint import lint_graph
+    return {"lint": lint_graph(_load_graph(name))}
+
+
 @app.get("/api/copilot/status")
 async def copilot_status_route():
     """Which LLM backend the copilot will use (provider/model/keyed)."""
@@ -1212,7 +1539,7 @@ async def get_graph_view(name: str):
     vpath = d / "view.json"
     if not vpath.exists():
         raise HTTPException(404, "No view yet. Call /execute first.")
-    return json.loads(vpath.read_text())
+    return FileResponse(vpath, media_type='application/json')
 
 
 # Real geometry export: transpile + execute + write the file in the requested
@@ -1224,17 +1551,34 @@ _EXPORT_MEDIA = {
 }
 
 
+# The 📦 bake: every node whose eye is on, as STEP + STL, zipped with a manifest.
+# Registered BEFORE /export/{fmt} so "bundle" is not read as a format.
+@app.get("/api/graph/{name}/export/bundle")
+@app.post("/api/graph/{name}/export/bundle")
+async def export_bundle_project(name: str, snapshot: Optional[dict] = Body(default=None)):
+    require_project(name)
+    graph = Graph.from_dict(snapshot) if snapshot is not None else _load_graph(name)
+    try:
+        zpath, fname, _man = await off_loop(api.export_all, GraphStore(PROJECTS_DIR), name, graph)
+    except ValidationError as e:
+        raise HTTPException(400, str(e)) from e
+    except (RuntimeError, ValueError) as e:
+        raise HTTPException(400, f"Export failed: {e}") from e
+    return FileResponse(zpath, media_type="application/zip", filename=fname)
+
+
 @app.get("/api/graph/{name}/export/{fmt}")
-async def export_graph_project(name: str, fmt: str):
+@app.post("/api/graph/{name}/export/{fmt}")
+async def export_graph_project(name: str, fmt: str, snapshot: Optional[dict] = Body(default=None)):
     fmt = fmt.lower()
     if fmt not in _EXPORT_MEDIA:
         raise HTTPException(400, f"Unsupported format {fmt!r}; "
                                  f"choose from {sorted(_EXPORT_MEDIA)}")
-    d = require_project(name)
-    graph = _load_graph(name)
+    require_project(name)
+    graph = Graph.from_dict(snapshot) if snapshot is not None else _load_graph(name)
     media, ext = _EXPORT_MEDIA[fmt]
     try:
-        out_path = await off_loop(export_graph, graph, d, fmt)
+        out_path = await off_loop(api.export, GraphStore(PROJECTS_DIR), name, fmt, graph)
     except ValidationError as e:
         raise HTTPException(400, str(e)) from e
     except (RuntimeError, ValueError) as e:
@@ -1256,21 +1600,27 @@ _LIB_MEDIA = {
     ".dxf": "image/vnd.dxf",
     ".png": "image/png",
     ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".zip": "application/zip",
+    ".obj": "model/obj", ".ply": "application/octet-stream",
 }
 # The two sandboxed sub-folders the library exposes. Nothing else in a
 # project dir (graph.json, _run.py, output.stl, …) is ever listed or served.
 _LIB_KINDS = ("exports", "assets")
 
 
-def _lib_entries(d: Path, kind: str) -> list[dict]:
-    """List downloadable files in a project's exports/ or assets/ folder."""
+def _lib_entries(d: Path, kind: str, prov: Optional[dict] = None) -> list[dict]:
+    """List downloadable files in a project's exports/ or assets/ folder.
+    `prov` = export_index.load(...) — each export carries its `source` (which
+    node / button / bundle wrote it, and whether the graph changed since)."""
     folder = d / kind
     out: list[dict] = []
     if folder.is_dir():
         for f in sorted(folder.iterdir()):
             if f.is_file() and f.suffix.lower() in _LIB_MEDIA:
                 st = f.stat()
+                src = (prov or {}).get(f.name) if kind == "exports" else None
                 out.append({
+                    **({"source": src} if src else {}),
                     "name": f.name,
                     "kind": kind,
                     "ext": f.suffix.lower(),
@@ -1289,9 +1639,16 @@ async def library_list():
     for d in sorted(PROJECTS_DIR.iterdir()):
         if not d.is_dir() or d.name in _RESERVED_PROJECT_DIRS:
             continue
-        files = _lib_entries(d, "exports") + _lib_entries(d, "assets")
+        gpath = d / "graph.json"
+        try:
+            graph = json.loads(gpath.read_text()) if gpath.exists() else None
+        except (OSError, ValueError):
+            graph = None
+        prov = export_index.load(d, graph)
+        files = _lib_entries(d, "exports", prov) + _lib_entries(d, "assets")
         thumb = d / THUMB_NAME
         projects.append({"project": d.name, "files": files,
+                         "mtime": int(gpath.stat().st_mtime) if gpath.exists() else 0,
                          "thumb": int(thumb.stat().st_mtime) if thumb.exists() else 0})
     return {"projects": projects}
 
@@ -1337,3 +1694,55 @@ async def list_backends():
     return [
         {"id": "nodegraph", "name": "Node CAD (build123d)", "type": "Visual graph -> build123d"},
     ]
+
+
+# ---------------------------------------------------------------------------
+# Graph version (optimistic concurrency) — BEGIN
+# The editor polls this to notice a graph changed under it (an agent, the API,
+# the copilot) and merges it live; a save carrying a stale base_version is
+# refused with 409 (see save_graph and cad_nodes/graph_version.py).
+# ---------------------------------------------------------------------------
+def _stale_detail(e) -> dict:
+    """The 409 body, with the graph in the same normalised form GET returns."""
+    d = e.detail()
+    if d.get("graph") is not None:
+        try:
+            d["graph"] = Graph.from_dict(d["graph"]).to_dict()
+        except Exception:  # an unparsable file on disk: the version alone still helps
+            d["graph"] = None
+    return d
+
+
+@app.get("/api/graph/{name}/version")
+async def graph_version(name: str, graph: int = 0):
+    """`{version}` of graph.json — a content hash, cheap to poll. With `?graph=1`
+    also the graph itself, read in the SAME read as the hash so they agree."""
+    from cad_nodes.graph_version import read_versioned
+    d = require_project(name)
+    version, data = read_versioned(d / "graph.json")
+    if version is None:
+        raise HTTPException(404, f"Project '{name}' has no graph.json")
+    out = {"version": version}
+    if graph:
+        out["graph"] = Graph.from_dict(data or {}).to_dict()
+    return out
+
+
+@app.post("/api/graph/{name}/merge")
+async def graph_merge(name: str, body: dict = Body(...)):
+    """Stateless three-way merge (cad_nodes/graph_merge.py) of the editor's
+    unsaved canvas with a graph someone else wrote: body `{base_mine, mine,
+    base_theirs, theirs}` -> `{graph, conflicts, changed, ops, renamed,
+    base_next}`. Touches nothing on disk."""
+    from cad_nodes.graph_merge import merge3, rebase
+    validate_graph_id(name)
+    try:
+        parts = [body[k] or {} for k in ("base_mine", "mine", "base_theirs", "theirs")]
+    except KeyError as e:
+        raise HTTPException(400, f"missing {e}") from e
+    out = merge3(*parts)
+    out["base_next"] = rebase(parts[0], parts[2], parts[3])
+    return out
+# ---------------------------------------------------------------------------
+# Graph version — END
+# ---------------------------------------------------------------------------

@@ -96,7 +96,7 @@ def test_transpile_flange_golden():
     assert "__out_1 = _outline(Circle(20.0))" in code
     assert "_extrude(__out_1, 10.0, 0.0, False, True)" in code
     assert "(__out_2 - __out_4)" in code
-    assert "export_step(__out_5, _out('flange.step'))" in code  # exports/ sandbox
+    assert "export_step(__out_5, _out('flange.step', " in code  # exports/ sandbox
     assert "__result__ = __out_5" in code
 
 

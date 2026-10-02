@@ -21,6 +21,8 @@ import shutil
 from pathlib import Path
 
 from .graph import Graph
+from .graph_version import check_base, current_version, write_graph
+from .job_files import atomic_write
 
 DEFAULT_ROOT = os.environ.get("CAD_PROJECTS_DIR", "/app/projects")
 
@@ -312,11 +314,22 @@ class GraphStore:
             raise KeyError(f"No graph {graph_id!r}")
         return Graph.from_dict(json.loads(gpath.read_text()))
 
-    def save(self, graph_id: str, graph: Graph, description: str = "") -> None:
-        stamp_agent_tags(graph.nodes)
+    def version(self, graph_id: str) -> str | None:
+        """The on-disk version of graph.json (a content hash; None if absent)."""
+        return current_version(self.dir(graph_id) / "graph.json")
+
+    def save(self, graph_id: str, graph: Graph, description: str = "",
+             base_version: str | None = None) -> str:
+        """Write the graph; return its new version.
+
+        With `base_version`, refuse (StaleGraphError) if the file on disk is no
+        longer that version — someone else wrote it meanwhile. See graph_version.
+        """
         d = self.dir(graph_id)
+        check_base(d / "graph.json", base_version)
+        stamp_agent_tags(graph.nodes)
         d.mkdir(parents=True, exist_ok=True)
-        (d / "graph.json").write_text(json.dumps(graph.to_dict(), indent=2))
+        version = write_graph(d / "graph.json", json.dumps(graph.to_dict(), indent=2))
         meta = {}
         mpath = d / "meta.json"
         if mpath.exists():
@@ -327,7 +340,8 @@ class GraphStore:
         meta["backend"] = "nodegraph"
         if description:
             meta["description"] = description
-        mpath.write_text(json.dumps(meta, indent=2))
+        atomic_write(mpath, json.dumps(meta, indent=2))
+        return version
 
     def delete(self, graph_id: str) -> None:
         d = self.dir(graph_id)
@@ -367,3 +381,72 @@ class GraphStore:
             return json.loads(vpath.read_text())
         except Exception:
             return None
+
+    # --- generations: frozen snapshots of a run, for the read-only viewer ------
+    # A generation is a COPY of one run's view.json + the graph.json that made it,
+    # under <graph_id>/gens/g<N>/. It exists so a link sent to someone (an agent
+    # reporting "look at this" instead of a screenshot) keeps showing THAT result
+    # while the live workflow moves on. Written once, never modified: the numbers
+    # are never reused, so /view/<name>/g7 means the same thing forever (until the
+    # project itself is deleted).
+    GENS_DIRNAME = "gens"
+
+    def gens_dir(self, graph_id: str) -> Path:
+        return self.dir(graph_id) / self.GENS_DIRNAME
+
+    def gen_dir(self, graph_id: str, gen: str) -> Path:
+        return self.gens_dir(graph_id) / validate_gen_id(gen)
+
+    def list_gens(self, graph_id: str) -> list[dict]:
+        """Every generation's meta, newest first."""
+        root = self.gens_dir(graph_id)
+        out = []
+        if root.is_dir():
+            for d in root.iterdir():
+                if not (d.is_dir() and _GEN_ID_RE.fullmatch(d.name)):
+                    continue
+                try:
+                    out.append(json.loads((d / "meta.json").read_text()))
+                except (OSError, ValueError):
+                    continue          # a half-written gen is not listed
+        out.sort(key=lambda m: int(m.get("gen", "g0")[1:]), reverse=True)
+        return out
+
+    def save_gen(self, graph_id: str, view: dict, graph: dict, meta: dict) -> dict:
+        """Freeze `view` + `graph` as the next generation; return its meta."""
+        root = self.gens_dir(graph_id)
+        root.mkdir(parents=True, exist_ok=True)
+        n = max([int(d.name[1:]) for d in root.iterdir()
+                 if _GEN_ID_RE.fullmatch(d.name)] or [0]) + 1
+        while True:                   # mkdir is the atomic claim on the number
+            d = root / f"g{n}"
+            try:
+                d.mkdir()
+                break
+            except FileExistsError:
+                n += 1
+        meta = {**meta, "gen": d.name, "graph": graph_id}
+        (d / "view.json").write_text(json.dumps(view))
+        (d / "graph.json").write_text(json.dumps(graph, indent=2))
+        # meta LAST, and atomic: list_gens only lists a gen whose meta exists, so a
+        # reader never sees one whose view is still being written, nor half a meta.
+        atomic_write(d / "meta.json", json.dumps(meta, indent=2))
+        return meta
+
+    def load_gen(self, graph_id: str, gen: str, part: str) -> dict:
+        """One file of a generation: part is view | graph | meta."""
+        if part not in ("view", "graph", "meta"):
+            raise ValueError(f"unknown generation part {part!r}")
+        p = self.gen_dir(graph_id, gen) / f"{part}.json"
+        if not p.exists():
+            raise KeyError(f"No generation {gen!r} in {graph_id!r}")
+        return json.loads(p.read_text())
+
+
+_GEN_ID_RE = re.compile(r"^g[1-9][0-9]{0,6}$")
+
+
+def validate_gen_id(gen: str) -> str:
+    if not isinstance(gen, str) or not _GEN_ID_RE.fullmatch(gen):
+        raise ValueError(f"Invalid generation id {gen!r}: expected g<number>, e.g. g3")
+    return gen

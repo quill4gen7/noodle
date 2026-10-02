@@ -23,11 +23,14 @@ SERVER = Path(__file__).resolve().parent.parent / "server.py"
 # loop on a lock is blocking the loop.
 ENGINE_CALLS = {
     "execute_graph",
-    "export_graph",
+    "export",          # api.export -> executor.export_graph
+    "export_all",      # api.export_all -> executor.export_bundle (the 📦 bake)
     "extract_subshapes_for_node",
     "slice_summary",
     "section_outline",
     "set_warm",
+    "measure_graph",
+    "codeblock_sections_run",   # api -> executor.codeblock_sections_run
 }
 
 

@@ -1,0 +1,24 @@
+# Opt-in overlay: give the screenshot browser (cad_nodes/screenshot.py, §9) a
+# real GPU instead of SwiftShader.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+#
+# Needs an NVIDIA GPU exposed through CDI (nvidia-container-toolkit; Docker 25+
+# or podman). The device alone is NOT enough: CDI injects the driver libraries
+# but not the Vulkan ICD / glvnd EGL manifests that tell a loader where they
+# are, and without those Chromium silently falls back to SwiftShader. The
+# defaults below are where NixOS keeps them (/run/opengl-driver, which the CDI
+# spec mounts); elsewhere point them at /usr/share/vulkan/icd.d and
+# /usr/share/glvnd/egl_vendor.d.
+#
+# Measured on an RTX 4060 Ti: WebGL reports
+# "ANGLE (NVIDIA, Vulkan 1.4.341 (NVIDIA GeForce RTX 4060 Ti ...))".
+services:
+  noodle:
+    devices:
+      - nvidia.com/gpu=all
+    environment:
+      - NOODLE_BROWSER_GPU=${NOODLE_BROWSER_GPU:-vulkan}
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - VK_ICD_FILENAMES=${NOODLE_VK_ICD:-/run/opengl-driver/share/vulkan/icd.d/nvidia_icd.json}
+      - __EGL_VENDOR_LIBRARY_DIRS=${NOODLE_EGL_VENDOR_DIRS:-/run/opengl-driver/share/glvnd/egl_vendor.d}

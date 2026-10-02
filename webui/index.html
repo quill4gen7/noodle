@@ -6,9 +6,9 @@
 <title>noodle — code</title>
 <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
 <link rel="apple-touch-icon" href="/static/icon.svg">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.36.2/ace.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.36.2/mode-python.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.36.2/theme-one_dark.js"></script>
+<script src="/static/vendor/ace-1.36.2/ace.js"></script>
+<script src="/static/vendor/ace-1.36.2/mode-python.js"></script>
+<script src="/static/vendor/ace-1.36.2/theme-one_dark.js"></script>
 <style>
 :root {
   --bg-0: #0b0e14;
@@ -33,7 +33,7 @@ html, body { height:100%; overflow:hidden; }
 body { font-family:var(--font); background:var(--bg-0); color:var(--text); }
 
 /* ── Layout ── */
-.app { display:grid; grid-template-columns:240px 1fr; grid-template-rows:48px 1fr 28px; height:100vh; }
+.app { display:grid; grid-template-columns:240px 1fr; grid-template-rows:48px 1fr 28px; height:100vh; height:100dvh; }
 .sidebar { grid-row:1/4; background:var(--bg-1); border-right:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; }
 .toolbar { grid-column:2; background:var(--bg-1); border-bottom:1px solid var(--border); display:flex; align-items:center; gap:6px; padding:0 12px; }
 .workspace { grid-column:2; display:flex; overflow:hidden; position:relative; }
@@ -87,6 +87,20 @@ body { font-family:var(--font); background:var(--bg-0); color:var(--text); }
 .viewer-pane { flex:1; position:relative; min-width:200px; background:var(--bg-0); }
 .split-handle { width:5px; background:var(--border); cursor:col-resize; transition:background .15s; flex-shrink:0; }
 .split-handle:hover, .split-handle.dragging { background:var(--accent); }
+.split-handle { touch-action:none; }
+/* ── touch: narrow screens stack the project list, the code and the 3D view ── */
+@media (max-width:800px) {
+  .app { grid-template-columns:1fr; grid-template-rows:auto auto 1fr 28px; }
+  .sidebar { grid-row:auto; max-height:30dvh; border-right:none; border-bottom:1px solid var(--border); }
+  .toolbar, .workspace, .statusbar { grid-column:1; }
+  .toolbar { flex-wrap:wrap; padding:6px 8px; row-gap:6px; }
+  .workspace { flex-direction:column; }
+  .editor-pane, .viewer-pane { min-width:0; min-height:0; width:auto !important; flex:1 1 0 !important; }
+  .split-handle { display:none; }
+  .proj-item { padding:11px 10px; }
+  .tb-btn { padding:8px 12px; }
+  .viewer-overlay { display:none; }   /* mouse-button hints */
+}
 #ace-editor { position:absolute; inset:0; font-size:14px; }
 .code-banner { position:absolute; top:8px; left:8px; z-index:6; font-size:10px; color:var(--text-dim);
   background:var(--bg-1); border:1px solid var(--border); border-radius:5px; padding:3px 8px; pointer-events:none; }
@@ -301,8 +315,8 @@ body { font-family:var(--font); background:var(--bg-0); color:var(--text); }
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    "three": "/static/vendor/three-0.170.0/build/three.module.min.js",
+    "three/addons/": "/static/vendor/three-0.170.0/examples/jsm/"
   }
 }
 </script>
@@ -317,7 +331,7 @@ let aceEditor = null;
 // ── Ace Editor (read-only build123d viewer) ──
 function initAce() {
   // let Ace lazy-load any mode/theme it needs from the same CDN as the preloads
-  ace.config.set('basePath', 'https://cdnjs.cloudflare.com/ajax/libs/ace/1.36.2/');
+  ace.config.set('basePath', '/static/vendor/ace-1.36.2/');
   aceEditor = ace.edit('ace-editor');
   try { aceEditor.setTheme('ace/theme/one_dark'); } catch (e) { /* theme is cosmetic */ }
   aceEditor.setOptions({
@@ -948,14 +962,15 @@ function setStatus(msg, type = '') {
 const splitHandle = document.getElementById('split-handle');
 const editorPane = document.getElementById('editor-pane');
 let isDragging = false;
-splitHandle.addEventListener('mousedown', e => {
+splitHandle.addEventListener('pointerdown', e => {   // pointer events: a finger drags it too
   isDragging = true;
+  try { splitHandle.setPointerCapture(e.pointerId); } catch(_) {}
   splitHandle.classList.add('dragging');
   document.body.style.cursor = 'col-resize';
   document.body.style.userSelect = 'none';
   e.preventDefault();
 });
-document.addEventListener('mousemove', e => {
+splitHandle.addEventListener('pointermove', e => {
   if (!isDragging) return;
   const workspace = document.querySelector('.workspace');
   const rect = workspace.getBoundingClientRect();
@@ -965,13 +980,15 @@ document.addEventListener('mousemove', e => {
   editorPane.style.width = Math.max(minW, Math.min(rect.width - minW - 5, newW)) + 'px';
   onResize();
 });
-document.addEventListener('mouseup', () => {
+const endSplitDrag = () => {
   if (!isDragging) return;
   isDragging = false;
   splitHandle.classList.remove('dragging');
   document.body.style.cursor = '';
   document.body.style.userSelect = '';
-});
+};
+splitHandle.addEventListener('pointerup', endSplitDrag);
+splitHandle.addEventListener('pointercancel', endSplitDrag);
 
 // ── Init ──
 try { initAce(); initParamEditing(); } catch (e) { console.error('Ace init failed', e); }

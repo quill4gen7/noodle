@@ -11,3 +11,6 @@ projects/*
 !projects/.gitkeep
 feedback/*
 !feedback/.gitkeep
+
+# GitHub Pages build output (scripts/build_pages.py)
+site/

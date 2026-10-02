@@ -73,6 +73,7 @@ export function markGlow(obj) {
     const emits = (Array.isArray(m) ? m : [m]).some(
       x => x && x.emissive && x.emissiveIntensity > 0 && x.emissive.getHex() !== 0);
     if (emits) o.layers.enable(GLOW_LAYER);
+    else o.layers.disable(GLOW_LAYER);
   });
 }
 export function makeMaterial(color, finish) {
@@ -201,11 +202,151 @@ function objFromPreview(p, color, opts, scale) {
   return null;
 }
 
+// ── Drop live replay ────────────────────────────────────────────────────────
+// The engine ships the WHOLE fall with the preview (previews[id].anim: bounce
+// segments + topple steps, world coordinates, and the t it was baked at), so
+// the browser can play any t of the timeline as pure matrix math — the same
+// physics, anticipated at 60fps while the slider drags; the exact re-bake
+// lands when the drag settles.
+export function dropMatrixAt(anim, t){
+  const M = new THREE.Matrix4();
+  const n = new THREE.Vector3(anim.n[0], anim.n[1], anim.n[2]);
+  const tau = Math.min(Math.max(+t || 0, 0), 1) * anim.T;
+  const h0 = anim.h0;
+  if (tau < anim.Tb || !(anim.steps||[]).length){      // still in the air
+    const f = anim.Tb > 0 ? tau / anim.Tb : 1;
+    let h = 0;
+    if (h0 <= 0) h = h0 * (1 - f);
+    else {
+      let tn = f * anim.tot_n;
+      for (const [d, up] of anim.segs){
+        if (tn <= d){ h = h0 * Math.max((up == null ? 1 - tn*tn : up*tn - tn*tn), 0); break; }
+        tn -= d;
+      }
+    }
+    return M.makeTranslation(n.x*(h-h0), n.y*(h-h0), n.z*(h-h0));
+  }
+  M.makeTranslation(-h0*n.x, -h0*n.y, -h0*n.z);        // landed…
+  let left = tau - anim.Tb;
+  for (const s of anim.steps){                         // …then the topples, in order
+    let deg = s.deg, partial = false;
+    if (left >= s.du - 1e-12){ left -= s.du; }
+    else { const fr = Math.max(0, left / s.du); deg = s.deg * fr * fr; partial = true; }
+    const ax = new THREE.Vector3(s.ax[0], s.ax[1], s.ax[2]).normalize();
+    M.premultiply(new THREE.Matrix4().makeTranslation(-s.p[0], -s.p[1], -s.p[2]))
+     .premultiply(new THREE.Matrix4().makeRotationAxis(ax, deg * Math.PI/180))
+     .premultiply(new THREE.Matrix4().makeTranslation(s.p[0], s.p[1], s.p[2]));
+    if (partial) break;
+  }
+  return M;
+}
+
+// A collide body ships a KEYFRAME plan instead (kind "keys"): pybullet ran the
+// whole scene once, and here we interpolate (lerp + slerp) the pose at any t.
+export function keyInterp(anim, tau){
+  const T = anim.times; if (!T || !T.length) return null;
+  const q = (i)=> new THREE.Quaternion(anim.quat[i][0], anim.quat[i][1], anim.quat[i][2], anim.quat[i][3]);
+  if (tau <= T[0])            return { p: anim.pos[0], q: q(0) };
+  if (tau >= T[T.length-1])   return { p: anim.pos[T.length-1], q: q(T.length-1) };
+  let lo = 0, hi = T.length - 1;
+  while (hi - lo > 1){ const mid = (lo+hi)>>1; if (T[mid] <= tau) lo = mid; else hi = mid; }
+  const f = (tau - T[lo]) / ((T[hi] - T[lo]) || 1);
+  const p = [0,1,2].map(i => anim.pos[lo][i]*(1-f) + anim.pos[hi][i]*f);
+  return { p, q: q(lo).slerp(q(hi), f) };
+}
+
+// Move one Scene body (baked at anim.t) to tNew. Its world vertices sit at pose
+// (pB,qB); target is (pT,qT). The rigid delta is Δq = qT·qB⁻¹, and the child's
+// offset = pT − Δq·pB, so vertex y → Δq·(y−pB) + pT.
+export function sceneBodyPose(anim, tNew, child){
+  const T = anim.T || 1;
+  const at = keyInterp(anim, Math.min(Math.max(tNew,0),1) * T);
+  const bk = keyInterp(anim, Math.min(Math.max(anim.t,0),1) * T);
+  if (!at || !bk) return;
+  const dq = at.q.clone().multiply(bk.q.clone().invert());
+  const pB = new THREE.Vector3(bk.p[0], bk.p[1], bk.p[2]);
+  const pT = new THREE.Vector3(at.p[0], at.p[1], at.p[2]);
+  child.quaternion.copy(dq);
+  child.position.copy(pT).sub(pB.clone().applyQuaternion(dq));
+}
+
+// Seat one drawn preview object at timeline position tNew (0..1), relative to
+// the t its mesh was baked at. `anim` is the node-level plan (previews[id].anim);
+// a collide Scene group carries one plan per body on child.userData.anim, and a
+// single part falling into a container is a plain mesh with a "keys" plan.
+// Returns false when there is nothing to replay. Shared by the editor's live
+// scrub and the /view page's timeline, so the two cannot drift.
+export function poseAnim(obj, anim, tNew) {
+  if (!obj) return false;
+  if (obj.userData && obj.userData.isScene) {
+    let any = false;
+    for (const child of obj.children) {
+      const a = child.userData && child.userData.anim;
+      if (a && a.kind === 'keys') { sceneBodyPose(a, tNew, child); any = true; }
+    }
+    return any;
+  }
+  if (!anim) return false;
+  if (anim.kind === 'keys') { sceneBodyPose(anim, tNew, obj); return true; }
+  const rel = dropMatrixAt(anim, tNew).multiply(dropMatrixAt(anim, anim.t).invert());
+  rel.decompose(obj.position, obj.quaternion, obj.scale);
+  return true;
+}
+
+function disposeObject(obj) {
+  obj.removeFromParent();
+  obj.traverse(o=>{
+    if (o.geometry) o.geometry.dispose();
+    for (const m of (Array.isArray(o.material) ? o.material : [o.material])) if (m){
+      if (m.map) m.map.dispose(); m.dispose();
+    }
+  });
+}
+
+// Appearance is independent of tessellation. Keep vertex/index buffers intact.
+function restylePreview(obj, p, color, opts) {
+  if (p.bodies){
+    for (const child of obj.children){
+      const i = child.userData.bodyIndex, b = p.bodies[i];
+      let c = color === 'rainbow' ? rainbowHue(i) : color, finish = opts.finish;
+      if (b.owner){
+        c = (opts.colorOf && opts.colorOf(b.owner, opts.order)) || c;
+        finish = (opts.finishOf && opts.finishOf(b.owner)) || finish;
+      }
+      restylePreview(child, b, c, {...opts, finish});
+    }
+    return;
+  }
+  const look = JSON.stringify([color.isColor ? color.getHex() : color, opts.finish, opts.wireframe, HQ]);
+  if (obj.userData.look === look) return;
+  obj.userData.look = look;
+  if (p.mesh){
+    for (const m of (Array.isArray(obj.material) ? obj.material : [obj.material])) m.dispose();
+    obj.geometry.clearGroups();
+    if (color === 'rainbow' && p.parts && p.parts.length > 1){
+      let start = 0;
+      obj.material = p.parts.map((n,i)=>{
+        obj.geometry.addGroup(start * 3, n * 3, i); start += n;
+        return makeMaterial(rainbowHue(i), opts.finish);
+      });
+    } else obj.material = makeMaterial(color === 'rainbow' ? rainbowHue(0) : color, opts.finish);
+    for (const m of (Array.isArray(obj.material) ? obj.material : [obj.material])){
+      m.wireframe = !!opts.wireframe;
+      if (m.wireframe) m.metalness = 0;
+    }
+  } else if (obj.material && obj.material.color){
+    obj.material.color.set(color === 'rainbow' ? rainbowHue(0) : color);
+  }
+}
+
 export class CadViewer {
   constructor(canvas, { background = 0x0b0e14 } = {}) {
     this.canvas = canvas;
     this.currentMesh = null;
     this._framed = false;
+    this._previewCache = new Map();
+    this._loadGeneration = 0;
+    this._raf = 0; this._dirty = true; this._disposed = false;
     const c = canvas.parentElement;
 
     const scene = new THREE.Scene();
@@ -260,7 +401,7 @@ export class CadViewer {
     this._glowScene = null;                 // built lazily, below
     this._glowComposer = new EffectComposer(renderer);
     this._glowComposer.renderToScreen = false;
-    this._glowPass = new RenderPass(scene, this.camera);
+    this._glowPass = new RenderPass(scene, camera);
     this._glowComposer.addPass(this._glowPass);
     // HALF resolution on purpose: bloom is a blur, and a blur does not need the
     // pixels. Full-res cost the bowl scene ~1fps against ~29 — the mip chain is
@@ -314,21 +455,36 @@ export class CadViewer {
   }
 
   _loop() {
-    const tick = () => {
-      requestAnimationFrame(tick);
-      const dt = this._clock.getDelta();
+    this._tick = () => {
+      this._raf = 0;
+      if (this._disposed || document.hidden) return;
+      const dt = Math.min(this._clock.getDelta(), 0.05);
       const anim = this.viewHelper.animating;
       if (anim) this.viewHelper.update(dt);
-      // a nav-gizmo snap just finished animating → enter inspect mode
       if (this._wasAnimating && !anim && this._pendingInspect) {
         this._pendingInspect = false;
         this._enterInspectFromView();
       }
       this._wasAnimating = anim;
-      this.controls.update();
-      this._renderFrame(true);
+      const moving = this.controls.update();
+      if (this._dirty || anim || moving) this._renderFrame(true);
+      this._dirty = false;
+      if (anim || moving) this.invalidate();
     };
-    tick();
+    this._onChange = () => this.invalidate();
+    this.controls.addEventListener('change', this._onChange);
+    this._onVisibility = () => {
+      if (document.hidden){ cancelAnimationFrame(this._raf); this._raf = 0; }
+      else this.invalidate();
+    };
+    document.addEventListener('visibilitychange', this._onVisibility);
+    this.invalidate();
+  }
+
+  invalidate() {
+    this._dirty = true;
+    if (!this._disposed && !document.hidden && !this._raf)
+      this._raf = requestAnimationFrame(this._tick);
   }
 
   // One frame, drawn exactly as the animate loop draws it. Extracted so that
@@ -402,10 +558,12 @@ export class CadViewer {
       this.controls.target.copy(saved.tgt); this.controls.update();
       this.grid.visible = saved.grid;
       this.axes.visible = saved.axes;
+      this.invalidate();
     }
   }
 
   resize() {
+    this.invalidate();
     const c = this.canvas.parentElement;
     const aspect = c.clientWidth / c.clientHeight;
     this._persp.aspect = aspect;
@@ -424,7 +582,7 @@ export class CadViewer {
     if (this._bloom) this._bloom.resolution.set(c.clientWidth / 2, c.clientHeight / 2);
   }
 
-  setGrid(on) { this.grid.visible = on; }
+  setGrid(on) { this.grid.visible = on; this.invalidate(); }
 
   // ── projection: perspective ⇄ orthographic ─────────────────────────────
   // Ortho is the CAD measuring projection (parallel — no perspective foreshorten).
@@ -468,15 +626,19 @@ export class CadViewer {
     this.viewHelper = new ViewHelper(to, this.canvas);
     this.viewHelper.center.copy(tgt);
     if (this.onProjectionChange) this.onProjectionChange(this._projection);
+    this.invalidate();
   }
 
   toggleProjection() { this.setProjection(this.isOrtho ? 'persp' : 'ortho'); return this._projection; }
 
   // Re-target + re-distance the camera to fit the shown geometry WITHOUT moving
-  // it: keep the current view direction, just frame the real bounds.
-  frame() {
+  // it: keep the current view direction, just frame the real bounds. `fit` (a
+  // Box3) frames that box instead — /view passes the pieces left visible.
+  frame(fit = null) {
+    this.invalidate();
     const box = new THREE.Box3();
-    if (this.previewGroup.children.length) box.setFromObject(this.previewGroup);
+    if (fit) box.copy(fit);
+    else if (this.previewGroup.children.length) box.setFromObject(this.previewGroup);
     else if (this.currentMesh) box.setFromObject(this.currentMesh);
     if (box.isEmpty()) return;
     const ctr = new THREE.Vector3(); box.getCenter(ctr);
@@ -501,7 +663,7 @@ export class CadViewer {
   // ── inspect mode: a millimetre-ruled grid on the plane you snapped to ───
   // Armed by the page right after a nav-gizmo click consumes a pointer-up; the
   // animate loop fires _enterInspectFromView once the snap animation settles.
-  requestInspectOnSnap() { this._pendingInspect = true; }
+  requestInspectOnSnap() { this._pendingInspect = true; this.invalidate(); }
 
   _modelBox() {
     const box = new THREE.Box3();
@@ -530,6 +692,7 @@ export class CadViewer {
       if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
     });
     this.inspectGrid = null;
+    this.invalidate();
   }
 
   _buildInspectGrid(normalAxis, center, size) {
@@ -584,6 +747,7 @@ export class CadViewer {
     }
     this.inspectGrid = grp;
     this.scene.add(grp);
+    this.invalidate();
   }
 
   _labelSprite(text, worldSize) {
@@ -617,6 +781,8 @@ export class CadViewer {
       });
     }
     this.previewGroup.position.set(0, 0, 0);
+    this._previewCache.clear();
+    this._bloomOn = false;
   }
 
   _dropMesh() {
@@ -635,11 +801,16 @@ export class CadViewer {
   renderPreviews(previews, { colorOf, wireOf, finishOf, onEmpty } = {}) {
     let glowing = false;   // does anything in this view declare itself a source?
     previews = previews || {};
-    this._clearPreviewGroup();
+    this._loadGeneration++;
+    const previous = this._previewCache, next = new Map();
     const drawable = e => e && (e.mesh || e.polylines || e.points || e.bodies);
     const order = Object.keys(previews).filter(k => drawable(previews[k]))
       .sort((a, b) => nodeNum(a) - nodeNum(b));   // stable order for colour slots
-    if (!order.length) { if (onEmpty) onEmpty(); return { order: [], colors: {}, meshes: {}, size: null }; }
+    if (!order.length) {
+      this._clearPreviewGroup(); this._dropMesh(); this.invalidate();
+      if (onEmpty) onEmpty();
+      return { order: [], colors: {}, meshes: {}, size: null };
+    }
     this._dropMesh();
     const scale = previewsExtent(previews, order);
     const colors = {}, meshes = {};
@@ -652,16 +823,32 @@ export class CadViewer {
       // emissive bowl would light nothing.
       for (const b of (previews[id].bodies || []))
         if (b.owner && finishOf && finishOf(b.owner) === 'emissive') glowing = true;
-      const obj = objFromPreview(previews[id], color,
-      { wireframe: wireOf ? wireOf(id) : false, finish,
-        colorOf, finishOf, order }, scale);
+      const p = previews[id], old = previous.get(id);
+      const opts = {wireframe: wireOf ? wireOf(id) : false, finish, colorOf, finishOf, order};
+      const reusable = old && (old.data === p || (p.cache_key && old.key === p.cache_key)) &&
+        (!p.points || old.scale === scale);
+      let obj;
+      if (reusable){
+        obj = old.obj;
+        if (old.data !== p) obj.traverse(o=>{
+          o.position.set(0,0,0); o.quaternion.identity(); o.scale.set(1,1,1); o.updateMatrix();
+        });
+        restylePreview(obj, p, color, opts);
+      } else {
+        obj = objFromPreview(p, color, opts, scale);
+        if (old) disposeObject(old.obj);
+      }
       if (!obj) continue;
+      next.set(id, {obj, data:p, key:p.cache_key, scale});
       obj.userData.nodeId = id;
       markGlow(obj);                      // put its emitters on the glow layer
-      this.previewGroup.add(obj);
+      if (obj.parent !== this.previewGroup) this.previewGroup.add(obj);
       colors[id] = color; meshes[id] = obj;
     }
-    this._bloomOn = glowing;          // pay for the second pass only when it shows
+    for (const [id, old] of previous) if (!next.has(id)) disposeObject(old.obj);
+    this._previewCache = next;
+    this._bloomOn = glowing;
+    this.invalidate();
     const box = new THREE.Box3().setFromObject(this.previewGroup);
     const size = new THREE.Vector3(); box.getSize(size);
     if (!this._framed) { this.frame(); this._framed = true; }
@@ -670,21 +857,43 @@ export class CadViewer {
 
   // Fallback single-STL load (used when an execution produced no per-node mesh).
   loadSTL(url, { onSize } = {}) {
+    const generation = ++this._loadGeneration;
     this._stl.load(url, (geo) => {
+      if (generation !== this._loadGeneration || this._disposed){ geo.dispose(); return; }
       this._dropMesh();
       geo.computeVertexNormals();
       this.currentMesh = new THREE.Mesh(geo,
         new THREE.MeshStandardMaterial({ color: 0xe94560, roughness: .35, metalness: .15, side: THREE.DoubleSide }));
       this.scene.add(this.currentMesh);          // real coords — no recentering
+      this.invalidate();
       if (!this._framed) { this.frame(); this._framed = true; }
       if (onSize) {
         geo.computeBoundingBox(); const s = new THREE.Vector3(); geo.boundingBox.getSize(s);
         onSize(s);
       }
-    }, undefined, (err) => { if (onSize) onSize(null, err); });
+    }, undefined, (err) => { if (generation === this._loadGeneration && onSize) onSize(null, err); });
   }
 
-  clear() { this._clearPreviewGroup(); this._dropMesh(); }
+  clear() {
+    this._loadGeneration++;
+    this._clearPreviewGroup(); this._dropMesh(); this._hideInspectGrid(); this.invalidate();
+  }
+  dispose() {
+    this.clear(); this._disposed = true;
+    cancelAnimationFrame(this._raf); this._raf = 0;
+    document.removeEventListener('visibilitychange', this._onVisibility);
+    this.controls.removeEventListener('change', this._onChange);
+    this.controls.dispose(); this.viewHelper.dispose();
+    this._bloom.dispose(); this._glowComposer.dispose();
+    this._glowQuadMat.dispose();
+    this._glowQuadScene.traverse(o=>{ if (o.geometry) o.geometry.dispose(); });
+    if (this.scene.environment) this.scene.environment.dispose();
+    this.scene.traverse(o=>{
+      if (o.geometry) o.geometry.dispose();
+      for (const m of (Array.isArray(o.material) ? o.material : [o.material])) if (m) m.dispose();
+    });
+    this.renderer.dispose();
+  }
   resetFraming() { this._framed = false; }
 
   // Raycast the previews under a screen point; returns the owning graph node id

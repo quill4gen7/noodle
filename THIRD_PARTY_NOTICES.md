@@ -4,8 +4,8 @@ noodle itself is licensed under the **MIT License** (see `LICENSE`). It builds
 on the following third-party components, whose licenses are reproduced/located as
 noted. None of these change the MIT license of noodle's own source, because
 they are used as **dynamically-linked libraries** (Python imports) or as a
-**separate process** invoked over a CLI — not statically linked or copied into
-this project's source.
+**separate process** invoked over a CLI. Browser libraries are redistributed
+under their own licenses in `webui/vendor/` (see below).
 
 ## Runtime libraries (Python — see `requirements.txt`)
 
@@ -39,8 +39,13 @@ LGPL-2.1 this permits noodle to remain MIT-licensed, provided we:
 
 | Component | Role | License |
 |---|---|---|
-| three.js | 3D viewport | MIT |
-| litegraph.js (node-editor pattern) | node graph UI | MIT |
+| three.js 0.170.0 | 3D viewport | MIT — `webui/vendor/three-0.170.0/LICENSE` |
+| litegraph.js 0.7.18 | node graph UI | MIT — `webui/vendor/litegraph-0.7.18/LICENSE` |
+| Ace 1.36.2 | code editor | BSD-3-Clause — `webui/vendor/ace-1.36.2/LICENSE` |
+
+Runtime files are copied unmodified from pinned npm releases, including their
+license notices. `python scripts/vendor_webui.py` refreshes the selected files
+and transitive Three addon imports. Both editors work without a CDN connection.
 
 The geometry pipeline is build123d-only; there is no GPL component in the stack
 (the former OpenSCAD backend has been removed).

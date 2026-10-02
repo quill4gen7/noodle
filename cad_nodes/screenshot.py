@@ -14,9 +14,14 @@ rejected: it would be a second renderer, free to drift from the first, and blind
 to exactly the things (glass, emissive, rainbow, bloom) most recently worked on.
 
 No GPU needed: verified pixel-identical under SwiftShader with `--disable-gpu`.
+One can be used when there is one — see `NOODLE_BROWSER_GPU` below.
 
 The browser is kept WARM, like the execution worker, because the cost is all in
-the launch and none in the frame.
+the launch and none in the frame. But the page is FROZEN between shots: it is
+the real editor, whose animate loop redraws the viewport 60 times a second
+forever, and on SwiftShader every one of those frames is software rasterised.
+Measured, the hard way: a page left warm after one shot held ~11 cores
+(gpu-process at 1076% CPU) for ten hours with nobody looking at it.
 """
 
 from __future__ import annotations
@@ -53,13 +58,27 @@ _BASE_URL = os.environ.get("NOODLE_BASE_URL", "http://127.0.0.1:8090")
 # implicit pick. It does WebGL2 through SwiftShader.
 _CHANNEL = os.environ.get("NOODLE_BROWSER_CHANNEL", "chromium-headless-shell")
 
-_ARGS = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu",
-         "--use-gl=swiftshader", "--enable-unsafe-swiftshader"]
+_BASE_ARGS = ["--no-sandbox", "--disable-dev-shm-usage"]
+_SWIFTSHADER = ["--disable-gpu", "--use-gl=swiftshader", "--enable-unsafe-swiftshader"]
+
+# NOODLE_BROWSER_GPU picks a hardware backend instead: "vulkan" (ANGLE on
+# Vulkan) or "gl" (ANGLE on EGL). Empty = SwiftShader, which runs anywhere. The
+# container must be given the GPU AND the vendor's ICD/EGL manifests — see
+# docker-compose.gpu.yml; without them Chromium quietly falls back to
+# SwiftShader, so a wrong setup costs speed, never a picture.
+_GPU = os.environ.get("NOODLE_BROWSER_GPU", "").strip().lower()
+_GPU_ARGS = {
+    "vulkan": ["--use-angle=vulkan", "--enable-features=Vulkan",
+               "--ignore-gpu-blocklist"],
+    "gl": ["--use-gl=angle", "--use-angle=gl-egl", "--ignore-gpu-blocklist"],
+}
+_ARGS = _BASE_ARGS + _GPU_ARGS.get(_GPU, _SWIFTSHADER)
 
 _lock = asyncio.Lock()
 _pw = None
 _browser = None
 _page = None
+_cdp = None                    # CDP session on _page, for freezing it between shots
 _page_key: tuple = ()          # (scale, hq) — a change means a fresh page
 # graph_id -> graph.json mtime when the warm page last loaded it. The page is
 # only re-navigated when the URL changes, which silently returns a STALE picture
@@ -85,8 +104,48 @@ class ScreenshotUnavailable(RuntimeError):
     """Playwright or its browser is missing — a deployment problem, not a bug."""
 
 
+async def _freeze(page, frozen: bool) -> None:
+    """Freeze or thaw the warm page.
+
+    A frozen page runs no JavaScript at all — no requestAnimationFrame, no
+    timers, so neither the viewer's 60fps loop nor the editor's health/log
+    polling — yet keeps its DOM, scene and loaded graph, so the next shot is
+    still warm (thawing takes ~3ms).
+
+    It is a debugger pause, and that is not the obvious tool: CDP's own
+    `Page.setWebLifecycleState {state: "frozen"}` answers OK and then freezes
+    nothing, because Chromium only freezes HIDDEN pages and a headless page is
+    always visible (measured: the rAF loop kept ticking at 60fps). The debugger
+    is enabled only while frozen, so a stray `debugger;` in page code cannot
+    stall a shot. Returns False when CDP failed: a page that cannot be thawed
+    must be replaced, never shot."""
+    global _cdp
+    try:
+        if _cdp is None:
+            _cdp = await page.context.new_cdp_session(page)
+        if frozen:
+            await _cdp.send("Debugger.enable")
+            await _cdp.send("Debugger.pause")
+        else:
+            await _cdp.send("Debugger.disable")    # resumes, and lets go
+        return True
+    except Exception:
+        _cdp = None
+        return False
+
+
+async def _drop_page() -> None:
+    global _page, _cdp
+    try:
+        if _page is not None and not _page.is_closed():
+            await _page.close()
+    except Exception:
+        pass
+    _page = _cdp = None
+
+
 async def _ensure_page(scale: int, hq: bool, width: int, height: int):
-    global _pw, _browser, _page, _page_key
+    global _pw, _browser, _page, _page_key, _cdp
     try:
         from playwright.async_api import async_playwright
     except ImportError as e:                       # pragma: no cover - deploy path
@@ -108,9 +167,13 @@ async def _ensure_page(scale: int, hq: bool, width: int, height: int):
         _page = None
 
     key = (scale, hq)
+    if (_page is not None and not _page.is_closed() and key == _page_key
+            and not await _freeze(_page, False)):   # parked by the last shot
+        await _page.close()                         # stuck paused: start over
     if _page is None or _page.is_closed() or key != _page_key:
         if _page is not None and not _page.is_closed():
             await _page.close()
+        _cdp = None
         _page = await _browser.new_page(
             viewport={"width": width, "height": height},
             device_scale_factor=scale)
@@ -221,65 +284,77 @@ async def render(graph_id: str, *, view: str = "iso",
 
     async with _lock:                    # one shared page: shots are serialised
         page = await _ensure_page(scale, hq, width, height)
-        url = f"{base}/nodes?p={graph_id}"
-        mtime = _graph_mtime(graph_id)
-        stale = mtime < 0 or _loaded_mtime.get(graph_id) != mtime
-        if page.url.split("#")[0] != url:
-            await page.goto(url, timeout=ms)
-        elif stale:
-            # Re-read the edited graph WITHOUT navigating: the editor guards
-            # `beforeunload` while the doc is dirty, and a reload stalls on it
-            # until the element screenshot times out. openGraph re-reads from the
-            # server, which is all this needs.
-            await page.evaluate("(n) => window.openGraph(n)", graph_id)
-            await page.wait_for_timeout(400)
-        await page.wait_for_function(
-            "() => window._noodle && window._noodle.viewer && window._noodle.lgraph"
-            " && window._noodle.lgraph._nodes.length > 0", timeout=ms)
-
-        # openGraph is async: running before it has settled executes an EMPTY
-        # graph, and then the wait below times out with nothing to explain it.
-        await page.wait_for_timeout(400)
-
-        ran = False
-        have = await page.evaluate(
-            "() => window._noodle.viewer.previewGroup.children.length")
-        # `stale` forces a run: the previews still on screen were computed from
-        # the graph as it was BEFORE the edit, and handing those back is exactly
-        # the silent lie this whole path exists to avoid.
-        if run or not have or stale:
-            ran = True
-            await page.evaluate("() => window.runGraph()")
+        shot = False
+        try:
+            url = f"{base}/nodes?p={graph_id}"
+            mtime = _graph_mtime(graph_id)
+            stale = mtime < 0 or _loaded_mtime.get(graph_id) != mtime
+            if page.url.split("#")[0] != url:
+                await page.goto(url, timeout=ms)
+            elif stale:
+                # Re-read the edited graph WITHOUT navigating: the editor guards
+                # `beforeunload` while the doc is dirty, and a reload stalls on it
+                # until the element screenshot times out. openGraph re-reads from the
+                # server, which is all this needs.
+                await page.evaluate("(n) => window.openGraph(n)", graph_id)
+                await page.wait_for_timeout(400)
             await page.wait_for_function(
-                "() => window._noodle.viewer.previewGroup.children.length > 0",
-                timeout=ms)
-            await page.wait_for_timeout(250)
+                "() => window._noodle && window._noodle.viewer && window._noodle.lgraph"
+                " && window._noodle.lgraph._nodes.length > 0", timeout=ms)
 
-        # Record the mtime AFTER the run, not before: runGraph() saves the graph
-        # first, so noting it earlier leaves every later shot looking stale and
-        # re-running forever — the warm page would never be reused again.
-        _loaded_mtime[graph_id] = _graph_mtime(graph_id)
+            # openGraph is async: running before it has settled executes an EMPTY
+            # graph, and then the wait below times out with nothing to explain it.
+            await page.wait_for_timeout(400)
 
-        if projection in ("persp", "ortho"):
-            await page.evaluate("(m) => window._noodle.viewer.setProjection(m)",
-                                projection)
-        info = await page.evaluate(_CAMERA_JS, [a, e, zoom, node or None, isolate])
-        if isinstance(info, dict) and info.get("error"):
-            raise ValueError(info["error"])
-        if not chrome:
-            await page.evaluate(_HIDE_CHROME)
-        await page.wait_for_timeout(200)           # let a frame land
+            ran = False
+            have = await page.evaluate(
+                "() => window._noodle.viewer.previewGroup.children.length")
+            # `stale` forces a run: the previews still on screen were computed from
+            # the graph as it was BEFORE the edit, and handing those back is exactly
+            # the silent lie this whole path exists to avoid.
+            if run or not have or stale:
+                ran = True
+                await page.evaluate("() => window.runGraph()")
+                await page.wait_for_function(
+                    "() => window._noodle.viewer.previewGroup.children.length > 0",
+                    timeout=ms)
+                await page.wait_for_timeout(250)
 
-        png = await page.locator("#viewer-canvas").screenshot()
+            # Record the mtime AFTER the run, not before: runGraph() saves the graph
+            # first, so noting it earlier leaves every later shot looking stale and
+            # re-running forever — the warm page would never be reused again.
+            _loaded_mtime[graph_id] = _graph_mtime(graph_id)
 
-        if not chrome:                             # leave the page as we found it
-            await page.evaluate(
-                "() => { const s = document.getElementById('__noodle_shot__');"
-                " if (s) s.remove(); }")
-        if isolate:
-            await page.evaluate(
-                "() => window._noodle.viewer.previewGroup.children"
-                ".forEach(c => c.visible = true)")
+            if projection in ("persp", "ortho"):
+                await page.evaluate("(m) => window._noodle.viewer.setProjection(m)",
+                                    projection)
+            info = await page.evaluate(_CAMERA_JS, [a, e, zoom, node or None, isolate])
+            if isinstance(info, dict) and info.get("error"):
+                raise ValueError(info["error"])
+            if not chrome:
+                await page.evaluate(_HIDE_CHROME)
+            await page.wait_for_timeout(200)           # let a frame land
+
+            png = await page.locator("#viewer-canvas").screenshot()
+
+            if not chrome:                             # leave the page as we found it
+                await page.evaluate(
+                    "() => { const s = document.getElementById('__noodle_shot__');"
+                    " if (s) s.remove(); }")
+            if isolate:
+                await page.evaluate(
+                    "() => window._noodle.viewer.previewGroup.children"
+                    ".forEach(c => c.visible = true)")
+            shot = True
+        finally:
+            # Park the page: left running, the editor redraws the viewport
+            # forever (see module docstring). A FAILED shot drops it instead —
+            # it may be half booted (a load that timed out), and reusing it
+            # failed every later shot with "reading 'clear'" until a restart.
+            if shot:
+                await _freeze(page, True)
+            else:
+                await _drop_page()
 
     meta = {"graph": graph_id, "view": view, "azim": a, "elev": e, "zoom": zoom,
             "width": width, "height": height, "scale": scale, "ran": ran,
@@ -291,12 +366,12 @@ async def render(graph_id: str, *, view: str = "iso",
 
 async def shutdown() -> None:
     """Drop the warm browser (server shutdown, or to reclaim its ~100MB)."""
-    global _pw, _browser, _page, _page_key
+    global _pw, _browser, _page, _page_key, _cdp
     try:
         if _browser is not None and _browser.is_connected():
             await _browser.close()
     finally:
-        _browser = _page = None
+        _browser = _page = _cdp = None
         _page_key = ()
     if _pw is not None:
         try:
