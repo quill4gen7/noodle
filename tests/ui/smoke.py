@@ -8,6 +8,7 @@ Does not read or modify existing user graphs; no benchmark fixtures required.
 import asyncio
 import json
 import os
+import re
 import urllib.request
 import uuid
 
@@ -99,7 +100,8 @@ async def main():
                     await route.fulfill(status=500, content_type='application/json', body='{"detail":"disk full"}')
                 else:
                     await route.continue_()
-            await page.route('**/api/graph/' + names[1], fail_save)
+            # the save carries ?base_version=… (live sync), so match the query too
+            await page.route(re.compile(r'.*/api/graph/' + re.escape(names[1]) + r'(\?.*)?$'), fail_save)
             executes = []
             page.on('request', lambda req: executes.append(req.url) if '/execute?' in req.url else None)
             await page.evaluate('''()=>{const n=window._noodle.lgraph._nodes[0];n.properties.width=13;

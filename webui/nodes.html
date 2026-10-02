@@ -2700,6 +2700,8 @@ window.newGraph = async function(name){
 function persistToServer(snapshot = null){
   if (!currentName) return Promise.resolve(false);
   const name = currentName, epoch = sessionEpoch;
+  // Capture NOW: a queued save writes what the graph was when it was asked for.
+  let json = snapshot || JSON.stringify(toGraphJSON(name));
   const index = {...nodeIndex};
   const current = ()=>epoch === sessionEpoch && name === currentName;
   const fail = (msg)=>{
@@ -2710,7 +2712,6 @@ function persistToServer(snapshot = null){
     return false;
   };
   const write = async ()=>{
-    let json = snapshot || JSON.stringify(toGraphJSON(name));
     for (let retry = 0; ; retry++){
       if (!current()) return false;
       if (!syncMaySave()) return false;           // merging, or conflicts to resolve
