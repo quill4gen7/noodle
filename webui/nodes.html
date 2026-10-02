@@ -859,6 +859,8 @@ function registerNodes(defs){
       if (def.type === 'CodeBlock'){
         const cb = this.addWidget('button', '✎ Edit code', null, ()=> openCodeEditor(this));
         cb.isCodeBtn = true;
+        // ▦ the block read as the nodes it contains (cad_nodes/sections.py), read-only
+        this.addWidget('button', '▦ Sezioni', null, ()=> openSectionsView(this));
         syncCodeblockParams(this);   // surface any #@param in the default code
       }
       // Eye on every geometry node (auto/on/off). Data/math/panel nodes can't draw.
@@ -1784,6 +1786,224 @@ function openCodeEditor(node){
   ov.style.display = 'flex';
   ta.focus();
 }
+
+// ════════════════════════════════════════════════════════════════════
+// ▦ Sezioni — a CodeBlock read as the nodes it already contains. READ-ONLY:
+// the block is analysed (GET …/codeblock/{id}/sections) and, on demand, run
+// from an instrumented copy (POST …/sections/run) for per-section time, the
+// numbers each section leaves and one section's shapes. Nothing is written
+// back: the agent keeps writing one block, the user sees its structure.
+// ════════════════════════════════════════════════════════════════════
+const SEC_KIND = {
+  params: ['Parametri', '#8b5cf6'], quote: ['Quote', '#64748b'], funcs: ['Funzioni', '#0ea5e9'],
+  part: ['Pezzo', '#22c55e'], chain: ['Lavorazione', '#f59e0b'],
+};
+const _secEsc = t => String(t ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let _secState = null;      // {node, name, id, code, a, run, sel, viewer}
+
+async function openSectionsView(node){
+  if (!currentName) return;
+  let ov = document.getElementById('sections-view');
+  if (!ov){
+    ov = document.createElement('div'); ov.id = 'sections-view';
+    ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', 'Sezioni del CodeBlock');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:210;display:none;background:var(--bg-0);'+
+      'flex-direction:column;font-size:13px';
+    ov.innerHTML =
+      '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap">'+
+        '<b id="sv-title" style="color:var(--accent)"></b><span id="sv-meta" style="color:var(--text-dim)"></span>'+
+        '<span style="flex:1"></span>'+
+        '<span id="sv-legend" style="display:flex;gap:10px;font-size:11px;color:var(--text-dim)"></span>'+
+        '<button class="tb-btn" id="sv-time" title="Esegue una copia del blocco e misura ogni sezione (non salva nulla)">⏱ Misura</button>'+
+        '<button class="tb-btn" id="sv-close" title="Chiudi (Esc)">✕</button>'+
+      '</div>'+
+      '<div style="flex:1;display:flex;min-height:0">'+
+        '<div id="sv-graph" style="flex:1;overflow:auto;position:relative"></div>'+
+        '<div id="sv-side" style="width:420px;max-width:45vw;border-left:1px solid var(--border);display:flex;flex-direction:column;min-height:0;background:var(--bg-1)">'+
+          '<div id="sv-prev" style="height:260px;position:relative;border-bottom:1px solid var(--border);display:none"><canvas></canvas>'+
+            '<div id="sv-prev-msg" style="position:absolute;left:8px;top:6px;font-size:11px;color:var(--text-dim)"></div></div>'+
+          '<div id="sv-detail" style="flex:1;overflow:auto;padding:12px;line-height:1.5"></div>'+
+        '</div>'+
+      '</div>';
+    document.body.appendChild(ov);
+    document.getElementById('sv-close').onclick = closeSectionsView;
+    document.getElementById('sv-time').onclick = () => runSections(null);
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && ov.style.display === 'flex') closeSectionsView();
+    });
+    document.getElementById('sv-legend').innerHTML = Object.values(SEC_KIND).map(([t, c]) =>
+      `<span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${c};margin-right:4px"></span>${t}</span>`).join('');
+  }
+  // the analysis reads the SAVED block: save what is on the canvas first
+  if (!(await persistToServer())) { toast('error', 'Salvataggio non riuscito: le sezioni leggono il blocco salvato'); return; }
+  const id = graphIdOf(node), name = currentName;
+  const codeW = (node.widgets||[]).find(x => x.cadParam === 'code');
+  const code = (codeW ? codeW.value : node.properties.code) || '';
+  let a;
+  try {
+    const r = await fetchTimed(`${API}/api/graph/${encodeURIComponent(name)}/codeblock/${encodeURIComponent(id)}/sections`);
+    a = await r.json();
+    if (!r.ok) throw new Error(a.detail || r.status);
+  } catch(e){ toast('error', 'Sezioni: ' + e.message); return; }
+  _secState = {node, name, id, code, a, run: null, sel: null, viewer: _secState && _secState.viewer};
+  document.getElementById('sv-title').textContent = '▦ ' + (node.title || 'CodeBlock');
+  document.getElementById('sv-meta').textContent =
+    `${a.sections.length} sezioni · ${a.lines} righe · ${a.params} parametri · ` +
+    (a.headers ? 'divise dalle intestazioni del blocco' : 'raggruppate per variabile') +
+    (a.error ? ' · ERRORE: ' + a.error : '');
+  ov.style.display = 'flex';
+  drawSectionsGraph();
+  showSectionDetail(null);
+}
+function closeSectionsView(){
+  const ov = document.getElementById('sections-view'); if (ov) ov.style.display = 'none';
+}
+
+// Columns by dependency: Parametri / Quote / Funzioni on the left, then every
+// section one column right of the deepest section it takes a shape from.
+function drawSectionsGraph(){
+  const {a, run, sel} = _secState, box = document.getElementById('sv-graph');
+  const S = a.sections, byId = Object.fromEntries(S.map(s => [s.id, s]));
+  const base = s => ['params', 'quote', 'funcs'].includes(s.kind);
+  const depth = {};
+  for (const s of S){
+    if (base(s)) { depth[s.id] = 0; continue; }
+    let d = 1;
+    for (const e of a.edges) if (e.to === s.id && byId[e.from] && !base(byId[e.from]) && depth[e.from] != null)
+      d = Math.max(d, depth[e.from] + 1);
+    depth[s.id] = d;
+  }
+  const BW = 200, BH = 58, GX = 48, GY = 14, PAD = 20;
+  const cols = {}; for (const s of S) (cols[depth[s.id]] ||= []).push(s);
+  const pos = {};
+  for (const [c, list] of Object.entries(cols)) list.forEach((s, i) =>
+    pos[s.id] = {x: PAD + (+c) * (BW + GX), y: PAD + i * (BH + GY)});
+  const W = PAD * 2 + (Math.max(...Object.keys(cols).map(Number)) + 1) * (BW + GX);
+  const H = PAD * 2 + Math.max(...Object.values(cols).map(l => l.length)) * (BH + GY);
+  const touches = e => sel && (e.from === sel || e.to === sel);
+  let svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg" style="display:block">`;
+  for (const e of a.edges){
+    const f = pos[e.from], t = pos[e.to]; if (!f || !t) continue;
+    const fromBase = base(byId[e.from]);
+    if (fromBase && !touches(e)) continue;               // params/quote edges only for the selection
+    const x1 = f.x + BW, y1 = f.y + BH / 2, x2 = t.x, y2 = t.y + BH / 2, mx = (x1 + x2) / 2;
+    const hot = touches(e);
+    svg += `<path d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" fill="none" stroke="${hot ? 'var(--accent)' : '#4b5563'}" `+
+      `stroke-width="${hot ? 2 : 1.2}" opacity="${hot ? 1 : .7}"><title>${_secEsc(e.names.join(', '))}</title></path>`;
+    if (hot) svg += `<text x="${mx}" y="${(y1 + y2) / 2 - 4}" fill="var(--text-dim)" font-size="10" text-anchor="middle">`+
+      `${_secEsc(e.names.slice(0, 3).join(', ') + (e.names.length > 3 ? ' +' + (e.names.length - 3) : ''))}</text>`;
+  }
+  for (const s of S){
+    const p = pos[s.id], [kt, kc] = SEC_KIND[s.kind] || ['', '#888'];
+    const t = run && run.timings ? run.timings[s.id] : null;
+    const failed = run && run.failed_in === s.id;
+    const meta = `${kt} · ${s.lines} righe` + (t != null ? ` · ⏱ ${t < 0.01 ? '<0.01' : t.toFixed(2)} s` : '') +
+                 (s.unused ? ' · non usata' : '');
+    svg += `<g class="sv-box" data-id="${s.id}" style="cursor:pointer" opacity="${s.unused ? .55 : 1}">`+
+      `<rect x="${p.x}" y="${p.y}" width="${BW}" height="${BH}" rx="8" fill="var(--bg-1)" `+
+        `stroke="${failed ? '#ef4444' : (sel === s.id ? 'var(--accent)' : kc)}" stroke-width="${sel === s.id || failed ? 2.5 : 1.4}" `+
+        `${s.unused ? 'stroke-dasharray="5 4"' : ''}/>`+
+      `<rect x="${p.x}" y="${p.y}" width="6" height="${BH}" rx="3" fill="${kc}"/>`+
+      `<text x="${p.x + 14}" y="${p.y + 22}" fill="var(--text)" font-size="12.5" font-weight="600">${_secEsc(s.title.length > 25 ? s.title.slice(0, 24) + '…' : s.title)}</text>`+
+      `<text x="${p.x + 14}" y="${p.y + 42}" fill="var(--text-dim)" font-size="11">${_secEsc(meta)}</text>`+
+      `<title>${_secEsc(s.title + (s.subtitle ? '\n' + s.subtitle : ''))}</title></g>`;
+  }
+  svg += '</svg>';
+  box.innerHTML = svg;
+  box.querySelectorAll('.sv-box').forEach(g => g.onclick = () => showSectionDetail(g.dataset.id));
+  if (sel && pos[sel]){                               // keep the chosen section in view
+    const p = pos[sel];
+    if (p.x < box.scrollLeft || p.x + BW > box.scrollLeft + box.clientWidth) box.scrollLeft = Math.max(0, p.x - 40);
+    if (p.y < box.scrollTop || p.y + BH > box.scrollTop + box.clientHeight) box.scrollTop = Math.max(0, p.y - 40);
+  }
+}
+
+function _secCode(ranges){
+  const L = _secState.code.split('\n');
+  return ranges.map(([a, b]) => L.slice(a - 1, b).map((l, i) =>
+    `<span style="color:var(--text-dim);user-select:none">${String(a + i).padStart(4)}  </span>${_secEsc(l)}`).join('\n')).join('\n<span style="color:var(--text-dim)">   …</span>\n');
+}
+function showSectionDetail(sid){
+  const st = _secState; st.sel = sid; drawSectionsGraph();
+  const el = document.getElementById('sv-detail'), a = st.a;
+  const title = id => { const s = a.sections.find(x => x.id === id); return s ? s.title : id; };
+  const link = id => `<a href="#" data-sec="${id}" style="color:var(--accent)">${_secEsc(title(id))}</a>`;
+  if (!sid){
+    document.getElementById('sv-prev').style.display = 'none';
+    const outs = Object.entries(a.outputs || {}).map(([n, id]) => `<div><code>${_secEsc(n)}</code> ← ${link(id)}</div>`).join('');
+    const items = (a.result_items || []).map(it => `<div><code>result[${it.index}]</code> ${_secEsc(it.expr)}` +
+      (it.section ? ` ← ${link(it.section)}` : '') + '</div>').join('');
+    el.innerHTML = `<div style="color:var(--text-dim);margin-bottom:8px">Il blocco non cambia: questa è solo una lettura della sua struttura. `+
+      `Clicca una sezione per il suo codice, cosa usa e cosa passa avanti; ⏱ Misura esegue una copia e misura ogni sezione.</div>`+
+      (outs ? `<b>Uscite</b>${outs}` : '') + (items ? `<b style="display:block;margin-top:8px">Elementi di result</b>${items}` : '');
+  } else {
+    const s = a.sections.find(x => x.id === sid), [kt, kc] = SEC_KIND[s.kind] || ['', '#888'];
+    const inc = a.edges.filter(e => e.to === sid), out = a.edges.filter(e => e.from === sid);
+    const vals = st.run && st.run.values && st.run.values[sid];
+    const t = st.run && st.run.timings ? st.run.timings[sid] : null;
+    const chip = n => `<code style="background:var(--bg-3);padding:1px 5px;border-radius:4px;margin:0 3px 3px 0;display:inline-block">${_secEsc(n)}</code>`;
+    el.innerHTML =
+      `<div style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:2px;background:${kc}"></span>`+
+        `<b>${_secEsc(s.title)}</b></div>`+
+      (s.subtitle ? `<div style="color:var(--text-dim)">${_secEsc(s.subtitle)}</div>` : '')+
+      `<div style="color:var(--text-dim);margin:4px 0 8px">${kt} · righe ${s.ranges.map(([a, b]) => a === b ? a : a + '–' + b).join(', ')}${t != null ? ` · ⏱ ${t.toFixed(3)} s` : ''}${s.unused ? ' · <b>non usata</b> da altre sezioni' : ''}</div>`+
+      (['part', 'chain'].includes(s.kind) ? `<button class="tb-btn" id="sv-preview">▶ Anteprima di questa sezione</button> ` : '')+
+      `<button class="tb-btn" id="sv-incode" title="Apre l'editor del codice su queste righe">✎ Nel codice</button>`+
+      (s.chain && s.chain.length ? `<div style="margin-top:8px"><b>Continua a lavorare su</b> ${s.chain.map(chip).join('')}</div>` : '')+
+      (s.produces && s.produces.length ? `<div style="margin-top:6px"><b>Passa avanti</b><br>${s.produces.map(chip).join('')}</div>` : '')+
+      (inc.length ? `<div style="margin-top:6px"><b>Usa</b>${inc.map(e => `<div>${link(e.from)}: ${e.names.map(chip).join('')}</div>`).join('')}</div>` : '')+
+      (out.length ? `<div style="margin-top:6px"><b>Usata da</b>${out.map(e => `<div>${link(e.to)}: ${e.names.map(chip).join('')}</div>`).join('')}</div>` : '')+
+      (s.functions && s.functions.length ? `<div style="margin-top:6px"><b>Funzioni</b><br>${s.functions.map(chip).join('')}</div>` : '')+
+      (vals && Object.keys(vals).length ? `<div style="margin-top:6px"><b>Valori</b><div style="font-family:var(--mono);font-size:12px">`+
+        Object.entries(vals).map(([k, v]) => `${_secEsc(k)} = ${_secEsc(v)}`).join('<br>') + '</div></div>' : '')+
+      `<pre style="margin-top:10px;background:var(--bg-0);border:1px solid var(--border);border-radius:6px;padding:8px;`+
+        `font-family:var(--mono);font-size:11.5px;line-height:1.45;overflow:auto;white-space:pre">${_secCode(s.ranges)}</pre>`;
+    const pv = document.getElementById('sv-preview'); if (pv) pv.onclick = () => runSections(sid);
+    document.getElementById('sv-incode').onclick = () => {
+      closeSectionsView(); openCodeEditor(st.node);
+      const ta = document.getElementById('ce-text'), L = ta.value.split('\n');
+      const [a0, b0] = s.ranges[0];
+      const start = L.slice(0, a0 - 1).join('\n').length + (a0 > 1 ? 1 : 0);
+      const end = L.slice(0, b0).join('\n').length;
+      ta.setSelectionRange(start, end);
+      ta.scrollTop = Math.max(0, (a0 - 3) * (parseFloat(getComputedStyle(ta).lineHeight) || 20));
+    };
+  }
+  el.querySelectorAll('a[data-sec]').forEach(x => x.onclick = ev => { ev.preventDefault(); showSectionDetail(x.dataset.sec); });
+}
+
+async function runSections(sid){
+  const st = _secState; if (!st) return;
+  const btn = document.getElementById('sv-time'), msg = document.getElementById('sv-prev-msg');
+  btn.disabled = true; btn.textContent = '⏳ eseguo…';
+  if (sid){ document.getElementById('sv-prev').style.display = 'block'; msg.textContent = 'eseguo una copia del blocco…'; }
+  let r;
+  try {
+    const q = sid ? `?section=${encodeURIComponent(sid)}` : '';
+    const res = await fetchTimed(`${API}/api/graph/${encodeURIComponent(st.name)}/codeblock/${encodeURIComponent(st.id)}/sections/run${q}`,
+      {method: 'POST'}, 600000);
+    r = await res.json();
+    if (!res.ok) throw new Error(r.detail || res.status);
+  } catch(e){ toast('error', 'Sezioni: ' + e.message); btn.disabled = false; btn.textContent = '⏱ Misura'; return; }
+  btn.disabled = false; btn.textContent = '⏱ Misura';
+  if (_secState !== st) return;                       // closed or reopened meanwhile
+  st.run = r;
+  if (!r.success) toast('error', `Il blocco si ferma${r.failed_in ? ' nella sezione «' + (st.a.sections.find(s => s.id === r.failed_in) || {}).title + '»' : ''}: ${r.error || ''}`);
+  showSectionDetail(st.sel);
+  if (sid){
+    document.getElementById('sv-prev').style.display = 'block';
+    const cv = document.querySelector('#sv-prev canvas');
+    if (!st.viewer){ st.viewer = new CadViewer(cv); }
+    st.viewer.resize(); st.viewer.resetFraming();
+    const pv = (r.view && r.view.previews) || {};
+    const res2 = st.viewer.renderPreviews(pv, {onEmpty: () => {}});
+    msg.textContent = Object.keys(pv).length
+      ? Object.keys(pv).map(k => k.split(':').slice(1).join(':')).join(', ') +
+        (res2.size ? ` · ${res2.size.x.toFixed(0)} × ${res2.size.y.toFixed(0)} × ${res2.size.z.toFixed(0)} mm` : '')
+      : 'questa sezione non lascia forme da mostrare';
+  }
+}
+window.openSectionsView = openSectionsView;
 
 // ════════════════════════════════════════════════════════════════════
 // Curve editor — a reusable control-point curve widget. One data model:

@@ -1655,3 +1655,41 @@ shows it all, with search, `?p=<project>` focus, and a link per node to
 Sorting: home and the editor's project menu share `localStorage noodle:sort:workflows`
 (`date` = graph.json mtime, the `/api/projects` `mtime` field; or `name`); the library
 keeps its own `noodle:sort:library`. Tests: `tests/test_export_index.py`.
+
+## 9e. ▦ Sezioni — a CodeBlock read as the nodes it already contains
+
+Agents write long CodeBlocks (the TARS-pet body: ~570 lines, 18 sections). Asking
+them to build the same thing out of catalogue nodes would make their work heavier;
+instead noodle READS the block. `cad_nodes/sections.py` (pure `ast`, no build123d):
+
+- **Sections** come from the block's own header comments (`# ---- servo ----`,
+  `# ======== frontale ========`, ≥ 2 of them), else statements are grouped by the
+  variable they build, with `#@param` lines → *Parametri*, pure arithmetic of
+  params → *Quote*, `def`s → *Funzioni*; a single-assignment wrapper of one group
+  (`dummy = Compound(ghost)`, `result = body`) joins that group.
+- **Kinds**: params | quote | funcs | part | **chain** — a section that keeps working
+  on a shape an earlier section made (`bezel -= …`), i.e. one step of a part, as a
+  feature tree would show it. Detected through `x += …` anywhere in the statement
+  and in-place mutators (`ghost.append`).
+- **Edges**: straight-line reaching definitions per statement; names a compound
+  statement binds before use (loop / comprehension targets, inner assignments) are
+  local, so `for sx in …` never "reads" another section's `sx`; calling a helper adds
+  its free variables at the call site (Python binds them when it runs). Also
+  `outputs` (#@out / result → section), `result_items` (each item of a
+  `result = [...]` list → the section that makes it) and `unused` sections.
+- **The run** (`executor.codeblock_sections_run`, `POST …/sections/run`): the block
+  and ONLY its ancestors, all previews off, the block's code replaced by
+  `sections.instrument()` — a COPY with `__sec_mark__('sN', locals())` after every
+  contiguous range of every section (+ a nonce comment so its memo key is unique,
+  upstream stays cached). Per-section time = sum of its ranges; numbers each
+  section leaves; for `?section=sN` its shapes (what it hands on first, scratch lists
+  only if nothing else) as `view.previews`; `failed_in` = first section whose marker
+  never ran. `execute_code(publish=False)`: no view.json, no root progress pointer.
+- **UI**: ▦ Sezioni under ✎ Edit code opens a read-only full-screen view: columns
+  by dependency (Parametri/Quote/Funzioni left; their edges drawn only for the
+  selection), colour by kind, dashed = unused, ⏱ Misura, per-section code, uses /
+  used by / values, ▶ Anteprima in its own CadViewer, ✎ Nel codice selects the lines.
+  It saves the canvas first (the analysis reads the saved block).
+- Next steps (not built): edit a section's lines from its node; per-section memo
+  so a change re-runs from that section on; explode into real wired CodeBlocks.
+- Tests: `tests/test_sections.py` (analysis), `tests/test_sections_run.py` (image).

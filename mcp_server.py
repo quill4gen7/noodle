@@ -259,6 +259,28 @@ def cad_export(graph_id: str, fmt: str = "step") -> str:
 
 
 @mcp.tool()
+def cad_codeblock_sections(graph_id: str, node: str, run: bool = False,
+                           section: str = "") -> dict:
+    """Read a long CodeBlock as the nodes it already contains, without changing
+    it: sections (from its `# ---- title ----` headers, else grouped by the
+    variable each statement builds), kind (params | quote | funcs | part |
+    chain = a later step on a shape an earlier section made), line ranges,
+    params used, the names flowing between sections, which section makes each
+    output and each item of a `result = [...]` list. `node` = id or title.
+    run=True also runs the block from an instrumented copy (saves nothing):
+    seconds per section, the numbers each leaves behind, and `failed_in` if it
+    raised; `section="sN"` adds that section's shapes as view previews."""
+    if run or section:
+        def _r(store, gid):
+            res = api.codeblock_sections_run(store, gid, node, section or None)
+            if res.get("view"):                       # meshes are for the viewer, not for you
+                res["view"] = {"previews": sorted((res["view"].get("previews") or {}).keys())}
+            return res
+        return _safe(_r, STORE, graph_id)
+    return _safe(api.codeblock_sections, STORE, graph_id, node)
+
+
+@mcp.tool()
 def cad_export_all(graph_id: str) -> dict:
     """Bake every PREVIEWED node (what the viewport shows) to STEP + STL, zipped
     with a manifest.json, into the project's exports/ (indexed in

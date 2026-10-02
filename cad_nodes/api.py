@@ -119,6 +119,33 @@ def _check_base_version(store: GraphStore, graph_id: str, base_version) -> None:
             f"{current}); re-read it with cad_get_graph and retry")
 
 
+# --- a CodeBlock read as nodes (cad_nodes/sections.py) ---------------------
+def codeblock_sections(store: GraphStore, graph_id: str, node_ref: str) -> dict:
+    """The sections a CodeBlock already contains: kinds, line ranges, the names
+    flowing between them, which section makes each output. No run."""
+    from . import sections
+    graph = store.load(graph_id)
+    node = resolve_node(graph, node_ref)
+    if node.type != "CodeBlock":
+        raise ValueError(f"{node.id!r} is a {node.type}, not a CodeBlock")
+    return {"node": node.id, "title": node.title or "CodeBlock",
+            **sections.compact(sections.analyze(node.params.get("code", "") or ""))}
+
+
+def codeblock_sections_run(store: GraphStore, graph_id: str, node_ref: str,
+                           section: Optional[str] = None) -> dict:
+    """Run the block from an instrumented copy: per-section time and numbers,
+    and the shapes `section` built (as view previews). Saves nothing."""
+    from . import sections
+    from .executor import codeblock_sections_run as _run
+    graph = store.load(graph_id)
+    node = resolve_node(graph, node_ref)
+    res = _run(graph, node.id, store.dir(graph_id), section)
+    res["analysis"] = sections.compact(res["analysis"])
+    res["node"] = node.id
+    return res
+
+
 # --- node addressing -------------------------------------------------------
 def resolve_node(graph: Graph, ref: str) -> Node:
     """Find a node by id, or else by its exact user-given title.

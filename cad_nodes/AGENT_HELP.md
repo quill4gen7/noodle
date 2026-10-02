@@ -124,6 +124,13 @@ required inputs, unknown / badly typed / out-of-range stored params).
   your last read to have a write refused (HTTP 409) if the graph changed in the
   meantime. `version` is `null` where the server does not track versions yet.
 
+**Long CodeBlocks.** Writing one big CodeBlock is fine — noodle reads its
+structure for you (`cad_codeblock_sections`) and shows it to the user as nodes
+(▦ Sezioni on the block). It reads best when each part starts with a header
+comment line, `# ---- frontale ----`; without headers statements are grouped
+by the variable they build. Use it to find where a part is made, which
+section is slow, or where a run fails (`run=True` → `failed_in`).
+
 ## HTTP endpoints
 
 | Endpoint | Purpose (MCP twin) |
@@ -140,6 +147,7 @@ required inputs, unknown / badly typed / out-of-range stored params).
 | `POST /api/graph/{name}/execute?lean=1` body=`{overrides?}` | run → lean summary (`cad_execute`); without `lean` the editor's full payload (code + meshes, ~1MB). A body that is a whole graph (`nodes`, `connections`) runs that snapshot instead of the file |
 | `GET /api/graph/{name}/progress?run=<id>` · `POST /api/graph/{name}/runs/{id}/cancel` | per-node SSE events of the run you started with `?run=<id>` on execute · cancel it (a queued job never starts, a running one is killed). A run id is used once (409 on reuse) |
 | `GET /health` | `{status, version, enabled, alive, busy, queued}`: `busy`/`queued` is the warm worker |
+| `GET /api/graph/{name}/codeblock/{node}/sections` · `POST …/sections/run?section=sN` | a long CodeBlock read as the nodes it contains, unchanged (`cad_codeblock_sections`): sections from its `# ---- title ----` headers (else grouped by the variable each statement builds), kind params/quote/funcs/part/chain, line ranges, names flowing between sections, which section makes each output · run = time and numbers per section, `failed_in`, and section sN's shapes; saves nothing |
 | `POST /api/graph/{name}` body=`{name,nodes,connections}` | create or overwrite the whole graph → `{warnings, param_issues?}` |
 | `GET /api/graph/{name}` | the raw graph JSON |
 | `PATCH /api/graph/{name}/param` body=`{node_id,param,value}` | single-param edit (the code view's) |

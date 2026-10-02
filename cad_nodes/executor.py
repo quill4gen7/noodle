@@ -471,7 +471,8 @@ def _run_script(script_path: Path, cwd: Path, timeout: float,
 
 def execute_code(code: str, workdir: Path, timeout: int = 120,
                  quality: str = "live", write_stl: bool = True,
-                 run_id: str | None = None, graph_key: str | None = None) -> dict:
+                 run_id: str | None = None, graph_key: str | None = None,
+                 publish: bool = True) -> dict:
     """Execute already-transpiled code. Uses the warm worker (build123d kept
     loaded) with a fallback to a cold subprocess. Returns a result dict.
 
@@ -497,8 +498,9 @@ def execute_code(code: str, workdir: Path, timeout: int = 120,
     # for legacy subscribers and publication, never a shared worker output.
     header = {"k": "run", "r": run_id, "t": time.time()}
     progress_path.write_text(json.dumps(header) + "\n")
-    with _PUBLISH_LOCK:
-        atomic_write(workdir / "progress.jsonl", json.dumps(header) + "\n")
+    if publish:     # a side run (e.g. a CodeBlock's sections) never becomes "the latest"
+        with _PUBLISH_LOCK:
+            atomic_write(workdir / "progress.jsonl", json.dumps(header) + "\n")
     with progress_path.open('a') as f:
         f.write(json.dumps({"k": "phase", "phase": "queued"}) + '\n')
 
@@ -516,6 +518,8 @@ def execute_code(code: str, workdir: Path, timeout: int = 120,
         stderr = (res.get("error") or "").strip() or None
         result = _finalize(code, script_text, res.get("stdout", ""), stderr, view_path, stl_path)
         result['run_id'] = run_id
+        if not publish:
+            return result
         with _PUBLISH_LOCK:
             try:
                 latest = json.loads((workdir / 'progress.jsonl').read_text()).get('r')
@@ -901,3 +905,125 @@ def export_bundle(graph: Graph, workdir: Path, labels: dict | None = None,
         return zpath, manifest
     finally:
         (jobdir / 'complete').touch()
+
+
+# ---------------------------------------------------------------------------
+# A CodeBlock's sections (cad_nodes/sections.py): timings, values, one preview.
+# ---------------------------------------------------------------------------
+_SECTIONS_HEAD = """
+import time as _sec_time
+__SECS__ = {{"marks": [], "vals": {{}}, "snap": {{}}}}
+__SECS_NAMES__ = {names!r}
+__SECS_WANT__ = {want!r}
+__SECS_SHOW__ = {show!r}
+def _sec_drawable(_v):
+    if hasattr(_v, "wrapped") or hasattr(_v, "tm"):
+        return True
+    return isinstance(_v, (list, tuple)) and bool(_v) and all(
+        hasattr(_x, "wrapped") or hasattr(_x, "tm") for _x in _v)
+def __sec_mark__(_sid, _loc):
+    __SECS__["marks"].append([_sid, _sec_time.perf_counter()])
+    for _k in __SECS_NAMES__.get(_sid, ()):
+        if _k not in _loc:
+            continue
+        _v = _loc[_k]
+        if isinstance(_v, bool) or (isinstance(_v, (int, float)) and not isinstance(_v, bool)):
+            __SECS__["vals"].setdefault(_sid, {{}})[_k] = (round(_v, 4) if isinstance(_v, float) else _v)
+        elif _sid == __SECS_WANT__ and _sec_drawable(_v):
+            __SECS__["snap"][_k] = _v
+"""
+
+_SECTIONS_TAIL = """
+# --- sections run (injected by executor) ---
+if __SECS_WANT__:
+    _sec_snap = __SECS__["snap"]
+    # what the section hands on (bezel, tub…) before its scratch lists (adds, cuts…)
+    if any(_k in _sec_snap for _k in __SECS_SHOW__):
+        _sec_snap = {{_k: _v for _k, _v in _sec_snap.items() if _k in __SECS_SHOW__}}
+    __previews__ = {{__SECS_WANT__ + ":" + _k: _v for _k, _v in _sec_snap.items()}}
+import json as _sec_json
+_sec_m = __SECS__["marks"]
+_sec_t = {{}}
+for _i, (_sid, _t) in enumerate(_sec_m):
+    if _sid != "__start__" and _i:
+        _sec_t[_sid] = round(_sec_t.get(_sid, 0.0) + (_t - _sec_m[_i - 1][1]), 4)
+with open({out!r}, "w") as _f:
+    _sec_json.dump({{"timings": _sec_t, "values": __SECS__["vals"],
+                    "reached": sorted({{m[0] for m in _sec_m if m[0] != "__start__"}}),
+                    "snapped": sorted(__previews__) if __SECS_WANT__ else []}}, _f)
+"""
+
+
+def _ancestors(graph: Graph, node_id: str) -> set[str]:
+    keep, todo = {node_id}, [node_id]
+    while todo:
+        nid = todo.pop()
+        for c in graph.connections:
+            if c.to_node == nid and c.from_node not in keep:
+                keep.add(c.from_node)
+                todo.append(c.from_node)
+    for n in graph.nodes:                       # keep the groups the kept nodes sit in
+        if n.id in keep and getattr(n, "parent", None):
+            keep.add(n.parent)
+    return keep
+
+
+def codeblock_sections_run(graph: Graph, node_id: str, workdir: Path,
+                           section: str | None = None, timeout: int = 180) -> dict:
+    """Run ONE CodeBlock (and only what feeds it) with a marker after each of its
+    sections: per-section wall time, the numbers each section leaves behind,
+    and — for `section` — a preview of the shapes it built. The block runs from
+    an instrumented COPY; the stored graph, view.json and the latest-run
+    pointer are untouched (publish=False)."""
+    from . import sections as _sections
+    node = graph.node(node_id)
+    if node.type != "CodeBlock":
+        raise ValueError(f"{node_id!r} is a {node.type}, not a CodeBlock")
+    code = node.params.get("code", "") or ""
+    analysis = _sections.analyze(code)
+    if analysis.get("error"):
+        return {"success": False, "analysis": analysis, "error": analysis["error"]}
+    keep = _ancestors(graph, node_id)
+    d = graph.to_dict()
+    d["nodes"] = [n for n in d["nodes"] if n["id"] in keep]
+    d["connections"] = [c for c in d["connections"]
+                        if c["from_node"] in keep and c["to_node"] in keep]
+    for n in d["nodes"]:
+        n["preview"] = False
+        if n["id"] == node_id:
+            # the nonce makes this block's memo key unique (its markers must run);
+            # everything upstream is served from the cache as usual
+            n["params"] = {**n["params"], "code": _sections.instrument(code, analysis)
+                           + f"# sections run {uuid.uuid4().hex}\n"}
+    sub = Graph.from_dict(d)
+    run_id = uuid.uuid4().hex
+    out = run_dir(workdir.resolve(), run_id) / "sections.json"
+    names = {s["id"]: s["_writes"] for s in analysis["sections"]}
+    show = {s["id"]: s["produces"] + s["chain"] for s in analysis["sections"]}.get(section or "", [])
+    show = [n for n in show if n != "result"] or show       # `result = body` repeats body
+    code_run = (_SECTIONS_HEAD.format(names=names, want=section or "", show=show)
+                + transpile(sub, memo=True)
+                + _SECTIONS_TAIL.format(out=str(out)))
+    res = execute_code(code_run, workdir, timeout=timeout, write_stl=False,
+                       run_id=run_id, publish=False)
+    try:
+        data = json.loads(out.read_text())
+    except (OSError, ValueError):
+        data = {"timings": {}, "values": {}, "reached": [], "snapped": []}
+    err = (res.get("node_errors") or {}).get(node_id)
+    failed_in = None
+    if err or not res.get("success"):
+        reached = set(data.get("reached", []))
+        failed_in = next((s["id"] for s in analysis["sections"]
+                          if s["_end"] and s["id"] not in reached), None)
+    return {
+        "success": bool(res.get("success")) and not err,
+        "analysis": analysis,
+        "timings": data.get("timings", {}),
+        "values": data.get("values", {}),
+        "section": section,
+        "snapped": data.get("snapped", []),
+        "view": (res.get("view") or {}) if section else None,
+        "error": (err.get("message") if isinstance(err, dict) else err) or res.get("errors"),
+        "failed_in": failed_in,
+    }

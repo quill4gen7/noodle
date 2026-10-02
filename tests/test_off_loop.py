@@ -30,6 +30,7 @@ ENGINE_CALLS = {
     "section_outline",
     "set_warm",
     "measure_graph",
+    "codeblock_sections_run",   # api -> executor.codeblock_sections_run
 }
 
 

@@ -971,6 +971,31 @@ async def scan_codeblock_params(name: str, node_id: str):
         raise HTTPException(400, str(e)) from e
 
 
+@app.get("/api/graph/{name}/codeblock/{node_id}/sections")
+async def codeblock_sections(name: str, node_id: str):
+    """The block read as the nodes it contains (cad_nodes/sections.py): sections
+    from its own headers (or grouped by what each statement builds), kinds,
+    line ranges, names flowing between them. Pure analysis, no run."""
+    require_project(name)
+    try:
+        return api.codeblock_sections(GraphStore(PROJECTS_DIR), name, node_id)
+    except (ValueError, KeyError) as e:
+        raise HTTPException(400, str(e.args[0] if isinstance(e, KeyError) else e)) from e
+
+
+@app.post("/api/graph/{name}/codeblock/{node_id}/sections/run")
+async def codeblock_sections_run(name: str, node_id: str, section: str | None = None):
+    """Run the block (and only what feeds it) from an instrumented copy: time and
+    numbers per section, and with `?section=sN` the shapes that section built,
+    as `view.previews`. The graph, view.json and the latest run are untouched."""
+    require_project(name)
+    try:
+        return await off_loop(api.codeblock_sections_run, GraphStore(PROJECTS_DIR),
+                              name, node_id, section)
+    except (ValueError, KeyError) as e:
+        raise HTTPException(400, str(e.args[0] if isinstance(e, KeyError) else e)) from e
+
+
 # Map an imported file's extension to the Import node that reads it.
 _IMPORT_NODE_BY_EXT = {
     ".step": "ImportSTEP", ".stp": "ImportSTEP",
