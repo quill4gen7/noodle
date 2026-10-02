@@ -105,6 +105,10 @@ server.py            FastAPI HTTP API (port 8090). Routes under /api/* :
                        source map), PATCH /api/graph/{name}/param (clamped
                        single-param edit; `_cb.<name>` targets a CodeBlock
                        override), /api/graph/{name}/codeblock/{id}/scan,
+                       /api/graph/{name}/export/{fmt} (the RESULT, one file) and
+                       /export/bundle (📦 every PREVIEWED node → STEP + STL, zipped
+                       — §9d); both also publish into exports/ with a provenance
+                       line in exports/index.jsonl,
                        POST /api/graph/{name}/arrange (tidy node positions; with
                        a graph body = stateless and returns it, without = load/
                        arrange/save — §6c),
@@ -127,12 +131,16 @@ server.py            FastAPI HTTP API (port 8090). Routes under /api/* :
                        /api/graph/{name}/screenshot (PNG of the viewport, §9 —
                        the agent's eyes; also MCP cad_screenshot),
                        /api/graph/{name}/progress?run=<id> (SSE: per-node execution
-                       events, tailed from the workdir's progress.jsonl — see
-                       transpiler `_ev`. `run` is the id the caller is about to POST
-                       to /execute?run=; each run opens the file with a header line
-                       naming itself and closes it with a `done` line, so the stream
-                       knows whose events it is reading and when to hang up. Omit it
-                       and you get the next run that starts — the MCP/curl path),
+                       events, tailed from projects/<name>/.runs/<hash>/progress.jsonl
+                       — see transpiler `_ev` and cad_nodes/job_files.py. `run` is the
+                       id the caller is about to POST to /execute?run=; each run owns
+                       its own script/view/progress so two concurrent jobs cannot
+                       overwrite each other. A root progress.jsonl is only an atomic
+                       "latest run" pointer. The run closes with a `done` line so the
+                       stream hangs up. POST /runs/{run}/cancel writes a cancel file.
+                       Omit `run` and you get the next run that starts — MCP/curl),
+                       POST /api/graph/{name}/execute may take a graph snapshot body
+                       (the editor does; MCP/curl with no body run the file on disk),
                        /api/system/health|logs|restart.
                        NOTE every route that reaches the executor goes through
                        `off_loop()` — execute, render, download, export,
@@ -210,12 +218,11 @@ webui/
                        RUNS ARE IDENTIFIED, NOT INFERRED — three bugs were paid for here
                        and every one of them read as "the glow stops at random":
                        (1) runGraph mints a `run` id and passes it to BOTH
-                       /progress?run= and /execute?run=, because progress.jsonl lives at
-                       ONE path per project and two warm runs write near-identical bytes
-                       — the old tailer watched the file SIZE and, when a run rewrote it
-                       to the same length inside one 50ms poll, dropped the whole run
-                       (measured: 5/5 nodes on voronoi-3d-lattice; big graphs survived,
-                       small fast ones lost everything). (2) The stream is NOT closed
+                       /progress?run= and /execute?run=. Each run now has its own files
+                       under `.runs/`; the root progress.jsonl is only a latest-run
+                       pointer. The old tailer watched ONE shared file's SIZE and, when
+                       a run rewrote it to the same length inside one 50ms poll, dropped
+                       the whole run (measured: 5/5 nodes on voronoi-3d-lattice). (2) The stream is NOT closed
                        when the POST resolves: the browser dispatches that GET up to
                        ~90ms AFTER the POST and needs ~90ms more to connect, so a warm
                        ~350ms run was over before its stream arrived — only run 1 glowed
@@ -1606,3 +1613,45 @@ result while the workflow moves on.
   (`animate_chain`). Hash: `tt=<id>:<t>,…` (only tracks that differ from the
   master `t`), `tracks=1` (panel open). Framing restores every track's own `t`.
   Example project: `projects/cassone-demo` (a chest whose lid opens on a hinge).
+- **The viewer draws on demand** (`CadViewer.invalidate()`, no continuous loop):
+  anything that changes the scene from outside the viewer must ask for a frame.
+  `/view` does it in `poseTrack()` (every timeline pose) and `apply()` (hidden
+  pieces); without it the ▶ player moves the meshes and the canvas stays still.
+
+
+## 9d. Exports — the bake bundle and the per-workflow index
+
+**The 📦 bake** (`⬇ Export` in the editor, default choice; `⬇ STEP+STL` on each home
+card; `POST /api/graph/{name}/export/bundle`; `api.export_all`; MCP `cad_export_all`)
+exports what the viewport SHOWS, not `__result__`: every entry of `__previews__` (the
+one dict `Transpiler._previewed` fills) becomes `NN_<title>_<id>.step` + `.stl`, zipped
+with a `manifest.json`. Runtime in `cad_nodes/bake.py` (runs in the worker). It bakes the
+SAVED params — a Drop/Animate comes out posed at its slider's `t`, and a Drop's moving
+container (`_noodle_extra`) gets its own `_container` pair. What a format cannot hold
+is recorded in the manifest (`skipped`), never raised: a mesh-lane node has no B-Rep, so
+STL only (MeshToSolid is the explicit, slow bridge — §5c); a curve gets STEP only;
+points get nothing. The bake must never re-parent what it exports: on the warm
+worker the previewed shapes are the memo cache's own objects, shared with
+`__result__`, and `Compound(children=...)` moves them under the new compound —
+after one bake the next ⬇ STEP of the result failed. `bake._as_brep` uses
+`Compound(list)`, and wraps a single shape that has a parent (build123d cannot
+STEP-export it directly); `tests/test_bake.py`. The home card exports the graph ON DISK (no body); the editor saves
+first and posts its snapshot.
+
+**The index** — `projects/<name>/exports/index.jsonl`, `cad_nodes/export_index.py`.
+Every file in exports/ says who wrote it: an Export node (`_out(path, node_id)` in the
+PREAMBLE appends the line from inside the worker — the generated script cannot import
+cad_nodes), the ⬇ button (`exports/<name>.<ext>`), or a bundle
+(`exports/<name>_<date>.zip`, with the node list inside). JSONL and O_APPEND because
+TWO processes write it; `load()` folds it (last line per file wins, deleted files drop
+out) and, given the current graph, adds the node's current title, whether it still
+exists, and `fresh` = `graph_key` unchanged. `graph_key` hashes types + params (minus
+`_ui`) + bypass + wiring only, so moving or restyling a node does not mark exports
+stale; the executor hands it to the worker as `__GRAPH_KEY__`. A file older than the
+index still finds its Export node by file name (`guessed`). The library (`/library`)
+shows it all, with search, `?p=<project>` focus, and a link per node to
+`/nodes?p=<project>&node=<id>`, which selects and flashes that node.
+
+Sorting: home and the editor's project menu share `localStorage noodle:sort:workflows`
+(`date` = graph.json mtime, the `/api/projects` `mtime` field; or `name`); the library
+keeps its own `noodle:sort:library`. Tests: `tests/test_export_index.py`.
