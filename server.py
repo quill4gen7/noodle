@@ -87,7 +87,7 @@ app.mount("/static", StaticFiles(directory="/app/webui"), name="static")
 async def _revalidate_ui(request: Request, call_next):
     response = await call_next(request)
     p = request.url.path
-    if (p.startswith("/static/") or p in ("/", "/ui", "/nodes", "/library")
+    if (p.startswith("/static/") or p in ("/", "/ui", "/nodes", "/library", "/views")
             or p.startswith("/view/")) and "cache-control" not in response.headers:
         response.headers["Cache-Control"] = "no-cache"
     return response
@@ -608,6 +608,55 @@ async def list_generations(request: Request, name: str):
                               base_url=_public_base(request))}
 
 
+@app.get("/api/gens/recent")
+async def recent_generations(request: Request, limit: int = 60, project: str = ""):
+    """Every project's generations, newest first, with `ref`, thumbnail flag
+    and `seen` — the /views gallery, and what an agent reads to learn which of
+    its proposals the user last opened (`last_seen`)."""
+    if project:
+        require_project(project)
+    return {"gens": _gen_http(api.recent_gens, GraphStore(PROJECTS_DIR), limit=limit,
+                              graph_id=project, base_url=_public_base(request))}
+
+
+@app.get("/api/graph/{name}/gens/{gen}/thumb")
+async def get_generation_thumb(name: str, gen: str):
+    require_project(name)
+    try:
+        p = GraphStore(PROJECTS_DIR).gen_dir(name, gen) / GraphStore.GEN_THUMB
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    if not p.exists():
+        raise HTTPException(404, f"No thumbnail for {name}/{gen} yet")
+    # write-once, so as cacheable as the gen itself
+    return FileResponse(p, media_type="image/jpeg",
+                        headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+@app.put("/api/graph/{name}/gens/{gen}/thumb")
+async def put_generation_thumb(name: str, gen: str, request: Request):
+    """The card picture, drawn by the first page that renders the gen (/views
+    or /view) with the shared viewer. Write-once: a second PUT is a no-op."""
+    require_project(name)
+    data = await request.body()
+    if not data.startswith(b"\xff\xd8\xff"):
+        raise HTTPException(415, "Thumbnail must be a JPEG")
+    if len(data) > _THUMB_MAX_BYTES:
+        raise HTTPException(413, "Thumbnail too large")
+    saved = _gen_http(GraphStore(PROJECTS_DIR).save_gen_thumb, name, gen, data)
+    return {"status": "saved" if saved else "exists"}
+
+
+@app.post("/api/graph/{name}/gens/{gen}/seen")
+async def mark_generation_seen(name: str, gen: str):
+    """/view pings this on open: the agent can then tell which gen is on screen."""
+    import datetime
+    require_project(name)
+    when = datetime.datetime.now().isoformat(timespec="seconds")
+    _gen_http(GraphStore(PROJECTS_DIR).mark_gen_seen, name, gen, when)
+    return {"seen": when}
+
+
 @app.get("/api/graph/{name}/gens/{gen}/{part}")
 async def get_generation(name: str, gen: str, part: str):
     """part = view | graph | meta. Immutable once written, so cacheable."""
@@ -615,6 +664,15 @@ async def get_generation(name: str, gen: str, part: str):
     data = _gen_http(GraphStore(PROJECTS_DIR).load_gen, name, gen, part)
     return Response(json.dumps(data), media_type="application/json",
                     headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+@app.get("/views", response_class=HTMLResponse)
+async def webui_views():
+    """Every generation of every project, as cards — the agent's proposals."""
+    page = Path("/app/webui/gens.html")
+    if not page.exists():
+        return HTMLResponse("<h1>noodle</h1><p>Gallery not found</p>", status_code=404)
+    return page.read_text()
 
 
 @app.get("/view/{name}", response_class=HTMLResponse)

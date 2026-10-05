@@ -1393,7 +1393,7 @@ def snapshot(store: GraphStore, graph_id: str, label: str = "",
     gens = store.list_gens(graph_id)
     if gens and gens[0].get("hash") == digest and gens[0].get("label", "") == label:
         meta = gens[0]
-        return {**meta, "reused": True,
+        return {**meta, "reused": True, "ref": gen_ref(graph_id, meta["gen"]),
                 "url": gen_url(graph_id, meta["gen"], base_url)}
     meta = store.save_gen(graph_id, view, graph.to_dict(), {
         "label": label,
@@ -1404,7 +1404,8 @@ def snapshot(store: GraphStore, graph_id: str, label: str = "",
         # the /view page plays it (▶, andata e ritorno…); None = a still
         "timeline": _timeline(view),
     })
-    return {**meta, "reused": False, "url": gen_url(graph_id, meta["gen"], base_url)}
+    return {**meta, "reused": False, "ref": gen_ref(graph_id, meta["gen"]),
+            "url": gen_url(graph_id, meta["gen"], base_url)}
 
 
 def list_gens(store: GraphStore, graph_id: str, base_url: str = "") -> list[dict]:
@@ -1412,3 +1413,52 @@ def list_gens(store: GraphStore, graph_id: str, base_url: str = "") -> list[dict
     return [{k: m.get(k) for k in ("gen", "label", "created", "version")}
             | {"url": gen_url(graph_id, m["gen"], base_url)}
             for m in store.list_gens(graph_id)]
+
+
+def gen_ref(graph_id: str, gen: str) -> str:
+    """The short name a generation goes by in conversation: `<graph>/g<N>`.
+    The /view header and the /views cards show exactly this, so "the one I am
+    looking at" can be said in words both sides resolve the same way."""
+    return f"{graph_id}/{gen}"
+
+
+def recent_gens(store: GraphStore, limit: int = 60, graph_id: str = "",
+                base_url: str = "") -> list[dict]:
+    """Every generation of every project (or of `graph_id`), newest first.
+
+    Exists because an agent asked for several alternatives snapshots them one
+    after another — often into several projects — and then "the second one"
+    or "the blue one" is ambiguous. Each entry carries its `ref`
+    (`graph/gN`, what the user can quote), its label, and `seen`: when the user
+    last OPENED it in the viewer. The most recently seen is the one they mean
+    when they say "this one"; `last_seen: true` marks it."""
+    names = [graph_id] if graph_id else store.list()
+    out = []
+    for name in names:
+        try:
+            metas = store.list_gens(name)
+        except ValueError:
+            continue
+        for m in metas:
+            gen = m.get("gen")
+            if not gen:
+                continue
+            extra = store.gen_extras(name, gen)
+            pieces = m.get("pieces") or []
+            out.append({
+                "ref": gen_ref(name, gen), "graph": name, "gen": gen,
+                "label": m.get("label", ""), "created": m.get("created"),
+                "pieces": [p.get("title") for p in pieces],
+                "animated": bool(m.get("timeline")),
+                "thumb": extra["thumb"], "seen": extra["seen"],
+                "url": gen_url(name, gen, base_url),
+            })
+    out.sort(key=lambda e: (e["created"] or "", int(e["gen"][1:])), reverse=True)
+    seen = [e for e in out if e["seen"]]
+    last = max(seen, key=lambda e: e["seen"]) if seen else None
+    if last:
+        last["last_seen"] = True
+    head = out[:max(1, int(limit))] if limit else out
+    if last and last not in head:       # never cut the one the user means
+        head.append(last)
+    return head

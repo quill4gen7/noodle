@@ -1635,6 +1635,24 @@ result while the workflow moves on.
   touch twin of `H`. Tap vs orbit: 12px / 500ms tolerance for a finger, 5px for a
   mouse, never during a pinch; double tap = frame the visible pieces.
 - Tests: `tests/test_generations.py`.
+- **`/views` — every proposal in one place** (`webui/gens.html`, `api.recent_gens`,
+  `GET /api/gens/recent?limit=&project=`, MCP `cad_recent_gens`). Paid for in
+  friction: an agent asked for several alternatives sent one link per design, and
+  "the second one" / "the round one" never meant the same thing to both sides.
+  Every gen of every project is a card, newest first, grouped by day, and each
+  goes by ONE name — its **ref** `<graph>/g<N>` — on the card, in the `/view`
+  header chip (click = copy `ref (label)`) and in `cad_snapshot`'s result. `/view`
+  also gets ‹ › (`[` `]`) through the project's gens and a link to the gallery
+  (also in the editor toolbar ◫, home and library).
+  Two files sit BESIDE a gen without touching its immutable view/graph/meta:
+  `seen.json` (`/view` POSTs `…/gens/{gen}/seen` on open → `last_seen: true` in the
+  listing = what the user means by "this one"; kept even past `limit`) and
+  `thumb.jpg`, **write-once**, drawn by the first page that renders the gen with
+  the SHARED CadViewer — `/views` draws the missing ones on an off-screen canvas,
+  `/view` takes one before the link's hidden pieces apply. The thumb GET route is
+  declared before the generic `gens/{gen}/{part}` one, or `{part}` swallows it.
+  `scripts/build_pages.py` maps the listing to the static `gens.json` (flagged
+  `thumb: true` so a static page never tries to upload) and points ◫ at `../`.
 - **Timelines play.** A generation of a graph with `Animate` / `Drop` nodes carries
   their plans (`previews[id].anim`, a scene's `bodies[i].anim`), and `/view` shows a
   ▶ player — so a movement (lid open ⇄ closed) is ONE link, not one per pose. One

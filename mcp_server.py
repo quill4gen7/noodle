@@ -222,6 +222,18 @@ def cad_list_gens(graph_id: str) -> list:
 
 
 @mcp.tool()
+def cad_recent_gens(limit: int = 30, graph_id: str = "") -> list:
+    """Generations across ALL projects (or one), newest first: `ref`
+    (`graph/gN` — the name the user sees in the viewer header and on the
+    /views gallery cards, so "graph/g3" is unambiguous), label, pieces, and
+    `seen` = when the user last opened it. `last_seen: true` marks the one on
+    their screen most recently: when they say "this one" / "questa", that is it.
+    The gallery of every proposal is `/views` — send that link when you have
+    made several alternatives to choose from."""
+    return _safe(api.recent_gens, STORE, limit=limit, graph_id=graph_id)
+
+
+@mcp.tool()
 def cad_agent_tags() -> list:
     """Provenance index: every 'To Agent' tag node across ALL projects —
     label, date (auto-stamped at save), graph, node id and the tagged source

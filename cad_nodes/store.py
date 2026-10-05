@@ -433,6 +433,42 @@ class GraphStore:
         atomic_write(d / "meta.json", json.dumps(meta, indent=2))
         return meta
 
+    # Two small files sit NEXT TO a generation without changing it (its view,
+    # graph and meta are immutable and cached a year): `thumb.jpg`, the card
+    # picture, drawn once by whichever page first renders the gen, and
+    # `seen.json`, when the user last opened it in /view — which is how an agent
+    # asked "this one" finds out which of its proposals the user is looking at.
+    GEN_THUMB = "thumb.jpg"
+    GEN_SEEN = "seen.json"
+
+    def gen_extras(self, graph_id: str, gen: str) -> dict:
+        d = self.gen_dir(graph_id, gen)
+        out = {"thumb": (d / self.GEN_THUMB).exists(), "seen": None}
+        try:
+            out["seen"] = json.loads((d / self.GEN_SEEN).read_text()).get("seen")
+        except (OSError, ValueError):
+            pass
+        return out
+
+    def save_gen_thumb(self, graph_id: str, gen: str, data: bytes) -> bool:
+        """Store the card picture once; False if one is already there (the
+        first render wins, so a picture never changes under a link)."""
+        d = self.gen_dir(graph_id, gen)
+        if not (d / "meta.json").exists():
+            raise KeyError(f"No generation {gen!r} in {graph_id!r}")
+        if (d / self.GEN_THUMB).exists():
+            return False
+        tmp = d / (self.GEN_THUMB + ".tmp")
+        tmp.write_bytes(data)
+        tmp.replace(d / self.GEN_THUMB)
+        return True
+
+    def mark_gen_seen(self, graph_id: str, gen: str, when: str) -> None:
+        d = self.gen_dir(graph_id, gen)
+        if not (d / "meta.json").exists():
+            raise KeyError(f"No generation {gen!r} in {graph_id!r}")
+        atomic_write(d / self.GEN_SEEN, json.dumps({"seen": when}))
+
     def load_gen(self, graph_id: str, gen: str, part: str) -> dict:
         """One file of a generation: part is view | graph | meta."""
         if part not in ("view", "graph", "meta"):
