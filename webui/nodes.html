@@ -568,6 +568,32 @@ import { plan as antPlan, modelFromGraph, loadManifold, manifoldFromMesh, evalua
          upstreamSignature } from '/static/anticipate.js';   // boolean drag anticipation
 
 const API = '';
+// ── which editor is this? (verifying across browsers) ──────────────────────
+// An open tab keeps the JS it loaded: after an edit to webui/ the user's tab and
+// an agent's freshly opened headless page run DIFFERENT code on the same graph.
+// UI_BUILD is injected by server.py (/nodes → _ui_build); checkUiBuild() shows a
+// reload banner once the server's build moves on, and the /version poll sends it
+// (`ui=`) so the access log tells which build each tab runs.
+const UI_BUILD = '__NOODLE_UI_BUILD__';
+const UI_BUILD_KNOWN = !UI_BUILD.startsWith('__');     // static copy (build_pages): no check
+// ?readonly=1 — a page that may LOOK at a real project (the user's own, same
+// node, same `_ui`) but never writes it: no save, no draft, no thumbnail, no run,
+// and every other non-GET is refused at fetch(), except the stateless /merge
+// (live sync keeps it following the disk exactly like the user's tab) and
+// /anticipate (publish=False). Verify THERE instead of on a copy.
+const READ_ONLY = new URLSearchParams(location.search).has('readonly');
+if (READ_ONLY){
+  const _fetch = window.fetch.bind(window);
+  const _ok = /\/api\/graph\/[^/]+\/(merge|anticipate)$/;
+  window.fetch = (input, init) => {
+    const m = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+    const u = new URL(typeof input === 'string' ? input : input.url, location.href);
+    if (m === 'GET' || m === 'HEAD' || _ok.test(u.pathname)) return _fetch(input, init);
+    console.warn('[readonly] refused', m, u.pathname);
+    return Promise.resolve(new Response(JSON.stringify({detail: 'read-only page'}),
+      {status: 423, headers: {'Content-Type': 'application/json'}}));
+  };
+}
 const LiteGraph = window.LiteGraph;
 let catalog = {};          // type -> NodeDef
 let lgraph, lcanvas;
@@ -582,6 +608,7 @@ window._noodle = { get lgraph(){ return lgraph; }, get lcanvas(){ return lcanvas
   get previewMeshes(){ return previewMeshes; },
   get ant(){ return ant; },
   get antMarks(){ return antMarks; },              // boolean drag anticipation state (anticipate.js)
+  build: UI_BUILD, readOnly: READ_ONLY,            // which code this tab runs; ?readonly=1
   paramChange(n){ return onParamChange(n); },
   togglePick(i){ return togglePick(i); } };
 let currentName = null;
@@ -2949,7 +2976,7 @@ window.newGraph = async function(name){
 // merge-then-save-again retry stays INSIDE this queued step: calling
 // persistToServer from there would queue behind itself and never run.
 function persistToServer(snapshot = null){
-  if (!currentName) return Promise.resolve(false);
+  if (!currentName || READ_ONLY) return Promise.resolve(false);
   const name = currentName, epoch = sessionEpoch;
   // Capture NOW: a queued save writes what the graph was when it was asked for.
   let json = snapshot || JSON.stringify(toGraphJSON(name));
@@ -4190,6 +4217,7 @@ window.runGraph = function(){
   return runTask;
 };
 async function executeCurrentGraph(){
+  if (READ_ONLY){ setStatus('read-only: run skipped'); return; }   // /execute publishes into the project
   const name = currentName, epoch = sessionEpoch;
   const json = JSON.stringify(toGraphJSON(name));
   runAbort = new AbortController();
@@ -6442,6 +6470,7 @@ function setDocState(s){
 // local draft (browser safety net) ---------------------------------
 function draftKey(name){ return 'noodle:draft:'+name; }
 function saveDraft(name, json){
+  if (READ_ONLY) return;
   try{ localStorage.setItem(draftKey(name), JSON.stringify({json, base:lastSavedJSON, ts:Date.now()})); }catch(_){}
 }
 function clearDraft(name){ try{ localStorage.removeItem(draftKey(name)); }catch(_){} }
@@ -6912,6 +6941,23 @@ async function pollHealth(){
   }catch(_){ backendOnline=false; setHealth('offline'); }
   refreshHealthText();
 }
+// The server's webui/ moved on under this tab: say so, once, in plain words.
+// Without it a tab keeps running old JS indefinitely while an agent verifies the
+// new code elsewhere and reports "it works" (raccordo, 2026-10-05).
+let uiBuildWarned = false;
+async function checkUiBuild(){
+  if (!UI_BUILD_KNOWN || uiBuildWarned || restarting) return;
+  try{
+    const r = await fetchTimed(`${API}/api/system/ui-build`, {cache:'no-store'}, 3000);
+    if (!r.ok) return;                                  // older server: no route, no check
+    const {build} = await r.json();
+    if (!build || build === UI_BUILD) return;
+    uiBuildWarned = true;
+    log(`editor aggiornato sul server (${UI_BUILD} → ${build}): questa scheda usa il codice vecchio`, 'warn');
+    showBanner(`L'editor è stato aggiornato sul server: questa scheda usa ancora il codice vecchio (${UI_BUILD} → ${build}). `+
+      `<button class="tb-btn" onclick="location.reload()">Ricarica</button>`);
+  }catch(_){}
+}
 async function pollLogs(){
   if (restarting) return;
   try{
@@ -7359,7 +7405,7 @@ async function syncPoll(){
   const name = currentName, epoch = sync.epoch;
   sync.polling = true;
   try {
-    const r = await fetch(`${API}/api/graph/${encodeURIComponent(name)}/version`, {cache:'no-store'});
+    const r = await fetch(`${API}/api/graph/${encodeURIComponent(name)}/version?ui=${UI_BUILD}${READ_ONLY ? '&ro=1' : ''}`, {cache:'no-store'});
     if (!r.ok) return;
     const {version} = await r.json();
     if (name !== currentName || epoch !== sync.epoch || docState === 'saving') return;
@@ -7763,6 +7809,8 @@ document.addEventListener('keydown', e=>{
   setInterval(checkDirty, 1000);
   pollHealth(); setInterval(pollHealth, 4000);
   pollLogs();   setInterval(pollLogs, 3000);
+  setInterval(checkUiBuild, 10000);
+  log(`editor build ${UI_BUILD}${READ_ONLY ? ' · SOLA LETTURA (?readonly=1): nessun salvataggio né run' : ''}`);
 })();
 </script>
 </body>

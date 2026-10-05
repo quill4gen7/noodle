@@ -486,11 +486,74 @@ async def webui():
     return HTMLResponse("<h1>noodle</h1><p>WebUI not found</p>", status_code=404)
 
 
+# The editor's BUILD: one short hash of the files a tab runs. An open tab keeps
+# the JS it loaded, so after an edit to webui/ a user's tab and a freshly opened
+# headless page run DIFFERENT code on the same graph — and "it works here" says
+# nothing about "it works there". Measured on raccordo (2026-10-05): the user's
+# tab was loaded at 23:43:45 and saved a slider pinned at 10.0 with the old
+# absolute-drag code, while the agent verified the fixes of 23:45:59 / 23:51:49
+# in a page opened later. The page carries its build (injected below), polls
+# /api/system/ui-build and shows a reload banner when the two differ; its
+# /version poll also sends `ui=<build>`, so the access log says which build each
+# tab is running.
+_UI_BUILD_FILES = ("nodes.html", "viewer.js", "anticipate.js")
+
+
+def _ui_build() -> str:
+    import hashlib
+    h = hashlib.sha1()
+    for f in _UI_BUILD_FILES:
+        try:
+            h.update((Path("/app/webui") / f).read_bytes())
+        except OSError:
+            pass
+    return h.hexdigest()[:10]
+
+
+@app.get("/api/system/ui-build")
+async def system_ui_build():
+    return {"build": _ui_build(), "files": list(_UI_BUILD_FILES)}
+
+
+# Who is calling: the user's browser and an agent's curl both arrive from the
+# podman gateway (10.89.0.4) when they come from the host, so the IP alone cannot
+# tell them apart. Page loads and every write get one extra log line naming the
+# client KIND from its User-Agent (a headless Chromium says "HeadlessChrome").
+# A client may also name itself with `?client=` or `X-Noodle-Client`.
+def _client_kind(request: Request) -> str:
+    tag = request.query_params.get("client") or request.headers.get("x-noodle-client")
+    if tag:
+        return tag[:32]
+    ua = request.headers.get("user-agent", "")
+    if "HeadlessChrome" in ua:
+        return "headless"
+    for key, kind in (("curl/", "curl"), ("python", "python"), ("node", "node")):
+        if key in ua.lower():
+            return kind
+    return "browser" if "Mozilla/" in ua else (ua[:24] or "?")
+
+
+# uvicorn.error has the console handler: these lines land in `docker logs`
+# next to the access lines (the app's own "noodle" logger reaches only the
+# in-app ring buffer).
+_client_log = logging.getLogger("uvicorn.error")
+
+
+@app.middleware("http")
+async def _log_client(request: Request, call_next):
+    p = request.url.path
+    if p == "/nodes" or (request.method != "GET" and p.startswith("/api/graph/")):
+        host = request.client.host if request.client else "?"
+        _client_log.info("client=%s %s %s %s%s", _client_kind(request), host, request.method, p,
+                         ("?" + request.url.query) if request.url.query else "")
+    return await call_next(request)
+
+
 @app.get("/nodes", response_class=HTMLResponse)
 async def webui_nodes():
     page = Path("/app/webui/nodes.html")
     if page.exists():
-        return page.read_text()
+        return page.read_text().replace("__NOODLE_UI_BUILD__", _ui_build())
     return HTMLResponse("<h1>noodle</h1><p>Node editor not found</p>", status_code=404)
 
 

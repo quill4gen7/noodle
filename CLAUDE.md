@@ -1348,6 +1348,26 @@ before saving". Three pieces fix it:
   so the copilot's and Import's "reload" were no-ops (then reverted by the next
   save) — they now `syncPullNow()`; and `checkDirty` re-armed the 2.5s autosave
   debounce every second, so an idle dirty graph never autosaved.
+- **Verifying the editor: same project, same node, same build.** Paid for on
+  `raccordo` n48 (2026-10-05): the user's tab, loaded at 23:43:45, ran the OLD
+  absolute slider and saved x 127.785 → 10.0 and y 120.75 → 7.5 (a value pinned
+  at the cap of a collapsed −10…10 window); the fixes landed at 23:45:59 and
+  23:51:49, and the agent verified them in headless pages opened LATER, on
+  copies (`zz-probe-preview`), on n23/n19 — then said "fixed" twice. Once x
+  was 10 on disk, every fresh page derives −10…10 from it (the grown window
+  `w._win` lives only for the session), so "I see 10" was the truth on disk.
+  Three tools now close those gaps: the page carries its **build**
+  (`UI_BUILD`, injected by server.py `/nodes`, = `GET /api/system/ui-build`),
+  shows a reload banner when the server's moves on, and sends `ui=<build>` on
+  every `/version` poll (so `docker logs noodle | grep version?ui=` says which
+  build each open tab runs); `/nodes?p=<name>&readonly=1` opens the REAL project
+  and can never save, draft, thumbnail or run (non-GETs refused at `fetch`,
+  except the stateless `/merge` and `/anticipate`); `scripts/editor_probe.py`
+  drives that page and prints, per slider, canvas value vs disk value and the
+  window the canvas draws. Page loads and writes are logged as
+  `client=browser|headless|curl|python …` (User-Agent), because from the host
+  the user (via a LAN forward) and an agent's curl share the gateway IP;
+  a headless page inside the container shows up as 127.0.0.1.
 
 ### 6g. Touch (tablets/phones) — the `── touch ──` block in nodes.html
 
