@@ -1148,8 +1148,13 @@ function sliderCfg(node, w){
   }
   const v = Number(w.value) || 0;
   const cap = (w.softMax != null) ? Math.min(w.softMax, h.max) : h.max;
-  const hi = Math.max(Math.min(cap, Math.max(10, niceCap(v))), h.min);
-  const lo = Math.min(Math.max(h.min, v < 0 ? -niceCap(-v) : -10), hi);
+  let hi = Math.max(Math.min(cap, Math.max(10, niceCap(v))), h.min);
+  let lo = Math.min(Math.max(h.min, v < 0 ? -niceCap(-v) : -10), hi);
+  // The window only GROWS (w._win, this session): derived from the value alone, it
+  // collapsed back to −10…10 the moment a value of 120 went below 10, and the
+  // slider could never bring it back.
+  if (w._win){ lo = Math.min(lo, w._win.lo); hi = Math.max(hi, w._win.hi); }
+  w._win = {lo, hi};
   return {lo, hi, step: w.defStep, custom: false, play: playCfg(ui)};
 }
 
@@ -1170,7 +1175,7 @@ function addCadSlider(node, name, init, apply, opts){
 function drawCadSlider(ctx, node, w, width, y, H){
   const margin = 15, gx = width - margin - SLIDER_GEAR_W;
   const px = gx - SLIDER_PLAY_W, tw = px - margin;
-  const cfg = sliderCfg(node, w);
+  const cfg = w._dragCfg || sliderCfg(node, w);      // frozen while a hand is on it
   ctx.fillStyle = LiteGraph.WIDGET_BGCOLOR || '#222';
   ctx.fillRect(margin, y, width - margin * 2, H);
   let f = (Number(w.value) - cfg.lo) / ((cfg.hi - cfg.lo) || 1);
@@ -1202,18 +1207,26 @@ function cadSliderMouse(ev, pos, node, w){
   const px = gx - SLIDER_PLAY_W;
   if (down && pos[0] >= gx){ w._drag = false; openSliderCfg(node, w, ev); return true; }
   if (down && pos[0] >= px){ w._drag = false; toggleSliderPlay(node, w); return true; }
-  if (down){ w._drag = true; stopSliderPlay(w); }   // a hand on the slider wins
-  if ((down || move) && w._drag){
-    const cfg = sliderCfg(node, w);
-    let f = (pos[0] - margin) / ((px - margin) || 1);
-    f = f < 0 ? 0 : f > 1 ? 1 : f;
-    let v = cfg.lo + (cfg.hi - cfg.lo) * f;
+  // The window is FROZEN for the whole gesture. It is derived from the value, so
+  // recomputing it per move shrank it under the pointer: start a Move at 120
+  // (window −10…250), drag below 10 and it collapsed to −10…10 — you could
+  // never get back up in the same drag.
+  // RELATIVE drag: pressing never changes the value, moving shifts it by the
+  // distance travelled (track width = the whole window). An absolute slider made
+  // a press on the left of a 120 jump it to ~0 by accident.
+  if (down){ w._drag = true; w._dragCfg = sliderCfg(node, w);
+             w._x0 = pos[0]; w._v0 = Number(w.value) || 0; stopSliderPlay(w);
+             return true; }   // a hand on the slider wins
+  if (move && w._drag){
+    const cfg = w._dragCfg || sliderCfg(node, w);
+    let v = w._v0 + (pos[0] - w._x0) / ((px - margin) || 1) * (cfg.hi - cfg.lo);
+    v = Math.min(cfg.hi, Math.max(cfg.lo, v));
     v = Math.round(v / cfg.step) * cfg.step;
     v = Math.min(w.hard.max, Math.max(w.hard.min, v));
     v = w.isInt ? Math.round(v) : +v.toFixed(4);
     if (v !== Number(w.value)) w.callback(v);
   }
-  if (up) w._drag = false;
+  if (up){ w._drag = false; w._dragCfg = null; }
   return true;
 }
 

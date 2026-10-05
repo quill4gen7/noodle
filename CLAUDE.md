@@ -432,6 +432,11 @@ drag window + step set via the slider's ⚙ (`{param: {min,max,step}}`). Sliders
 the editor are a custom `cadslider` widget — the drag window defaults to ±10
 (clipped to catalog hard bounds, auto-grown to contain the value) and drag snaps
 to the step; the typed ✎ field clamps only on the catalog's hard min/max. The
+drag is RELATIVE (a press never changes the value; moving shifts it by the
+distance, track = the whole window) and the window only grows during a session
+(`w._win`) and is frozen for the gesture — derived from the value alone it used to
+collapse back to −10…10 as soon as a 120 went under 10, and a press on the left of
+an absolute slider was what took it there. The
 engine resolves params by catalog name, so it never sees `_ui`.
 
 **PLAY** — a ▶ hotspot left of the ⚙ sweeps the param across its drag window on a
