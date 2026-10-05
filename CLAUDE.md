@@ -130,6 +130,8 @@ server.py            FastAPI HTTP API (port 8090). Routes under /api/* :
                        /api/graph/{name}/slice_summary|section_outline (§7b),
                        /api/graph/{name}/screenshot (PNG of the viewport, §9 —
                        the agent's eyes; also MCP cad_screenshot),
+                       POST /api/graph/{name}/anticipate (baked meshes of the
+                       operands a drag cannot change — §6b, anticipate.js),
                        /api/graph/{name}/progress?run=<id> (SSE: per-node execution
                        events, tailed from projects/<name>/.runs/<hash>/progress.jsonl
                        — see transpiler `_ev` and cad_nodes/job_files.py. `run` is the
@@ -197,6 +199,9 @@ webui/
                        white. No refraction of the glow and no caustics: those need
                        rays. Costs ~0-1fps (glass dominates); off unless HQ and
                        something declares itself emissive.
+  anticipate.js      boolean drag anticipation (§6b): plan the dirty chain from a
+                       dragged node to the screen, redo it on meshes with the
+                       vendored manifold-wasm. Pure module (no three, no DOM).
   view.html          the `/view/<graph>/<gen>` read-only viewer of a frozen
                        GENERATION (§9c): hide / solo / invert pieces, state in
                        the URL hash. What an agent links instead of screenshots.
@@ -1066,7 +1071,26 @@ whether a preview mesh exists, so it cannot be a static flag on the NodeDef:
 - `applyDropTargets(node)` — a value node (Number Slider…) wired into the `t` of a
   timeline node, which replays each target instead of itself.
 
-Both return **false** when they cannot help, and the caller falls through to the
+- `applyBoolAnticipation(node)` — **booleans downstream of the dragged node**, redone
+  on meshes in the browser with manifold-wasm (`webui/anticipate.js`, vendored
+  `manifold-3d` 3.5.4, Apache-2.0 — the same library as the mesh lane). The reason:
+  on `raccordo` a Fillet radius re-runs in 19ms and then waits ~800ms for the Union
+  and Subtract after it, plus ~330ms of meshing/transport, so the node you touch is
+  never the cost. `plan()` finds the chain from the dragged node to what is drawn;
+  the inputs the drag cannot change are fetched ONCE per drag as baked meshes
+  (`POST /api/graph/{name}/anticipate` → `executor.operand_meshes`: a side run pruned
+  to their ancestors, all memo hits, `publish=False` — ~150ms), then each animation
+  frame re-evaluates the chain and swaps the drawn geometry; `renderPreviews` puts
+  the baked geometry back when the exact re-bake lands. Supported: Move, Rotate
+  (world, no pivot), Union, Subtract, Intersect, Box/Cylinder/Sphere (no `origin`,
+  arc 360) and value nodes into their pins — anything else in the chain refuses the
+  plan. Measured on raccordo: ~55ms per frame, bbox identical to the re-bake and
+  volume within −0.2…−0.8% (chordal error of the tessellated cylinders), 0
+  `/execute` during the drag. Per frame the boolean with the helical thread costs
+  25ms and `calculateNormals` 16ms; the cylinder booleans ~1ms each.
+  Tests: `tests/ui/anticipate.test.cjs`, `tests/test_anticipate.py`.
+
+All three return **false** when they cannot help, and the caller falls through to the
 plain debounced re-run. That fallback is what makes an unanticipated node correct
 but merely slower — so when in doubt, return false. A node that anticipates
 WRONGLY is far worse than one that does not anticipate at all.

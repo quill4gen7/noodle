@@ -32,7 +32,8 @@ from cad_nodes import api, catalog, layout
 from cad_nodes.graph import Graph, ValidationError
 from cad_nodes.screenshot import ScreenshotUnavailable
 from cad_nodes.transpiler import transpile, transpile_with_map
-from cad_nodes.executor import execute_graph, extract_subshapes_for_node, warm_status
+from cad_nodes.executor import (execute_graph, extract_subshapes_for_node,
+                                 operand_meshes, warm_status)
 from cad_nodes import export_index
 from cad_nodes.store import GraphStore, stamp_agent_tags, validate_graph_id
 from cad_nodes.job_files import atomic_write, progress_file, run_dir
@@ -1257,6 +1258,26 @@ async def execute_graph_project(name: str, run: str | None = None,
         # Always offered — /download regenerates the STL on demand if it's stale.
         "stl": f"/api/projects/{name}/download",
     }
+
+
+@app.post("/api/graph/{name}/anticipate")
+async def anticipate_operands(name: str, body: dict = Body(...)):
+    """Baked meshes of the nodes in `body.nodes`, for the editor's in-browser
+    boolean anticipation (webui/anticipate.js). `body.graph` is the editor's
+    snapshot; only what feeds the asked nodes runs, nothing is published."""
+    d = require_project(name)
+    ids = body.get("nodes")
+    if not isinstance(ids, list) or not ids or not all(isinstance(i, str) for i in ids):
+        raise HTTPException(400, "`nodes` must be a non-empty list of node ids")
+    try:
+        graph = Graph.from_dict(body["graph"]) if "graph" in body else _load_graph(name)
+        graph.validate()
+    except (ValidationError, KeyError, TypeError, ValueError) as e:
+        raise HTTPException(400, f"Invalid graph: {e}") from e
+    try:
+        return await off_loop(operand_meshes, graph, ids, d)
+    except KeyError as e:
+        raise HTTPException(400, f"unknown node {e.args[0]!r}") from e
 
 
 @app.post('/api/graph/{name}/runs/{run}/cancel')

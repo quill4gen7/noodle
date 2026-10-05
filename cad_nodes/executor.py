@@ -1027,3 +1027,41 @@ def codeblock_sections_run(graph: Graph, node_id: str, workdir: Path,
         "error": (err.get("message") if isinstance(err, dict) else err) or res.get("errors"),
         "failed_in": failed_in,
     }
+
+
+def operand_meshes(graph: Graph, node_ids: list[str], workdir: Path,
+                   timeout: int = 60) -> dict:
+    """The baked meshes of `node_ids`, for the editor's in-browser boolean
+    anticipation (webui/anticipate.js): while a slider drags, the browser redoes
+    the dirty Move/Union/Subtract chain on meshes with manifold-wasm, and these
+    are its fixed operands — the inputs the drag cannot change.
+
+    A side run like codeblock_sections_run: the graph is pruned to what feeds
+    the asked nodes (so nothing downstream of the dragged value runs), only they
+    are previewed, and view.json / the latest-run pointer stay untouched
+    (publish=False). On the warm worker every node is a memo hit, so the cost
+    is the round trip plus any tessellation not cached yet."""
+    keep: set[str] = set()
+    for nid in node_ids:
+        graph.node(nid)                       # KeyError on an unknown id
+        keep |= _ancestors(graph, nid)
+    want = set(node_ids)
+    d = graph.to_dict()
+    d["nodes"] = [n for n in d["nodes"] if n["id"] in keep]
+    d["connections"] = [c for c in d["connections"]
+                        if c["from_node"] in keep and c["to_node"] in keep]
+    for n in d["nodes"]:
+        n["preview"] = n["id"] in want
+    sub = Graph.from_dict(d)
+    res = execute_code(transpile(sub, memo=True), workdir, timeout=timeout,
+                       write_stl=False, publish=False)
+    previews = ((res.get("view") or {}).get("previews") or {})
+    meshes = {nid: {"mesh": p["mesh"], "cache_key": p.get("cache_key")}
+              for nid, p in previews.items() if nid in want and p.get("mesh")}
+    return {
+        "success": bool(res.get("success")),
+        "meshes": meshes,
+        "missing": sorted(want - set(meshes)),
+        "node_errors": {k: v for k, v in (res.get("node_errors") or {}).items() if k in keep},
+        "error": None if res.get("success") else res.get("errors"),
+    }

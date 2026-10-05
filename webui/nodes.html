@@ -564,6 +564,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';        // sub-shape picker modal
 import { TransformControls } from 'three/addons/controls/TransformControls.js'; // on-canvas gizmo
 import { CadViewer, PALETTE, nodeNum, meshFromData, setQuality, poseAnim } from '/static/viewer.js';   // shared main viewport
+import { plan as antPlan, modelFromGraph, loadManifold, manifoldFromMesh, evaluate as antEvaluate,
+         upstreamSignature } from '/static/anticipate.js';   // boolean drag anticipation
 
 const API = '';
 const LiteGraph = window.LiteGraph;
@@ -578,6 +580,8 @@ window._noodle = { get lgraph(){ return lgraph; }, get lcanvas(){ return lcanvas
   get THREE(){ return THREE; },
   get liveMode(){ return liveMode; },
   get previewMeshes(){ return previewMeshes; },
+  get ant(){ return ant; },
+  get antMarks(){ return antMarks; },              // boolean drag anticipation state (anticipate.js)
   paramChange(n){ return onParamChange(n); },
   togglePick(i){ return togglePick(i); } };
 let currentName = null;
@@ -602,7 +606,18 @@ async function fetchTimed(url, options = {}, timeout = 15000){
 }
 function previewStale(){
   const el = document.getElementById('viewer-stats');
-  el.textContent = 'Preview out of date — Run to update'; el.classList.add('visible');
+  // Live off: the ⚡ nodes would replay instantly, but only in Live (fastDrag) —
+  // say so where the eye already is, or the feature looks broken (it is off by
+  // default on every page load).
+  el.textContent = 'Preview out of date — Run to update'
+    + (!liveMode && fastEnabled && antMarks.size ? ' · attiva Live per l\'anteprima istantanea ⚡' : '');
+  el.classList.add('visible');
+}
+// The drag is being shown locally: say so instead of "out of date", which it is
+// not (it stayed lit for the whole gesture). The exact re-bake replaces it.
+function previewAnticipated(){
+  const el = document.getElementById('viewer-stats');
+  el.textContent = '⚡ Anteprima istantanea — ricalcolo esatto al rilascio'; el.classList.add('visible');
 }
 window.stopRun = function(){
   runPending = false; clearTimeout(liveTimer);
@@ -624,6 +639,7 @@ function resetProjectSession(){
   if (sketchNode) exitCurveDrawMode();
   lastView = null; lastRunJSON = null; lastObservedJSON = null; thumbWanted = false;
   previewMeshes = {}; previewAnims = {}; lastNodeErrors = {};
+  antFree();          // operands belong to the graph they came from: ids repeat across projects
   if (viewer){ viewer.clear(); viewer.resetFraming(); }
   renderLegend([]);
   document.getElementById('viewer-stats').textContent = 'Run to generate a preview';
@@ -920,6 +936,7 @@ function registerNodes(defs){
         }
         if (this.cadType === 'Display') drawDisplayBody(ctx, this);   // wired value on the body
         drawCostBadge(ctx, this);                         // last run's ms, title-bar right
+        drawAntMark(ctx, this);                           // ⚡ = dragging this is instant
         if (!this.bypassed) return;
         ctx.save();
         ctx.fillStyle = 'rgba(11,14,20,.45)';
@@ -1216,6 +1233,7 @@ function cadSliderMouse(ev, pos, node, w){
   // a press on the left of a 120 jump it to ~0 by accident.
   if (down){ w._drag = true; w._dragCfg = sliderCfg(node, w);
              w._x0 = pos[0]; w._v0 = Number(w.value) || 0; stopSliderPlay(w);
+             antPrepare(node);              // operands fetched before the first move (§6b)
              return true; }   // a hand on the slider wins
   if (move && w._drag){
     const cfg = w._dragCfg || sliderCfg(node, w);
@@ -3028,18 +3046,30 @@ async function postThumb(){
 }
 
 // ── live mode: debounced auto-run on any graph change ──
-function scheduleLive(){
+// `anticipated`: the screen already shows the change (a local transform, the
+// boolean anticipation, a timeline replay) — so it is not "out of date", and
+// while the hand is still on the control the exact run waits (antHolding).
+function scheduleLive(anticipated = false){
   if (loadingGraph) return;
-  if (currentName) previewStale();
+  if (currentName) anticipated && liveMode ? previewAnticipated() : previewStale();
   if(!liveMode) return;
   clearTimeout(liveTimer);
-  liveTimer = setTimeout(()=>{ runGraph(); }, 120);
+  liveTimer = setTimeout(liveFire, 120);
+}
+function liveFire(){
+  // A frame of anticipation can take longer than the debounce (SwiftShader, a
+  // heavy chain): input events are rAF-aligned, so the 120ms timer expired
+  // DURING the frame and fired before the next move arrived — /execute ran in
+  // the middle of a drag (measured: 3 per gesture on raccordo, headless).
+  if (antHolding()){ liveTimer = setTimeout(liveFire, 120); return; }
+  runGraph();
 }
 window.toggleLive = function(){
   liveMode = !liveMode;
   document.querySelectorAll('.js-live-btn').forEach(b=>b.classList.toggle('on', liveMode));
   if(liveMode) scheduleLive();
   else { clearTimeout(liveTimer); runPending = false; }
+  if (lcanvas) lcanvas.setDirty(true, true);   // the ⚡ marks light up / dim with Live
 };
 window.toggleCost = function(){
   showCost = !showCost;
@@ -3621,12 +3651,18 @@ function onParamChange(node){
   scheduleHistory();   // param edits become undo steps (debounced across a drag)
   if (node && node.cadType === 'RefImage'){ syncRefImages(); return; }   // editor-only: no re-exec
   if (node && node.cadGated) refreshSubtype(node);   // filter/transform: tag follows mode
-  if (fastDrag() && applyLocalTransform(node)){
-    scheduleLive();   // re-bake exactly once the drag settles
+  const local = fastDrag() && applyLocalTransform(node);
+  // Booleans downstream of the dragged node, redone on meshes in wasm. After a
+  // local transform the node's own mesh is already handled — only what it feeds.
+  const bool = fastDrag() && applyBoolAnticipation(node, local);
+  if (local || bool){
+    antTouched();
+    scheduleLive(true);   // re-bake exactly once the drag settles
     return;
   }
   if (fastDrag() && applyDropTargets(node)){
-    scheduleLive();   // a slider wired into Drop t: same live replay, per target
+    antTouched();
+    scheduleLive(true);   // a slider wired into Drop t: same live replay, per target
     return;
   }
   // Playing and nothing could anticipate it: scheduleLive()'s debounce is reset
@@ -3703,6 +3739,170 @@ function applyLocalTransform(node){
     m.position.copy(c).multiplyScalar(1 - s);
   }
   return true;
+}
+
+// ── boolean drag anticipation (webui/anticipate.js) ─────────────────────────
+// A param whose effect reaches the screen only through booleans (a Move into a
+// Subtract, a radius into a Union…) used to wait for the engine: ~1s per settle
+// on `raccordo`, of which the node you touched was a few ms. Here the chain from
+// the dragged node to what is drawn is redone on MESHES with manifold-wasm: the
+// inputs the drag cannot change are fetched ONCE per drag as baked meshes
+// (POST /anticipate), then every frame re-evaluates the chain and swaps the
+// drawn geometry. The exact re-bake still lands when the drag settles and puts
+// the baked geometry back (antRestore in renderPreviews). plan() refuses any
+// node it cannot redo faithfully, and then this returns false: fall-through
+// to the plain re-run, as §6b asks.
+const ant = { key: null, plan: null, leaves: null, ready: false, failed: false, sig: null,
+              model: null, raf: 0, why: '', ms: null, wasm: null };
+
+// ── the hand: is a gesture still going on? ──
+// The exact re-run must not start while a pointer is still down on a control
+// whose change the screen already shows — see liveFire. A hand that RESTS
+// (no anticipated change and no movement for ANT_REST_MS) lets it through, so
+// holding still still gets the exact answer, as it always did. Movement counts
+// even when the value does not change: a slider snaps to its step, so several
+// moves in a row can leave the value where it was in the middle of a gesture.
+const ANT_REST_MS = 500;
+let antHeld = false, antLastT = 0;
+window.addEventListener('pointerdown', ()=>{ antHeld = true; }, true);
+window.addEventListener('pointermove', ()=>{
+  if (antHeld && performance.now() - antLastT < ANT_REST_MS) antLastT = performance.now();
+}, true);
+for (const ev of ['pointerup', 'pointercancel', 'blur'])
+  window.addEventListener(ev, ()=>{ antHeld = false; }, true);
+function antTouched(){ antLastT = performance.now(); }
+function antHolding(){ return antHeld && performance.now() - antLastT < ANT_REST_MS; }
+
+function antFree(){
+  if (ant.leaves) for (const m of Object.values(ant.leaves)) m.delete();
+  Object.assign(ant, { key: null, plan: null, leaves: null, ready: false, failed: false, claimed: false,
+                       sig: null, model: null });
+}
+// Put the baked geometry back on every mesh the anticipation replaced.
+function antRestore(){
+  for (const m of Object.values(previewMeshes || {})){
+    if (!m || !m.userData || !m.userData.antBaked) continue;
+    if (m.geometry !== m.userData.antBaked) m.geometry.dispose();
+    m.geometry = m.userData.antBaked;
+    delete m.userData.antBaked;
+  }
+}
+// A fresh bake landed. The operands only have to be fetched again if something
+// UPSTREAM of them changed: a leaf is never downstream of the dragged node, so
+// a bake that only moved the dragged value leaves them valid, and the next drag
+// of the same node starts anticipated instead of waiting ~150-500ms for /anticipate.
+function antOnBake(bakedGraph){
+  if (!ant.key) return;
+  if (ant.ready && ant.sig && bakedGraph &&
+      upstreamSignature(modelFromGraph(bakedGraph, catalog), ant.plan.leaves) === ant.sig) return;
+  antFree();
+}
+// Ids drawn as one plain mesh — the only kind whose geometry can be swapped.
+function antScreen(skip){
+  const out = [];
+  for (const [id, m] of Object.entries(previewMeshes || {}))
+    if (id !== skip && m && m.isMesh && !Array.isArray(m.material) && !(previewAnims && previewAnims[id])) out.push(id);
+  return out;
+}
+// Would applyLocalTransform move this node's own mesh? (Same test, no side effect.)
+function localApplies(node){
+  return !!node && (['Move','Rotate','Scale'].includes(node.cadType) || TIMELINE_NODES.has(node.cadType))
+         && !!previewMeshOf(node);
+}
+function antPlanFor(node, localDone){
+  const id = graphIdOf(node);
+  const g = toGraphJSON(currentName);
+  const model = modelFromGraph(g, catalog);
+  const p = antPlan(model, id, antScreen(localDone ? id : null));
+  if (!p.ok){ ant.why = p.why; return null; }
+  return { g, p, key: id + '|' + p.order.join(',') + '|' + p.leaves.slice().sort().join(',') };
+}
+// Start (or reuse) the operand fetch for this plan. True = the anticipation
+// owns this change: shown now if ready, or as soon as the operands land.
+function antEnsure(r){
+  if (ant.key !== r.key){
+    antFree(); antRestore();
+    ant.key = r.key; ant.plan = r.p;
+    antFetch(r.key, r.g, r.p);
+  }
+  ant.plan = r.p;
+  return !ant.failed;
+}
+// A hand just landed on a slider: fetch the operands NOW, before the first move
+// (the drag is relative, so the press itself changes nothing). Without it the
+// first tick of every drag fell through to the plain path.
+function antPrepare(node){
+  if (!fastDrag() || !node || !currentName || !viewer) return;
+  const r = antPlanFor(node, localApplies(node));
+  if (r) antEnsure(r);
+}
+function applyBoolAnticipation(node, localDone){
+  if (!node || !currentName || !viewer) return false;
+  const r = antPlanFor(node, localDone);
+  if (!r || !antEnsure(r)) return false;
+  ant.claimed = true;
+  if (ant.ready) antSchedule();          // still fetching: antFetch draws it on arrival
+  return true;
+}
+async function antFetch(key, g, p){
+  const t0 = performance.now();
+  try {
+    const [w, res] = await Promise.all([loadManifold(),
+      fetch(`${API}/api/graph/${encodeURIComponent(currentName)}/anticipate`,
+            {method:'POST', headers:{'Content-Type':'application/json'},
+             body: JSON.stringify({graph: g, nodes: p.leaves})})]);
+    const data = await res.json();
+    if (!res.ok || !data.success || (data.missing || []).length)
+      throw new Error((data && (data.detail || data.error)) || ('missing ' + data.missing));
+    const leaves = {};
+    try { for (const [lid, x] of Object.entries(data.meshes)) leaves[lid] = manifoldFromMesh(w, x.mesh); }
+    catch(e){ for (const m of Object.values(leaves)) m.delete(); throw e; }
+    if (ant.key !== key){ for (const m of Object.values(leaves)) m.delete(); return; }   // superseded
+    ant.leaves = leaves; ant.ready = true; ant.wasm = w;
+    ant.sig = upstreamSignature(modelFromGraph(g, catalog), p.leaves);
+    log(`⚡ anticipo booleani: ${p.order.length} nodi, ${p.leaves.length} operandi in ${Math.round(performance.now()-t0)}ms`);
+    if (ant.claimed) antSchedule();      // a bare press (antPrepare) changed nothing: keep the baked mesh
+  } catch(e){
+    // keep the key: this drag stays on the plain path instead of re-asking every tick
+    if (ant.key === key){
+      ant.why = e.message; ant.failed = true;
+      if (ant.claimed) scheduleLive();   // the ticks it claimed while fetching still need a run
+    }
+    console.warn('anticipate:', e);
+  }
+}
+// Drawing the operands of a Union overlapped instead of fusing them (`soup`,
+// anticipate.js) is the same picture only for an opaque solid surface.
+function antOpaque(m){
+  const mt = m && m.material;
+  return !!mt && !Array.isArray(mt) && !mt.wireframe && !mt.transparent && !(mt.transmission > 0);
+}
+// One evaluation per animation frame, with the params as they are THEN: a
+// slider fires faster than a ~50ms boolean chain can be redone.
+function antSchedule(){
+  if (ant.raf) return;
+  ant.raf = requestAnimationFrame(() => {
+    ant.raf = 0;
+    if (!ant.ready || !ant.plan) return;
+    const t0 = performance.now();
+    const model = modelFromGraph(toGraphJSON(currentName), catalog);
+    const soup = ant.plan.outputs.every(id => antOpaque(previewMeshes[id]));
+    let res;
+    try { res = antEvaluate(ant.wasm, ant.plan, model, ant.leaves, { soup }); }
+    catch(e){ console.warn('anticipate:', e); return; }
+    for (const [oid, a] of Object.entries(res)){
+      const m = previewMeshes[oid]; if (!m) continue;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(a.positions, 3));
+      geo.setAttribute('normal', new THREE.BufferAttribute(a.normals, 3));
+      geo.setIndex(new THREE.BufferAttribute(a.index, 1));
+      if (!m.userData.antBaked) m.userData.antBaked = m.geometry;
+      else if (m.geometry !== m.userData.antBaked) m.geometry.dispose();
+      m.geometry = geo;
+    }
+    ant.ms = Math.round(performance.now() - t0);   // window._noodle.ant.ms — what the last frame cost
+    viewer.invalidate();
+  });
 }
 
 // ── on-canvas edit gizmo (PLAN_NODE_CAD.md §E1: translate) ──────────────────
@@ -3870,16 +4070,25 @@ function gizmoDragUpdate(){
   // point producers (ConstructPoint/Vector) shift their dot by the world delta.
   // Timeline (Drop) rides the same fallback: the mesh follows the cursor until
   // the debounced exact run lands the bounce/topple frame (memo makes it cheap).
-  if (!applyLocalTransform(node) && (g.kind === 'translate' || g.kind === 'timeline')){
+  const local = applyLocalTransform(node);
+  if (!local && (g.kind === 'translate' || g.kind === 'timeline')){
     const m = previewMeshOf(node);
     if (m) m.position.copy(gizmoAnchor.position.clone().sub(gizmoStart));
   }
+  // …and what it feeds: the booleans downstream, as a slider drag does (§6b).
+  // The gizmo re-runs on its own timer, Live or not, so only the ⚙ switch gates it.
+  if (local){ if (fastEnabled) applyBoolAnticipation(node, true); antTouched(); }
   scheduleGizmoRun();
 }
 
 function scheduleGizmoRun(){
   clearTimeout(gizmoRunTimer);
-  gizmoRunTimer = setTimeout(()=>{ if (gizmoNode) window.runGraph(); }, 150);
+  gizmoRunTimer = setTimeout(gizmoRunFire, 150);
+}
+function gizmoRunFire(){
+  if (!gizmoNode) return;
+  if (antHolding()){ gizmoRunTimer = setTimeout(gizmoRunFire, 150); return; }   // see liveFire
+  window.runGraph();
 }
 
 window.toggleGizmoSnap = function(){
@@ -4576,6 +4785,36 @@ function costLabel(t){
   return t < 0.9995 ? Math.round(t * 1000) + 'ms' : t.toFixed(1) + 's';
 }
 
+// ⚡ on the title bar of every node whose params replay INSTANTLY while dragged
+// (a local transform, or the boolean anticipation). Recomputed after each bake,
+// because it depends on the wiring and on what is on screen.
+let antMarks = new Set();
+function computeAntMarks(){
+  antMarks = new Set();
+  // fastEnabled, not fastDrag(): with Live off the marks are still drawn (dimmed),
+  // so the user can see which sliders WOULD be instant once Live is on.
+  if (!fastEnabled || !lgraph || !currentName) return 0;
+  const model = modelFromGraph(toGraphJSON(currentName), catalog);
+  const screen = antScreen(null);
+  for (const n of lgraph._nodes){
+    if (!(n.widgets || []).some(w => w.cadParam)) continue;       // nothing to drag
+    const id = graphIdOf(n);
+    const local = ['Move','Rotate','Scale'].includes(n.cadType) && previewMeshOf(n);
+    if (local || antPlan(model, id, screen).ok) antMarks.add(n);
+  }
+  return antMarks.size;
+}
+function drawAntMark(ctx, n){
+  if (!antMarks.has(n) || !fastEnabled) return;
+  const th = LiteGraph.NODE_TITLE_HEIGHT || 20;
+  const shift = (showCost && lastCost && lastCost.get(n)) ? 56 : 0;   // sit left of the cost badge
+  ctx.save();
+  ctx.font = '12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = liveMode ? '#facc15' : '#6b7280';        // grey = needs Live
+  ctx.fillText('⚡', n.size[0] - 12 - shift, -th / 2);
+  ctx.restore();
+}
+
 function drawCostBadge(ctx, n){
   if (!showCost || !lastCost) return;
   const c = lastCost.get(n);
@@ -4839,6 +5078,8 @@ function renderPreviews(view, bakedGraph = null){
   const baked = bakedGraph && Object.fromEntries(bakedGraph.nodes.map(n=>[n.id,n.params]));
   lastView = view;                       // cache so colour/wireframe changes re-render instantly
   if (!viewer) return;
+  antRestore();                          // a re-used preview object must not keep anticipated geometry
+  if (bakedGraph) antOnBake(bakedGraph); // a fresh bake: refetch only if the operands changed
   clearPreviewDots();
   const setStats = (txt)=>{ const st=document.getElementById('viewer-stats'); st.innerHTML=txt; st.classList.add('visible'); };
   const r = viewer.renderPreviews((view && view.previews) || {}, {
@@ -4867,7 +5108,9 @@ function renderPreviews(view, bakedGraph = null){
   renderLegend(legend);
   if(lcanvas) lcanvas.setDirty(true, true);   // repaint node dots
   const s = r.size;
-  setStats(`${r.order.length} preview · ${s.x.toFixed(1)} × ${s.y.toFixed(1)} × ${s.z.toFixed(1)} mm`);
+  const nAnt = computeAntMarks();
+  setStats(`${r.order.length} preview · ${s.x.toFixed(1)} × ${s.y.toFixed(1)} × ${s.z.toFixed(1)} mm`
+           + (nAnt ? ` · ⚡ ${nAnt} nodi istantanei al trascinamento${liveMode ? '' : ' (con Live attivo)'}` : ''));
 }
 
 // instant display-only refresh (colour / wireframe) without re-executing
