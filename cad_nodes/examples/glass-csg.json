@@ -1,0 +1,309 @@
+{
+ "name": "glass-csg",
+ "nodes": [
+  {
+   "id": "nucleo",
+   "type": "NumberSlider",
+   "params": {
+    "value": 9,
+    "_ui": {
+     "value": {
+      "min": 3,
+      "max": 16,
+      "step": 0.5,
+      "play": {
+       "speed": 0.22,
+       "mode": "pingpong"
+      }
+     }
+    }
+   },
+   "position": [
+    80.0,
+    464.0
+   ],
+   "parent": null,
+   "title": "3 · Nucleo"
+  },
+  {
+   "id": "cubo",
+   "type": "Box",
+   "params": {
+    "width": 40,
+    "height": 40,
+    "depth": 40,
+    "centered": true
+   },
+   "position": [
+    470.0,
+    150.0
+   ],
+   "parent": null,
+   "preview": false
+  },
+  {
+   "id": "sfera_b",
+   "type": "Sphere",
+   "params": {
+    "radius": 25,
+    "arc": 360
+   },
+   "position": [
+    470.0,
+    607.0
+   ],
+   "parent": null,
+   "preview": false
+  },
+  {
+   "id": "dado",
+   "type": "Intersect",
+   "params": {},
+   "position": [
+    800.0,
+    462.8230452674897
+   ],
+   "parent": null,
+   "preview": false,
+   "title": "Cubo ∩ Sfera"
+  },
+  {
+   "id": "foro_z",
+   "type": "Cylinder",
+   "params": {
+    "radius": 9,
+    "height": 60,
+    "arc": 360,
+    "centered": true
+   },
+   "position": [
+    470.0,
+    904.0
+   ],
+   "parent": null,
+   "preview": false
+  },
+  {
+   "id": "foro_x",
+   "type": "Rotate",
+   "params": {
+    "angle": 90,
+    "axis": "X",
+    "about": "world"
+   },
+   "position": [
+    800.0,
+    663.8230452674898
+   ],
+   "parent": null,
+   "preview": false
+  },
+  {
+   "id": "foro_y",
+   "type": "Rotate",
+   "params": {
+    "angle": 90,
+    "axis": "Y",
+    "about": "world"
+   },
+   "position": [
+    800.0,
+    1028.8230452674898
+   ],
+   "parent": null,
+   "preview": false
+  },
+  {
+   "id": "croce",
+   "type": "Union",
+   "params": {},
+   "position": [
+    1100.0,
+    916.0160493827161
+   ],
+   "parent": null,
+   "preview": false,
+   "title": "Tre fori",
+   "multi": [
+    "shapes"
+   ]
+  },
+  {
+   "id": "vetro",
+   "type": "Subtract",
+   "params": {},
+   "position": [
+    1400.0,
+    695.4195473251029
+   ],
+   "parent": null,
+   "preview": true,
+   "color": "#9be7ff",
+   "finish": "glass",
+   "title": "Vetro"
+  },
+  {
+   "id": "luce",
+   "type": "Sphere",
+   "params": {
+    "radius": 9,
+    "arc": 360
+   },
+   "position": [
+    470.0,
+    1726.1203703703702
+   ],
+   "parent": null,
+   "preview": true,
+   "color": "#ffb347",
+   "finish": "emissive",
+   "title": "Luce"
+  },
+  {
+   "id": "sfera",
+   "type": "NumberSlider",
+   "params": {
+    "value": 26,
+    "_ui": {
+     "value": {
+      "min": 20,
+      "max": 34,
+      "step": 0.5,
+      "play": {
+       "speed": 0.22,
+       "mode": "pingpong"
+      }
+     }
+    }
+   },
+   "position": [
+    80.0,
+    150.0
+   ],
+   "parent": null,
+   "title": "1 · Sfera"
+  },
+  {
+   "id": "fori",
+   "type": "NumberSlider",
+   "params": {
+    "value": 8,
+    "_ui": {
+     "value": {
+      "min": 3,
+      "max": 12,
+      "step": 0.5,
+      "play": {
+       "speed": 0.22,
+       "mode": "pingpong"
+      }
+     }
+    }
+   },
+   "position": [
+    80.0,
+    307.0
+   ],
+   "parent": null,
+   "title": "2 · Fori"
+  },
+  {
+   "id": "note",
+   "type": "Note",
+   "params": {
+    "text": "Live booleans, in glass\n\nThe textbook CSG tree: (Box ∩ Sphere) − three crossed Cylinders, drawn as glass around an emissive core.\n\nTurn on Live, then drag 1 · Sfera or 2 · Fori — or press the ▶ on the slider to sweep it. While the value moves, the Intersect / Union / Subtract chain is redone IN THE BROWSER on meshes (manifold-wasm): no run, no round trip. The exact build123d result lands once, when you let go.\n\nWhat can be anticipated: Box, Cylinder, Sphere, Move, Rotate, Union, Subtract, Intersect and value nodes wired into them. Anything else just falls back to a normal re-run."
+   },
+   "position": [
+    470.0,
+    2023.1203703703702
+   ],
+   "parent": null
+  }
+ ],
+ "connections": [
+  {
+   "id": "l1",
+   "from_node": "sfera",
+   "from_socket": "result",
+   "to_node": "sfera_b",
+   "to_socket": "radius"
+  },
+  {
+   "id": "l2",
+   "from_node": "cubo",
+   "from_socket": "result",
+   "to_node": "dado",
+   "to_socket": "a"
+  },
+  {
+   "id": "l3",
+   "from_node": "sfera_b",
+   "from_socket": "result",
+   "to_node": "dado",
+   "to_socket": "b"
+  },
+  {
+   "id": "l4",
+   "from_node": "fori",
+   "from_socket": "result",
+   "to_node": "foro_z",
+   "to_socket": "radius"
+  },
+  {
+   "id": "l5",
+   "from_node": "foro_z",
+   "from_socket": "result",
+   "to_node": "foro_x",
+   "to_socket": "shape"
+  },
+  {
+   "id": "l6",
+   "from_node": "foro_z",
+   "from_socket": "result",
+   "to_node": "foro_y",
+   "to_socket": "shape"
+  },
+  {
+   "id": "l7",
+   "from_node": "foro_z",
+   "from_socket": "result",
+   "to_node": "croce",
+   "to_socket": "shapes"
+  },
+  {
+   "id": "l8",
+   "from_node": "foro_x",
+   "from_socket": "result",
+   "to_node": "croce",
+   "to_socket": "shapes"
+  },
+  {
+   "id": "l9",
+   "from_node": "foro_y",
+   "from_socket": "result",
+   "to_node": "croce",
+   "to_socket": "shapes"
+  },
+  {
+   "id": "l10",
+   "from_node": "dado",
+   "from_socket": "result",
+   "to_node": "vetro",
+   "to_socket": "a"
+  },
+  {
+   "id": "l11",
+   "from_node": "croce",
+   "from_socket": "result",
+   "to_node": "vetro",
+   "to_socket": "b"
+  },
+  {
+   "id": "l12",
+   "from_node": "nucleo",
+   "from_socket": "result",
+   "to_node": "luce",
+   "to_socket": "radius"
+  }
+ ]
+}
