@@ -3345,7 +3345,7 @@ async function editAppearance(node){
   // buildModal handles the overlay click but not the key; Esc must revert too.
   const onKey = e => {
     if (e.key === 'Escape'){ e.stopPropagation(); m.close(false); }
-    else if (e.key === 'Enter' && document.activeElement !== hex) m.close(true);
+    else if (e.key === 'Enter' && document.activeElement !== hex){ e.preventDefault(); m.close(true); }   // see promptModal
   };
   m.ov.addEventListener('keydown', onKey);
   document.addEventListener('keydown', onKey, true);
@@ -6586,12 +6586,17 @@ function toast(kind, msg, action){
 }
 
 // generic modal helpers (return a Promise) ------------------------
+buildModal.seq = 0;
 function buildModal(html){
   const previous = document.activeElement;
   const ov=document.createElement('div'); ov.className='modal-overlay open';
   ov.innerHTML='<div class="modal" role="dialog" aria-modal="true" tabindex="-1">'+html+'</div>';
   const dialog = ov.firstElementChild, heading = dialog.querySelector('h3');
-  if (heading){ heading.id = 'modal-'+crypto.randomUUID(); dialog.setAttribute('aria-labelledby',heading.id); }
+  // A page counter, NOT crypto.randomUUID(): that exists only in a SECURE context
+  // (https or localhost). Opened over the LAN as http://<ip>:<port> it is undefined,
+  // this line threw, and EVERY modal died before being shown — "New project…" did
+  // nothing at all, while every localhost/headless test passed.
+  if (heading){ heading.id = 'modal-'+(++buildModal.seq); dialog.setAttribute('aria-labelledby',heading.id); }
   document.body.appendChild(ov);
   const focusable = ()=>Array.from(dialog.querySelectorAll('button:not(:disabled), input, select, textarea, [tabindex="0"]'));
   setTimeout(()=>{ if(ov.isConnected) (focusable()[0] || dialog).focus(); },0);
@@ -6628,7 +6633,10 @@ function promptModal(title, label, def){
   const inp=m.ov.querySelector('#__pm'); setTimeout(()=>{inp.focus();inp.select();},0);
   m.ov.querySelector('#__pc').onclick=()=>m.close(null);
   m.ov.querySelector('#__po').onclick=()=>m.close(inp.value.trim());
-  inp.addEventListener('keydown',e=>{ if(e.key==='Enter')m.close(inp.value.trim()); if(e.key==='Escape')m.close(null); });
+  // preventDefault on Enter is load-bearing: close() hands focus back to the button
+  // that opened the modal while this keydown is still being handled, and the same
+  // Enter would then ACTIVATE that button — "New empty project" reopened itself.
+  inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); m.close(inp.value.trim()); } if(e.key==='Escape')m.close(null); });
   return m.p.then(v=>v === 'cancel' ? null : v);
 }
 function showRestoreModal(name, d){

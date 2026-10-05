@@ -26,10 +26,10 @@ def api(method, path, body=None):
 
 
 async def main():
-    names = ['ui-regression-' + uuid.uuid4().hex[:12] for _ in range(2)]
+    names = ['ui-regression-' + uuid.uuid4().hex[:12] for _ in range(3)]
     errors = []
     try:
-        for name in names:
+        for name in names[:2]:   # names[2] is created through the UI (New project…)
             api('POST', '/api/graph/' + name, {
                 'name': name, 'nodes': [{'id': 'box', 'type': 'Box',
                     'params': {'width': 10, 'height': 10, 'depth': 10}, 'position': [100, 100]}],
@@ -120,9 +120,53 @@ async def main():
             await page.keyboard.press('Escape')
             assert await page.locator('[role="dialog"]').count() == 0
             assert await page.evaluate('document.activeElement.id') == 'btn-project'
+            # Enter that closes a prompt must not also press the button that opened it
+            # (focus returns to it mid-keydown): "New empty project" used to reopen itself.
+            await page.evaluate('''()=>{const b=document.createElement('button');b.id='__newbtn';
+                b.onclick=()=>window.promptNewGraph();document.body.appendChild(b);b.focus();}''')
+            await page.keyboard.press('Enter')
+            await page.wait_for_selector('[role="dialog"]')
+            await page.keyboard.press('Enter')            # empty name: the prompt just closes
+            await page.wait_for_timeout(200)
+            assert await page.locator('[role="dialog"]').count() == 0, 'Enter re-pressed the opener'
+            await page.evaluate("document.getElementById('__newbtn').remove()")
             assert not errors, errors
+            # The user's real gesture, on the user's real ORIGIN. Over the LAN the editor
+            # is http://<ip>:<port> — NOT a secure context, so crypto.randomUUID does not
+            # exist, and buildModal() used it: every modal threw before showing and
+            # "New project…" did nothing. localhost is secure, so this hid from every test.
+            # A fake hostname proxied to BASE gives the same insecure origin anywhere.
+            lan = 'http://noodle-lan.test:8090'
+            lan_ctx = await browser.new_context(viewport={'width': 1440, 'height': 900})
+            async def via_lan(route):
+                url = route.request.url
+                try:
+                    if not url.startswith(lan):
+                        await route.abort()
+                    else:
+                        await route.fulfill(response=await route.fetch(url=BASE + url[len(lan):]))
+                except Exception:
+                    pass  # a live-sync poll still in flight when the context closes
+            await lan_ctx.route('**/*', via_lan)
+            lan_page = await lan_ctx.new_page()
+            lan_errors = []
+            lan_page.on('pageerror', lambda error: lan_errors.append(str(error)))
+            await lan_page.goto(lan + '/nodes?p=' + names[0])
+            await lan_page.wait_for_function("document.getElementById('status').textContent==='ready'")
+            assert await lan_page.evaluate('window.isSecureContext') is False
+            await lan_page.locator('#btn-project').click()                     # real mouse
+            await lan_page.locator('#project-menu .menu-item', has_text='New project').click()
+            await lan_page.wait_for_selector('[role="dialog"]', timeout=3000)
+            await lan_page.keyboard.type(names[2])
+            await lan_page.locator('#__po').click()
+            await lan_page.wait_for_function(
+                "n=>document.getElementById('project-name').textContent===n", arg=names[2])
+            assert api('GET', '/api/graph/' + names[2])['nodes'] == []
+            assert not lan_errors, lan_errors
+            await lan_page.close()
+            await lan_ctx.close()
             await browser.close()
-        print('PASS: offline boot, real CAD runs, GPU reuse, autosave, idle rendering, stale responses, save failure, modal focus')
+        print('PASS: offline boot, real CAD runs, GPU reuse, autosave, idle rendering, stale responses, save failure, modal focus, modal Enter, New project over LAN')
     finally:
         for name in names:
             try:
