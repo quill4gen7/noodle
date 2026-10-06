@@ -859,6 +859,38 @@ Length: 5
 
 ---
 
+### 3. ✎ Disegna: la gomma
+
+**Problema** (quill, 2026-10-07, disegnando la prima nota vera: 33 segni su 12
+viste). Nel viewer `/view` oggi si può solo **annullare l'ultimo tratto** (↶,
+Ctrl+Z) o **cancellare tutto** (Pulisci). Un tratto sbagliato a metà di un
+disegno lungo si toglie solo disfacendo tutto quello fatto dopo. Serve la
+**gomma**: passarci sopra e togliere solo quel tratto, come in qualsiasi paint.
+
+**Da decidere prima di scrivere codice:**
+
+- **Cosa cancella.** Il tratto intero toccato (semplice, come la gomma "a
+  oggetto" di molte app) o solo la parte strofinata, che spezza il tratto in
+  due. Sul modello i tratti sono già spezzati dove la penna esce dalla
+  superficie (`painting.s = null`), quindi la gomma "a tratto" toglie un pezzo
+  naturale; quella "a pixel" va pensata sui punti 3D, non sullo schermo.
+- **Come si colpisce un tratto.** Il raycast va sul pezzo (`firstHit` su
+  `previewGroup`), non sui tubi dei tratti: serve un pick su `annoGroup`, o la
+  distanza 3D fra il punto colpito sul pezzo e i punti del tratto (più
+  robusta, e funziona anche con tratti sottili).
+- **Le foto delle viste** (`views`, una per vista, scattate al rilascio). Se
+  la gomma toglie l'unico tratto di una vista, quella vista sparisce dall'invio
+  (già così con l'undo: `remap` all'invio scarta le viste senza tratti). Ma una
+  vista che conserva altri tratti ha la foto VECCHIA, col tratto cancellato
+  ancora sopra: va riscattata, e solo se la camera è ancora quella (sennò la
+  foto corretta non si può più fare: meglio togliere il tratto dalla foto o
+  scartarla?).
+- **Undo della gomma.** ↶ oggi toglie l'ultimo gesto: dopo una cancellatura
+  deve ripristinare il tratto cancellato, cioè la pila diventa di AZIONI, non
+  di tratti.
+- **Solo la bozza.** Le note già inviate restano immutabili come le generazioni
+  (si eliminano intere): la gomma lavora sul disegno non ancora inviato.
+
 ## Roadmap / Suggerimenti (post-Fase 4)
 
 > Visione: rimanere **semplici** e **integrati con l'AI fin da subito**, con la
