@@ -11,7 +11,7 @@ function context(extra={}) {
   let now=0, id=0; const timers=new Map();
   const c={JSON,Promise,console,currentName:'demo',sessionEpoch:1,loadingGraph:false,
     lastSavedJSON:JSON.stringify({v:0}),lastObservedJSON:null,docState:'saved',serverSaveTimer:null,
-    value:0,nodeIndex:{},saveChain:Promise.resolve(),API:'',thumbWanted:false,
+    value:0,nodeIndex:{},saveChain:Promise.resolve(),API:'',thumbWanted:false,READ_ONLY:false,
     toGraphJSON:()=>({v:c.value}),setDocState:s=>c.docState=s,
     saveDraft:()=>{c.drafts++;},clearDraft:()=>{c.clears++;},drafts:0,clears:0,
     log(){},maybeThumb(){},
