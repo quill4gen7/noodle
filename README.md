@@ -33,12 +33,12 @@ browser at 60fps — no re-run.</em></p>
 </p>
 
 <p align="center">
-  <img src="docs/asset/noodle-bool-live.gif" alt="glass-csg example: the ▶ on a slider sweeps the sphere radius and then the hole radius, and the glass (Box ∩ Sphere) − three cylinders reshapes live around a glowing core" width="880">
+  <img src="docs/asset/noodle-bool-live.gif" alt="glow-pierce example: three spheres orbit a glass disc with a glowing aqua ring sunk inside it, carving spherical cavities in the glass and cutting gaps in the ring as they pass" width="800">
 </p>
-<p align="center"><em><strong>Live booleans.</strong> Press ▶ on a slider (or drag it) with Live on: the
-Intersect / Union / Subtract chain is redone <strong>in the browser</strong> on meshes (manifold-wasm)
-while the value moves, and the exact build123d result lands once, when it stops.
-Example: <code>glass-csg</code>.</em></p>
+<p align="center"><em><strong>Live booleans.</strong> One slider turns three spheres; two Subtracts carve them out of a
+glass disc and the glowing ring inside it. With Live on, the chain is redone <strong>in the browser</strong>
+on meshes (manifold-wasm) at every frame — every frame of this GIF is that, with the engine blocked —
+and the exact build123d result lands once, when the slider stops. Example: <code>glow-pierce</code>.</em></p>
 
 **▶ [Live preview](https://quill4gen7.github.io/noodle/)** — the read-only 3D viewer running on
 GitHub Pages: orbit real generations, hide pieces, play their timelines. No install.
