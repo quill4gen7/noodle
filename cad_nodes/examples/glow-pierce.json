@@ -1,0 +1,278 @@
+{
+ "name": "glow-pierce",
+ "nodes": [
+  {
+   "id": "giro",
+   "type": "NumberSlider",
+   "params": {
+    "value": 20,
+    "_ui": {
+     "value": {
+      "min": 0,
+      "max": 120,
+      "step": 0.5,
+      "play": {
+       "speed": 0.25,
+       "mode": "loop"
+      }
+     }
+    }
+   },
+   "position": [
+    80.0,
+    150.0
+   ],
+   "parent": null,
+   "title": "Giro"
+  },
+  {
+   "id": "disco",
+   "type": "Cylinder",
+   "params": {
+    "radius": 30,
+    "height": 14,
+    "arc": 360,
+    "centered": true
+   },
+   "position": [
+    470.0,
+    150.0
+   ],
+   "parent": null,
+   "preview": false,
+   "title": "Disco"
+  },
+  {
+   "id": "anello",
+   "type": "Torus",
+   "params": {
+    "major_radius": 19,
+    "minor_radius": 2.6,
+    "arc": 360
+   },
+   "position": [
+    470.0,
+    860.0
+   ],
+   "parent": null,
+   "preview": false,
+   "title": "Anello"
+  },
+  {
+   "id": "palla",
+   "type": "Sphere",
+   "params": {
+    "radius": 8.5,
+    "arc": 360
+   },
+   "position": [
+    470.0,
+    563.0
+   ],
+   "parent": null,
+   "preview": false
+  },
+  {
+   "id": "p0",
+   "type": "Move",
+   "params": {
+    "x": 19,
+    "y": 0,
+    "z": 0
+   },
+   "position": [
+    800.0,
+    525.0000000000001
+   ],
+   "parent": null,
+   "preview": false
+  },
+  {
+   "id": "p120",
+   "type": "Rotate",
+   "params": {
+    "angle": 120,
+    "axis": "Z",
+    "about": "world"
+   },
+   "position": [
+    1100.0,
+    343.0
+   ],
+   "parent": null,
+   "preview": false
+  },
+  {
+   "id": "p240",
+   "type": "Rotate",
+   "params": {
+    "angle": 240,
+    "axis": "Z",
+    "about": "world"
+   },
+   "position": [
+    1100.0,
+    708.0
+   ],
+   "parent": null,
+   "preview": false
+  },
+  {
+   "id": "tre",
+   "type": "Union",
+   "params": {},
+   "position": [
+    1400.0,
+    619.5
+   ],
+   "parent": null,
+   "preview": false,
+   "title": "Tre sfere",
+   "multi": [
+    "shapes"
+   ]
+  },
+  {
+   "id": "sfere",
+   "type": "Rotate",
+   "params": {
+    "angle": 0,
+    "axis": "Z",
+    "about": "world"
+   },
+   "position": [
+    1700.0,
+    525.25
+   ],
+   "parent": null,
+   "preview": false,
+   "title": "Sfere in giro"
+  },
+  {
+   "id": "vetro",
+   "type": "Subtract",
+   "params": {},
+   "position": [
+    2000.0,
+    385.08333333333337
+   ],
+   "parent": null,
+   "preview": true,
+   "color": "#d6f2ff",
+   "finish": "glass",
+   "title": "Vetro"
+  },
+  {
+   "id": "luce",
+   "type": "Subtract",
+   "params": {},
+   "position": [
+    2000.0,
+    850.4166666666666
+   ],
+   "parent": null,
+   "preview": true,
+   "color": "#0fb89a",
+   "finish": "emissive",
+   "title": "Luce"
+  },
+  {
+   "id": "note",
+   "type": "Note",
+   "params": {
+    "text": "Live booleans: glass and light\n\nA glowing ring sunk in a glass disc, both pierced by three spheres that orbit the axis: two Subtracts fed by the same rotating group.\n\nTurn on Live and press ▶ on the Giro slider (or drag it). While the angle moves, the Rotate → Subtract chain is redone IN THE BROWSER on meshes (manifold-wasm): no run, no round trip. The exact build123d result lands once, when it stops.\n\nThree spheres 120° apart, so 0 → 120° is a seamless loop.\n\nWhat can be anticipated: Box, Cylinder, Sphere, Move, Rotate, Union, Subtract, Intersect and value nodes wired into their pins. Any other node upstream is fine as a fixed operand (the Torus here); in the moving chain it falls back to a normal re-run."
+   },
+   "position": [
+    470.0,
+    1249.0
+   ],
+   "parent": null
+  }
+ ],
+ "connections": [
+  {
+   "id": "l1",
+   "from_node": "palla",
+   "from_socket": "result",
+   "to_node": "p0",
+   "to_socket": "shape"
+  },
+  {
+   "id": "l2",
+   "from_node": "p0",
+   "from_socket": "result",
+   "to_node": "p120",
+   "to_socket": "shape"
+  },
+  {
+   "id": "l3",
+   "from_node": "p0",
+   "from_socket": "result",
+   "to_node": "p240",
+   "to_socket": "shape"
+  },
+  {
+   "id": "l4",
+   "from_node": "p0",
+   "from_socket": "result",
+   "to_node": "tre",
+   "to_socket": "shapes"
+  },
+  {
+   "id": "l5",
+   "from_node": "p120",
+   "from_socket": "result",
+   "to_node": "tre",
+   "to_socket": "shapes"
+  },
+  {
+   "id": "l6",
+   "from_node": "p240",
+   "from_socket": "result",
+   "to_node": "tre",
+   "to_socket": "shapes"
+  },
+  {
+   "id": "l7",
+   "from_node": "tre",
+   "from_socket": "result",
+   "to_node": "sfere",
+   "to_socket": "shape"
+  },
+  {
+   "id": "l8",
+   "from_node": "giro",
+   "from_socket": "result",
+   "to_node": "sfere",
+   "to_socket": "angle"
+  },
+  {
+   "id": "l9",
+   "from_node": "disco",
+   "from_socket": "result",
+   "to_node": "vetro",
+   "to_socket": "a"
+  },
+  {
+   "id": "l10",
+   "from_node": "sfere",
+   "from_socket": "result",
+   "to_node": "vetro",
+   "to_socket": "b"
+  },
+  {
+   "id": "l11",
+   "from_node": "anello",
+   "from_socket": "result",
+   "to_node": "luce",
+   "to_socket": "a"
+  },
+  {
+   "id": "l12",
+   "from_node": "sfere",
+   "from_socket": "result",
+   "to_node": "luce",
+   "to_socket": "b"
+  }
+ ]
+}
