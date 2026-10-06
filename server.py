@@ -32,7 +32,8 @@ from cad_nodes import api, catalog, layout
 from cad_nodes.graph import Graph, ValidationError
 from cad_nodes.screenshot import ScreenshotUnavailable
 from cad_nodes.transpiler import transpile, transpile_with_map
-from cad_nodes.executor import execute_graph, extract_subshapes_for_node, warm_status
+from cad_nodes.executor import (execute_graph, extract_subshapes_for_node,
+                                 operand_meshes, warm_status)
 from cad_nodes import export_index
 from cad_nodes.store import GraphStore, stamp_agent_tags, validate_graph_id
 from cad_nodes.job_files import atomic_write, progress_file, run_dir
@@ -86,7 +87,7 @@ app.mount("/static", StaticFiles(directory="/app/webui"), name="static")
 async def _revalidate_ui(request: Request, call_next):
     response = await call_next(request)
     p = request.url.path
-    if (p.startswith("/static/") or p in ("/", "/ui", "/nodes", "/library")
+    if (p.startswith("/static/") or p in ("/", "/ui", "/nodes", "/library", "/views")
             or p.startswith("/view/")) and "cache-control" not in response.headers:
         response.headers["Cache-Control"] = "no-cache"
     return response
@@ -485,11 +486,74 @@ async def webui():
     return HTMLResponse("<h1>noodle</h1><p>WebUI not found</p>", status_code=404)
 
 
+# The editor's BUILD: one short hash of the files a tab runs. An open tab keeps
+# the JS it loaded, so after an edit to webui/ a user's tab and a freshly opened
+# headless page run DIFFERENT code on the same graph — and "it works here" says
+# nothing about "it works there". Measured on raccordo (2026-10-05): the user's
+# tab was loaded at 23:43:45 and saved a slider pinned at 10.0 with the old
+# absolute-drag code, while the agent verified the fixes of 23:45:59 / 23:51:49
+# in a page opened later. The page carries its build (injected below), polls
+# /api/system/ui-build and shows a reload banner when the two differ; its
+# /version poll also sends `ui=<build>`, so the access log says which build each
+# tab is running.
+_UI_BUILD_FILES = ("nodes.html", "viewer.js", "anticipate.js")
+
+
+def _ui_build() -> str:
+    import hashlib
+    h = hashlib.sha1()
+    for f in _UI_BUILD_FILES:
+        try:
+            h.update((Path("/app/webui") / f).read_bytes())
+        except OSError:
+            pass
+    return h.hexdigest()[:10]
+
+
+@app.get("/api/system/ui-build")
+async def system_ui_build():
+    return {"build": _ui_build(), "files": list(_UI_BUILD_FILES)}
+
+
+# Who is calling: the user's browser and an agent's curl both arrive from the
+# podman gateway (10.89.0.4) when they come from the host, so the IP alone cannot
+# tell them apart. Page loads and every write get one extra log line naming the
+# client KIND from its User-Agent (a headless Chromium says "HeadlessChrome").
+# A client may also name itself with `?client=` or `X-Noodle-Client`.
+def _client_kind(request: Request) -> str:
+    tag = request.query_params.get("client") or request.headers.get("x-noodle-client")
+    if tag:
+        return tag[:32]
+    ua = request.headers.get("user-agent", "")
+    if "HeadlessChrome" in ua:
+        return "headless"
+    for key, kind in (("curl/", "curl"), ("python", "python"), ("node", "node")):
+        if key in ua.lower():
+            return kind
+    return "browser" if "Mozilla/" in ua else (ua[:24] or "?")
+
+
+# uvicorn.error has the console handler: these lines land in `docker logs`
+# next to the access lines (the app's own "noodle" logger reaches only the
+# in-app ring buffer).
+_client_log = logging.getLogger("uvicorn.error")
+
+
+@app.middleware("http")
+async def _log_client(request: Request, call_next):
+    p = request.url.path
+    if p == "/nodes" or (request.method != "GET" and p.startswith("/api/graph/")):
+        host = request.client.host if request.client else "?"
+        _client_log.info("client=%s %s %s %s%s", _client_kind(request), host, request.method, p,
+                         ("?" + request.url.query) if request.url.query else "")
+    return await call_next(request)
+
+
 @app.get("/nodes", response_class=HTMLResponse)
 async def webui_nodes():
     page = Path("/app/webui/nodes.html")
     if page.exists():
-        return page.read_text()
+        return page.read_text().replace("__NOODLE_UI_BUILD__", _ui_build())
     return HTMLResponse("<h1>noodle</h1><p>Node editor not found</p>", status_code=404)
 
 
@@ -544,6 +608,55 @@ async def list_generations(request: Request, name: str):
                               base_url=_public_base(request))}
 
 
+@app.get("/api/gens/recent")
+async def recent_generations(request: Request, limit: int = 60, project: str = ""):
+    """Every project's generations, newest first, with `ref`, thumbnail flag
+    and `seen` — the /views gallery, and what an agent reads to learn which of
+    its proposals the user last opened (`last_seen`)."""
+    if project:
+        require_project(project)
+    return {"gens": _gen_http(api.recent_gens, GraphStore(PROJECTS_DIR), limit=limit,
+                              graph_id=project, base_url=_public_base(request))}
+
+
+@app.get("/api/graph/{name}/gens/{gen}/thumb")
+async def get_generation_thumb(name: str, gen: str):
+    require_project(name)
+    try:
+        p = GraphStore(PROJECTS_DIR).gen_dir(name, gen) / GraphStore.GEN_THUMB
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    if not p.exists():
+        raise HTTPException(404, f"No thumbnail for {name}/{gen} yet")
+    # write-once, so as cacheable as the gen itself
+    return FileResponse(p, media_type="image/jpeg",
+                        headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+@app.put("/api/graph/{name}/gens/{gen}/thumb")
+async def put_generation_thumb(name: str, gen: str, request: Request):
+    """The card picture, drawn by the first page that renders the gen (/views
+    or /view) with the shared viewer. Write-once: a second PUT is a no-op."""
+    require_project(name)
+    data = await request.body()
+    if not data.startswith(b"\xff\xd8\xff"):
+        raise HTTPException(415, "Thumbnail must be a JPEG")
+    if len(data) > _THUMB_MAX_BYTES:
+        raise HTTPException(413, "Thumbnail too large")
+    saved = _gen_http(GraphStore(PROJECTS_DIR).save_gen_thumb, name, gen, data)
+    return {"status": "saved" if saved else "exists"}
+
+
+@app.post("/api/graph/{name}/gens/{gen}/seen")
+async def mark_generation_seen(name: str, gen: str):
+    """/view pings this on open: the agent can then tell which gen is on screen."""
+    import datetime
+    require_project(name)
+    when = datetime.datetime.now().isoformat(timespec="seconds")
+    _gen_http(GraphStore(PROJECTS_DIR).mark_gen_seen, name, gen, when)
+    return {"seen": when}
+
+
 @app.get("/api/graph/{name}/gens/{gen}/{part}")
 async def get_generation(name: str, gen: str, part: str):
     """part = view | graph | meta. Immutable once written, so cacheable."""
@@ -551,6 +664,15 @@ async def get_generation(name: str, gen: str, part: str):
     data = _gen_http(GraphStore(PROJECTS_DIR).load_gen, name, gen, part)
     return Response(json.dumps(data), media_type="application/json",
                     headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+@app.get("/views", response_class=HTMLResponse)
+async def webui_views():
+    """Every generation of every project, as cards — the agent's proposals."""
+    page = Path("/app/webui/gens.html")
+    if not page.exists():
+        return HTMLResponse("<h1>noodle</h1><p>Gallery not found</p>", status_code=404)
+    return page.read_text()
 
 
 @app.get("/view/{name}", response_class=HTMLResponse)
@@ -1257,6 +1379,26 @@ async def execute_graph_project(name: str, run: str | None = None,
         # Always offered — /download regenerates the STL on demand if it's stale.
         "stl": f"/api/projects/{name}/download",
     }
+
+
+@app.post("/api/graph/{name}/anticipate")
+async def anticipate_operands(name: str, body: dict = Body(...)):
+    """Baked meshes of the nodes in `body.nodes`, for the editor's in-browser
+    boolean anticipation (webui/anticipate.js). `body.graph` is the editor's
+    snapshot; only what feeds the asked nodes runs, nothing is published."""
+    d = require_project(name)
+    ids = body.get("nodes")
+    if not isinstance(ids, list) or not ids or not all(isinstance(i, str) for i in ids):
+        raise HTTPException(400, "`nodes` must be a non-empty list of node ids")
+    try:
+        graph = Graph.from_dict(body["graph"]) if "graph" in body else _load_graph(name)
+        graph.validate()
+    except (ValidationError, KeyError, TypeError, ValueError) as e:
+        raise HTTPException(400, f"Invalid graph: {e}") from e
+    try:
+        return await off_loop(operand_meshes, graph, ids, d)
+    except KeyError as e:
+        raise HTTPException(400, f"unknown node {e.args[0]!r}") from e
 
 
 @app.post('/api/graph/{name}/runs/{run}/cancel')

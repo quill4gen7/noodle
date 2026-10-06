@@ -61,6 +61,14 @@ More detail on demand — `cad_help(topic=...)` / `GET /api/agent/help?topic=...
    hides pieces and inverts the selection. The link stays fixed on THAT result
    while the workflow keeps changing. Append `#hide=n3,n7.2` to open it with
    pieces hidden (a node id = all its pieces, `id.i` = its i-th piece).
+   **Several alternatives to choose from?** Give each its own snapshot with a
+   label that says what differs (`"B — wall 3mm, round lid"`), then send the
+   gallery link `/views` (every generation of every project, as cards, newest
+   first; `/views?p=<graph>` for one project) as well as the individual links.
+   Each generation is called `<graph>/g<N>` everywhere the user sees it — the
+   viewer header, the cards — so ask them to quote that. And when they say
+   "this one", `cad_recent_gens()` (`GET /api/gens/recent`) tells you which one
+   they last opened: the entry with `last_seen: true`.
    **A movement is one link, not several**: to show a lid open AND closed, a
    drawer in and out, an assembly exploding, do not send one link per pose —
    animate it. `Motion` (type `ContainerMotion`: move x/y/z, rotate rx/ry/rz,
@@ -159,6 +167,7 @@ section is slow, or where a run fails (`run=True` → `failed_in`).
 | `POST /api/graph/{name}/asset` (multipart `file`) · `GET .../assets` | upload into `assets/` without a node · list them |
 | `GET /api/graph/{name}/screenshot?view=&node=&…` | **PNG of the viewport** (`cad_screenshot`) |
 | `POST /api/graph/{name}/snapshot?label=&run=` · `GET .../gens` | freeze a generation → `{gen, url}` for the read-only viewer (`cad_snapshot`, `cad_list_gens`) — send the user the `url` |
+| `GET /api/gens/recent?limit=&project=` · page `/views` | generations of every project, newest first, with `ref` (`graph/gN`), `seen` and `last_seen` = the one the user opened last (`cad_recent_gens`) |
 | `GET /api/agent/tags` | ToAgent provenance index (`cad_agent_tags`) |
 | `GET /api/graph/{name}/slice_summary?path=&n=` · `.../section_outline?axis=&pos=&path=` | sections (`cad_slice_summary`, `cad_section_outline`) |
 | `POST /api/graph/{name}/measure` body=`{queries:[…]}` | geometry facts by node ref `n5`/`n51.body`/`n51[3]` (`cad_measure`): `props`, `interference` (a+b, or every pair of a list node), `distance`, `section` (+svg), `probe`, `summary` — check fits and clashes instead of writing scripts |

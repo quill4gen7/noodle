@@ -199,7 +199,7 @@ def analyze(code: str) -> dict[str, Any]:
         first_header = headers[0][0]
         if any(s.start < first_header for s in stmts):
             sections.append({"title": "Inizio", "subtitle": "", "ranges": []})
-        for (ln, title), _nxt in zip(headers, bounds[1:]):
+        for (ln, title), _nxt in zip(headers, bounds[1:], strict=True):
             sections.append({"title": title, "subtitle": "", "ranges": [], "_from": ln})
         for k, s in enumerate(stmts):
             if s.start < first_header:
@@ -210,7 +210,7 @@ def analyze(code: str) -> dict[str, Any]:
     else:
         # No headers: group by what each statement builds.
         later_reads: dict[str, int] = {}
-        for k, s in enumerate(stmts):
+        for _k, s in enumerate(stmts):
             for n in s.reads:
                 later_reads[n] = later_reads.get(n, 0) + 1
         groups: dict[str, int] = {}

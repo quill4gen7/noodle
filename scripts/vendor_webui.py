@@ -51,6 +51,13 @@ def main():
         for file in ['ace.js', 'mode-python.js', 'theme-one_dark.js']:
             copy(archive, 'src-min-noconflict/' + file, DEST / 'ace-1.36.2' / file)
         copy(archive, 'LICENSE', DEST / 'ace-1.36.2' / 'LICENSE')
+    # In-browser booleans for the editor's drag anticipation (webui/anticipate.js).
+    # manifold.js finds its .wasm next to itself (import.meta.url), so keep the pair together.
+    with package('manifold-3d', '3.5.4') as archive:
+        for file in ['manifold.js', 'LICENSE']:
+            copy(archive, file, DEST / 'manifold-3d-3.5.4' / file)
+        data = archive.extractfile('package/manifold.wasm').read()
+        (DEST / 'manifold-3d-3.5.4' / 'manifold.wasm').write_bytes(data)
 
 
 if __name__ == '__main__':

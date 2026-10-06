@@ -32,6 +32,14 @@ browser at 60fps — no re-run.</em></p>
   <img src="docs/asset/noodle-lego-brick-editor.png" alt="noodle node editor building a parametric LEGO brick with embossed NOODLE text" width="880">
 </p>
 
+<p align="center">
+  <img src="docs/asset/noodle-bool-live.gif" alt="glass-csg example: the ▶ on a slider sweeps the sphere radius and then the hole radius, and the glass (Box ∩ Sphere) − three cylinders reshapes live around a glowing core" width="880">
+</p>
+<p align="center"><em><strong>Live booleans.</strong> Press ▶ on a slider (or drag it) with Live on: the
+Intersect / Union / Subtract chain is redone <strong>in the browser</strong> on meshes (manifold-wasm)
+while the value moves, and the exact build123d result lands once, when it stops.
+Example: <code>glass-csg</code>.</em></p>
+
 **▶ [Live preview](https://quill4gen7.github.io/noodle/)** — the read-only 3D viewer running on
 GitHub Pages: orbit real generations, hide pieces, play their timelines. No install.
 
@@ -80,6 +88,9 @@ Live re-runs it.</em></p>
   agent, so your local Claude Code can reproduce it, fix it on a safe branch and
   open a PR. Bug reports and "make it blue" alike. [See below](#feedback-that-turns-into-a-pr).
 - **Live per-node preview** with a per-node "eye" (auto / on / off).
+- **Drags that don't wait for the engine**: with Live on, a slider feeding Move /
+  Rotate / primitives and the booleans after them is replayed in the browser
+  (manifold-wasm) at every frame; the exact result is recomputed once, on release.
 - **Generations and `/view` links**: freeze a run and share a read-only 3D page —
   pieces you can hide/solo/invert, timelines with one track per movement.
 - **▦ Sezioni**: a long CodeBlock read as the nodes it contains (sections, chains

@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>noodle · preview</title>
+<link rel="icon" href="/static/icon.svg">
+<!--
+  /views — every GENERATION of every project, newest first, as cards.
+
+  Why it exists: an agent asked for several alternatives snapshots them one after
+  another (often into several projects) and sends a link per design. The user
+  then had no single place to see them side by side, and no unambiguous way to
+  say which one they meant ("the second", "the round one"). Here each card
+  carries the generation's REF — `<graph>/g<N>`, the same string the /view
+  header shows and the agent gets back from cad_snapshot — so "progetto/g3" names
+  one design for both sides. `seen` (written by /view on open) marks what the
+  user has looked at; the most recent one is flagged, and an agent reads the same
+  flag from GET /api/gens/recent (`last_seen`).
+
+  Thumbnails: a generation has no picture until a page renders it. This page
+  draws the missing ones itself, one at a time, with the SHARED CadViewer on a
+  canvas kept off screen — the same renderer as /view, so the card is what the
+  link shows — and stores them write-once (PUT …/gens/{gen}/thumb).
+-->
+<script type="importmap">
+{
+  "imports": {
+    "three": "/static/vendor/three-0.170.0/build/three.module.min.js",
+    "three/addons/": "/static/vendor/three-0.170.0/examples/jsm/"
+  }
+}
+</script>
+<style>
+  :root{
+    --bg-0:#0b0e14; --bg-1:#0f1318; --bg-2:#151a22; --bg-3:#1a2030;
+    --border:#1e2738; --text:#c5cdd8; --text-dim:#5c6a7a;
+    --accent:#e94560; --green:#2dd4a0; --amber:#f59e0b; --blue:#3b82f6;
+    --font:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    --mono:'SFMono-Regular',Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:var(--font);background:var(--bg-0);color:var(--text);min-height:100vh;font-size:14px;line-height:1.4;}
+  a{color:inherit;text-decoration:none;}
+  header{display:flex;align-items:center;gap:14px;padding:16px 24px;border-bottom:1px solid var(--border);
+    position:sticky;top:0;background:var(--bg-0);z-index:5;flex-wrap:wrap;}
+  header h1{margin:0;font-size:22px;letter-spacing:-.5px;}
+  header .sub{color:var(--text-dim);font-size:13px;}
+  header .spacer{flex:1;}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;border:1px solid var(--border);
+    background:var(--bg-3);color:var(--text);font-size:13px;cursor:pointer;font-family:var(--font);}
+  .btn:hover{border-color:var(--text-dim);}
+  main{max-width:1240px;margin:0 auto;padding:20px 24px 48px;}
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:18px;}
+  .toolbar input,.toolbar select{background:var(--bg-3);color:var(--text);border:1px solid var(--border);border-radius:8px;
+    padding:8px 10px;font-size:13px;font-family:var(--font);}
+  .toolbar input{flex:1;min-width:200px;}
+  .toolbar .n{color:var(--text-dim);font-size:12px;}
+  .day{margin:22px 0 10px;color:var(--text-dim);font-size:12px;text-transform:uppercase;letter-spacing:.06em;
+    border-bottom:1px solid var(--border);padding-bottom:6px;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px;}
+  .card{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:12px;background:var(--bg-1);
+    overflow:hidden;transition:border-color .15s,transform .15s;position:relative;}
+  .card:hover{border-color:var(--text-dim);transform:translateY(-1px);}
+  .card.last{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);}
+  .card .pic{aspect-ratio:4/3;background:var(--bg-0);display:flex;align-items:center;justify-content:center;
+    color:var(--border);font-size:30px;position:relative;}
+  .card .pic img{width:100%;height:100%;object-fit:cover;display:block;}
+  .card .pic .wait{font-size:11px;color:var(--text-dim);}
+  .card .flags{position:absolute;top:8px;left:8px;right:8px;display:flex;gap:6px;flex-wrap:wrap;}
+  .flag{font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(11,14,20,.85);border:1px solid var(--border);}
+  .flag.last{border-color:var(--accent);color:#fff;background:var(--accent);}
+  .flag.anim{color:var(--amber);border-color:var(--amber);}
+  .flag.new{color:var(--green);border-color:var(--green);}
+  .card .body{padding:10px 12px 12px;display:flex;flex-direction:column;gap:6px;flex:1;}
+  .ref{font:600 15px var(--mono);color:#fff;word-break:break-all;}
+  .ref .g{color:var(--accent);}
+  .label{font-size:13px;}
+  .label.none{color:var(--text-dim);font-style:italic;}
+  .meta{font-size:11px;color:var(--text-dim);}
+  .acts{display:flex;gap:8px;margin-top:auto;padding-top:4px;}
+  .acts a,.acts button{flex:1;text-align:center;padding:6px 8px;border-radius:7px;font-size:12px;border:1px solid var(--border);
+    background:var(--bg-3);color:var(--text);cursor:pointer;font-family:var(--font);}
+  .acts a:hover{border-color:var(--green);color:var(--green);}
+  .acts button:hover{border-color:var(--text-dim);}
+  .empty{color:var(--text-dim);padding:60px 0;text-align:center;line-height:1.7;}
+  code{font:12px var(--mono);background:var(--bg-2);padding:1px 5px;border-radius:4px;}
+  /* the thumbnail renderer: a real canvas with a real size, just not on screen */
+  #thumbvp{position:fixed;left:-10000px;top:0;width:480px;height:360px;}
+  #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--bg-2);border:1px solid var(--border);
+    border-radius:8px;padding:8px 14px;font-size:13px;display:none;z-index:10;}
+  @media (max-width:600px){ header{padding:12px 16px;} main{padding:14px 16px 40px;} .grid{grid-template-columns:1fr 1fr;gap:10px;}
+    .ref{font-size:13px;} .acts{flex-direction:column;} }
+</style>
+</head>
+<body>
+  <header>
+    <div><h1>Preview</h1><div class="sub">le generazioni condivise (dall'agente o da te), tutti i workflow — la più recente prima</div></div>
+    <div class="spacer"></div>
+    <a class="btn" href="/nodes">← Editor</a>
+    <a class="btn" href="/library">Libreria</a>
+    <button class="btn" id="reload">⟳</button>
+  </header>
+  <main>
+    <div class="toolbar">
+      <input id="q" type="search" placeholder="Cerca: progetto/g3, etichetta, pezzo…">
+      <select id="proj" title="Workflow"><option value="">Tutti i workflow</option></select>
+      <span class="n" id="count"></span>
+    </div>
+    <div id="list"><div class="empty">Caricamento…</div></div>
+  </main>
+  <div id="thumbvp"><canvas id="thumbc"></canvas></div>
+  <div id="toast"></div>
+<script type="module">
+import { CadViewer, PALETTE } from '/static/viewer.js';
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const enc = encodeURIComponent;
+const params = new URLSearchParams(location.search);
+let GENS = [];
+
+function toast(t) {
+  const el = $('toast'); el.textContent = t; el.style.display = 'block';
+  clearTimeout(toast._t); toast._t = setTimeout(() => { el.style.display = 'none'; }, 1600);
+}
+function ago(iso) {
+  if (!iso) return '';
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 60) return 'adesso';
+  if (s < 3600) return `${Math.round(s / 60)} min fa`;
+  if (s < 86400) return `${Math.round(s / 3600)} h fa`;
+  return `${Math.round(s / 86400)} g fa`;
+}
+function dayOf(iso) {
+  if (!iso) return 'Senza data';
+  const d = new Date(iso), today = new Date();
+  const y = new Date(); y.setDate(today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return 'Oggi';
+  if (d.toDateString() === y.toDateString()) return 'Ieri';
+  return d.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
+const thumbURL = g => `/api/graph/${enc(g.graph)}/gens/${g.gen}/thumb`;
+const viewURL = g => `/view/${enc(g.graph)}/${g.gen}`;
+
+async function load() {
+  const r = await fetch('/api/gens/recent?limit=0', { cache: 'no-store' });
+  GENS = r.ok ? (await r.json()).gens : [];
+  const sel = $('proj'), keep = sel.value || params.get('p') || '';
+  sel.innerHTML = '<option value="">Tutti i workflow</option>' +
+    [...new Set(GENS.map(g => g.graph))].sort().map(p => `<option>${esc(p)}</option>`).join('');
+  sel.value = keep;
+  render();
+  drawMissingThumbs();
+}
+
+function shown() {
+  const q = $('q').value.trim().toLowerCase(), p = $('proj').value;
+  return GENS.filter(g => (!p || g.graph === p) &&
+    (!q || [g.ref, g.label, ...(g.pieces || [])].join(' ').toLowerCase().includes(q)));
+}
+
+function render() {
+  const list = shown(), L = $('list');
+  $('count').textContent = `${list.length} preview`;
+  if (!GENS.length) {
+    L.innerHTML = `<div class="empty">Nessuna preview salvata.<br>Un agente le crea con <code>cad_snapshot</code>
+      (o <code>POST /api/graph/&lt;nome&gt;/snapshot</code>), e compaiono qui.</div>`;
+    return;
+  }
+  if (!list.length) { L.innerHTML = '<div class="empty">Nessuna preview corrisponde al filtro.</div>'; return; }
+  let html = '', day = null;
+  for (const g of list) {
+    const d = dayOf(g.created);
+    if (d !== day) { if (day !== null) html += '</div>'; html += `<div class="day">${esc(d)}</div><div class="grid">`; day = d; }
+    const flags = [
+      g.last_seen ? '<span class="flag last" title="L\'ultima che hai aperto: se dici «questa» all\'agente, è lei">👁 aperta per ultima</span>' : '',
+      !g.seen ? '<span class="flag new" title="Non ancora aperta">nuova</span>' : '',
+      g.animated ? '<span class="flag anim" title="Contiene un movimento: si riproduce nel viewer">▶ anima</span>' : '',
+    ].join('');
+    const pieces = (g.pieces || []).filter(Boolean);
+    html += `<div class="card${g.last_seen ? ' last' : ''}" data-ref="${esc(g.ref)}">
+      <a class="pic" href="${viewURL(g)}" title="Apri ${esc(g.ref)}">
+        ${g.thumb ? `<img loading="lazy" src="${thumbURL(g)}" alt="${esc(g.ref)}">` : '<span class="wait">⬡ disegno l\'anteprima…</span>'}
+        <span class="flags">${flags}</span></a>
+      <div class="body">
+        <div class="ref" title="Il nome di questa preview: citalo all'agente">${esc(g.graph)}/<span class="g">${esc(g.gen)}</span></div>
+        <div class="label${g.label ? '' : ' none'}">${esc(g.label || 'senza etichetta')}</div>
+        <div class="meta">${esc((g.created || '').replace('T', ' ').slice(0, 16))} · ${esc(ago(g.created))}
+          ${pieces.length ? '· ' + esc(pieces.slice(0, 4).join(', ')) + (pieces.length > 4 ? ` +${pieces.length - 4}` : '') : ''}
+          ${g.seen ? `<br>vista ${esc(ago(g.seen))}` : ''}</div>
+        <div class="acts"><a href="${viewURL(g)}">Apri</a>
+          <button data-copy="${esc(g.ref)}" title="Copia il nome (e l'etichetta) da incollare all'agente">⧉ Copia nome</button></div>
+      </div></div>`;
+  }
+  L.innerHTML = html + '</div>';
+}
+
+$('list').addEventListener('click', async e => {
+  const b = e.target.closest('[data-copy]'); if (!b) return;
+  const g = GENS.find(x => x.ref === b.dataset.copy);
+  const txt = g.label ? `${g.ref} (${g.label})` : g.ref;
+  try { await navigator.clipboard.writeText(txt); toast(`Copiato: ${txt}`); }
+  catch { prompt('Nome della preview:', txt); }
+});
+$('q').addEventListener('input', render);
+$('proj').addEventListener('change', () => {
+  const p = $('proj').value;
+  history.replaceState(null, '', p ? `/views?p=${enc(p)}` : '/views');
+  render();
+});
+$('reload').onclick = load;
+
+// ── the missing card pictures, drawn here with the shared viewer ─────────────
+let viewer = null, drawing = false;
+async function drawMissingThumbs() {
+  if (drawing) return; drawing = true;
+  try {
+    for (const g of GENS) {
+      if (g.thumb) continue;
+      try {
+        viewer = viewer || new CadViewer($('thumbc'));
+        const base = `/api/graph/${enc(g.graph)}/gens/${g.gen}`;
+        const [view, graph] = await Promise.all(['view', 'graph'].map(p => fetch(`${base}/${p}`).then(r => r.json())));
+        const byId = Object.fromEntries((graph.nodes || []).map(n => [n.id, n]));
+        viewer.resize();
+        viewer.renderPreviews(view.previews || {}, {
+          colorOf: (id, order) => (byId[id] && byId[id].color) || PALETTE[Math.max(0, (order || []).indexOf(id)) % PALETTE.length],
+          finishOf: id => (byId[id] && byId[id].finish) || null,
+          wireOf: id => !!(byId[id] && byId[id].wireframe),
+        });
+        const url = viewer.snapshot({ maxSize: 480, quality: 0.85 });
+        if (!url) continue;
+        const blob = await (await fetch(url)).blob();
+        const r = await fetch(`${base}/thumb`, { method: 'PUT', body: blob, headers: { 'Content-Type': 'image/jpeg' } });
+        if (!r.ok) continue;
+        g.thumb = true;
+        const pic = document.querySelector(`.card[data-ref="${CSS.escape(g.ref)}"] .wait`);
+        if (pic) pic.outerHTML = `<img src="${thumbURL(g)}" alt="${esc(g.ref)}">`;
+      } catch (err) { console.warn('thumbnail', g.ref, err); }
+    }
+  } finally { drawing = false; }
+}
+
+load();
+</script>
+</body>
+</html>

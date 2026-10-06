@@ -37,6 +37,8 @@ FETCH_SHIM = """<script>
     if (m) return `../data/${m[1]}/${m[2]}/${m[3]}.json`;
     m = /^\\/api\\/graph\\/([^/]+)\\/(gens|version)$/.exec(url);
     if (m) return `../data/${m[1]}/${m[2]}.json`;
+    m = /^\\/api\\/gens\\/recent\\?.*project=([^&]+)/.exec(url);
+    if (m) return `../data/${m[1]}/gens.json`;
     return url;
   };
   window.fetch = (input, init) => real(typeof input === 'string' ? map(input) : input, init);
@@ -61,8 +63,11 @@ def _patch_view(html: str) -> str:
         "const seg = ['view', _q.get('g') || '', _q.get('gen') || ''];   // static preview")
     sub("history.replaceState(null, '', `/view/${encodeURIComponent(NAME)}/${GEN}${location.hash}`);",
         "history.replaceState(null, '', `?g=${encodeURIComponent(NAME)}&gen=${GEN}${location.hash}`);")
-    sub("location.href = `/view/${encodeURIComponent(NAME)}/${sel.value}`;",
-        "location.href = `?g=${encodeURIComponent(NAME)}&gen=${sel.value}`;")
+    sub("location.href = `/view/${encodeURIComponent(NAME)}/${gen}`;",
+        "location.href = `?g=${encodeURIComponent(NAME)}&gen=${gen}`;")
+    # no /views gallery on a static site: back to the landing page
+    sub("$('all').href = $('m-all').href = '/views?p=' + encodeURIComponent(NAME);",
+        "$('all').href = $('m-all').href = '../';")
     # the hash writer keeps ?g=…&gen=… (it used to rebuild the URL from the path alone)
     sub("history.replaceState(null, '', location.pathname + (ps.length ? '#' + ps.join('&') : ''));",
         "history.replaceState(null, '', location.pathname + location.search + (ps.length ? '#' + ps.join('&') : ''));")
@@ -102,6 +107,8 @@ def build(projects: Path, out: Path, gens: list[str]) -> None:
         by_project.setdefault(name, []).append(json.loads((src / "meta.json").read_text()))
     for name, metas in by_project.items():
         metas.sort(key=lambda m: int(m["gen"][1:]), reverse=True)
+        for m in metas:              # nothing to upload a card picture to
+            m["thumb"] = True
         (out / "data" / name / "gens.json").write_text(json.dumps({"gens": metas}))
         # the frozen graph IS the version shown: no "workflow changed" badge
         (out / "data" / name / "version.json").write_text(json.dumps({"version": metas[0].get("version")}))

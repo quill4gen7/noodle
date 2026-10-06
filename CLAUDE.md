@@ -130,6 +130,8 @@ server.py            FastAPI HTTP API (port 8090). Routes under /api/* :
                        /api/graph/{name}/slice_summary|section_outline (§7b),
                        /api/graph/{name}/screenshot (PNG of the viewport, §9 —
                        the agent's eyes; also MCP cad_screenshot),
+                       POST /api/graph/{name}/anticipate (baked meshes of the
+                       operands a drag cannot change — §6b, anticipate.js),
                        /api/graph/{name}/progress?run=<id> (SSE: per-node execution
                        events, tailed from projects/<name>/.runs/<hash>/progress.jsonl
                        — see transpiler `_ev` and cad_nodes/job_files.py. `run` is the
@@ -197,6 +199,9 @@ webui/
                        white. No refraction of the glow and no caustics: those need
                        rays. Costs ~0-1fps (glass dominates); off unless HQ and
                        something declares itself emissive.
+  anticipate.js      boolean drag anticipation (§6b): plan the dirty chain from a
+                       dragged node to the screen, redo it on meshes with the
+                       vendored manifold-wasm. Pure module (no three, no DOM).
   view.html          the `/view/<graph>/<gen>` read-only viewer of a frozen
                        GENERATION (§9c): hide / solo / invert pieces, state in
                        the URL hash. What an agent links instead of screenshots.
@@ -432,6 +437,11 @@ drag window + step set via the slider's ⚙ (`{param: {min,max,step}}`). Sliders
 the editor are a custom `cadslider` widget — the drag window defaults to ±10
 (clipped to catalog hard bounds, auto-grown to contain the value) and drag snaps
 to the step; the typed ✎ field clamps only on the catalog's hard min/max. The
+drag is RELATIVE (a press never changes the value; moving shifts it by the
+distance, track = the whole window) and the window only grows during a session
+(`w._win`) and is frozen for the gesture — derived from the value alone it used to
+collapse back to −10…10 as soon as a 120 went under 10, and a press on the left of
+an absolute slider was what took it there. The
 engine resolves params by catalog name, so it never sees `_ui`.
 
 **PLAY** — a ▶ hotspot left of the ⚙ sweeps the param across its drag window on a
@@ -1061,7 +1071,26 @@ whether a preview mesh exists, so it cannot be a static flag on the NodeDef:
 - `applyDropTargets(node)` — a value node (Number Slider…) wired into the `t` of a
   timeline node, which replays each target instead of itself.
 
-Both return **false** when they cannot help, and the caller falls through to the
+- `applyBoolAnticipation(node)` — **booleans downstream of the dragged node**, redone
+  on meshes in the browser with manifold-wasm (`webui/anticipate.js`, vendored
+  `manifold-3d` 3.5.4, Apache-2.0 — the same library as the mesh lane). The reason:
+  on `raccordo` a Fillet radius re-runs in 19ms and then waits ~800ms for the Union
+  and Subtract after it, plus ~330ms of meshing/transport, so the node you touch is
+  never the cost. `plan()` finds the chain from the dragged node to what is drawn;
+  the inputs the drag cannot change are fetched ONCE per drag as baked meshes
+  (`POST /api/graph/{name}/anticipate` → `executor.operand_meshes`: a side run pruned
+  to their ancestors, all memo hits, `publish=False` — ~150ms), then each animation
+  frame re-evaluates the chain and swaps the drawn geometry; `renderPreviews` puts
+  the baked geometry back when the exact re-bake lands. Supported: Move, Rotate
+  (world, no pivot), Union, Subtract, Intersect, Box/Cylinder/Sphere (no `origin`,
+  arc 360) and value nodes into their pins — anything else in the chain refuses the
+  plan. Measured on raccordo: ~55ms per frame, bbox identical to the re-bake and
+  volume within −0.2…−0.8% (chordal error of the tessellated cylinders), 0
+  `/execute` during the drag. Per frame the boolean with the helical thread costs
+  25ms and `calculateNormals` 16ms; the cylinder booleans ~1ms each.
+  Tests: `tests/ui/anticipate.test.cjs`, `tests/test_anticipate.py`.
+
+All three return **false** when they cannot help, and the caller falls through to the
 plain debounced re-run. That fallback is what makes an unanticipated node correct
 but merely slower — so when in doubt, return false. A node that anticipates
 WRONGLY is far worse than one that does not anticipate at all.
@@ -1319,6 +1348,26 @@ before saving". Three pieces fix it:
   so the copilot's and Import's "reload" were no-ops (then reverted by the next
   save) — they now `syncPullNow()`; and `checkDirty` re-armed the 2.5s autosave
   debounce every second, so an idle dirty graph never autosaved.
+- **Verifying the editor: same project, same node, same build.** Paid for on
+  `raccordo` n48 (2026-10-05): the user's tab, loaded at 23:43:45, ran the OLD
+  absolute slider and saved x 127.785 → 10.0 and y 120.75 → 7.5 (a value pinned
+  at the cap of a collapsed −10…10 window); the fixes landed at 23:45:59 and
+  23:51:49, and the agent verified them in headless pages opened LATER, on
+  copies (`zz-probe-preview`), on n23/n19 — then said "fixed" twice. Once x
+  was 10 on disk, every fresh page derives −10…10 from it (the grown window
+  `w._win` lives only for the session), so "I see 10" was the truth on disk.
+  Three tools now close those gaps: the page carries its **build**
+  (`UI_BUILD`, injected by server.py `/nodes`, = `GET /api/system/ui-build`),
+  shows a reload banner when the server's moves on, and sends `ui=<build>` on
+  every `/version` poll (so `docker logs noodle | grep version?ui=` says which
+  build each open tab runs); `/nodes?p=<name>&readonly=1` opens the REAL project
+  and can never save, draft, thumbnail or run (non-GETs refused at `fetch`,
+  except the stateless `/merge` and `/anticipate`); `scripts/editor_probe.py`
+  drives that page and prints, per slider, canvas value vs disk value and the
+  window the canvas draws. Page loads and writes are logged as
+  `client=browser|headless|curl|python …` (User-Agent), because from the host
+  the user (via a LAN forward) and an agent's curl share the gateway IP;
+  a headless page inside the container shows up as 127.0.0.1.
 
 ### 6g. Touch (tablets/phones) — the `── touch ──` block in nodes.html
 
@@ -1586,6 +1635,24 @@ result while the workflow moves on.
   touch twin of `H`. Tap vs orbit: 12px / 500ms tolerance for a finger, 5px for a
   mouse, never during a pinch; double tap = frame the visible pieces.
 - Tests: `tests/test_generations.py`.
+- **`/views` — every proposal in one place** (`webui/gens.html`, `api.recent_gens`,
+  `GET /api/gens/recent?limit=&project=`, MCP `cad_recent_gens`). Paid for in
+  friction: an agent asked for several alternatives sent one link per design, and
+  "the second one" / "the round one" never meant the same thing to both sides.
+  Every gen of every project is a card, newest first, grouped by day, and each
+  goes by ONE name — its **ref** `<graph>/g<N>` — on the card, in the `/view`
+  header chip (click = copy `ref (label)`) and in `cad_snapshot`'s result. `/view`
+  also gets ‹ › (`[` `]`) through the project's gens and a link to the gallery
+  (also in the editor toolbar ◫, home and library).
+  Two files sit BESIDE a gen without touching its immutable view/graph/meta:
+  `seen.json` (`/view` POSTs `…/gens/{gen}/seen` on open → `last_seen: true` in the
+  listing = what the user means by "this one"; kept even past `limit`) and
+  `thumb.jpg`, **write-once**, drawn by the first page that renders the gen with
+  the SHARED CadViewer — `/views` draws the missing ones on an off-screen canvas,
+  `/view` takes one before the link's hidden pieces apply. The thumb GET route is
+  declared before the generic `gens/{gen}/{part}` one, or `{part}` swallows it.
+  `scripts/build_pages.py` maps the listing to the static `gens.json` (flagged
+  `thumb: true` so a static page never tries to upload) and points ◫ at `../`.
 - **Timelines play.** A generation of a graph with `Animate` / `Drop` nodes carries
   their plans (`previews[id].anim`, a scene's `bodies[i].anim`), and `/view` shows a
   ▶ player — so a movement (lid open ⇄ closed) is ONE link, not one per pose. One

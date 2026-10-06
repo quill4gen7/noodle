@@ -48,7 +48,8 @@
     background:var(--bg-1);position:relative;z-index:20;padding-top:max(8px,env(safe-area-inset-top));}
   header .brand{font-weight:700;letter-spacing:-.3px;white-space:nowrap;}
   header .brand span{color:var(--accent);}
-  header .proj{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+  header .proj{display:none;}       /* the #ref chip carries the project name */
+  header .proj-x{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
   header .meta{color:var(--text-dim);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1;}
   select,.btn{background:var(--bg-3);color:var(--text);border:1px solid var(--border);border-radius:8px;
     padding:5px 10px;font-size:12px;font-family:var(--font);cursor:pointer;min-height:var(--tap);
@@ -56,6 +57,13 @@
   select{max-width:260px;}
   .btn:hover,select:hover{border-color:var(--text-dim);}
   .btn:active{background:var(--bg-2);}
+  /* the generation's NAME, <graph>/g<N>: what the user quotes to the agent */
+  #ref{font:600 13px var(--mono);color:#fff;background:var(--bg-2);border:1px solid var(--accent);border-radius:8px;
+    padding:4px 10px;cursor:pointer;white-space:nowrap;min-height:var(--tap);}
+  #ref .g{color:var(--accent);}
+  #ref:hover{background:var(--bg-3);}
+  .nav{min-width:var(--tap);padding:5px 8px;}
+  .nav:disabled{opacity:.35;cursor:default;}
   .badge{font-size:11px;padding:2px 7px;border-radius:10px;border:1px solid var(--amber);color:var(--amber);white-space:nowrap;}
   #more{display:none;font-size:18px;padding:0 12px;}
   #menu{display:none;position:absolute;right:8px;top:calc(100% + 4px);background:var(--bg-2);border:1px solid var(--border);
@@ -131,8 +139,8 @@
   /* ── narrow screens: one-line header + ⋯ menu, pieces in a bottom sheet ── */
   @media (max-width:760px){
     header{gap:8px;padding:6px 8px;}
-    header .brand,header .meta,header .desk{display:none;}
-    header .proj{flex:1;font-size:14px;}
+    header .brand,header .meta,header .desk,header .proj,header .nav{display:none;}
+    #ref{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:12px;}
     select{max-width:46vw;}
     #more{display:inline-flex;}
     main{flex-direction:column;}
@@ -163,14 +171,20 @@
   <header>
     <div class="brand">noodle<span>·</span>view</div>
     <div class="proj" id="proj"></div>
+    <button id="ref" title="Il nome di questa preview — clic per copiarlo e incollarlo all'agente"></button>
+    <button class="btn nav" id="prev" title="Generazione precedente ( [ )">‹</button>
     <select id="gen" title="Generazioni salvate di questo workflow"></select>
+    <button class="btn nav" id="next" title="Generazione successiva ( ] )">›</button>
     <span class="badge desk" id="stale" style="display:none" title="Il workflow live è stato modificato dopo questa generazione: la vista resta quella salvata">workflow cambiato</span>
     <div class="meta" id="meta"></div>
+    <a class="btn desk" id="all" href="/views" title="Tutte le preview recenti, di tutti i workflow">◫ Tutte le preview</a>
     <button class="btn desk" id="copy" title="Copia il link a questa generazione, con i pezzi nascosti">Copia link</button>
     <a class="btn desk" id="edit" title="Apri il workflow live nell'editor">Editor ↗</a>
     <button class="btn" id="more" aria-label="Menu">⋯</button>
     <div id="menu" role="menu">
       <div class="info" id="m-info"></div>
+      <button class="btn" id="m-ref">⧉ Copia il nome</button>
+      <a class="btn" id="m-all" href="/views">◫ Tutte le preview</a>
       <button class="btn" id="m-share">↗ Condividi / copia link</button>
       <button class="btn" id="m-ortho">▦ Prospettiva / ortografica</button>
       <a class="btn" id="m-edit">✎ Apri nell'editor</a>
@@ -681,6 +695,8 @@ addEventListener('keydown', e => {
   else if (k === 'a') showAll();
   else if (k === 'f') frameVisible();
   else if (k === 'o') toggleOrtho();
+  else if (k === '[') $('prev').click();
+  else if (k === ']') $('next').click();
   else if (k === ' ' && anims.length) { e.preventDefault(); setPlaying(!clock.playing); }
   else if (k === 'escape') { closeMenu(); select(null); }
 });
@@ -746,10 +762,10 @@ new ResizeObserver(() => viewer.resize()).observe($('vp'));
 let sizeTxt = '';
 async function boot() {
   $('proj').textContent = NAME;
-  document.title = `${NAME} · noodle view`;
+  document.title = `${NAME} · noodle view`;   // refined to <graph>/gN below
   $('edit').href = $('m-edit').href = '/nodes?p=' + encodeURIComponent(NAME);
   let gens;
-  try { gens = (await getJSON(`/api/graph/${encodeURIComponent(NAME)}/gens`)).gens; }
+  try { gens = (await getJSON(`/api/gens/recent?limit=0&project=${encodeURIComponent(NAME)}`)).gens; }
   catch (e) { msg(`Workflow <b>${esc(NAME)}</b> non trovato.<br>${esc(e.message)}`); return; }
   if (!gens.length) { msg(`<b>${esc(NAME)}</b> non ha ancora generazioni salvate.<br>
     Creane una con <code>POST /api/graph/${esc(NAME)}/snapshot</code> o <code>cad_snapshot</code>.`); return; }
@@ -762,7 +778,28 @@ async function boot() {
     sel.appendChild(o);
   }
   sel.value = GEN;
-  sel.onchange = () => { location.href = `/view/${encodeURIComponent(NAME)}/${sel.value}`; };
+  const go = gen => { location.href = `/view/${encodeURIComponent(NAME)}/${gen}`; };
+  sel.onchange = () => go(sel.value);
+  // gens is newest first: ‹ goes back in time, › forward
+  const i = gens.findIndex(g => g.gen === GEN);
+  $('prev').disabled = i < 0 || i >= gens.length - 1;
+  $('next').disabled = i <= 0;
+  $('prev').onclick = () => { if (!$('prev').disabled) go(gens[i + 1].gen); };
+  $('next').onclick = () => { if (!$('next').disabled) go(gens[i - 1].gen); };
+  $('all').href = $('m-all').href = '/views?p=' + encodeURIComponent(NAME);
+  const cur = gens[i] || {};
+  const REF = `${NAME}/${GEN}`, refText = cur.label ? `${REF} (${cur.label})` : REF;
+  $('ref').innerHTML = `${esc(NAME)}/<span class="g">${esc(GEN)}</span>`;
+  document.title = `${REF}${cur.label ? ' · ' + cur.label : ''} · noodle view`;
+  const copyRef = async btn => {
+    try { await navigator.clipboard.writeText(refText); } catch { prompt('Nome della preview:', refText); return; }
+    const old = btn.innerHTML; btn.textContent = '✓ copiato'; setTimeout(() => { btn.innerHTML = old; }, 1200);
+  };
+  $('ref').onclick = () => copyRef($('ref'));
+  $('m-ref').onclick = () => { copyRef($('m-ref')); };
+  // tell the server it is on screen: an agent asked "which one?" reads it back
+  // as `last_seen` from /api/gens/recent
+  fetch(`/api/graph/${encodeURIComponent(NAME)}/gens/${GEN}/seen`, { method: 'POST' }).catch(() => {});
 
   const base = `/api/graph/${encodeURIComponent(NAME)}/gens/${GEN}`;
   let view, graph, meta;
@@ -789,6 +826,15 @@ async function boot() {
     wireOf: id => !!(byId[id] && byId[id].wireframe),
     onEmpty: () => msg('Questa generazione non contiene geometria disegnabile.'),
   });
+  // The gallery card picture, if nobody has drawn it yet: taken NOW, before the
+  // link's hidden pieces and timeline are applied, so it shows the whole gen
+  // as /views would have drawn it. Write-once on the server.
+  if (cur.gen && !cur.thumb && r.order.length) {
+    const url = viewer.snapshot({ maxSize: 480, quality: 0.85 });
+    if (url) fetch(url).then(x => x.blob())
+      .then(b => fetch(`${base}/thumb`, { method: 'PUT', body: b, headers: { 'Content-Type': 'image/jpeg' } }))
+      .catch(() => {});
+  }
   if (r.size) sizeTxt = `${r.size.x.toFixed(1)} × ${r.size.y.toFixed(1)} × ${r.size.z.toFixed(1)} mm`;
   for (const id of r.order) {
     const obj = r.meshes[id]; if (!obj) continue;

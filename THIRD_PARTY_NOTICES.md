@@ -42,6 +42,7 @@ LGPL-2.1 this permits noodle to remain MIT-licensed, provided we:
 | three.js 0.170.0 | 3D viewport | MIT — `webui/vendor/three-0.170.0/LICENSE` |
 | litegraph.js 0.7.18 | node graph UI | MIT — `webui/vendor/litegraph-0.7.18/LICENSE` |
 | Ace 1.36.2 | code editor | BSD-3-Clause — `webui/vendor/ace-1.36.2/LICENSE` |
+| manifold-3d 3.5.4 (JS + WASM) | in-browser booleans for drag anticipation (`webui/anticipate.js`) | Apache-2.0 — `webui/vendor/manifold-3d-3.5.4/LICENSE` |
 
 Runtime files are copied unmodified from pinned npm releases, including their
 license notices. `python scripts/vendor_webui.py` refreshes the selected files
