@@ -1,0 +1,171 @@
+"""Notes for the agent — strokes the user draws on a generation in /view.
+
+What can go wrong silently, and is pinned here: a note that lands IN the
+immutable gen (or anywhere but beside it), a stroke whose piece no longer says
+which node it was drawn on, a "circle" the agent cannot tell from a line, a
+done note that keeps being handed to the agent, and ids through which a path
+could escape.
+"""
+
+import json
+import math
+from pathlib import Path
+
+import pytest
+
+from cad_nodes import api
+from cad_nodes.graph import Graph
+from cad_nodes.store import GraphStore, validate_note_id
+
+ROOT = Path(__file__).resolve().parent.parent
+SERVER = (ROOT / "server.py").read_text()
+MCP = (ROOT / "mcp_server.py").read_text()
+VIEW = (ROOT / "webui" / "view.html").read_text()
+HELP = (ROOT / "cad_nodes" / "AGENT_HELP.md").read_text()
+
+BOX = {"id": "n1", "type": "Box", "title": "Body",
+       "params": {"length": 10, "width": 10, "height": 10}}
+JPEG = b"\xff\xd8\xff\xe0" + b"0" * 300
+
+
+@pytest.fixture
+def store(tmp_path):
+    s = GraphStore(tmp_path)
+    s.save("demo", Graph.from_dict({"name": "demo", "nodes": [BOX], "connections": []}))
+    (s.dir("demo") / "view.json").write_text(json.dumps({"previews": {"n1": {
+        "kind": "Solid", "mesh": {"vertices": [[0, 0, 0], [1, 0, 0], [0, 1, 0]],
+                                  "triangles": [[0, 1, 2]]}}}}))
+    api.snapshot(s, "demo", run=False)
+    return s
+
+
+def _circle(cx=5, cy=5, z=10, r=2, n=24):
+    return [[cx + r * math.cos(2 * math.pi * i / n), cy + r * math.sin(2 * math.pi * i / n), z]
+            for i in range(n + 1)]
+
+
+def test_a_note_sits_beside_the_gen_and_names_the_piece(store):
+    gen_files = sorted(p.name for p in store.gen_dir("demo", "g1").iterdir())
+    note = api.add_note(store, "demo", "g1", {
+        "text": "questo foro si può fare meglio",
+        "strokes": [{"color": "#ef4444", "width": 0.5, "piece": "n1", "points": _circle()},
+                    {"color": "#3b82f6", "width": 0.5, "points": [[0, 0, 10], [8, 0, 10]]}],
+        "camera": {"position": [30, -30, 30], "target": [5, 5, 5]}}, JPEG)
+    assert note["id"] == "a1"
+    red, blue = note["marks"]
+    assert red["on"] == [{"node": "n1", "title": "Body", "type": "Box"}] and red["color_name"] == "red"
+    assert note["strokes"][0]["node"] == "n1"
+    assert red["shape"] == "loop" and blue["shape"] == "line"
+    assert red["centre"] == pytest.approx([5, 5, 10], abs=0.2)
+    # the gen's own files are untouched; the note is in notes/
+    assert sorted(p.name for p in store.gen_dir("demo", "g1").iterdir()) == sorted(gen_files + ["notes"])
+    assert (store.gen_dir("demo", "g1") / "notes" / "a1.jpg").read_bytes() == JPEG
+
+
+def test_the_agent_gets_open_notes_newest_first_without_raw_points(store):
+    api.add_note(store, "demo", "g1", {"text": "one", "strokes": []})
+    api.add_note(store, "demo", "g1", {"text": "two", "strokes": [{"points": [[1, 2, 3]]}]})
+    out = api.list_notes(store, base_url="http://h/")
+    assert [n["text"] for n in out] == ["two", "one"]
+    two = out[0]
+    assert two["ref"] == "demo/g1#a2" and two["url"] == "http://h/view/demo/g1#note=a2"
+    assert "strokes" not in two and two["marks"][0]["shape"] == "dot"
+    assert api.list_notes(store, points=True)[0]["strokes"][0]["points"] == [[1, 2, 3]]
+    api.resolve_note(store, "demo", "g1", "a2", reply="fatto, vedi g2")
+    assert [n["id"] for n in api.list_notes(store)] == ["a1"]
+    done = [n for n in api.list_notes(store, include_done=True) if n["id"] == "a2"][0]
+    assert done["done"]["reply"] == "fatto, vedi g2"
+    # the gallery counts OPEN notes only
+    assert api.recent_gens(store)[0]["notes"] == 1
+
+
+def test_a_circle_broken_by_the_hole_is_still_one_loop(store):
+    """The pen lifts wherever the circle leaves the surface — over the hole it
+    is drawn round — so one gesture arrives as several strokes. Read stroke by
+    stroke that is three lines; the agent must still be told 'circled'."""
+    c = _circle()
+    note = api.add_note(store, "demo", "g1", {"strokes": [
+        {"g": 1, "piece": "n1", "points": c[:9]}, {"g": 1, "piece": "n1", "points": c[11:20]},
+        {"g": 1, "piece": "n1", "points": c[21:]}]})
+    assert [s["shape"] for s in note["strokes"]] == ["line"] * 3
+    (mark,) = note["marks"]
+    assert mark["shape"] == "loop" and mark["on"] == [{"node": "n1", "title": "Body", "type": "Box"}]
+    assert mark["centre"] == pytest.approx([5, 5, 10], abs=0.3)
+
+
+def test_a_C_round_a_hole_is_a_loop_a_straight_line_and_an_S_are_not(store):
+    c = _circle(n=40)
+    note = api.add_note(store, "demo", "g1", {"strokes": [
+        {"g": 1, "points": c[:31]},                                   # 270°: an open C
+        {"g": 2, "points": [[i, 0, 0] for i in range(10)]},
+        {"g": 3, "points": [[i, math.sin(i / 2), 0] for i in range(20)]}]})
+    assert [m["shape"] for m in note["marks"]] == ["loop", "line", "line"]
+
+
+def test_a_mark_drawn_from_another_angle_gets_its_own_picture(store):
+    """The main picture is the LAST view. A cross drawn under the head from
+    below is not in it: its mark must point at the picture of its own view."""
+    V1 = b"\xff\xd8\xff\xe0" + b"1" * 300
+    note = api.add_note(store, "demo", "g1", {
+        "camera": {"position": [0, -50, 20], "target": [0, 0, 0], "aspect": 1.6},
+        "views": [{"camera": {"position": [0, 0, -60], "target": [0, 0, 0], "aspect": 1.6}}],
+        "strokes": [{"g": 1, "view": 0, "points": [[-3, 0, -16], [3, 0, -16]]},
+                    {"g": 2, "points": [[8, 0, 0], [8, 3, 0]]}]}, JPEG, [V1])
+    cross, side = note["marks"]
+    assert cross["view"] == 1 and side["view"] == 0
+    assert api.note_image(store, "demo", "g1", note["id"], mark=1) == V1
+    assert api.note_image(store, "demo", "g1", note["id"], mark=2) == JPEG
+    lean = api.list_notes(store)[0]
+    assert lean["marks"][0]["image_path"].endswith(f"{note['id']}.v1.jpg")
+    assert "image_path" not in lean["marks"][1] and lean["views"] == 1
+    assert note["camera"]["aspect"] == 1.6
+    with pytest.raises(ValueError):
+        api.add_note(store, "demo", "g1", {"strokes": [{"view": 3, "points": [[0, 0, 0]]}]})
+    store.delete_gen_note("demo", "g1", note["id"])
+    assert not list((store.gen_dir("demo", "g1") / "notes").glob("*.jpg"))
+
+
+def test_a_deleted_note_id_is_never_reused(store):
+    a = api.add_note(store, "demo", "g1", {"text": "x"})
+    store.delete_gen_note("demo", "g1", a["id"])
+    assert api.add_note(store, "demo", "g1", {"text": "y"})["id"] == "a2"
+
+
+def test_bad_notes_are_refused(store):
+    with pytest.raises(ValueError):
+        api.add_note(store, "demo", "g1", {"text": "", "strokes": []})
+    with pytest.raises(ValueError):
+        api.add_note(store, "demo", "g1", {"strokes": [{"points": [[0, 0, float("nan")]]}]})
+    with pytest.raises(ValueError):
+        api.add_note(store, "demo", "g1", {"strokes": [{"color": "red", "points": [[0, 0, 0]]}]})
+    with pytest.raises(KeyError):
+        api.add_note(store, "demo", "g9", {"text": "x"})
+    for bad in ("../a1", "a0", "g1", "a1.json", ""):
+        with pytest.raises(ValueError):
+            validate_note_id(bad)
+
+
+def test_routes_tools_and_help_exist():
+    for r in ('@app.get("/api/notes")', '@app.post("/api/graph/{name}/gens/{gen}/notes")',
+              '@app.get("/api/graph/{name}/gens/{gen}/notes/{note_id}.jpg")',
+              '@app.patch("/api/graph/{name}/gens/{gen}/notes/{note_id}")'):
+        assert r in SERVER
+    # declared before the generic gens/{gen}/{part}, which would swallow `notes`
+    assert SERVER.index('gens/{gen}/notes")') < SERVER.index('gens/{gen}/{part}")')
+    for t in ("def cad_notes", "def cad_note_image", "def cad_note_done"):
+        assert t in MCP
+    assert "cad_notes" in HELP
+
+
+def test_the_pen_paints_on_the_surface_and_leaves_the_background_to_orbit():
+    # strokes come from a raycast on the part, not from screen coordinates, and a
+    # press that misses the part is left to OrbitControls
+    assert "function surfaceHit" in VIEW and "if (!hit) return;" in VIEW
+    assert "vp.addEventListener('pointerdown'" in VIEW and "}, true);" in VIEW
+    # the picture is the user's own view, not a re-framed one — and one more per
+    # view the user drew from, taken when the pen lifts
+    assert "snapshot({ frame: false" in VIEW
+    assert "if (draft.some(s => s.g === g)) takeView(g);" in VIEW
+    # a note opened on another screen backs off by the aspect ratio, then
+    # until every stroke is inside the picture
+    assert "c.aspect / now" in VIEW and "!inside()" in VIEW

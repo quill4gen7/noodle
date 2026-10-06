@@ -234,6 +234,49 @@ def cad_recent_gens(limit: int = 30, graph_id: str = "") -> list:
 
 
 @mcp.tool()
+def cad_notes(graph_id: str = "", gen: str = "", limit: int = 10,
+              include_done: bool = False, points: bool = False) -> list:
+    """What the user DREW for you on a generation in the /view viewer (✎ Disegna):
+    strokes painted on the model — a red circle round a hole, an arrow at a
+    fillet — plus a sentence ("this hole could be better"). Newest first, open
+    ones only unless `include_done`. When the user says "guarda cosa ho
+    segnato / disegnato", call this first.
+    Each note: `text`, `ref` (`graph/gN#aK`), `url` (opens the viewer on it),
+    `image_path`/`image_url` (THEIR view with the strokes — look at it with
+    `cad_note_image`), and `marks` — one per gesture: `color_name`, `shape`
+    (loop = circled something, line, dot), `centre` + `bbox` in model mm and
+    `on` = the node(s) it was drawn on, read off the gen's frozen graph
+    (cad_get_graph may have moved on: compare against the gen). The centre is
+    where to aim `cad_measure` or a section. `points=True` adds the raw
+    `strokes` (surface points + normals, split where the pen left the surface).
+    Once handled, close it with `cad_note_done` so the user sees your answer."""
+    return _safe(api.list_notes, STORE, graph_id=graph_id, gen=gen, limit=limit,
+                 include_done=include_done, points=points)
+
+
+@mcp.tool()
+def cad_note_image(graph_id: str, gen: str, note_id: str, mark: int = 0):
+    """The picture the user saw when they drew note `note_id` (e.g. "a2"), with
+    their strokes on it — exactly their camera angle and zoom. The main picture
+    is the LAST view only: a mark drawn from another angle (a cross under a
+    head, seen from below) is not in it — pass `mark=N` to get the picture that
+    mark was drawn in (its `view` > 0 in cad_notes)."""
+    try:
+        return Image(data=api.note_image(STORE, graph_id, gen, note_id, mark=mark),
+                     format="jpeg")
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"{type(e).__name__}: {e}"}
+
+
+@mcp.tool()
+def cad_note_done(graph_id: str, gen: str, note_id: str, reply: str = "",
+                  done: bool = True) -> dict:
+    """Close a drawn note once you acted on it; `reply` is shown under it in the
+    viewer ("hole now chamfered 0.5mm — see g8"). done=False reopens it."""
+    return _safe(api.resolve_note, STORE, graph_id, gen, note_id, reply=reply, done=done)
+
+
+@mcp.tool()
 def cad_agent_tags() -> list:
     """Provenance index: every 'To Agent' tag node across ALL projects —
     label, date (auto-stamped at save), graph, node id and the tagged source

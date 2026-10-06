@@ -89,6 +89,20 @@ More detail on demand — `cad_help(topic=...)` / `GET /api/agent/help?topic=...
    Animate: the second moves the first's result FROZEN at its `t`, it does not
    play after it (lint `animate_chain`). Link a pose of the tracks with
    `#tt=<id>:0.6,<id>:1` (per-track t) and `#tracks=1` (panel open).
+   **The user can DRAW on a generation for you** (✎ Disegna in the viewer):
+   circle a hole in red, mark a fillet, write "questo si può fare meglio".
+   When they say "guarda cosa ho segnato / disegnato", call `cad_notes()`
+   (`GET /api/notes`): newest open notes first, each with `text`, the
+   picture they were looking at with the strokes on it (`cad_note_image`, or
+   `image_path`), and `marks`, one per gesture: `color_name`, `shape` (`loop`
+   = circled, `line`, `dot`), `centre`/`bbox` in model mm and `on` = the
+   node(s) it was drawn on — ids of the gen's FROZEN graph (`ref` `graph/gN#aK`).
+   The main picture is only the LAST view: a mark drawn from another angle
+   has `view` > 0 and its own `image_path` — `cad_note_image(..., mark=N)`
+   shows it. Look at every mark's picture before acting on it. Aim
+   `cad_measure` / a section at the centre to find the feature, fix it,
+   snapshot, then `cad_note_done(graph, gen, id, reply="…see g8")` so the
+   user sees it closed with your answer.
 6. **Tidy and export**: `cad_arrange` lays the whole graph out (dependency
    order, real node sizes, no overlaps, named sliders gathered in a parameter
    panel on the left) — you never compute positions yourself. Then
@@ -168,6 +182,7 @@ section is slow, or where a run fails (`run=True` → `failed_in`).
 | `GET /api/graph/{name}/screenshot?view=&node=&…` | **PNG of the viewport** (`cad_screenshot`) |
 | `POST /api/graph/{name}/snapshot?label=&run=` · `GET .../gens` | freeze a generation → `{gen, url}` for the read-only viewer (`cad_snapshot`, `cad_list_gens`) — send the user the `url` |
 | `GET /api/gens/recent?limit=&project=` · page `/views` | generations of every project, newest first, with `ref` (`graph/gN`), `seen` and `last_seen` = the one the user opened last (`cad_recent_gens`) |
+| `GET /api/notes?project=&gen=&done=&points=` · `GET .../gens/{gen}/notes/{id}.jpg[?view=k]` · `PATCH .../gens/{gen}/notes/{id}` body `{done, reply}` | what the user DREW on a generation in the viewer (`cad_notes`, `cad_note_image`, `cad_note_done`) |
 | `GET /api/agent/tags` | ToAgent provenance index (`cad_agent_tags`) |
 | `GET /api/graph/{name}/slice_summary?path=&n=` · `.../section_outline?axis=&pos=&path=` | sections (`cad_slice_summary`, `cad_section_outline`) |
 | `POST /api/graph/{name}/measure` body=`{queries:[…]}` | geometry facts by node ref `n5`/`n51.body`/`n51[3]` (`cad_measure`): `props`, `interference` (a+b, or every pair of a list node), `distance`, `section` (+svg), `probe`, `summary` — check fits and clashes instead of writing scripts |

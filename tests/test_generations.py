@@ -97,12 +97,15 @@ def test_the_viewer_reads_only_the_frozen_copy():
     exactly what a fixed link must not do. And the viewer writes nothing."""
     assert "/gens/${GEN}" in VIEW or "gens/${GEN}" in VIEW
     assert "/view`" not in VIEW and "/view'" not in VIEW
-    # it writes only BESIDE the gen — when it was seen, and its card picture —
-    # never the gen itself nor the project
+    # it writes only BESIDE the gen — when it was seen, its card picture and the
+    # user's drawn notes (notes/) — never the gen itself nor the project
     writes = [ln for ln in VIEW.splitlines() if "method:" in ln]
-    assert len(writes) == 2
+    assert len(writes) == 4
     assert any("/seen`" in ln and "'POST'" in ln for ln in writes)
     assert any("/thumb`" in ln and "'PUT'" in ln for ln in writes)
+    notes = [ln for ln in writes if "/notes" in ln or "method: 'POST', headers" in ln]
+    assert len(notes) == 2
+    assert "/gens/${GEN}/notes`, {" in VIEW
 
 
 # --- timelines -----------------------------------------------------------------

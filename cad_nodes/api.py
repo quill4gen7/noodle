@@ -1451,6 +1451,7 @@ def recent_gens(store: GraphStore, limit: int = 60, graph_id: str = "",
                 "pieces": [p.get("title") for p in pieces],
                 "animated": bool(m.get("timeline")),
                 "thumb": extra["thumb"], "seen": extra["seen"],
+                "notes": _open_notes(store, name, gen),
                 "url": gen_url(name, gen, base_url),
             })
     out.sort(key=lambda e: (e["created"] or "", int(e["gen"][1:])), reverse=True)
@@ -1462,3 +1463,290 @@ def recent_gens(store: GraphStore, limit: int = 60, graph_id: str = "",
     if last and last not in head:       # never cut the one the user means
         head.append(last)
     return head
+
+
+# ---------------------------------------------------------------------------
+# Notes for the agent — what the user DREW on a generation in /view
+# ---------------------------------------------------------------------------
+# The user zooms onto a hole that looks wrong, circles it in red on the model
+# and writes "could be done better". That reaches the agent as a note: the
+# picture they were looking at (strokes included), the sentence, and — so it
+# is not just a picture — every stroke in model millimetres with the piece
+# (node) it was drawn on, read off the gen's frozen graph. The stroke centre is
+# where to point `cad_measure` / `section_outline`.
+
+_NOTE_COLORS = {"#ef4444": "red", "#f59e0b": "orange", "#facc15": "yellow",
+                "#22c55e": "green", "#3b82f6": "blue", "#ffffff": "white",
+                "#111827": "black", "#d946ef": "magenta"}
+_NOTE_MAX_STROKES = 300
+_NOTE_MAX_POINTS = 4000
+
+
+def _num(v, what):
+    import math
+    if not isinstance(v, (int, float)) or isinstance(v, bool) or not math.isfinite(v):
+        raise ValueError(f"note: {what} must be a finite number")
+    return float(v)
+
+
+def _vec(v, what):
+    if not isinstance(v, (list, tuple)) or len(v) != 3:
+        raise ValueError(f"note: {what} must be [x, y, z]")
+    return [round(_num(c, what), 4) for c in v]
+
+
+def _winding(points: list, c: list) -> float:
+    """Signed angle (radians) the polyline sweeps round `c`, measured in the
+    plane it mostly lies in (normal = sum of the consecutive cross products)."""
+    import math
+    v = [[p[k] - c[k] for k in range(3)] for p in points]
+    cross = lambda a, b: [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2],  # noqa: E731
+                          a[0] * b[1] - a[1] * b[0]]
+    n = [0.0, 0.0, 0.0]
+    for a, b in zip(v, v[1:], strict=False):
+        n = [x + y for x, y in zip(n, cross(a, b), strict=True)]
+    if math.hypot(*n) < 1e-12:
+        return 0.0
+    total = 0.0
+    for a, b in zip(v, v[1:], strict=False):
+        cr = cross(a, b)
+        total += math.atan2(sum(x * y for x, y in zip(cr, n, strict=True)) / math.hypot(*n),
+                            sum(x * y for x, y in zip(a, b, strict=True)))
+    return total
+
+
+def _stroke_summary(points: list, width: float) -> dict:
+    import math
+    xs, ys, zs = zip(*points, strict=True)
+    lo, hi = [min(xs), min(ys), min(zs)], [max(xs), max(ys), max(zs)]
+    length = sum(math.dist(a, b) for a, b in zip(points, points[1:], strict=False))
+    centre = [round(sum(c) / len(c), 3) for c in (xs, ys, zs)]
+    # a stroke that winds round its own centre is a CIRCLE around something:
+    # the thing is inside it, and the centre is the best guess at where. Judged
+    # by the angle it sweeps (>= 270°), not by end meeting start — a circle
+    # round a hole loses the arc that hung over the hole and arrives as a C.
+    closed = len(points) > 6 and abs(_winding(points, centre)) >= 1.5 * math.pi
+    return {"centre": centre, "bbox": [[round(v, 3) for v in lo], [round(v, 3) for v in hi]],
+            "length_mm": round(length, 2),
+            "shape": "dot" if len(points) == 1 else ("loop" if closed else "line")}
+
+
+def _marks(strokes: list[dict]) -> list[dict]:
+    """One entry per GESTURE — what the user meant to draw. A circle round a hole
+    reaches here as several strokes, because the pen lifts wherever the circle
+    leaves the surface (over the hole, across a silhouette); joined back in
+    order they are a loop again, and that is what the agent needs to read."""
+    by_g: dict[int, list[dict]] = {}
+    for s in strokes:
+        by_g.setdefault(s["g"], []).append(s)
+    out = []
+    for ss in by_g.values():
+        pts = [p for s in ss for p in s["points"]]
+        m = {"mark": len(out) + 1, "color_name": ss[0]["color_name"], "color": ss[0]["color"]}
+        m.update(_stroke_summary(pts, max(s["width_mm"] for s in ss)))
+        nodes = []
+        for s in ss:
+            if s.get("node") and s["node"] not in [n["node"] for n in nodes]:
+                nodes.append({k: s[k] for k in ("node", "title", "type") if k in s})
+        m["on"] = nodes
+        # the picture this mark is in: the view its strokes were drawn from
+        # (0 = the note's main picture, the final view)
+        m["view"] = next((s["view"] for s in ss if s.get("view")), 0)
+        out.append(m)
+    return out
+
+
+_NOTE_MAX_VIEWS = 24
+
+
+def _camera(cam, what="camera") -> Optional[dict]:
+    if not (isinstance(cam, dict) and cam.get("position") and cam.get("target")):
+        return None
+    out = {"position": _vec(cam["position"], what), "target": _vec(cam["target"], what),
+           "ortho": bool(cam.get("ortho"))}
+    for k in ("zoom", "aspect"):          # ortho zoom; width/height of the canvas
+        if cam.get(k) is not None:
+            out[k] = round(max(1e-6, min(_num(cam[k], f"{what} {k}"), 1e6)), 5)
+    return out
+
+
+def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
+             jpeg: Optional[bytes] = None,
+             view_jpegs: Optional[list] = None) -> dict:
+    """Validate and store what the /view page sends. `payload` = {text, strokes:
+    [{color, width, points:[[x,y,z]…], normals?, piece?}], camera?, t?, hide?}."""
+    import datetime
+    if not isinstance(payload, dict):
+        raise ValueError("note: expected a JSON object")
+    text = payload.get("text") or ""
+    if not isinstance(text, str) or len(text) > 4000:
+        raise ValueError("note: text must be a string of at most 4000 chars")
+    strokes_in = payload.get("strokes") or []
+    if not isinstance(strokes_in, list) or len(strokes_in) > _NOTE_MAX_STROKES:
+        raise ValueError(f"note: strokes must be a list of at most {_NOTE_MAX_STROKES}")
+    if not strokes_in and not text.strip():
+        raise ValueError("note: nothing drawn and nothing written")
+    views_in = payload.get("views") or []
+    if not isinstance(views_in, list) or len(views_in) > _NOTE_MAX_VIEWS:
+        raise ValueError(f"note: views must be a list of at most {_NOTE_MAX_VIEWS}")
+    views = [{"camera": _camera(v.get("camera") if isinstance(v, dict) else None, f"view {i}")}
+             for i, v in enumerate(views_in)]
+    meta = store.load_gen(graph_id, gen, "meta")
+    titles = {p.get("id"): p for p in (meta.get("pieces") or [])}
+    strokes, total = [], 0
+    for i, s in enumerate(strokes_in):
+        if not isinstance(s, dict):
+            raise ValueError(f"note: stroke {i} must be an object")
+        pts = [_vec(p, f"stroke {i} point") for p in (s.get("points") or [])]
+        if not pts:
+            raise ValueError(f"note: stroke {i} has no points")
+        total += len(pts)
+        if total > _NOTE_MAX_POINTS:
+            raise ValueError(f"note: more than {_NOTE_MAX_POINTS} points in total")
+        color = str(s.get("color") or "#ef4444").lower()
+        if not re.fullmatch(r"#[0-9a-f]{6}", color):
+            raise ValueError(f"note: stroke {i} color must be #rrggbb")
+        width = max(0.001, min(_num(s.get("width", 1.0), f"stroke {i} width"), 1e4))
+        piece = s.get("piece")
+        piece = str(piece)[:40] if piece else None
+        node = piece.split(".")[0] if piece else None
+        g = s.get("g", i)
+        out = {"color": color, "color_name": _NOTE_COLORS.get(color, color),
+               "width_mm": round(width, 3), "g": int(_num(g, f"stroke {i} g")), "points": pts}
+        v = s.get("view")
+        if v is not None:
+            v = int(_num(v, f"stroke {i} view"))
+            if not 0 <= v < len(views):
+                raise ValueError(f"note: stroke {i} view {v} out of range")
+            out["view"] = v + 1                # 1-based, as the picture file: aK.v1.jpg
+        if s.get("normals") and len(s["normals"]) == len(pts):
+            out["normals"] = [_vec(n, f"stroke {i} normal") for n in s["normals"]]
+        if node:
+            out["piece"] = piece
+            out["node"] = node
+            if node in titles:
+                out["title"] = titles[node].get("title")
+                out["type"] = titles[node].get("type")
+        out.update(_stroke_summary(pts, width))
+        strokes.append(out)
+    note = {"text": text.strip(),
+            "created": datetime.datetime.now().isoformat(timespec="seconds"),
+            "marks": _marks(strokes), "strokes": strokes, "done": None}
+    cam = _camera(payload.get("camera"))
+    if cam:
+        note["camera"] = cam
+    if views:
+        note["views"] = views
+    if isinstance(payload.get("t"), (int, float)):
+        note["t"] = round(min(max(float(payload["t"]), 0.0), 1.0), 4)
+    if isinstance(payload.get("hide"), str):
+        note["hide"] = payload["hide"][:500]
+    return store.save_gen_note(graph_id, gen, note, jpeg, view_jpegs)
+
+
+def _open_notes(store: GraphStore, graph_id: str, gen: str) -> int:
+    try:
+        return sum(1 for n in store.list_gen_notes(graph_id, gen) if not n.get("done"))
+    except (KeyError, ValueError):
+        return 0
+
+
+def _note_for_agent(n: dict, base_url: str, points: bool) -> dict:
+    g, gen, nid = n["graph"], n["gen"], n["id"]
+    from urllib.parse import quote
+    base = gen_url(g, gen, base_url).rsplit("/view/", 1)[0]
+    out = {
+        "ref": f"{gen_ref(g, gen)}#{nid}", "graph": g, "gen": gen, "id": nid,
+        "text": n.get("text", ""), "created": n.get("created"), "done": n.get("done"),
+        "url": f"{gen_url(g, gen, base_url)}#note={nid}",
+        # marks = one per gesture (what the user drew); the raw strokes, split
+        # wherever the pen left the surface, only on request
+        # recomputed on read: a better reading of the strokes reaches old notes too
+        "marks": (_marks(n["strokes"]) if n.get("strokes") and all("g" in x for x in n["strokes"])
+                  else n.get("marks") or []),
+    }
+    if points:
+        out["strokes"] = n.get("strokes", [])
+    for k in ("t", "hide", "camera"):
+        if n.get(k) is not None:
+            out[k] = n[k]
+    if n.get("image"):
+        out["image_url"] = f"{base}/api/graph/{quote(g)}/gens/{gen}/notes/{nid}.jpg"
+        out["image_path"] = f"projects/{g}/gens/{gen}/notes/{nid}.jpg"
+    # a mark drawn from another angle than the last one is NOT in the main
+    # picture: it gets the picture of its own view
+    for m in out["marks"]:
+        if m.get("view"):
+            k = m["view"]
+            m["image_url"] = f"{base}/api/graph/{quote(g)}/gens/{gen}/notes/{nid}.jpg?view={k}"
+            m["image_path"] = f"projects/{g}/gens/{gen}/notes/{nid}.v{k}.jpg"
+    if n.get("views"):
+        out["views"] = len(n["views"])
+    return out
+
+
+def list_notes(store: GraphStore, graph_id: str = "", gen: str = "", limit: int = 20,
+               include_done: bool = False, points: bool = False,
+               base_url: str = "") -> list[dict]:
+    """Notes the user drew in /view, NEWEST FIRST, across every project (or one,
+    or one generation). Open ones only unless `include_done`. `points=True`
+    adds every stroke's raw points + surface normals (mm, model frame)."""
+    if gen and not graph_id:
+        raise ValueError("gen needs graph_id")
+    names = [graph_id] if graph_id else store.list()
+    out = []
+    for name in names:
+        try:
+            gens = [gen] if gen else [m["gen"] for m in store.list_gens(name) if m.get("gen")]
+        except ValueError:
+            continue
+        for g in gens:
+            try:
+                notes = store.list_gen_notes(name, g)
+            except KeyError:
+                if gen:
+                    raise
+                continue
+            for n in notes:
+                if include_done or not n.get("done"):
+                    out.append(_note_for_agent(n, base_url, points))
+    out.sort(key=lambda e: (e["created"] or "", int(e["gen"][1:]), int(e["id"][1:])),
+             reverse=True)
+    return out[:max(1, int(limit))] if limit else out
+
+
+def gen_notes_raw(store: GraphStore, graph_id: str, gen: str) -> list[dict]:
+    """What /view draws: every note of the gen, with its points."""
+    return store.list_gen_notes(graph_id, gen)
+
+
+def resolve_note(store: GraphStore, graph_id: str, gen: str, note_id: str,
+                 reply: str = "", done: bool = True) -> dict:
+    """Mark a note handled (the viewer shows it ticked, with `reply` under it),
+    or reopen it with done=False."""
+    import datetime
+    if not isinstance(reply, str) or len(reply) > 4000:
+        raise ValueError("reply must be a string of at most 4000 chars")
+    state = ({"when": datetime.datetime.now().isoformat(timespec="seconds"),
+              "reply": reply.strip()} if done else None)
+    return store.update_gen_note(graph_id, gen, note_id, done=state)
+
+
+def note_image(store: GraphStore, graph_id: str, gen: str, note_id: str,
+               view: int = 0, mark: int = 0) -> bytes:
+    """A note's picture: the main one (the final view), the `view`-th other
+    view, or — with `mark` — whichever picture that mark is visible in."""
+    if mark:
+        note = next((n for n in store.list_gen_notes(graph_id, gen) if n.get("id") == note_id), None)
+        if note is None:
+            raise KeyError(f"No note {note_id!r} on {graph_id}/{gen}")
+        marks = _marks(note.get("strokes") or [])
+        if not 1 <= mark <= len(marks):
+            raise ValueError(f"note {note_id} has marks 1..{len(marks)}, not {mark}")
+        view = marks[mark - 1]["view"]
+    if view < 0:
+        raise ValueError("view must be >= 0")
+    p = store.gen_note_image(graph_id, gen, note_id, view)
+    if not p.exists():
+        raise KeyError(f"No picture {view or ''} for note {note_id!r} on {graph_id}/{gen}")
+    return p.read_bytes()

@@ -1680,6 +1680,40 @@ result while the workflow moves on.
   (`animate_chain`). Hash: `tt=<id>:<t>,…` (only tracks that differ from the
   master `t`), `tracks=1` (panel open). Framing restores every track's own `t`.
   Example project: `projects/cassone-demo` (a chest whose lid opens on a hinge).
+- **✎ Disegna — the user draws FOR the agent.** In /view (button, or `D`) the
+  user paints on the part — circles a hole in red, marks a fillet — picks
+  colour/size and writes a sentence; "Invia all'agente" stores a NOTE beside
+  the gen (`gens/gN/notes/aK.{json,jpg}` — the gen's own files stay immutable;
+  `aK.claim` is kept so an id is never reused, like a gen number). Strokes are
+  paint ON THE SURFACE, not on the screen: each pointer sample is a raycast
+  (`firstHit`) kept with its face normal, drawn as a tube lifted along it, so a
+  mark means a PLACE in model mm and stays put while the view orbits. Width is
+  picked in px and turned into mm where the stroke starts. Routing: a press ON
+  the part paints and is stopped at `#vp` in the CAPTURE phase, before
+  OrbitControls; background / right button / wheel still move the view; a
+  second finger cancels the stroke and RE-DISPATCHES the first finger's
+  pointerdown to the canvas, or OrbitControls would see a lone finger and
+  rotate instead of pinching. The JPEG is the user's own view (`snapshot({frame:
+  false})`). The pen lifts wherever it leaves the surface (over the hole it
+  circles), so the server also summarises per GESTURE (`marks`): `shape` loop/
+  line/dot — loop = sweeps ≥270° round its centre, because a circle round a hole
+  arrives as an open C — `centre`/`bbox` and `on` = node(s) of the gen's frozen
+  graph. Agent side: `cad_notes` / `GET /api/notes`, `cad_note_image`,
+  `cad_note_done` (reply shown under the note); `recent_gens` counts open
+  `notes`; `#note=aK` opens the viewer on one. Tests: `tests/test_notes.py`.
+  - **One picture per VIEW, not per note** — paid for on the first real note:
+    the main JPEG is the LAST view, and a cross drawn under a bolt head from
+    below was simply not in it (nor a line along the thread); the agent found
+    them only in the coordinates. Now the pen-up shoots the current view
+    (`takeView`), re-shooting instead of adding when the camera has not moved;
+    views equal to the final one are dropped at send. Files `aK.vN.jpg`, a
+    mark carries `view` (0 = main) + its own `image_path`, `cad_note_image(…,
+    mark=N)`.
+  - **Opening a note fits it to THIS screen** (`goToNote`): the camera carries
+    `aspect` (and ortho `zoom`); on a narrower screen it backs off by the ratio,
+    then until every stroke projects inside. `cam.lookAt` inside that loop is
+    load-bearing — the controls orient the camera only on `update()`, and
+    without it every stroke tested off-screen and the part shrank to a dot.
 - **The viewer draws on demand** (`CadViewer.invalidate()`, no continuous loop):
   anything that changes the scene from outside the viewer must ask for a frame.
   `/view` does it in `poseTrack()` (every timeline pose) and `apply()` (hidden
