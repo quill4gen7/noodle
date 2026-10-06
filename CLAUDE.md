@@ -1548,6 +1548,15 @@ thought to measure; a picture shows what you did not.**
   graph.json for the shot and restores it in a `finally` (the shot page reads
   the graph from disk, so there is no in-memory way). A node with nothing
   drawable (a slider) is a 400 before any browser work.
+- **The shot page shows the viewport ALONE** (`screenshot._SHOT_LAYOUT`, an init
+  script): the page is the real editor, laid out for a human. At width ≤ 800 it
+  took the phone layout — graph pane only — so the canvas was hidden and every
+  narrow shot waited 30s for "element is not visible" and came back 502 (blamed
+  at first on `node`/`isolate`, which were innocent); at desktop widths the
+  viewport was the right half under a toolbar, so 900×600 came back as ~472×307
+  CSS px. Now `width`×`height` IS the picture, at any width. Hidden layout must
+  not be a grid row: with toolbar/statusbar `display:none` the workspace lands
+  in the toolbar's grid row and gets its height — hence `display:block` + `100vh`.
 - **A failed capture is never a 200.** `api._check_png` rejects anything that
   is not a PNG or is under 200 bytes (`ScreenshotFailed`), and the route maps
   every non-HTTP failure to a **502** with the reason — an agent doing
