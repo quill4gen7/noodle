@@ -859,7 +859,7 @@ Length: 5
 
 ---
 
-### 3. ✎ Disegna: la gomma
+### 3. ✎ Disegna: la gomma, il testo sul pezzo, e le foto che mentono
 
 **Problema** (quill, 2026-10-07, disegnando la prima nota vera: 33 segni su 12
 viste). Nel viewer `/view` oggi si può solo **annullare l'ultimo tratto** (↶,
@@ -890,6 +890,45 @@ disegno lungo si toglie solo disfacendo tutto quello fatto dopo. Serve la
   di tratti.
 - **Solo la bozza.** Le note già inviate restano immutabili come le generazioni
   (si eliminano intere): la gomma lavora sul disegno non ancora inviato.
+
+**Bug trovato nel primo confronto fra agenti (stessa radice, va risolto qui).**
+La foto di una vista si scatta al rilascio della penna e si RI-scatta solo al
+tratto successivo dalla stessa camera. ↶ toglie i tratti ma non tocca la foto:
+sulla nota `prova-disegno/g1#a1` la vista 6 mostra ancora «xBIG» accanto al
+foro, mentre dei suoi tratti ne è stato inviato uno solo. Tutti gli agenti che
+vedono le immagini l'hanno aperta; Codex ha letto «croce sul foro = toglilo»
+(e ha tolto i fori). Regola: dopo ogni undo/gomma la foto di quella vista si
+riscatta se la camera è ancora quella (`sameCam`), altrimenti si scarta e i
+suoi tratti superstiti passano alla foto della vista corrente — mai una foto
+con tratti che non esistono più.
+
+**Il testo sul pezzo** (quill, stesso giorno). Uno strumento «T»: tocchi un
+punto del pezzo e trascini, nasce un riquadro, ci scrivi dentro. Serve a
+mettere la parola ACCANTO al punto («qui 8 mm», «questo no»), invece di una
+nota unica lontana dal disegno.
+
+- **Il modo agile per farlo bello: un decal.** `DecalGeometry` di three (stesso
+  0.170, MIT — da vendorizzare: oggi in `vendor/…/jsm/` non c'è `geometries/`)
+  proietta un box sulla mesh e ne ritaglia i triangoli: il testo, disegnato su
+  un `CanvasTexture`, segue le superfici curve senza UV. È quello che serve:
+  sul piano viene perfetto, su un cilindro avvolge, su un organico deforma ma
+  resta leggibile se il riquadro è piccolo.
+- **Orientamento.** Normale = media delle normali dei triangoli dentro il
+  riquadro (non quella del solo punto toccato, che su uno spigolo è a caso);
+  «su» = la proiezione del su della camera sul piano del riquadro, così il
+  testo si legge dritto da dove l'hai scritto. Dimensione dal trascinamento,
+  convertita in mm col `mmPerPx` già usato dalla penna.
+- **Il ripiego se il decal non basta** (organici, angoli): un piano orientato
+  come sopra e appena staccato dalla superficie. Brutto sugli spigoli, e pace —
+  lo ha detto quill: su un angolo non si scrive.
+- **Per l'agente il testo è un DATO, non solo pixel.** Ogni riquadro va nella
+  nota come `labels: [{text, at:[x,y,z], normal, up, size_mm, node}]`, e
+  `cad_notes` lo associa ai mark vicini: «qui 8 mm» accanto al cerchio rosso
+  diventa un'informazione su QUEL mark. Un modello solo-testo (GLM, DeepSeek)
+  oggi non vede le scritte fatte a mano — come «xBIG» — e con i label le
+  legge.
+- **Modifica e gomma.** Un riquadro si tocca per correggere il testo; la gomma
+  lo cancella intero, come un tratto. Stessa pila di azioni dell'undo.
 
 ## Roadmap / Suggerimenti (post-Fase 4)
 
