@@ -51,6 +51,18 @@ GitHub Pages: orbit real generations, hide pieces, play their timelines. No inst
 together, or one track at a time (≡ Tracce).</em></p>
 
 <p align="center">
+  <img src="docs/asset/noodle-view-draw.png" alt="noodle /view in draw mode: a green chain drawn on the side of a nut and a blue cross on the head of a bolt, with the note text, and in the side panel the agent's reply marking the note done" width="880">
+</p>
+<p align="center">
+  <img src="docs/asset/noodle-view-draw-result.png" alt="The next generation: the nut now carries a raised chain of six rings and the bolt head a cross recess" width="560">
+  <img src="docs/asset/noodle-view-draw-phone.png" alt="The same drawing bar on a phone: colours, brush sizes, undo, the note text and Invia all'agente" width="250">
+</p>
+<p align="center"><em><strong>✎ Disegna — tell the agent by drawing.</strong> Paint on the part itself,
+right where something is wrong (a hole, a fillet), add a sentence, and send it. The agent gets
+your view as a picture plus every stroke in model millimetres with the node it lies on
+(<code>cad_notes</code>), acts on it, and closes the note with its reply.</em></p>
+
+<p align="center">
   <img src="docs/asset/noodle-sections.gif" alt="▦ Sezioni on a 572-line CodeBlock: the front shell's sections are clicked one after another and each preview shows the part at that step" width="880">
 </p>
 <p align="center"><em><strong>▦ Sezioni.</strong> An agent's 572-line CodeBlock, read as the nodes it already
