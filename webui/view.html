@@ -21,6 +21,38 @@
   The state lives in the URL hash (#hide=n3,n5.2 — a bare node id means all its
   pieces), so a link can be sent already set up, e.g. with the lid hidden.
 -->
+<script>
+// A blank page is the worst way to fail. This CLASSIC script (not a module, so
+// it runs even when the module below cannot be parsed, linked or evaluated)
+// records every error and, if the module has not reached boot() after 8s,
+// writes them on screen with the browser's identity — a phone has no console
+// to read. Paid for 2026-10-07: /view came up empty on Firefox for Android
+// while Chrome and desktop Firefox were fine, and the server logs could only
+// say that the module never asked for a single import.
+(function () {
+  var errs = [];
+  function note(m) { if (m && errs.length < 6) errs.push(String(m).slice(0, 300)); }
+  addEventListener('error', function (e) {
+    var t = e.target;
+    if (t && t !== window && (t.src || t.href)) note('non caricato: ' + (t.src || t.href));
+    else note((e.message || 'errore') + (e.filename ? ' @ ' + e.filename.split('/').pop() + ':' + e.lineno + ':' + e.colno : ''));
+  }, true);
+  addEventListener('unhandledrejection', function (e) { note('promise: ' + (e.reason && (e.reason.stack || e.reason.message) || e.reason)); });
+  setTimeout(function () {
+    if (window.__viewBooted) return;
+    var m = document.getElementById('msg'); if (!m) return;
+    var esc = function (x) { return String(x).replace(/[&<>]/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]; }); };
+    m.style.display = 'flex';
+    m.innerHTML = '<div style="max-width:560px;text-align:left;font:12px monospace;line-height:1.5">' +
+      '<b style="font:600 14px sans-serif;color:#e94560">La pagina non è partita su questo browser.</b><br>' +
+      (errs.length ? errs.map(esc).join('<br>') : 'nessun errore registrato: il modulo non è stato eseguito (import map o moduli non supportati?)') +
+      '<br><br>' + esc(navigator.userAgent) + '<br>importmap: ' +
+      (window.HTMLScriptElement && HTMLScriptElement.supports ? HTMLScriptElement.supports('importmap') : '?') + '</div>';
+    try { fetch('/api/client-error', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({page: location.pathname, ua: navigator.userAgent, errors: errs})}); } catch (_) {}
+  }, 8000);
+})();
+</script>
 <script type="importmap">
 {
   "imports": {
@@ -2472,6 +2504,7 @@ async function boot() {
   const fn = focus && notesData.find(n => n.id === focus);
   if (fn) goToNote(fn);
 }
+window.__viewBooted = true;          // the error net above stands down
 boot();
 </script>
 </body>

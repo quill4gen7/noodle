@@ -673,6 +673,17 @@ async def mark_generation_seen(name: str, gen: str):
 _NOTE_MAX_BYTES = 40 * 1024 * 1024     # photos + up to 8 placed images of ≤ 4 MB, as base64
 
 
+@app.post("/api/client-error")
+async def client_error(request: Request):
+    """A page that failed to start reports here (the /view error net): a phone has
+    no console, so the error lands in the server log, where an agent can read it.
+    Logged only, truncated, never stored."""
+    raw = (await request.body())[:4000]
+    logging.getLogger("uvicorn.error").warning("client-error from %s: %s", request.headers.get("user-agent", "?")[:160],
+                raw.decode("utf-8", "replace"))
+    return {"logged": True}
+
+
 @app.get("/api/notes")
 async def list_notes(request: Request, project: str = "", gen: str = "",
                      limit: int = 20, done: bool = False, points: bool = False):
