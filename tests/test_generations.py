@@ -237,3 +237,14 @@ def test_gallery_routes_tool_and_links():
     assert "from '/static/viewer.js'" in GALLERY and "viewer.snapshot(" in GALLERY
     for page in ("view.html", "library.html", "home.html", "nodes.html"):
         assert 'href="/views' in (ROOT / "webui" / page).read_text(), page
+
+
+def test_on_a_phone_the_sheet_and_the_player_fold_by_a_real_handle():
+    """The sheet handle was a 22px strip and, once dragged shut, reopened at the
+    height it had been dragged to (~90px) — so a tap seemed to do nothing. The
+    animation player had no handle at all and covered the model."""
+    assert "aside .grab{display:flex;justify-content:center;align-items:center;height:36px" in VIEW
+    assert "openH" in VIEW and "MIN_OPEN" in VIEW            # reopens at the last OPEN height
+    assert 'id="tl-grab"' in VIEW and "#tl.min" in VIEW       # the player folds to ▶ + time
+    # floating buttons sit above the player at its real height, not a fixed 112px
+    assert "--tlh" in VIEW and "bottom:112px" not in VIEW
