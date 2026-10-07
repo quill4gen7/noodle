@@ -463,11 +463,126 @@ class GraphStore:
         tmp.replace(d / self.GEN_THUMB)
         return True
 
+    # `tags.json`: the agent's labels on the pieces of a gen it sends the user
+    # ("coperchio v2", "foro M8 qui") — beside the gen like seen.json, so the
+    # gen itself stays immutable and the tags can be rewritten.
+    GEN_TAGS = "tags.json"
+
+    def save_gen_tags(self, graph_id: str, gen: str, tags: list) -> None:
+        d = self.gen_dir(graph_id, gen)
+        if not (d / "meta.json").exists():
+            raise KeyError(f"No generation {gen!r} in {graph_id!r}")
+        atomic_write(d / self.GEN_TAGS, json.dumps({"tags": tags}, indent=1))
+
+    def load_gen_tags(self, graph_id: str, gen: str) -> list:
+        d = self.gen_dir(graph_id, gen)
+        if not (d / "meta.json").exists():
+            raise KeyError(f"No generation {gen!r} in {graph_id!r}")
+        try:
+            return json.loads((d / self.GEN_TAGS).read_text()).get("tags") or []
+        except (OSError, ValueError):
+            return []
+
     def mark_gen_seen(self, graph_id: str, gen: str, when: str) -> None:
         d = self.gen_dir(graph_id, gen)
         if not (d / "meta.json").exists():
             raise KeyError(f"No generation {gen!r} in {graph_id!r}")
         atomic_write(d / self.GEN_SEEN, json.dumps({"seen": when}))
+
+    # Notes for the agent: what the user DREW on a generation in /view (strokes
+    # on the surface, a colour, a sentence — "this hole could be better"). They
+    # sit beside the gen like seen.json, in `notes/`, one JSON + one JPEG (the
+    # user's own view with the strokes on it) per note. Bound to a GENERATION on
+    # purpose: the stroke coordinates mean something only on the geometry they
+    # were drawn on, and the gen keeps that geometry (and its graph) forever.
+    GEN_NOTES = "notes"
+
+    def gen_notes_dir(self, graph_id: str, gen: str) -> Path:
+        d = self.gen_dir(graph_id, gen)
+        if not (d / "meta.json").exists():
+            raise KeyError(f"No generation {gen!r} in {graph_id!r}")
+        return d / self.GEN_NOTES
+
+    def list_gen_notes(self, graph_id: str, gen: str) -> list[dict]:
+        """The gen's notes, oldest first (a1, a2, …)."""
+        d = self.gen_notes_dir(graph_id, gen)
+        out = []
+        if d.is_dir():
+            for p in d.glob("a*.json"):
+                if not _NOTE_ID_RE.fullmatch(p.stem):
+                    continue
+                try:
+                    out.append(json.loads(p.read_text()))
+                except (OSError, ValueError):
+                    continue
+        out.sort(key=lambda n: int(n.get("id", "a0")[1:]))
+        return out
+
+    def save_gen_note(self, graph_id: str, gen: str, note: dict,
+                      jpeg: bytes | None = None,
+                      view_jpegs: list[bytes | None] | None = None,
+                      images: list[tuple[str, bytes]] | None = None) -> dict:
+        """Store a NEW note; returns it with its id. Image first, JSON last and
+        atomic, so a listed note always has its picture."""
+        d = self.gen_notes_dir(graph_id, gen)
+        d.mkdir(exist_ok=True)
+        # `aN.claim` is the atomic claim on the id and is KEPT, even when the note
+        # is deleted: like a gen number, `graph/gN#aK` must mean one note forever.
+        n = max([int(p.stem[1:]) for p in d.glob("a*.claim")
+                 if _NOTE_ID_RE.fullmatch(p.stem)] or [0]) + 1
+        while True:
+            try:
+                (d / f"a{n}.claim").open("x").close()
+                break
+            except FileExistsError:
+                n += 1
+        nid = f"a{n}"
+        note = {**note, "id": nid, "gen": gen, "graph": graph_id, "image": bool(jpeg)}
+        if jpeg:
+            (d / f"{nid}.jpg").write_bytes(jpeg)
+        for k, data in enumerate(view_jpegs or [], 1):
+            if data:
+                (d / f"{nid}.v{k}.jpg").write_bytes(data)
+        # pictures the user PLACED on the part (✎ Disegna → Immagine): assets of
+        # the note, named in its `images` so the agent can open them
+        for k, (ext, data) in enumerate(images or [], 1):
+            (d / f"{nid}.img{k}.{ext}").write_bytes(data)
+            note["images"][k - 1]["file"] = f"{nid}.img{k}.{ext}"
+        atomic_write(d / f"{nid}.json", json.dumps(note, indent=1))
+        return note
+
+    def update_gen_note(self, graph_id: str, gen: str, note_id: str, **fields) -> dict:
+        p = self.gen_notes_dir(graph_id, gen) / f"{validate_note_id(note_id)}.json"
+        if not p.exists():
+            raise KeyError(f"No note {note_id!r} on {graph_id}/{gen}")
+        note = {**json.loads(p.read_text()), **fields}
+        atomic_write(p, json.dumps(note, indent=1))
+        return note
+
+    def delete_gen_note(self, graph_id: str, gen: str, note_id: str) -> None:
+        d = self.gen_notes_dir(graph_id, gen)
+        p = d / f"{validate_note_id(note_id)}.json"
+        if not p.exists():
+            raise KeyError(f"No note {note_id!r} on {graph_id}/{gen}")
+        p.unlink()
+        (d / f"{note_id}.jpg").unlink(missing_ok=True)
+        for v in d.glob(f"{note_id}.v*.jpg"):
+            v.unlink()
+        for v in d.glob(f"{note_id}.img*"):
+            v.unlink()
+
+    def gen_note_asset(self, graph_id: str, gen: str, note_id: str, k: int) -> Path:
+        """The k-th picture placed on the part with note `note_id` (1-based)."""
+        d = self.gen_notes_dir(graph_id, gen)
+        hits = sorted(d.glob(f"{validate_note_id(note_id)}.img{int(k)}.*"))
+        if not hits:
+            raise KeyError(f"No image {k} on note {note_id!r} of {graph_id}/{gen}")
+        return hits[0]
+
+    def gen_note_image(self, graph_id: str, gen: str, note_id: str, view: int = 0) -> Path:
+        """view 0 = the main picture (the last view); k >= 1 = the k-th other view."""
+        name = validate_note_id(note_id) + (f".v{int(view)}" if view else "")
+        return self.gen_notes_dir(graph_id, gen) / f"{name}.jpg"
 
     def load_gen(self, graph_id: str, gen: str, part: str) -> dict:
         """One file of a generation: part is view | graph | meta."""
@@ -486,3 +601,12 @@ def validate_gen_id(gen: str) -> str:
     if not isinstance(gen, str) or not _GEN_ID_RE.fullmatch(gen):
         raise ValueError(f"Invalid generation id {gen!r}: expected g<number>, e.g. g3")
     return gen
+
+
+_NOTE_ID_RE = re.compile(r"^a[1-9][0-9]{0,5}$")
+
+
+def validate_note_id(note_id: str) -> str:
+    if not isinstance(note_id, str) or not _NOTE_ID_RE.fullmatch(note_id):
+        raise ValueError(f"Invalid note id {note_id!r}: expected a<number>, e.g. a2")
+    return note_id

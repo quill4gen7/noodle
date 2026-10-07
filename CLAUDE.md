@@ -1548,6 +1548,15 @@ thought to measure; a picture shows what you did not.**
   graph.json for the shot and restores it in a `finally` (the shot page reads
   the graph from disk, so there is no in-memory way). A node with nothing
   drawable (a slider) is a 400 before any browser work.
+- **The shot page shows the viewport ALONE** (`screenshot._SHOT_LAYOUT`, an init
+  script): the page is the real editor, laid out for a human. At width ≤ 800 it
+  took the phone layout — graph pane only — so the canvas was hidden and every
+  narrow shot waited 30s for "element is not visible" and came back 502 (blamed
+  at first on `node`/`isolate`, which were innocent); at desktop widths the
+  viewport was the right half under a toolbar, so 900×600 came back as ~472×307
+  CSS px. Now `width`×`height` IS the picture, at any width. Hidden layout must
+  not be a grid row: with toolbar/statusbar `display:none` the workspace lands
+  in the toolbar's grid row and gets its height — hence `display:block` + `100vh`.
 - **A failed capture is never a 200.** `api._check_png` rejects anything that
   is not a PNG or is under 200 bytes (`ScreenshotFailed`), and the route maps
   every non-HTTP failure to a **502** with the reason — an agent doing
@@ -1680,6 +1689,126 @@ result while the workflow moves on.
   (`animate_chain`). Hash: `tt=<id>:<t>,…` (only tracks that differ from the
   master `t`), `tracks=1` (panel open). Framing restores every track's own `t`.
   Example project: `projects/cassone-demo` (a chest whose lid opens on a hinge).
+- **✎ Disegna — the user draws FOR the agent.** In /view (button, or `D`) the
+  user paints on the part — circles a hole in red, marks a fillet — picks
+  colour/size and writes a sentence; "Invia all'agente" stores a NOTE beside
+  the gen (`gens/gN/notes/aK.{json,jpg}` — the gen's own files stay immutable;
+  `aK.claim` is kept so an id is never reused, like a gen number). Strokes are
+  paint ON THE SURFACE, not on the screen: each pointer sample is a raycast
+  (`firstHit`) kept with its face normal, drawn as a tube lifted along it, so a
+  mark means a PLACE in model mm and stays put while the view orbits. Width is
+  picked in px and turned into mm where the stroke starts. Routing: a press ON
+  the part paints and is stopped at `#vp` in the CAPTURE phase, before
+  OrbitControls; background / right button / wheel still move the view; a
+  second finger cancels the stroke and RE-DISPATCHES the first finger's
+  pointerdown to the canvas, or OrbitControls would see a lone finger and
+  rotate instead of pinching. The JPEG is the user's own view (`snapshot({frame:
+  false})`). The pen lifts wherever it leaves the surface (over the hole it
+  circles), so the server also summarises per GESTURE (`marks`): `shape` loop/
+  line/dot — loop = sweeps ≥270° round its centre, because a circle round a hole
+  arrives as an open C — `centre`/`bbox` and `on` = node(s) of the gen's frozen
+  graph. Agent side: `cad_notes` / `GET /api/notes`, `cad_note_image`,
+  `cad_note_done` (reply shown under the note); `recent_gens` counts open
+  `notes`; `#note=aK` opens the viewer on one. Tests: `tests/test_notes.py`.
+  - **One picture per VIEW, not per note** — paid for on the first real note:
+    the main JPEG is the LAST view, and a cross drawn under a bolt head from
+    below was simply not in it (nor a line along the thread); the agent found
+    them only in the coordinates. Now the pen-up shoots the current view
+    (`takeView`), re-shooting instead of adding when the camera has not moved;
+    views equal to the final one are dropped at send. Files `aK.vN.jpg`, a
+    mark carries `view` (0 = main) + its own `image_path`, `cad_note_image(…,
+    mark=N)`.
+  - **↶ takes back ACTIONS and never leaves a lying photo.** The undo stack
+    holds actions (pen gesture, ⌫ erase drag, T label, label edit), so undoing
+    an erase puts the strokes back in their original order (`k`). Paid for on
+    `prova-disegno/g1#a1`: ↶ took «xBIG» off the model but not off the photo
+    of its view, and an agent read the leftover «x» on a hole as "remove it".
+    Now every view that lost (or regained) something is re-shot FROM ITS OWN
+    camera (`refreshViews` → `shootFrom`: camera swapped in and out inside one
+    task, `_renderFrame` before the browser composites); a view left empty
+    keeps its camera with `image: null` and is not sent; only a persp↔ortho
+    change falls back to a fresh picture of the current view.
+  - **⌫ eraser**: whole strokes (the pen already splits them where it leaves
+    the surface), hit-tested in 3D — the point on the PART vs each stroke's
+    polyline, radius from the size buttons in px → mm (`ERASE_PX`). Picking
+    the tubes would miss 3px lines and catch strokes on the far side. Draft
+    only; sent notes stay immutable.
+  - **T — text ON the part, and it is DATA.** Drag a box (a tap = default box,
+    smaller on a phone), type, Enter; tap a label with T to edit; ⌫ rubs it
+    out. Three STYLES, picked next to T and remembered (`noodle:view:labelStyle`),
+    stored per label as `style` ("tag" when absent, for old notes):
+    **✎ vernice** (`paint`, the default) — quill: «come disegna già a mano può
+    stampare testo?». The words are laid out in the box in SCREEN space with a
+    single-stroke font (Hershey Roman Simplex, public domain, embedded as
+    `HERSHEY`; à è é ì ò ù = base + a drawn accent), every glyph polyline is
+    sampled every ~2.5 px and each sample goes through the pen's `surfaceHit`.
+    Out come ordinary pen strokes (broken off the surface and on depth jumps,
+    width from the size button capped at a sixth of the letter height), so the
+    text lies on a plane, a cylinder, a thread, anything, with no special case
+    and no new rendering. The strokes carry `label`: one gesture for ↶ and ⌫, a
+    tap with T re-letters it, and the server marks them `kind: "text"` and keeps
+    them OUT of `marks` (forty «line» marks for one word buried the real
+    circle). Why the decal stopped being the default: it doubled on ridges by
+    parallax and needed a special case per surface (plane, cylinder, sphere…).
+    **⚑ targhetta** — anchor dot + stem
+    along the normal + a `THREE.Sprite` plate that always faces the camera,
+    every piece drawn twice (depth-tested full, and `depthTest:false` at 0.35
+    on top) so it reads from behind and shows through the part faded. Asked by
+    quill: a decal vanishes as soon as you orbit behind. **▭ decal** — three's
+    vendored `DecalGeometry` from a `CanvasTexture`; normal = mean of a
+    5×5 raycast grid under the box, up = camera up projected on the plane,
+    size = the box's corners met with that plane (`planeSize` — px×mmPerPx
+    ignored foreshortening and halved labels on a slanted top face). Back
+    faces are dropped (`frontFaces`) and coverage < 50% → a targhetta. RIDGED
+    surfaces get the targhetta too (`probeUnder`: |Σn|/n < 0.9 — a thread is
+    ~0.87, 90° of cylinder 0.90): a decal projects along the normal, and on the
+    bolt of `zz-note-probe` «filetto M8?» came out doubled by parallax. The old
+    fallback, a one-sided flat card lifted to the highest crest, is gone: on a
+    box straddling the bolt head it floated 3.4 mm off the part — the «faccia
+    volante» quill saw. **Regular surfaces are not projected** (quill: «sulle
+    curve proiettala o usa uv per superfici regolari»): `fitSurface` samples a
+    7×7 raycast grid and tries plane (normals within 4°) → cylinder (axis =
+    smallest eigenvector of Σnnᵀ, after RANSAC over normal pairs — 2 samples of
+    49 on a cross-hole ledge had turned the nut's side into a «sphere»; radius
+    by a Kåsa fit on the POINTS, since the viewport's flat facets make normal-
+    based radii wrong by half a facet) → sphere (only if the normals turn round
+    two axes: a thin cylinder band fits a sphere just as well). A fit with low
+    residual gets its own grid patch with UVs (`patchGeometry`): on a cylinder
+    an isometry, box width = arc length, ≤150° of arc; sphere by the
+    exponential map. Stored as `surface` (plane|cylinder|sphere|decal|tag) +
+    `fit`, so a saved note is redrawn without refitting. The note carries `labels: [{text, style, surface, fit, at,
+    normal, up, size_mm, color, node, view}]`; `_link_labels` adds
+    `near_marks` (within 1.5 label sizes, else the nearest within 2) and lists
+    the texts under each mark's `labels` — recomputed on read like `marks`.
+    A note of labels alone is valid. `near_marks`' fallback (the nearest mark
+    when none is within 1.5 sizes) reaches 2 label sizes, no further.
+  - **Img — a picture placed on the part.** «Img» picks a PNG/JPEG (on a phone
+    the camera too: `accept="image/*"`), shrunk in the browser to a long side
+    of 1600 px; drag a box and it lands in proportion — on the SURFACE, not on
+    screen (`L.h = L.w / aspect`: a 2:1 picture came out 1.2:1 on the slanted
+    top of the nut) — through the ▭ decal path (fitted patch, DecalGeometry,
+    targhetta). Stored as `aK.img<N>.png|jpg` beside the note (PNG/JPEG by
+    magic bytes, ≤ 4 MB each, ≤ 8; body limit 40 MB), described in `images`
+    like a label; `GET …/notes/{id}/img/{k}`; `cad_notes` gives each its
+    `image_path`/`image_url`. ↶ and ⌫ as a label; replacing = rub out + place.
+  - **The other way round: the agent TAGS the pieces it shows.**
+    `api.tag_gen` / `POST …/gens/{gen}/tags` / MCP `cad_tag_gen` (or `tags=` on
+    `cad_snapshot`, one call; a bad tag there is `tags_error`, not a failed
+    snapshot) write `gens/gN/tags.json` beside the gen — `[{text, node, at?,
+    color?}]`, `node` resolved against the gen's frozen `pieces` (id or exact
+    title; unknown/ambiguous → an error listing them). /view draws them as
+    targhette — anchor dot + stem + a `THREE.Sprite` plate facing the camera,
+    each piece drawn twice (depth-tested, and `depthTest:false` at 0.35) so a
+    tag reads from behind and shows through the part faded — in the agent's
+    look (cyan rim, a drawn ◆). Without `at` the anchor is the piece's topmost
+    point nearest the opening camera (a ray at the bbox centre dives into the
+    hole of a nut). «◆ Tag» hides them all (`#tags=0`), a hidden piece hides
+    its tags, a tap selects the piece, the piece row carries a ◆N badge.
+  - **Opening a note fits it to THIS screen** (`goToNote`): the camera carries
+    `aspect` (and ortho `zoom`); on a narrower screen it backs off by the ratio,
+    then until every stroke projects inside. `cam.lookAt` inside that loop is
+    load-bearing — the controls orient the camera only on `update()`, and
+    without it every stroke tested off-screen and the part shrank to a dot.
 - **The viewer draws on demand** (`CadViewer.invalidate()`, no continuous loop):
   anything that changes the scene from outside the viewer must ask for a frame.
   `/view` does it in `poseTrack()` (every timeline pose) and `apply()` (hidden

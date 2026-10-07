@@ -55,12 +55,25 @@ More detail on demand — `cad_help(topic=...)` / `GET /api/agent/help?topic=...
    mesh and green tests and still be plainly wrong: a boolean that filled the
    feature it was meant to cut, an array pointing the wrong way, a part sunk
    through the bed. One picture settles it.
+   **In Claude Code with the `anteprima` plugin** (you have the tool
+   `mcp__anteprima__mostra`) you can also put the part, in 3D, in the user's
+   terminal: `mostra(tipo="modello3d", file="<repo>/projects/<graph>/view.json")`
+   — the last run, one colour per output piece, which the user orbits there
+   (topic `screenshots`).
    **To SHOW the user a result, send a link, not pictures**: `cad_snapshot(graph_id,
    label=...)` freezes the current geometry as a generation and returns a `url`
    (`/view/<graph>/g<N>`) to a read-only 3D viewer where the user orbits it,
    hides pieces and inverts the selection. The link stays fixed on THAT result
    while the workflow keeps changing. Append `#hide=n3,n7.2` to open it with
    pieces hidden (a node id = all its pieces, `id.i` = its i-th piece).
+   **Label what you show**: `cad_tag_gen(graph, gen, tags=[{text, node,
+   at?, color?}])` — or `cad_snapshot(..., tags=[...])` in one go — pins
+   plates like «coperchio v2», «foro M8 qui», «parete 2 mm» to the pieces
+   (`node` = id or exact title of the gen's pieces; `at` [x,y,z] mm where
+   the stem starts, else the viewer anchors it on the piece). They read from
+   any side, the user can hide them (`#tags=0`), and tapping one selects its
+   piece. HTTP: `POST /api/graph/{name}/gens/{gen}/tags` body `{tags,
+   replace?}`, or a `{tags}` body on `POST .../snapshot`.
    **Several alternatives to choose from?** Give each its own snapshot with a
    label that says what differs (`"B — wall 3mm, round lid"`), then send the
    gallery link `/views` (every generation of every project, as cards, newest
@@ -89,6 +102,32 @@ More detail on demand — `cad_help(topic=...)` / `GET /api/agent/help?topic=...
    Animate: the second moves the first's result FROZEN at its `t`, it does not
    play after it (lint `animate_chain`). Link a pose of the tracks with
    `#tt=<id>:0.6,<id>:1` (per-track t) and `#tracks=1` (panel open).
+   **The user can DRAW on a generation for you** (✎ Disegna in the viewer):
+   circle a hole in red, mark a fillet, write "questo si può fare meglio".
+   When they say "guarda cosa ho segnato / disegnato", call `cad_notes()`
+   (`GET /api/notes`): newest open notes first, each with `text`, the
+   picture they were looking at with the strokes on it (`cad_note_image`, or
+   `image_path`), and `marks`, one per gesture: `color_name`, `shape` (`loop`
+   = circled, `line`, `dot`), `centre`/`bbox` in model mm and `on` = the
+   node(s) it was drawn on — ids of the gen's FROZEN graph (`ref` `graph/gN#aK`).
+   The main picture is only the LAST view: a mark drawn from another angle
+   has `view` > 0 and its own `image_path` — `cad_note_image(..., mark=N)`
+   shows it. Look at every mark's picture before acting on it. Words the
+   user wrote ON the part (the T tool) arrive as `labels`: `text`, `at` /
+   `normal` / `up` / `size_mm` in model mm, the `node` it is on, `near_marks` =
+   the marks it sits next to («qui 8 mm» beside mark 1 is about mark 1; each
+   mark also lists them under its own `labels`). A note may hold labels
+   only. A label's `style` says how it was drawn: `paint` (the letters are
+   pen strokes on the surface — they are NOT in `marks`; with `points=True`
+   they show up as strokes with `kind: "text"`), `tag` (a plate on a stem) or
+   `decal`. Pictures the user PLACED on the part (a PNG/JPEG — a sketch, a
+   photo of the real part, a logo) come as `images`: `file`, the same
+   `at`/`normal`/`up`/`size_mm`/`node`/`near_marks` as a label, `image_path`
+   / `image_url` to open the picture itself and `view_image_path` for the
+   photo of the view it was placed from. The pictures never show a stroke the user took back. Aim
+   `cad_measure` / a section at the centre to find the feature, fix it,
+   snapshot, then `cad_note_done(graph, gen, id, reply="…see g8")` so the
+   user sees it closed with your answer.
 6. **Tidy and export**: `cad_arrange` lays the whole graph out (dependency
    order, real node sizes, no overlaps, named sliders gathered in a parameter
    panel on the left) — you never compute positions yourself. Then
@@ -168,6 +207,7 @@ section is slow, or where a run fails (`run=True` → `failed_in`).
 | `GET /api/graph/{name}/screenshot?view=&node=&…` | **PNG of the viewport** (`cad_screenshot`) |
 | `POST /api/graph/{name}/snapshot?label=&run=` · `GET .../gens` | freeze a generation → `{gen, url}` for the read-only viewer (`cad_snapshot`, `cad_list_gens`) — send the user the `url` |
 | `GET /api/gens/recent?limit=&project=` · page `/views` | generations of every project, newest first, with `ref` (`graph/gN`), `seen` and `last_seen` = the one the user opened last (`cad_recent_gens`) |
+| `GET /api/notes?project=&gen=&done=&points=` · `GET .../gens/{gen}/notes/{id}.jpg[?view=k]` · `PATCH .../gens/{gen}/notes/{id}` body `{done, reply}` | what the user DREW on a generation in the viewer (`cad_notes`, `cad_note_image`, `cad_note_done`) |
 | `GET /api/agent/tags` | ToAgent provenance index (`cad_agent_tags`) |
 | `GET /api/graph/{name}/slice_summary?path=&n=` · `.../section_outline?axis=&pos=&path=` | sections (`cad_slice_summary`, `cad_section_outline`) |
 | `POST /api/graph/{name}/measure` body=`{queries:[…]}` | geometry facts by node ref `n5`/`n51.body`/`n51[3]` (`cad_measure`): `props`, `interference` (a+b, or every pair of a list node), `distance`, `section` (+svg), `probe`, `summary` — check fits and clashes instead of writing scripts |
@@ -342,6 +382,18 @@ Habits that pay: take **two angles** when a shape is ambiguous from one;
 `top`/`front` in `ortho` to check that things line up; isolate the node you
 just changed; re-shoot with `run=0` for extra angles. The browser is kept warm
 and needs no GPU.
+
+**In the terminal (Claude Code + `anteprima` plugin).** With the tool
+`mcp__anteprima__mostra` the user can look without leaving the terminal:
+- `tipo="modello3d"`, `file="<repo>/projects/<graph>/view.json"`: a 3D view of
+  the last run (every `previews.<node>.mesh`, one colour each) that the user
+  rotates and zooms with keys. It reads `view.json` as saved, so run the graph
+  after an edit first; an exported `.stl` works the same way.
+- `tipo="immagine"`, `file=<a PNG from this endpoint saved to disk>`: the
+  screenshot itself. Inside zellij it is drawn in characters (coarse), so for
+  details prefer the 3D view or the `/view` link.
+The panel shows up on its own only in a terminal ≥ 144 columns; when the tool
+answers that it is not on screen, ask the user to type `/anteprima` once.
 
 ## topic: retroeng
 

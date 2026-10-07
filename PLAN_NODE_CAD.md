@@ -859,6 +859,109 @@ Length: 5
 
 ---
 
+### 3. ✅ ✎ Disegna: la gomma, il testo sul pezzo, e le foto che mentono (2026-10-07)
+
+**Fatto** — come sono state prese le decisioni qui sotto:
+
+- *Cosa cancella*: il **tratto intero** (gomma "a oggetto").
+- *Come si colpisce*: **distanza 3D** fra il punto colpito sul pezzo e la
+  polilinea di ogni tratto, raggio in px dai bottoni della misura → mm lì.
+- *Foto delle viste*: dopo ↶ o gomma ogni vista toccata si **riscatta dalla
+  SUA camera** (scambiata e rimessa nello stesso task, invisibile), non solo se
+  la camera è ancora quella; una vista vuota non si invia. Solo un cambio
+  persp↔ortho manda i superstiti in una foto nuova della vista corrente.
+- *Undo*: la pila è di **azioni** (tratto, cancellatura, riquadro, modifica).
+- *Solo la bozza*: sì; le note inviate restano immutabili.
+- *Testo*: **è vernice** (default, «✎ Vernice»): il testo si impagina nel
+  riquadro sullo schermo con un font a tratto singolo (Hershey Simplex,
+  pubblico dominio) e ogni glifo diventa un tratto di penna proiettato col
+  raycast della penna — va su piano, cilindro, filetto, organico senza casi
+  speciali. Il decal non è più il default: sdoppiava sulle creste per
+  parallasse e su curve e superfici miste servivano casi speciali. I tratti
+  delle lettere non finiscono nei `marks`. Restano, a scelta, gli altri due
+  stili. **Targhetta**:
+  ancora + gambo + sprite rivolto alla camera, disegnato due volte (normale e
+  senza depth test a 0.35) — chiesta da quill perché il decal sparisce appena
+  giri dietro. **Decal**: su piano / cilindro / sfera la superficie si STIMA
+  (griglia 7×7) e il testo va su una patch con le sue UV (sul cilindro la
+  larghezza diventa lunghezza d'arco, niente stiramento ai lati); il resto è
+  `DecalGeometry` (vendorizzato, 0.170.0). Ripiego sulla **targhetta** se la
+  superficie è a creste (filetti: la proiezione si sdoppia per parallasse) o
+  il decal copre < 50% — non più il cartellino piatto a una faccia, che sul
+  bullone galleggiava a 3,4 mm (la «faccia volante»). Per l'agente: `labels`
+  con `style`, `surface`, `fit`, `near_marks`.
+
+Il resto di questa voce è la richiesta originale.
+
+**Problema** (quill, 2026-10-07, disegnando la prima nota vera: 33 segni su 12
+viste). Nel viewer `/view` oggi si può solo **annullare l'ultimo tratto** (↶,
+Ctrl+Z) o **cancellare tutto** (Pulisci). Un tratto sbagliato a metà di un
+disegno lungo si toglie solo disfacendo tutto quello fatto dopo. Serve la
+**gomma**: passarci sopra e togliere solo quel tratto, come in qualsiasi paint.
+
+**Da decidere prima di scrivere codice:**
+
+- **Cosa cancella.** Il tratto intero toccato (semplice, come la gomma "a
+  oggetto" di molte app) o solo la parte strofinata, che spezza il tratto in
+  due. Sul modello i tratti sono già spezzati dove la penna esce dalla
+  superficie (`painting.s = null`), quindi la gomma "a tratto" toglie un pezzo
+  naturale; quella "a pixel" va pensata sui punti 3D, non sullo schermo.
+- **Come si colpisce un tratto.** Il raycast va sul pezzo (`firstHit` su
+  `previewGroup`), non sui tubi dei tratti: serve un pick su `annoGroup`, o la
+  distanza 3D fra il punto colpito sul pezzo e i punti del tratto (più
+  robusta, e funziona anche con tratti sottili).
+- **Le foto delle viste** (`views`, una per vista, scattate al rilascio). Se
+  la gomma toglie l'unico tratto di una vista, quella vista sparisce dall'invio
+  (già così con l'undo: `remap` all'invio scarta le viste senza tratti). Ma una
+  vista che conserva altri tratti ha la foto VECCHIA, col tratto cancellato
+  ancora sopra: va riscattata, e solo se la camera è ancora quella (sennò la
+  foto corretta non si può più fare: meglio togliere il tratto dalla foto o
+  scartarla?).
+- **Undo della gomma.** ↶ oggi toglie l'ultimo gesto: dopo una cancellatura
+  deve ripristinare il tratto cancellato, cioè la pila diventa di AZIONI, non
+  di tratti.
+- **Solo la bozza.** Le note già inviate restano immutabili come le generazioni
+  (si eliminano intere): la gomma lavora sul disegno non ancora inviato.
+
+**Bug trovato nel primo confronto fra agenti (stessa radice, va risolto qui).**
+La foto di una vista si scatta al rilascio della penna e si RI-scatta solo al
+tratto successivo dalla stessa camera. ↶ toglie i tratti ma non tocca la foto:
+sulla nota `prova-disegno/g1#a1` la vista 6 mostra ancora «xBIG» accanto al
+foro, mentre dei suoi tratti ne è stato inviato uno solo. Tutti gli agenti che
+vedono le immagini l'hanno aperta; Codex ha letto «croce sul foro = toglilo»
+(e ha tolto i fori). Regola: dopo ogni undo/gomma la foto di quella vista si
+riscatta se la camera è ancora quella (`sameCam`), altrimenti si scarta e i
+suoi tratti superstiti passano alla foto della vista corrente — mai una foto
+con tratti che non esistono più.
+
+**Il testo sul pezzo** (quill, stesso giorno). Uno strumento «T»: tocchi un
+punto del pezzo e trascini, nasce un riquadro, ci scrivi dentro. Serve a
+mettere la parola ACCANTO al punto («qui 8 mm», «questo no»), invece di una
+nota unica lontana dal disegno.
+
+- **Il modo agile per farlo bello: un decal.** `DecalGeometry` di three (stesso
+  0.170, MIT — da vendorizzare: oggi in `vendor/…/jsm/` non c'è `geometries/`)
+  proietta un box sulla mesh e ne ritaglia i triangoli: il testo, disegnato su
+  un `CanvasTexture`, segue le superfici curve senza UV. È quello che serve:
+  sul piano viene perfetto, su un cilindro avvolge, su un organico deforma ma
+  resta leggibile se il riquadro è piccolo.
+- **Orientamento.** Normale = media delle normali dei triangoli dentro il
+  riquadro (non quella del solo punto toccato, che su uno spigolo è a caso);
+  «su» = la proiezione del su della camera sul piano del riquadro, così il
+  testo si legge dritto da dove l'hai scritto. Dimensione dal trascinamento,
+  convertita in mm col `mmPerPx` già usato dalla penna.
+- **Il ripiego se il decal non basta** (organici, angoli): un piano orientato
+  come sopra e appena staccato dalla superficie. Brutto sugli spigoli, e pace —
+  lo ha detto quill: su un angolo non si scrive.
+- **Per l'agente il testo è un DATO, non solo pixel.** Ogni riquadro va nella
+  nota come `labels: [{text, at:[x,y,z], normal, up, size_mm, node}]`, e
+  `cad_notes` lo associa ai mark vicini: «qui 8 mm» accanto al cerchio rosso
+  diventa un'informazione su QUEL mark. Un modello solo-testo (GLM, DeepSeek)
+  oggi non vede le scritte fatte a mano — come «xBIG» — e con i label le
+  legge.
+- **Modifica e gomma.** Un riquadro si tocca per correggere il testo; la gomma
+  lo cancella intero, come un tratto. Stessa pila di azioni dell'undo.
+
 ## Roadmap / Suggerimenti (post-Fase 4)
 
 > Visione: rimanere **semplici** e **integrati con l'AI fin da subito**, con la

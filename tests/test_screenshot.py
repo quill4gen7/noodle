@@ -207,3 +207,20 @@ def test_the_shot_page_never_writes_the_graph():
     assert 'body:window.__noodleShot ? undefined : json' in body
     # and the flag is still stamped before the page loads
     assert "window.__noodleShot = true;" in inspect.getsource(screenshot)
+
+
+def test_the_shot_page_shows_the_viewport_alone_at_any_width():
+    """The shot page is the real editor, laid out for a human: at width <= 800
+    it went to the phone layout (graph pane only), the viewport canvas was
+    hidden and every narrow shot timed out into a 502; at desktop widths the
+    viewport was only the right half, so the picture was never the size asked
+    for. The shot page hides everything but the viewport, from boot."""
+    src = inspect.getsource(screenshot)
+    css = screenshot._SHOT_LAYOUT
+    for hidden in (".toolbar", ".graph-pane", ".panel", ".mtabs", ".statusbar"):
+        assert hidden in css
+    assert ".right-pane{display:flex !important" in css      # beats the phone layout's none
+    assert "height:100vh" in css                              # not the grid's first row
+    assert "add_init_script(_SHOT_LAYOUT)" in src
+    # and the viewer re-measures before the camera is framed
+    assert src.index("new Event('resize')") < src.index("_CAMERA_JS, [a, e")

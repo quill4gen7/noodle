@@ -9,6 +9,7 @@ import itertools
 import json
 import logging
 import os
+import re
 import shutil
 import signal
 import threading
@@ -588,13 +589,22 @@ def _gen_http(fn, *args, **kwargs):
 @app.post("/api/graph/{name}/snapshot")
 async def snapshot_graph(request: Request, name: str, label: str = "",
                          run: bool = True):
-    """Freeze the current result as a new generation; returns its viewer `url`."""
+    """Freeze the current result as a new generation; returns its viewer `url`.
+    Optional JSON body {tags: [{text, node, at?, color?}]} labels its pieces."""
     require_project(name)
     store = GraphStore(PROJECTS_DIR)
+    raw = await request.body()
+    tags = None
+    if raw.strip():
+        try:
+            body = json.loads(raw)
+        except ValueError as e:
+            raise HTTPException(400, f"Invalid JSON: {e}") from e
+        tags = body.get("tags") if isinstance(body, dict) else None
     try:
         # off the loop: with run=1 this executes the graph (see off_loop)
         return await off_loop(api.snapshot, store, name, label=label, run=run,
-                              base_url=_public_base(request))
+                              base_url=_public_base(request), tags=tags)
     except KeyError as e:
         raise HTTPException(404, str(e.args[0] if e.args else e)) from e
     except ValueError as e:
@@ -655,6 +665,124 @@ async def mark_generation_seen(name: str, gen: str):
     when = datetime.datetime.now().isoformat(timespec="seconds")
     _gen_http(GraphStore(PROJECTS_DIR).mark_gen_seen, name, gen, when)
     return {"seen": when}
+
+
+# ── notes for the agent: strokes the user DRAWS on a gen in /view (✎ Disegna) ──
+# Declared before the generic gens/{gen}/{part} route, which would swallow
+# `notes`. Not cached: unlike the gen itself, its notes keep changing.
+_NOTE_MAX_BYTES = 40 * 1024 * 1024     # photos + up to 8 placed images of ≤ 4 MB, as base64
+
+
+@app.get("/api/notes")
+async def list_notes(request: Request, project: str = "", gen: str = "",
+                     limit: int = 20, done: bool = False, points: bool = False):
+    """The user's drawn notes, newest first (open ones unless done=1) — what an
+    agent reads when told "guarda cosa ho segnato"."""
+    if project:
+        require_project(project)
+    return {"notes": _gen_http(api.list_notes, GraphStore(PROJECTS_DIR), graph_id=project,
+                               gen=gen, limit=limit, include_done=done, points=points,
+                               base_url=_public_base(request))}
+
+
+@app.get("/api/graph/{name}/gens/{gen}/notes")
+async def get_generation_notes(name: str, gen: str):
+    require_project(name)
+    return {"notes": _gen_http(api.gen_notes_raw, GraphStore(PROJECTS_DIR), name, gen)}
+
+
+@app.get("/api/graph/{name}/gens/{gen}/tags")
+async def get_generation_tags(name: str, gen: str):
+    """The agent's labels on this gen's pieces (tags.json beside the gen)."""
+    require_project(name)
+    return {"tags": _gen_http(api.gen_tags, GraphStore(PROJECTS_DIR), name, gen)}
+
+
+@app.post("/api/graph/{name}/gens/{gen}/tags")
+async def tag_generation(request: Request, name: str, gen: str):
+    """Body {tags: [{text, node, at?, color?}], replace?: true}."""
+    require_project(name)
+    try:
+        body = await request.json()
+    except ValueError as e:
+        raise HTTPException(400, f"Invalid JSON: {e}") from e
+    if not isinstance(body, dict):
+        raise HTTPException(400, "Expected a JSON object")
+    return _gen_http(api.tag_gen, GraphStore(PROJECTS_DIR), name, gen, body.get("tags"),
+                     replace=body.get("replace", True) is not False, base_url=_public_base(request))
+
+
+@app.post("/api/graph/{name}/gens/{gen}/notes")
+async def add_generation_note(name: str, gen: str, request: Request):
+    """Body: {text, strokes, camera, t, hide, image: "data:image/jpeg;base64,…"}."""
+    import base64
+    require_project(name)
+    raw = await request.body()
+    if len(raw) > _NOTE_MAX_BYTES:
+        raise HTTPException(413, "Note too large")
+    try:
+        body = json.loads(raw)
+    except ValueError as e:
+        raise HTTPException(400, f"Invalid JSON: {e}") from e
+    def jpeg_of(img):
+        if not (isinstance(img, str) and img.startswith("data:image/jpeg;base64,")):
+            return None
+        try:
+            data = base64.b64decode(img.split(",", 1)[1], validate=True)
+        except ValueError as e:
+            raise HTTPException(400, "Invalid image") from e
+        if not data.startswith(b"\xff\xd8\xff"):
+            raise HTTPException(415, "Note image must be a JPEG")
+        return data
+    if not isinstance(body, dict):
+        raise HTTPException(400, "Expected a JSON object")
+    jpeg = jpeg_of(body.pop("image", None))
+    # the other views strokes were drawn from: their pictures travel apart
+    views = body.get("views") if isinstance(body.get("views"), list) else []
+    view_jpegs = [jpeg_of(v.pop("image", None)) if isinstance(v, dict) else None for v in views]
+    # pictures PLACED on the part: PNG or JPEG data URLs, checked by magic bytes in api
+    def blob_of(img):
+        if not (isinstance(img, str) and re.match(r"data:image/(png|jpeg);base64,", img)):
+            return None
+        try:
+            return base64.b64decode(img.split(",", 1)[1], validate=True)
+        except ValueError as e:
+            raise HTTPException(400, "Invalid image") from e
+    imgs = body.get("images") if isinstance(body.get("images"), list) else []
+    blobs = [blob_of(im.pop("data", None)) if isinstance(im, dict) else None for im in imgs]
+    return _gen_http(api.add_note, GraphStore(PROJECTS_DIR), name, gen, body, jpeg, view_jpegs, blobs)
+
+
+@app.get("/api/graph/{name}/gens/{gen}/notes/{note_id}/img/{k}")
+async def get_generation_note_asset(name: str, gen: str, note_id: str, k: int):
+    """The k-th picture the user placed on the part with this note."""
+    require_project(name)
+    data, mime = _gen_http(api.note_asset, GraphStore(PROJECTS_DIR), name, gen, note_id, k)
+    return Response(data, media_type=mime, headers={"Cache-Control": "max-age=31536000, immutable"})
+
+
+@app.get("/api/graph/{name}/gens/{gen}/notes/{note_id}.jpg")
+async def get_generation_note_image(name: str, gen: str, note_id: str, view: int = 0):
+    """The note's picture; `view=k` (1-based) = the k-th other view it was drawn from."""
+    require_project(name)
+    data = _gen_http(api.note_image, GraphStore(PROJECTS_DIR), name, gen, note_id, view=view)
+    return Response(data, media_type="image/jpeg", headers={"Cache-Control": "no-cache"})
+
+
+@app.patch("/api/graph/{name}/gens/{gen}/notes/{note_id}")
+async def resolve_generation_note(name: str, gen: str, note_id: str, request: Request):
+    """Body {done: bool, reply: str} — the agent (or the user) closes a note."""
+    require_project(name)
+    body = await request.json()
+    return _gen_http(api.resolve_note, GraphStore(PROJECTS_DIR), name, gen, note_id,
+                     reply=body.get("reply") or "", done=bool(body.get("done", True)))
+
+
+@app.delete("/api/graph/{name}/gens/{gen}/notes/{note_id}")
+async def delete_generation_note(name: str, gen: str, note_id: str):
+    require_project(name)
+    _gen_http(GraphStore(PROJECTS_DIR).delete_gen_note, name, gen, note_id)
+    return {"deleted": note_id}
 
 
 @app.get("/api/graph/{name}/gens/{gen}/{part}")

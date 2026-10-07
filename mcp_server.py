@@ -12,6 +12,7 @@ Or mount the SSE app into another ASGI server via `mcp.sse_app()`.
 """
 
 import json
+from typing import Optional
 
 from mcp.server.fastmcp import FastMCP, Image
 
@@ -200,7 +201,8 @@ async def cad_screenshot(graph_id: str, view: str = "iso", azim: float = None,
 
 
 @mcp.tool()
-def cad_snapshot(graph_id: str, label: str = "", run: bool = True) -> dict:
+def cad_snapshot(graph_id: str, label: str = "", run: bool = True,
+                 tags: Optional[list] = None) -> dict:
     """SHOW the user a result: freeze the graph's current geometry as a new
     GENERATION and get back a `url` to the read-only 3D viewer. Send that link
     instead of screenshots — the user orbits it, hides pieces, inverts the
@@ -211,8 +213,24 @@ def cad_snapshot(graph_id: str, label: str = "", run: bool = True) -> dict:
     open it with those nodes' pieces hidden (e.g. a lid, to show the inside).
     If the graph has Animate/Drop nodes the viewer PLAYS them (`timeline` in the
     result): send one link for a movement — open ⇄ close — rather than one per
-    pose; `#play=1` autoplays, `#t=0.5` / `#mode=pingpong|loop|once`."""
-    return _safe(api.snapshot, STORE, graph_id, label=label, run=run)
+    pose; `#play=1` autoplays, `#t=0.5` / `#mode=pingpong|loop|once`.
+    `tags` labels its pieces in the same call — see `cad_tag_gen`."""
+    return _safe(api.snapshot, STORE, graph_id, label=label, run=run, tags=tags)
+
+
+@mcp.tool()
+def cad_tag_gen(graph_id: str, gen: str, tags: list, replace: bool = True) -> dict:
+    """LABEL the pieces of a generation you send the user: «coperchio v2»,
+    «foro M8 qui», «parete 2 mm». The viewer draws each as a plate on a stem,
+    readable from any side (faded where the part covers it), in the agent's
+    own style; the user can hide them all (`#tags=0`) and tapping one selects
+    its piece. `tags` = [{text (1..120 chars), node, at?, color?}]: `node` is
+    an id or exact title of the gen's FROZEN pieces (an unknown or ambiguous
+    one is an error listing them); `at` = [x,y,z] mm where the stem starts —
+    omit it and the viewer anchors the tag on the piece's visible surface.
+    At most 40. `replace=False` appends to the tags already there. Stored
+    beside the gen (tags.json): the gen itself never changes."""
+    return _safe(api.tag_gen, STORE, graph_id, gen, tags, replace=replace)
 
 
 @mcp.tool()
@@ -231,6 +249,55 @@ def cad_recent_gens(limit: int = 30, graph_id: str = "") -> list:
     The gallery of every proposal is `/views` — send that link when you have
     made several alternatives to choose from."""
     return _safe(api.recent_gens, STORE, limit=limit, graph_id=graph_id)
+
+
+@mcp.tool()
+def cad_notes(graph_id: str = "", gen: str = "", limit: int = 10,
+              include_done: bool = False, points: bool = False) -> list:
+    """What the user DREW for you on a generation in the /view viewer (✎ Disegna):
+    strokes painted on the model — a red circle round a hole, an arrow at a
+    fillet — plus a sentence ("this hole could be better"). Newest first, open
+    ones only unless `include_done`. When the user says "guarda cosa ho
+    segnato / disegnato", call this first.
+    Each note: `text`, `ref` (`graph/gN#aK`), `url` (opens the viewer on it),
+    `image_path`/`image_url` (THEIR view with the strokes — look at it with
+    `cad_note_image`), and `marks` — one per gesture: `color_name`, `shape`
+    (loop = circled something, line, dot), `centre` + `bbox` in model mm and
+    `on` = the node(s) it was drawn on, read off the gen's frozen graph
+    (cad_get_graph may have moved on: compare against the gen). The centre is
+    where to aim `cad_measure` or a section. Text written ON the part comes as
+    `labels` — `text`, `at`/`normal`/`up`/`size_mm` (mm), `near_marks` = the
+    marks it sits next to (and each mark lists them under `labels`): «qui 8
+    mm» beside mark 1 is information about mark 1. A `paint` label is written
+    with pen strokes; those strokes are not marks. Pictures the user placed on
+    the part are `images` (same placement fields, plus `image_path`/`image_url`
+    of the picture itself — open it). `points=True` adds the raw
+    `strokes` (surface points + normals, split where the pen left the surface).
+    Once handled, close it with `cad_note_done` so the user sees your answer."""
+    return _safe(api.list_notes, STORE, graph_id=graph_id, gen=gen, limit=limit,
+                 include_done=include_done, points=points)
+
+
+@mcp.tool()
+def cad_note_image(graph_id: str, gen: str, note_id: str, mark: int = 0):
+    """The picture the user saw when they drew note `note_id` (e.g. "a2"), with
+    their strokes on it — exactly their camera angle and zoom. The main picture
+    is the LAST view only: a mark drawn from another angle (a cross under a
+    head, seen from below) is not in it — pass `mark=N` to get the picture that
+    mark was drawn in (its `view` > 0 in cad_notes)."""
+    try:
+        return Image(data=api.note_image(STORE, graph_id, gen, note_id, mark=mark),
+                     format="jpeg")
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"{type(e).__name__}: {e}"}
+
+
+@mcp.tool()
+def cad_note_done(graph_id: str, gen: str, note_id: str, reply: str = "",
+                  done: bool = True) -> dict:
+    """Close a drawn note once you acted on it; `reply` is shown under it in the
+    viewer ("hole now chamfered 0.5mm — see g8"). done=False reopens it."""
+    return _safe(api.resolve_note, STORE, graph_id, gen, note_id, reply=reply, done=done)
 
 
 @mcp.tool()

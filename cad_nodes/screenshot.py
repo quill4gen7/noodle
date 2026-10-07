@@ -189,11 +189,46 @@ async def _ensure_page(scale: int, hq: bool, width: int, height: int):
             "window.__noodleShot = true;"
             "localStorage.setItem('noodle:settings:hqRender', %r);"
             % ("1" if hq else "0"))
+        await _page.add_init_script(_SHOT_LAYOUT)
         _page_key = key
     else:
         await _page.set_viewport_size({"width": width, "height": height})
     return _page
 
+
+# The shot page shows the 3D viewport ALONE, filling the window. Two bugs were
+# one cause: the page is the real editor, and the editor lays itself out for a
+# human. (1) At width <= 800 it switches to the phone layout — one pane at a
+# time, the GRAPH pane by default — so the viewport canvas was display:none and
+# every shot narrower than 801px spent its 30s waiting for "element is not
+# visible" and came back a 502 (measured: 900 → 200 in 3s, 800 and 700 → 502,
+# with or without node/isolate, which is what it was first blamed on). (2) On a
+# desktop width the viewport is only the right half under a toolbar, so a
+# requested 900x600 came back 944x614 at scale 2, i.e. ~472x307 — the size an
+# agent asked for was never the size it got. Hiding everything but the viewport
+# fixes both, on the shot page only: no human ever sees it.
+_SHOT_LAYOUT = """
+(() => {
+  // .app is a grid whose rows are toolbar / workspace / statusbar: with those two
+  // hidden the workspace lands in the first row and gets ITS height (measured:
+  // 600 requested, 307 drawn). So no grid at all, and an explicit height.
+  const css = `.app{display:block !important;height:100vh !important}
+    .toolbar,.statusbar,.mtabs,.graph-pane,.split,.panel,#sel-toolbar,.sys-banner{display:none !important}
+    .workspace{display:flex !important;flex-direction:row !important;height:100vh !important}
+    .right-pane{display:flex !important;flex:1 1 auto !important;width:100% !important;min-width:0 !important}
+    .viewer-wrap{display:block !important;flex:1 1 auto !important;border:0 !important}`;
+  const put = () => {
+    if (document.getElementById('__noodle_shot_layout__')) return true;
+    const root = document.head || document.documentElement;
+    if (!root) return false;
+    const st = document.createElement('style');
+    st.id = '__noodle_shot_layout__'; st.textContent = css;
+    root.appendChild(st);
+    return true;
+  };
+  if (!put()) document.addEventListener('DOMContentLoaded', put);
+})();
+"""
 
 # The camera work happens in the page because that is where the real viewer is:
 # frame() already knows how to fit the shown geometry without moving the eye.
@@ -324,6 +359,11 @@ async def render(graph_id: str, *, view: str = "iso",
             # first, so noting it earlier leaves every later shot looking stale and
             # re-running forever — the warm page would never be reused again.
             _loaded_mtime[graph_id] = _graph_mtime(graph_id)
+
+            # the viewer sized itself before the shot layout (or a new viewport
+            # size) took effect: re-measure before framing, or the aspect is wrong
+            await page.evaluate("() => window.dispatchEvent(new Event('resize'))")
+            await page.wait_for_timeout(100)
 
             if projection in ("persp", "ortho"):
                 await page.evaluate("(m) => window._noodle.viewer.setProjection(m)",
