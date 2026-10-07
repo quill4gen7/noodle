@@ -1,0 +1,279 @@
+{
+  "name": "zz-note-probe",
+  "nodes": [
+    {
+      "id": "n1",
+      "type": "Vector",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": -10
+      },
+      "position": [
+        80.0,
+        314.0
+      ],
+      "parent": null
+    },
+    {
+      "id": "n2",
+      "type": "Cylinder",
+      "params": {
+        "radius": 7,
+        "height": 6,
+        "arc": 360,
+        "centered": true
+      },
+      "position": [
+        80.0,
+        703.0
+      ],
+      "parent": null
+    },
+    {
+      "id": "n3",
+      "type": "Move",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": -13
+      },
+      "position": [
+        380.0,
+        725.0
+      ],
+      "parent": null
+    },
+    {
+      "id": "n4",
+      "type": "Thread",
+      "params": {
+        "kind": "external",
+        "size": "M8",
+        "length": 20,
+        "clearance": 0,
+        "starts": 1,
+        "pitch": 0,
+        "diameter": 0,
+        "profile": "ISO metric",
+        "lefthand": false,
+        "lead_in": true,
+        "segments": 64
+      },
+      "position": [
+        980.0,
+        150.0
+      ],
+      "parent": null,
+      "preview": true
+    },
+    {
+      "id": "n5",
+      "type": "Vector",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": -4
+      },
+      "position": [
+        80.0,
+        2280.0
+      ],
+      "parent": null
+    },
+    {
+      "id": "n6",
+      "type": "Cylinder",
+      "params": {
+        "radius": 8,
+        "height": 8,
+        "arc": 360,
+        "centered": true
+      },
+      "position": [
+        80.0,
+        2669.0
+      ],
+      "parent": null
+    },
+    {
+      "id": "n7",
+      "type": "Thread",
+      "params": {
+        "kind": "internal",
+        "size": "M8",
+        "length": 8,
+        "clearance": 0.3,
+        "starts": 1,
+        "pitch": 0,
+        "diameter": 0,
+        "profile": "ISO metric",
+        "lefthand": false,
+        "lead_in": true,
+        "segments": 64
+      },
+      "position": [
+        380.0,
+        2316.5
+      ],
+      "parent": null
+    },
+    {
+      "id": "n8",
+      "type": "Move",
+      "params": {
+        "x": 30,
+        "y": 0,
+        "z": 0
+      },
+      "position": [
+        980.0,
+        2280.0
+      ],
+      "parent": null,
+      "preview": true
+    },
+    {
+      "id": "chain",
+      "type": "CodeBlock",
+      "params": {
+        "code": "# Catena in rilievo sul fianco del dado (nota zz-note-probe/g1#a2, in verde):\n# anelli orientati verso l'esterno, uniti da barrette, tutto intorno.\nlinks = 6        #@param int min=3 max=16\nring_r = 2.0     #@param float min=0.8 max=3.5 step=0.1\nwire = 0.7       #@param float min=0.3 max=1.5 step=0.1\nrelief = 0.6     #@param float min=0.2 max=1.5 step=0.1\nR = 8.0          #@param float min=4 max=30 step=0.5\nz0 = -0.3        #@param float min=-4 max=4 step=0.1\nimport math\nsink = 1.2                       # quanto entra nel dado: deve restare sepolta anche ai bordi\nt = relief + sink\nrc = R + relief - t / 2          # centro radiale di anelli e barrette\nhalf = math.pi / links\nL = max(2 * (rc * math.sin(half) - ring_r + wire / 2), 0.5)\nresult = None\nfor k in range(links):\n    ring = Cylinder(ring_r, t) - Cylinder(ring_r - wire, t + 1)\n    ring = Rot(0, 0, 360 * k / links) * Pos(rc, 0, z0) * Rot(0, 90, 0) * ring\n    bar = Rot(0, 0, 360 * (k + 0.5) / links) * Pos(rc, 0, z0) * Box(t, L, wire)\n    result = ring + bar if result is None else result + ring + bar\n"
+      },
+      "position": [
+        80.0,
+        1661.0
+      ],
+      "parent": null,
+      "title": "Catena dado"
+    },
+    {
+      "id": "nut_chain",
+      "type": "MeshUnion",
+      "params": {},
+      "position": [
+        680.0,
+        1879.0
+      ],
+      "parent": null,
+      "title": "Dado + catena"
+    },
+    {
+      "id": "cross",
+      "type": "CodeBlock",
+      "params": {
+        "code": "# Impronta a croce sulla testa della vite (nota zz-note-probe/g1#a2, in blu).\nsize = 8.0      #@param float min=2 max=13 step=0.5\nslot = 1.6      #@param float min=0.5 max=4 step=0.1\ndepth = 2.5     #@param float min=0.5 max=5 step=0.1\nz_face = -16.0  #@param float min=-30 max=0 step=0.5\nresult = Pos(0, 0, z_face) * (Box(size, slot, 2 * depth) + Box(slot, size, 2 * depth))\n"
+      },
+      "position": [
+        80.0,
+        1140.0
+      ],
+      "parent": null,
+      "title": "Croce testa"
+    },
+    {
+      "id": "head_cross",
+      "type": "Subtract",
+      "params": {},
+      "position": [
+        680.0,
+        1312.0
+      ],
+      "parent": null,
+      "title": "Testa - croce"
+    }
+  ],
+  "connections": [
+    {
+      "id": "l1",
+      "from_node": "n2",
+      "from_socket": "result",
+      "to_node": "n3",
+      "to_socket": "shape"
+    },
+    {
+      "id": "l2",
+      "from_node": "n1",
+      "from_socket": "vector",
+      "to_node": "n4",
+      "to_socket": "at"
+    },
+    {
+      "id": "l4",
+      "from_node": "n5",
+      "from_socket": "vector",
+      "to_node": "n7",
+      "to_socket": "at"
+    },
+    {
+      "id": "l5",
+      "from_node": "n6",
+      "from_socket": "result",
+      "to_node": "n7",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c6",
+      "from_node": "n7",
+      "from_socket": "result",
+      "to_node": "nut_chain",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c7",
+      "from_node": "chain",
+      "from_socket": "result",
+      "to_node": "nut_chain",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c8",
+      "from_node": "nut_chain",
+      "from_socket": "result",
+      "to_node": "n8",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c8_",
+      "from_node": "n3",
+      "from_socket": "result",
+      "to_node": "head_cross",
+      "to_socket": "a"
+    },
+    {
+      "id": "c9",
+      "from_node": "cross",
+      "from_socket": "result",
+      "to_node": "head_cross",
+      "to_socket": "b"
+    },
+    {
+      "id": "c10",
+      "from_node": "head_cross",
+      "from_socket": "result",
+      "to_node": "n4",
+      "to_socket": "shape"
+    }
+  ],
+  "groups": [
+    {
+      "title": "the bolt \u2014 ONE node: external brings its own core, the head is the shape it adds to",
+      "bounding": [
+        56.0,
+        100.0,
+        1158.0,
+        965.0
+      ],
+      "color": "#3f589e"
+    },
+    {
+      "title": "the nut \u2014 the same thread, as a TAP that cuts",
+      "bounding": [
+        56.0,
+        2230.0,
+        1158.0,
+        801.0
+      ],
+      "color": "#8a3f5b"
+    }
+  ]
+}

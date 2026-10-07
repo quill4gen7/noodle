@@ -4,14 +4,25 @@
 <script>
 (() => {
   const real = window.fetch.bind(window);
+  const json = (o, status) => Promise.resolve(new Response(JSON.stringify(o),
+    {status, headers: {'Content-Type': 'application/json'}}));
   const map = url => {
-    let m = /^\/api\/graph\/([^/]+)\/gens\/(g\d+)\/(view|graph|meta)$/.exec(url);
+    let m = /^\/api\/graph\/([^/]+)\/gens\/(g\d+)\/(view|graph|meta|notes|tags)$/.exec(url);
     if (m) return `../data/${m[1]}/${m[2]}/${m[3]}.json`;
     m = /^\/api\/graph\/([^/]+)\/(gens|version)$/.exec(url);
     if (m) return `../data/${m[1]}/${m[2]}.json`;
+    m = /^\/api\/gens\/recent\?.*project=([^&]+)/.exec(url);
+    if (m) return `../data/${m[1]}/gens.json`;
     return url;
   };
-  window.fetch = (input, init) => real(typeof input === 'string' ? map(input) : input, init);
+  window.fetch = (input, init) => {
+    const method = ((init && init.method) || 'GET').toUpperCase();
+    if (typeof input === 'string' && method !== 'GET') {
+      if (/\/notes(\/a\d+)?$/.test(input)) return json({detail: 'STATIC_PREVIEW'}, 501);
+      return json({ok: true, static: true}, 200);
+    }
+    return real(typeof input === 'string' ? map(input) : input, init);
+  };
 })();
 </script>
 
@@ -35,6 +46,38 @@
   The state lives in the URL hash (#hide=n3,n5.2 — a bare node id means all its
   pieces), so a link can be sent already set up, e.g. with the lid hidden.
 -->
+<script>
+// A blank page is the worst way to fail. This CLASSIC script (not a module, so
+// it runs even when the module below cannot be parsed, linked or evaluated)
+// records every error and, if the module has not reached boot() after 8s,
+// writes them on screen with the browser's identity — a phone has no console
+// to read. Paid for 2026-10-07: /view came up empty on Firefox for Android
+// while Chrome and desktop Firefox were fine, and the server logs could only
+// say that the module never asked for a single import.
+(function () {
+  var errs = [];
+  function note(m) { if (m && errs.length < 6) errs.push(String(m).slice(0, 300)); }
+  addEventListener('error', function (e) {
+    var t = e.target;
+    if (t && t !== window && (t.src || t.href)) note('non caricato: ' + (t.src || t.href));
+    else note((e.message || 'errore') + (e.filename ? ' @ ' + e.filename.split('/').pop() + ':' + e.lineno + ':' + e.colno : ''));
+  }, true);
+  addEventListener('unhandledrejection', function (e) { note('promise: ' + (e.reason && (e.reason.stack || e.reason.message) || e.reason)); });
+  setTimeout(function () {
+    if (window.__viewBooted) return;
+    var m = document.getElementById('msg'); if (!m) return;
+    var esc = function (x) { return String(x).replace(/[&<>]/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]; }); };
+    m.style.display = 'flex';
+    m.innerHTML = '<div style="max-width:560px;text-align:left;font:12px monospace;line-height:1.5">' +
+      '<b style="font:600 14px sans-serif;color:#e94560">La pagina non è partita su questo browser.</b><br>' +
+      (errs.length ? errs.map(esc).join('<br>') : 'nessun errore registrato: il modulo non è stato eseguito (import map o moduli non supportati?)') +
+      '<br><br>' + esc(navigator.userAgent) + '<br>importmap: ' +
+      (window.HTMLScriptElement && HTMLScriptElement.supports ? HTMLScriptElement.supports('importmap') : '?') + '</div>';
+    try { fetch('/api/client-error', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({page: location.pathname, ua: navigator.userAgent, errors: errs})}); } catch (_) {}
+  }, 8000);
+})();
+</script>
 <script type="importmap">
 {
   "imports": {
@@ -62,7 +105,8 @@
     background:var(--bg-1);position:relative;z-index:20;padding-top:max(8px,env(safe-area-inset-top));}
   header .brand{font-weight:700;letter-spacing:-.3px;white-space:nowrap;}
   header .brand span{color:var(--accent);}
-  header .proj{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+  header .proj{display:none;}       /* the #ref chip carries the project name */
+  header .proj-x{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
   header .meta{color:var(--text-dim);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1;}
   select,.btn{background:var(--bg-3);color:var(--text);border:1px solid var(--border);border-radius:8px;
     padding:5px 10px;font-size:12px;font-family:var(--font);cursor:pointer;min-height:var(--tap);
@@ -70,6 +114,13 @@
   select{max-width:260px;}
   .btn:hover,select:hover{border-color:var(--text-dim);}
   .btn:active{background:var(--bg-2);}
+  /* the generation's NAME, <graph>/g<N>: what the user quotes to the agent */
+  #ref{font:600 13px var(--mono);color:#fff;background:var(--bg-2);border:1px solid var(--accent);border-radius:8px;
+    padding:4px 10px;cursor:pointer;white-space:nowrap;min-height:var(--tap);}
+  #ref .g{color:var(--accent);}
+  #ref:hover{background:var(--bg-3);}
+  .nav{min-width:var(--tap);padding:5px 8px;}
+  .nav:disabled{opacity:.35;cursor:default;}
   .badge{font-size:11px;padding:2px 7px;border-radius:10px;border:1px solid var(--amber);color:var(--amber);white-space:nowrap;}
   #more{display:none;font-size:18px;padding:0 12px;}
   #menu{display:none;position:absolute;right:8px;top:calc(100% + 4px);background:var(--bg-2);border:1px solid var(--border);
@@ -98,6 +149,7 @@
   #tl-time{font:11px var(--mono);color:var(--text-dim);white-space:nowrap;min-width:78px;text-align:right;}
   #tl select{max-width:none;}
   #tl-tracks{display:none;}
+  #tl-grab{display:none;}
   #tl-trk[hidden]{display:none;}
   #tl.tracks{flex-wrap:wrap;}
   #tl.tracks #tl-tracks{display:flex;flex-direction:column;gap:2px;order:-1;flex-basis:100%;max-height:40vh;overflow:auto;
@@ -113,7 +165,7 @@
   aside{width:300px;border-left:1px solid var(--border);background:var(--bg-1);display:flex;flex-direction:column;min-height:0;}
   aside .grab{display:none;}
   aside .tools{display:flex;gap:6px;padding:8px;border-bottom:1px solid var(--border);}
-  aside .tools .btn{flex:1;padding:5px 6px;}
+  aside .tools .btn{flex:1;padding:5px 3px;min-width:0;gap:3px;font-size:11px;}
   #list{overflow:auto;flex:1;padding:4px 0;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;}
   .row{display:flex;align-items:center;gap:6px;padding:0 6px 0 4px;cursor:pointer;user-select:none;-webkit-user-select:none;
     min-height:var(--tap);}
@@ -132,6 +184,9 @@
   .row .name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:6px 0;}
   .row .id{color:var(--text-dim);font:10px var(--mono);}
   .row .tw{width:22px;}
+  .tgb{font:600 10px var(--mono);color:#22d3ee;border:1px solid #22d3ee;border-radius:8px;padding:0 4px;margin-left:4px;}
+  #b-tags.on{border-color:#22d3ee;color:#22d3ee;}
+  #b-tags[hidden]{display:none;}
   .hint{padding:8px 10px;border-top:1px solid var(--border);color:var(--text-dim);font-size:11px;line-height:1.5;}
   kbd{font:10px var(--mono);border:1px solid var(--border);border-radius:3px;padding:0 3px;}
   .touch-only{display:none;}
@@ -145,8 +200,8 @@
   /* ── narrow screens: one-line header + ⋯ menu, pieces in a bottom sheet ── */
   @media (max-width:760px){
     header{gap:8px;padding:6px 8px;}
-    header .brand,header .meta,header .desk{display:none;}
-    header .proj{flex:1;font-size:14px;}
+    header .brand,header .meta,header .desk,header .proj,header .nav{display:none;}
+    #ref{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:12px;}
     select{max-width:46vw;}
     #more{display:inline-flex;}
     main{flex-direction:column;}
@@ -154,21 +209,111 @@
       border-radius:14px 14px 0 0;box-shadow:0 -6px 20px rgba(0,0,0,.4);
       padding-bottom:env(safe-area-inset-bottom);}
     aside.closed{height:auto !important;}
-    aside.closed #list,aside.closed .hint{display:none;}
-    aside .grab{display:flex;justify-content:center;align-items:center;height:22px;cursor:grab;touch-action:none;
-      flex:0 0 auto;}
-    aside .grab::before{content:"";width:40px;height:5px;border-radius:3px;background:var(--border);}
+    aside.closed #list,aside.closed .hint,aside.closed #notes{display:none;}
+    /* the handle is a finger target, not a 5px line: 22px tall it was missed
+       more often than hit. The whole strip grabs; the pill only shows where. */
+    aside .grab{display:flex;justify-content:center;align-items:center;height:36px;margin-bottom:-8px;cursor:grab;
+      touch-action:none;flex:0 0 auto;user-select:none;-webkit-user-select:none;}
+    aside .grab::before{content:"";width:52px;height:6px;border-radius:3px;background:var(--text-dim);opacity:.7;}
+    aside .grab:active::before,aside .grab.drag::before{opacity:1;background:var(--accent);}
     aside .tools{padding:2px 8px 8px;}
     aside .tools .btn{flex-direction:column;gap:1px;font-size:11px;min-height:48px;}
     aside .tools .btn .ic{font-size:16px;}
     .hint{display:none;}
     #selbar{bottom:12px;}
     #stats{top:8px;bottom:auto;}
-    #tl{left:8px;right:8px;bottom:8px;flex-wrap:wrap;}
+    #tl{left:8px;right:8px;bottom:8px;flex-wrap:wrap;padding-top:0;}
+    /* the player folds down like the sheet: a handle on top, drag it down (or
+       tap it) and only ▶ and the time stay, as a pill — the model gets the
+       screen back. Drag up / tap to unfold. */
+    #tl-grab{display:flex;order:-2;flex-basis:100%;height:26px;justify-content:center;align-items:center;
+      touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none;}
+    #tl-grab::before{content:"";width:44px;height:5px;border-radius:3px;background:var(--text-dim);opacity:.7;}
+    #tl-grab.drag::before{opacity:1;background:var(--accent);}
+    #tl.min{right:auto;flex-wrap:nowrap;padding:0 8px 0 4px;gap:6px;}
+    #tl.min #tl-grab{order:5;flex-basis:auto;width:34px;height:var(--tap);}
+    #tl.min #tl-grab::before{width:5px;height:22px;}
+    #tl.min #tl-t,#tl.min #tl-mode,#tl.min #tl-speed,#tl.min #tl-trk,#tl.min #tl-tracks{display:none !important;}
+    #tl.min #tl-time{flex:0 0 auto;min-width:0;}
+
     #tl-t{order:5;flex-basis:100%;}
     #tl-time{flex:1;text-align:left;}
-    #vp.has-anim #selbar{bottom:112px;}
+    /* above the player, whatever height it has now (it wraps to 2-4 rows, or
+       folds to a pill): --tlh is measured by a ResizeObserver on #tl */
+    #vp.has-anim #selbar{bottom:calc(var(--tlh,104px) + 16px);}
     .trk{flex-wrap:wrap;} .trk .nm{flex:1;width:auto;} .trk input{order:5;flex-basis:100%;}
+  }
+  /* ── ✎ Disegna: strokes on the model, sent to the agent as a note ── */
+  #d-open{position:absolute;top:10px;right:10px;z-index:6;font-size:13px;font-weight:600;
+    background:rgba(26,32,48,.92);backdrop-filter:blur(4px);}
+  #d-open .n{background:var(--accent);color:#fff;border-radius:9px;padding:0 6px;font-size:11px;}
+  #d-open .n:empty{display:none;}
+  #dbar{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:7;display:none;flex-wrap:wrap;
+    align-items:center;gap:6px;background:rgba(21,26,34,.95);border:1px solid var(--border);border-radius:12px;
+    padding:6px 8px;box-shadow:0 8px 24px rgba(0,0,0,.5);max-width:calc(100% - 20px);width:max-content;
+    backdrop-filter:blur(4px);}
+  #vp.drawing #dbar{display:flex;}
+  #vp.drawing #d-open,#vp.drawing #stats{display:none;}
+  #vp.drawing.pen canvas{cursor:crosshair;}
+  #vp.drawing[data-tool=erase] canvas{cursor:none;}
+  #d-ring{position:absolute;display:none;pointer-events:none;z-index:6;border-radius:50%;
+    border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.6),inset 0 0 0 1px rgba(0,0,0,.6);}
+  #vp:not([data-tool=erase]) #d-ring{display:none !important;}
+  #vp.drawing[data-tool=text] canvas{cursor:text;}
+  #vp.drawing[data-tool=image] canvas{cursor:copy;}
+  #d-texttool{font:700 15px Georgia,serif;}
+  #d-lstyle{min-height:var(--tap);padding:4px 4px;max-width:112px;}
+  #d-box{position:absolute;display:none;pointer-events:none;z-index:6;border:2px dashed #fff;border-radius:4px;
+    box-shadow:0 0 0 1px rgba(0,0,0,.6);}
+  #d-label{position:absolute;display:none;z-index:9;min-width:140px;min-height:32px;background:rgba(11,14,20,.92);
+    border:2px solid currentColor;border-radius:6px;padding:4px 8px;font:600 15px var(--font);outline:none;}
+  #dbar .grp{display:flex;align-items:center;gap:4px;}
+  #dbar .sep{width:1px;align-self:stretch;background:var(--border);}
+  .sw-btn{width:24px;height:24px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.25);}
+  .sw-btn.on{border-color:#fff;outline:2px solid var(--accent);outline-offset:1px;}
+  #d-custom{width:28px;height:28px;padding:0;border:0;background:none;cursor:pointer;}
+  .sz{width:var(--tap);padding:0;}
+  .sz i{display:block;border-radius:50%;background:var(--text);}
+  .sz.on,.tool.on{border-color:var(--accent);background:var(--bg-2);}
+  #d-text{flex:1 1 120px;min-width:90px;min-height:var(--tap);background:var(--bg-0);color:var(--text);
+    border:1px solid var(--border);border-radius:8px;padding:5px 9px;font:13px var(--font);}
+  #d-send{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;}
+  #d-send:disabled{opacity:.4;cursor:default;}
+  #d-hint{flex-basis:100%;color:var(--text-dim);font-size:11px;padding:0 2px;}
+  #toast{position:absolute;left:50%;top:64px;transform:translateX(-50%);z-index:8;display:none;
+    background:var(--bg-2);border:1px solid var(--green);color:var(--text);border-radius:10px;padding:8px 12px;
+    box-shadow:0 8px 24px rgba(0,0,0,.5);max-width:calc(100% - 20px);font-size:12px;line-height:1.5;}
+  #toast.open{display:block;}
+  #toast code{font:600 12px var(--mono);color:#fff;}
+  /* the gen's notes, in the side panel */
+  #notes{border-top:1px solid var(--border);max-height:40%;overflow:auto;flex:0 0 auto;}
+  #notes .nh{padding:7px 10px 3px;color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:.5px;}
+  .note{display:flex;gap:6px;align-items:flex-start;padding:5px 6px 5px 10px;cursor:pointer;}
+  .note:hover{background:var(--bg-2);}
+  .note.done .tx{opacity:.55;}
+  .note .dots{display:flex;gap:2px;padding-top:5px;flex:0 0 auto;}
+  .note .dots i{width:9px;height:9px;border-radius:50%;}
+  .note .tx{flex:1;min-width:0;font-size:12px;line-height:1.4;word-break:break-word;}
+  .note .tx .id{color:var(--text-dim);font:10px var(--mono);margin-right:4px;}
+  .note .rp{color:var(--green);font-size:11px;margin-top:2px;}
+  .note .ib{flex:0 0 auto;width:28px;height:28px;display:flex;align-items:center;justify-content:center;
+    border-radius:6px;color:var(--text-dim);}
+  .note .ib:hover{background:var(--bg-3);color:var(--text);}
+  .note.off .dots{opacity:.3;}
+  @media (max-width:760px){
+    #d-open{top:auto;bottom:12px;right:10px;}
+    #vp.has-anim #d-open{bottom:calc(var(--tlh,104px) + 16px);}
+    /* at the BOTTOM of the viewport, compact: the part sits in the middle and
+       the bar must not hide what you are drawing on */
+    #dbar{top:auto;bottom:6px;left:6px;right:6px;transform:none;width:auto;max-width:none;gap:4px;padding:5px;}
+    #dbar .btn{min-height:36px;padding:4px 8px;}
+    #dbar .sz{width:36px;}
+    #dbar .sep,#d-hint{display:none;}
+    #dbar .tool{min-width:36px;padding:4px 6px;}
+    #d-lstyle{min-height:36px;max-width:104px;}
+    #d-text{flex:1 1 140px;min-height:36px;min-width:0;}
+    #toast{top:8px;}
   }
 </style>
 </head>
@@ -177,14 +322,20 @@
   <header>
     <div class="brand">noodle<span>·</span>view</div>
     <div class="proj" id="proj"></div>
+    <button id="ref" title="Il nome di questa preview — clic per copiarlo e incollarlo all'agente"></button>
+    <button class="btn nav" id="prev" title="Generazione precedente ( [ )">‹</button>
     <select id="gen" title="Generazioni salvate di questo workflow"></select>
+    <button class="btn nav" id="next" title="Generazione successiva ( ] )">›</button>
     <span class="badge desk" id="stale" style="display:none" title="Il workflow live è stato modificato dopo questa generazione: la vista resta quella salvata">workflow cambiato</span>
     <div class="meta" id="meta"></div>
+    <a class="btn desk" id="all" href="/views" title="Tutte le preview recenti, di tutti i workflow">◫ Tutte le preview</a>
     <button class="btn desk" id="copy" title="Copia il link a questa generazione, con i pezzi nascosti">Copia link</button>
     <a class="btn desk" id="edit" title="Apri il workflow live nell'editor">Editor ↗</a>
     <button class="btn" id="more" aria-label="Menu">⋯</button>
     <div id="menu" role="menu">
       <div class="info" id="m-info"></div>
+      <button class="btn" id="m-ref">⧉ Copia il nome</button>
+      <a class="btn" id="m-all" href="/views">◫ Tutte le preview</a>
       <button class="btn" id="m-share">↗ Condividi / copia link</button>
       <button class="btn" id="m-ortho">▦ Prospettiva / ortografica</button>
       <a class="btn" id="m-edit">✎ Apri nell'editor</a>
@@ -193,6 +344,7 @@
   <main>
     <div id="vp"><canvas id="c" tabindex="0"></canvas><div id="stats"></div><div id="msg"></div>
       <div id="tl" hidden>
+        <div id="tl-grab" role="button" aria-label="Riduci / espandi il player" title="Trascina giù per ridurre, su per espandere (o tocca)"></div>
         <div id="tl-tracks"></div>
         <button class="btn" id="tl-play" aria-label="Riproduci" title="Riproduci / pausa (spazio)">▶</button>
         <input type="range" id="tl-t" min="0" max="1" step="0.001" value="0" aria-label="Timeline">
@@ -208,6 +360,34 @@
           <option value="1" selected>1×</option><option value="2">2×</option>
         </select>
       </div>
+      <button class="btn" id="d-open" title="Disegna sul pezzo e manda la nota all'agente (D)">✎ Disegna <span class="n" id="d-count"></span></button>
+      <div id="dbar">
+        <div class="grp">
+          <button class="btn tool on" id="d-pen" title="Penna: trascina SUL pezzo per disegnare (P)">✎</button>
+          <button class="btn tool" id="d-texttool" title="Testo SUL pezzo: tocca e trascina per il riquadro, poi scrivi (T) — tocca un riquadro per correggerlo">T</button>
+          <select id="d-lstyle" title="Stile del testo T: vernice (lettere a tratto dipinte come la penna, su ogni superficie), targhetta (si legge da ogni lato) o decal (incollato alla superficie)">
+            <option value="paint">✎ Vernice</option><option value="tag">⚑ Targhetta</option><option value="decal">▭ Decal</option></select>
+          <button class="btn tool" id="d-imgtool" title="Immagine: scegli un PNG/JPEG (o una foto), poi trascina un riquadro sul pezzo">Img</button>
+          <input type="file" id="d-imgfile" accept="image/*" hidden>
+          <button class="btn tool" id="d-erase" title="Gomma: passa sopra un tratto per toglierlo intero (E) — la misura sceglie il raggio">⌫</button>
+          <button class="btn tool" id="d-hand" title="Muovi: ruota/zoom senza disegnare (anche: trascina fuori dal pezzo, tasto destro, rotella)">Muovi</button>
+        </div>
+        <span class="sep"></span>
+        <div class="grp" id="d-colors"></div>
+        <input type="color" id="d-custom" title="Altro colore" value="#d946ef">
+        <span class="sep"></span>
+        <div class="grp" id="d-sizes"></div>
+        <span class="sep"></span>
+        <button class="btn" id="d-undo" title="Annulla l'ultima azione: tratto, testo, cancellatura (Ctrl+Z)">↶</button>
+        <button class="btn" id="d-clear" title="Cancella tutti i tratti non inviati">Pulisci</button>
+        <input id="d-text" placeholder="Nota per l'agente: es. «questo foro si può fare meglio»" maxlength="4000" autocomplete="off">
+        <button class="btn" id="d-send" title="Salva la nota (tratti + testo + la tua vista) per l'agente">Invia all'agente ➤</button>
+        <button class="btn" id="d-x" aria-label="Chiudi" title="Esci dal disegno (Esc)">✕</button>
+        <div id="d-hint">Disegna trascinando sul pezzo · T: trascina un riquadro e scrivi · ⌫ gomma: passa sopra un tratto · fuori dal pezzo / tasto destro / rotella / due dita: muovi la vista · un tocco = un punto</div>
+      </div>
+      <div id="d-ring"></div><div id="d-box"></div>
+      <input id="d-label" maxlength="200" autocomplete="off" placeholder="scrivi… (Invio)">
+      <div id="toast"></div>
       <div id="selbar">
         <span class="nm" id="sel-name"></span>
         <button class="btn" id="sel-hide">Nascondi</button>
@@ -221,9 +401,11 @@
         <button class="btn" id="b-all" title="Mostra tutto (A)"><span class="ic">◉</span>Tutti</button>
         <button class="btn" id="b-inv" title="Inverti: i nascosti si vedono, i visibili si nascondono (I)"><span class="ic">⇄</span>Inverti</button>
         <button class="btn" id="b-frame" title="Inquadra i pezzi visibili (F)"><span class="ic">▣</span>Inquadra</button>
+        <button class="btn" id="b-tags" hidden title="Etichette dell'agente: mostra/nascondi"><span class="ic">◆</span>Tag</button>
         <button class="btn desk-ortho" id="b-ortho" title="Prospettiva / ortografica (O)"><span class="ic">▦</span><span id="b-ortho-t">Persp</span></button>
       </div>
       <div id="list"></div>
+      <div id="notes" hidden><div class="nh">✎ Note per l'agente</div><div id="nlist"></div></div>
       <div class="hint"><span class="keys">Clic sull'occhio o sul nome: mostra/nascondi · ◎ o doppio clic: solo lui ·
         clic su un pezzo nel 3D: lo seleziona, <kbd>H</kbd> lo nasconde, <kbd>Alt</kbd>+clic lo nasconde subito ·
         <kbd>I</kbd> inverti · <kbd>A</kbd> tutti · <kbd>F</kbd> inquadra</span>
@@ -234,6 +416,7 @@
 </div>
 <script type="module">
 import * as THREE from 'three';
+import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
 import { CadViewer, PALETTE, poseAnim } from '../static/viewer.js';
 
 const $ = id => document.getElementById(id);
@@ -268,6 +451,7 @@ function apply() {
     for (const l of n.leaves) { const v = !hidden.has(l.key); l.apply(v); any = any || v; }
     n.obj.visible = any;
   }
+  if (agentTags.length) syncTags();
   viewer.invalidate();
   const shown = allLeaves().filter(k => !hidden.has(k)).length;
   $('stats').textContent = `${shown}/${allLeaves().length} pezzi visibili` + (sizeTxt ? ' · ' + sizeTxt : '');
@@ -296,6 +480,7 @@ function writeHash() {
   }
   const ps = [];
   if (out.length) ps.push('hide=' + out.join(','));
+  if (!tagsOn && agentTags.length) ps.push('tags=0');
   if (anims.length) {
     if (clock.playing) ps.push('play=1');
     else ps.push('t=' + (+clock.t.toFixed(3)));
@@ -461,6 +646,10 @@ function swatch(c) {
   if (c && c.isColor) return 'background:#' + c.getHexString();
   return 'background:' + (c || '#888');
 }
+function tagBadge(id) {
+  const c = agentTags.filter(T => T.node === id);
+  return c.length ? ` <span class="tgb" title="${esc(c.map(T => T.text).join(' · '))}">◆${c.length}</span>` : '';
+}
 function renderList() {
   const L = $('list'); const top = L.scrollTop; L.innerHTML = '';
   for (const n of nodes) {
@@ -472,7 +661,7 @@ function renderList() {
     row.innerHTML = `<span class="ib tw" ${multi ? 'role="button" aria-label="Espandi"' : ''}>${multi ? (open.has(n.id) ? '▾' : '▸') : ''}</span>
       <span class="ib eye" role="button" aria-label="Mostra/nascondi">${vis === n.leaves.length ? '●' : vis ? '◐' : '○'}</span>
       <span class="sw" style="${swatch(n.color)}"></span>
-      <span class="name" title="${esc(n.type)}">${esc(n.title)}${multi ? ` <span class="id">×${n.leaves.length}</span>` : ''}</span>
+      <span class="name" title="${esc(n.type)}">${esc(n.title)}${multi ? ` <span class="id">×${n.leaves.length}</span>` : ''}${tagBadge(n.id)}</span>
       <span class="id">${esc(n.id)}</span>
       <span class="ib solo" role="button" aria-label="Solo questo" title="Solo questo">◎</span>`;
     if (multi) row.querySelector('.tw').onclick = e => { e.stopPropagation(); open.has(n.id) ? open.delete(n.id) : open.add(n.id); renderList(); };
@@ -606,7 +795,10 @@ function leavesOf(id, obj, entry, piece) {
 
 // ── picking: which LEAF is under the pointer ──────────────────────────────
 const ray = new THREE.Raycaster(); const ndc = new THREE.Vector2();
-function pickLeaf(x, y) {
+// The first VISIBLE hit under the pointer, with the leaf it belongs to. The ✎
+// pen uses the hit itself (point + face normal); selection only the leaf.
+function pickLeaf(x, y) { const f = firstHit(x, y); return f ? f.key : null; }
+function firstHit(x, y) {
   const r = $('c').getBoundingClientRect();
   ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
   ray.setFromCamera(ndc, viewer.camera);
@@ -620,13 +812,13 @@ function pickLeaf(x, y) {
     let top = h.object; while (top.parent && top.parent !== viewer.previewGroup) top = top.parent;
     const id = top.userData.nodeId; if (id == null) continue;
     const n = nodes.find(x => x.id === id); if (!n) continue;
-    if (n.leaves.length === 1) return n.leaves[0].key;
+    if (n.leaves.length === 1) return { h, key: n.leaves[0].key };
     if (top.userData.isScene) {
       let b = h.object; while (b && b.parent !== top) b = b.parent;
-      return `${id}.${b ? b.userData.bodyIndex : 0}`;
+      return { h, key: `${id}.${b ? b.userData.bodyIndex : 0}` };
     }
-    if (h.face && Array.isArray(top.material)) return `${id}.${h.face.materialIndex}`;
-    return n.leaves[0].key;
+    if (h.face && Array.isArray(top.material)) return { h, key: `${id}.${h.face.materialIndex}` };
+    return { h, key: n.leaves[0].key };
   }
   return null;
 }
@@ -682,6 +874,8 @@ $('c').addEventListener('pointerup', e => {
     if (now - lastTap < 320) { lastTap = 0; frameVisible(); return; }
     lastTap = now;
   }
+  const tg = agentTagAt(e.clientX, e.clientY);  // an agent's tag names its piece
+  if (tg) { select(tg.key); return; }
   const k = pickLeaf(e.clientX, e.clientY);
   if (e.altKey && k) { hidden.add(k); select(null); apply(); return; }
   select(k);
@@ -696,6 +890,9 @@ addEventListener('keydown', e => {
   else if (k === 'a') showAll();
   else if (k === 'f') frameVisible();
   else if (k === 'o') toggleOrtho();
+  else if (k === 'd') setDrawing(!drawing);
+  else if (k === '[') $('prev').click();
+  else if (k === ']') $('next').click();
   else if (k === ' ' && anims.length) { e.preventDefault(); setPlaying(!clock.playing); }
   else if (k === 'escape') { closeMenu(); select(null); }
 });
@@ -731,11 +928,16 @@ $('m-share').onclick = async () => {
 // Tap the handle: collapse to the toolbar / reopen. Drag it: any height between
 // the toolbar and 85% of the screen. The canvas follows through the
 // ResizeObserver below, so the model is never drawn under the sheet.
+// The height it reopens at is the last OPEN height: dragging it shut used to
+// leave --sheet at ~90px, so a tap "reopened" it at the size of the closed bar
+// and the handle seemed not to work. A release below the threshold snaps shut.
 {
   const panel = $('panel'), grab = $('grab');
-  let start = null;
+  const MIN_OPEN = 150;
+  let start = null, openH = null;
   grab.addEventListener('pointerdown', e => {
     grab.setPointerCapture(e.pointerId);
+    grab.classList.add('drag');
     start = { y: e.clientY, h: panel.getBoundingClientRect().height, moved: false };
   });
   grab.addEventListener('pointermove', e => {
@@ -744,27 +946,1499 @@ $('m-share').onclick = async () => {
     if (Math.abs(dy) > 6) start.moved = true;
     if (!start.moved) return;
     const vh = $('app').clientHeight;
-    const h = Math.max(90, Math.min(vh * 0.85, start.h + dy));
-    panel.classList.toggle('closed', h < 110);
+    const h = Math.max(70, Math.min(vh * 0.85, start.h + dy));
+    panel.classList.remove('closed');
     panel.style.setProperty('--sheet', h + 'px');
   });
   const end = () => {
-    if (start && !start.moved) panel.classList.toggle('closed');
+    grab.classList.remove('drag');
+    if (!start) return;
+    if (!start.moved) {
+      const shut = !panel.classList.contains('closed');
+      panel.classList.toggle('closed', shut);
+      if (!shut && openH) panel.style.setProperty('--sheet', openH + 'px');
+    } else {
+      const h = panel.getBoundingClientRect().height;
+      if (h < MIN_OPEN) panel.classList.add('closed');
+      else openH = h;
+      if (h < MIN_OPEN) panel.style.setProperty('--sheet', (openH || $('app').clientHeight * 0.42) + 'px');
+    }
     start = null;
   };
   grab.addEventListener('pointerup', end);
-  grab.addEventListener('pointercancel', () => { start = null; });
+  grab.addEventListener('pointercancel', end);
+}
+
+// The animation player folds the same way (narrow screens only — the handle
+// is display:none elsewhere): drag down / tap → only ▶ and the time remain.
+{
+  const tl = $('tl'), g = $('tl-grab');
+  let start = null;
+  const setMin = on => tl.classList.toggle('min', on);
+  // what floats over the viewport (✎ Disegna, the selection bar) sits above the
+  // player at its REAL height: a fixed 112px put ✎ Disegna on top of the
+  // player's own controls once they wrapped to four rows on a phone
+  new ResizeObserver(() => $('vp').style.setProperty('--tlh',
+    (tl.hidden ? 0 : Math.round(tl.getBoundingClientRect().height)) + 'px')).observe(tl);
+  g.addEventListener('pointerdown', e => {
+    g.setPointerCapture(e.pointerId); g.classList.add('drag');
+    start = { y: e.clientY, moved: false };
+  });
+  g.addEventListener('pointermove', e => {
+    if (!start) return;
+    const dy = e.clientY - start.y;
+    if (Math.abs(dy) < 18) return;
+    start.moved = true;
+    setMin(dy > 0);                    // down folds, up unfolds
+  });
+  const end = () => {
+    g.classList.remove('drag');
+    if (start && !start.moved) setMin(!tl.classList.contains('min'));
+    start = null;
+  };
+  g.addEventListener('pointerup', end);
+  g.addEventListener('pointercancel', end);
 }
 new ResizeObserver(() => viewer.resize()).observe($('vp'));
+
+// ── ✎ Disegna: notes for the agent ───────────────────────────────────────
+// The user zooms onto a hole that looks wrong, circles it in red ON THE MODEL
+// and writes "could be done better"; "Invia all'agente" stores it beside this
+// generation (POST …/gens/gN/notes): their own view as a JPEG with the strokes
+// on it, the sentence, and every stroke as surface points in model mm with the
+// piece it was drawn on. The agent reads it with cad_notes / GET /api/notes.
+//
+// Strokes are paint on the surface, not on the screen: each pointer sample is a
+// raycast onto the visible mesh, kept with its face normal, and drawn as a tube
+// lifted a little along that normal, so it stays put while the view orbits and
+// means a PLACE on the part. Width is chosen in screen pixels (what a marker
+// feels like) and turned into millimetres at the point where the stroke starts.
+//
+// Pointer routing: in pen mode a press that lands ON the part paints, and is
+// stopped before it reaches OrbitControls (capture listener on #vp); a press on
+// the background, the right button, the wheel and two fingers still move the
+// view — so you can zoom onto the hole and circle it without switching tools.
+// "Muovi" turns the pen off when the part fills the screen. The ⌫ eraser and
+// the T text tool route the same way: what lands on the part is theirs.
+//
+// ↶ takes back ACTIONS, not strokes: a pen gesture, an erase drag, a label, an
+// edit — so undoing an erase puts the strokes back, where they were.
+const annoGroup = new THREE.Group(); annoGroup.name = 'notes';
+viewer.scene.add(annoGroup);
+const PEN_COLORS = ['#ef4444', '#f59e0b', '#facc15', '#22c55e', '#3b82f6', '#ffffff', '#111827'];
+const PEN_SIZES = [3, 6, 12];                  // px on screen at the stroke's start
+const pen = { color: PEN_COLORS[0], size: PEN_SIZES[1] };
+let tool = 'pen';                              // pen | text | erase | hand
+const draft = [];                              // [{color, width, g, k, piece, pts:[V3], nrm:[V3], view, obj}]
+// [{text, color, at, n, up:V3, w, h (mm), k, piece, mesh, view, obj}] — text ON the part
+const labels = [];
+// the undo stack: {type: 'pen', g} | {type: 'erase', strokes, labels} | {type: 'label', L} | {type: 'edit', L, before}
+const actions = [];
+let gesture = 0, seq = 0, painting = null, drawing = false;
+let notesData = [];                            // this gen's notes, as stored
+// One picture per VIEW the user drew from, taken when the pen lifts. The note's
+// main picture is only the last view, and a cross drawn under the head from
+// below is not in it — the agent got the cross as coordinates and nothing to
+// look at. Same camera as the previous stroke → no new picture, that one is
+// re-shot so it shows this stroke too.
+const views = [];                              // [{image, cam}]
+const noteObjs = new Map();                    // note id → Group
+const shownNotes = new Set();
+
+// mm per CSS pixel at a point, for either camera
+function mmPerPx(p) {
+  const cam = viewer.camera, h = $('c').getBoundingClientRect().height || 1;
+  if (cam.isOrthographicCamera) return (cam.top - cam.bottom) / cam.zoom / h;
+  const d = cam.position.distanceTo(p);
+  return 2 * d * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2) / h;
+}
+function surfaceHit(x, y) {
+  const f = firstHit(x, y);
+  if (!f || !f.h.face) return null;            // lines and dots are not a surface
+  const n = f.h.face.normal.clone().transformDirection(f.h.object.matrixWorld);
+  if (n.dot(ray.ray.direction) > 0) n.negate(); // the side you are looking at
+  return { p: f.h.point.clone(), n, key: f.key, mesh: f.h.object };
+}
+function strokeMat(color) {
+  return new THREE.MeshBasicMaterial({ color, toneMapped: false,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+}
+// A tube through the points, lifted along the normals so half of it sits above
+// the surface (a tube ON the surface is half buried and flickers).
+function strokeObject(s) {
+  const r = s.width / 2;
+  const lifted = s.pts.map((p, i) => p.clone().addScaledVector(s.nrm[i] || new THREE.Vector3(), r * 0.6));
+  const mat = strokeMat(s.color);
+  const g = new THREE.Group();
+  const cap = new THREE.SphereGeometry(r, 12, 8);
+  const a = new THREE.Mesh(cap, mat); a.position.copy(lifted[0]); g.add(a);
+  if (lifted.length > 1) {
+    const path = new THREE.CurvePath();
+    for (let i = 1; i < lifted.length; i++) path.add(new THREE.LineCurve3(lifted[i - 1], lifted[i]));
+    const segs = Math.min(lifted.length * 2, 1600);
+    g.add(new THREE.Mesh(new THREE.TubeGeometry(path, segs, r, 8, false), mat));
+    const b = new THREE.Mesh(cap, mat); b.position.copy(lifted[lifted.length - 1]); g.add(b);
+  }
+  g.renderOrder = 2;
+  return g;
+}
+function disposeObj(o) {
+  const mats = new Set();
+  o.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) mats.add(c.material); });
+  mats.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); });   // a label's text is a texture
+  if (o.parent) o.parent.remove(o);
+}
+function redrawStroke(s) {
+  if (s.obj) disposeObj(s.obj);
+  s.obj = strokeObject(s); annoGroup.add(s.obj); viewer.invalidate();
+}
+function startStroke(hit, g) {
+  const s = { color: pen.color, width: pen.size * mmPerPx(hit.p), g, k: ++seq, piece: hit.key,
+              pts: [hit.p], nrm: [hit.n], obj: null };
+  draft.push(s); redrawStroke(s); syncDraw();
+  return s;
+}
+
+const vp = $('vp');
+let redispatch = false;
+vp.addEventListener('pointerdown', e => {
+  if (redispatch || !drawing || e.target !== $('c')) return;
+  if (painting) {
+    // a second finger: this was a pinch, not a stroke. Drop the stroke and hand
+    // the first finger back to OrbitControls, which never saw it.
+    if (e.pointerType === 'touch' && painting.id !== e.pointerId) {
+      const first = painting.down; cancelGesture();
+      redispatch = true;
+      try { $('c').dispatchEvent(new PointerEvent('pointerdown', first)); } finally { redispatch = false; }
+    }
+    return;
+  }
+  if (tool === 'hand' || e.button !== 0 || !e.isPrimary) return;
+  const hit = surfaceHit(e.clientX, e.clientY);
+  let onLabel = tool === 'text' || tool === 'erase' ? labelAt(e.clientX, e.clientY) : null;
+  if (onLabel && onLabel.img && tool === 'text') onLabel = null;   // T edits words, not pictures
+  if (!hit && !onLabel) return;                // the background still orbits
+  e.stopPropagation(); e.preventDefault();
+  if (clock.playing) setPlaying(false);        // paint on a part that stays put
+  try { $('c').setPointerCapture(e.pointerId); } catch {}
+  const down = { pointerId: e.pointerId, pointerType: e.pointerType, isPrimary: true, button: 0, buttons: 1,
+                 clientX: e.clientX, clientY: e.clientY, bubbles: true, cancelable: true };
+  painting = { id: e.pointerId, mode: tool, x: e.clientX, y: e.clientY, down, hit };
+  if (tool === 'erase') { painting.erased = { strokes: [], labels: [] }; eraseAt(hit, e.clientX, e.clientY); return; }
+  if (tool === 'image') { painting.x0 = e.clientX; painting.y0 = e.clientY; return; }
+  if (tool === 'text') {
+    painting.x0 = e.clientX; painting.y0 = e.clientY;
+    painting.edit = onLabel || (hit && paintLabelNear(hit));
+    return;
+  }
+  painting.g = ++gesture;
+  painting.s = startStroke(hit, painting.g);
+}, true);
+vp.addEventListener('pointermove', e => {
+  if (drawing && tool === 'erase' && e.pointerType === 'mouse') moveRing(e);
+  if (!painting || e.pointerId !== painting.id) return;
+  e.stopPropagation();
+  if (painting.mode === 'text' || painting.mode === 'image') { showBox(boxRect(painting, e.clientX, e.clientY)); return; }
+  const d = Math.hypot(e.clientX - painting.x, e.clientY - painting.y);
+  if (d < 3) return;
+  const hit = surfaceHit(e.clientX, e.clientY);
+  if (painting.mode === 'erase') {
+    eraseAt(hit, e.clientX, e.clientY);
+    painting.x = e.clientX; painting.y = e.clientY;
+    return;
+  }
+  if (!hit) { painting.s = null; return; }     // off the part: the line breaks
+  const s = painting.s, last = s && s.pts[s.pts.length - 1];
+  // a jump in depth (across the silhouette onto a face behind) breaks it too,
+  // or the tube would cut through the part
+  if (!s || last.distanceTo(hit.p) > 4 * d * mmPerPx(hit.p) + s.width || s.pts.length > 1500) {
+    painting.s = startStroke(hit, painting.g);
+  } else {
+    s.pts.push(hit.p); s.nrm.push(hit.n); redrawStroke(s);
+  }
+  painting.x = e.clientX; painting.y = e.clientY;
+}, true);
+const endPaint = e => {
+  if (!painting || e.pointerId !== painting.id) return;
+  e.stopPropagation();
+  const p = painting;
+  painting = null;
+  if (p.mode === 'pen') {
+    const mine = draft.filter(s => s.g === p.g);
+    if (mine.length) { actions.push({ type: 'pen', g: p.g }); takeView(mine); }
+  } else if (p.mode === 'erase' && (p.erased.strokes.length || p.erased.labels.length)) {
+    actions.push({ type: 'erase', ...p.erased });
+    refreshViews(viewsOf([...p.erased.strokes, ...p.erased.labels]));
+  } else if (p.mode === 'image') {
+    hideBox();
+    if (e.type === 'pointerup' && p.hit) newImage(p, boxRect(p, e.clientX, e.clientY));
+  } else if (p.mode === 'text') {
+    hideBox();
+    const r = boxRect(p, e.clientX, e.clientY);
+    // a tap on a label edits it; a drag that starts on one still draws a new box
+    if (e.type === 'pointerup') {
+      if (p.edit && r.tap) openEditor(p.edit, labelRect(p.edit), false);
+      else if (p.hit) newLabel(p, r);
+    }
+  }
+  syncDraw();
+};
+vp.addEventListener('pointerup', endPaint, true);
+vp.addEventListener('pointercancel', endPaint, true);
+vp.addEventListener('pointerleave', () => { $('d-ring').style.display = 'none'; });
+
+// ── ⌫ the eraser ──
+// Removes WHOLE strokes, like the "object" eraser of most paint apps: the pen
+// already lifts wherever it leaves the surface, so a stroke is a natural piece.
+// The hit test is in 3D — the distance from the point under the pointer ON THE
+// PART to each stroke's polyline, against a radius set in screen px (the size
+// buttons) and turned into mm right there. Picking the thin tubes themselves
+// would miss a 3px line and catch strokes on the far side of the part.
+// Only the unsent draft is erasable: a sent note is immutable, deleted whole.
+const ERASE_PX = () => 6 + pen.size * 1.5;   // radius: 10.5 / 15 / 24 px
+function segDist(p, a, b) {
+  const ab = b.clone().sub(a), l2 = ab.lengthSq();
+  const t = l2 ? THREE.MathUtils.clamp(p.clone().sub(a).dot(ab) / l2, 0, 1) : 0;
+  return a.clone().addScaledVector(ab, t).distanceTo(p);
+}
+function strokeDist(s, p) {
+  if (s.pts.length === 1) return s.pts[0].distanceTo(p);
+  let d = Infinity;
+  for (let i = 1; i < s.pts.length; i++) d = Math.min(d, segDist(p, s.pts[i - 1], s.pts[i]));
+  return d;
+}
+function eraseAt(hit, x, y) {
+  const er = painting.erased, over = labelAt(x, y);
+  if (over) { labels.splice(labels.indexOf(over), 1); disposeObj(over.obj); over.obj = null; er.labels.push(over); }
+  if (!hit) { viewer.invalidate(); syncDraw(); return; }
+  const r = ERASE_PX() * mmPerPx(hit.p);
+  for (let i = draft.length - 1; i >= 0; i--) {
+    const s = draft[i];
+    if (!s || strokeDist(s, hit.p) > r + s.width / 2) continue;
+    if (s.label) {                             // a letter: the whole text goes, as one gesture
+      const L = s.label;
+      er.strokes.push(...takeLabelStrokes(L));
+      if (labels.includes(L)) { labels.splice(labels.indexOf(L), 1); disposeObj(L.obj); L.obj = null; er.labels.push(L); }
+      i = draft.length;                        // indices moved: scan again from the top
+      continue;
+    }
+    draft.splice(i, 1); disposeObj(s.obj); s.obj = null; er.strokes.push(s);
+  }
+  for (let i = labels.length - 1; i >= 0; i--) {
+    const L = labels[i];
+    if (L.style === 'paint') continue;        // its letters are hit as strokes, above
+    if (L.obj && L.obj.userData.tag ? L.at.distanceTo(hit.p) > r : !inLabel(L, hit.p, r)) continue;
+    labels.splice(i, 1); disposeObj(L.obj); L.obj = null; er.labels.push(L);
+  }
+  viewer.invalidate(); syncDraw();
+}
+// inside a label's box, measured in its own frame (right, up, normal)
+function inLabel(L, p, margin) {
+  const v = p.clone().sub(L.at), right = L.up.clone().cross(L.n).normalize();
+  return Math.abs(v.dot(right)) <= L.w / 2 + margin && Math.abs(v.dot(L.up)) <= L.h / 2 + margin
+    && Math.abs(v.dot(L.n)) <= Math.max(L.w, L.h) * 0.6;
+}
+// put erased strokes back in their original order (`k`): a circle broken over
+// a hole is read by the server in stroke order, and must stay a loop
+function restore(er) {
+  for (const s of er.strokes) { draft.push(s); redrawStroke(s); }
+  draft.sort((a, b) => a.k - b.k);
+  for (const L of er.labels || []) { labels.push(L); drawLabel(L); }
+  labels.sort((a, b) => a.k - b.k);
+}
+const viewsOf = items => items.map(x => x.view).filter(v => v != null);
+function moveRing(e) {
+  const ring = $('d-ring'), r = vp.getBoundingClientRect(), d = 2 * ERASE_PX();
+  Object.assign(ring.style, { display: 'block', width: d + 'px', height: d + 'px',
+    left: (e.clientX - r.left - d / 2) + 'px', top: (e.clientY - r.top - d / 2) + 'px' });
+}
+
+// ── T: text ON the part — two styles, the user picks (⚑ / ▭ next to T) ──
+// Press on the part and drag a box (a tap gives a default one), type, Enter.
+// ⚑ TARGHETTA (default — the one you can always read): a dot on the surface, a
+// short stem along the normal, and a plate with the words that always FACES THE
+// CAMERA (a THREE.Sprite orients itself at every render, so the on-demand
+// viewer needs no per-frame code). Every piece is drawn twice — depth-tested
+// at full opacity, and without the depth test at 0.35 on top — so the part
+// covers a plate the way it covers anything, yet the plate never disappears:
+// quill asked for it because a decal vanishes as soon as you orbit behind.
+// ▭ DECAL: the words projected onto the surface with three's DecalGeometry —
+// it cuts the triangles inside the box and maps a CanvasTexture on them, flat
+// on a face, wrapped round a cylinder, no UVs. Where a decal cannot work (a box
+// hanging over an edge, a RIDGED surface) it falls back to the targhetta, never
+// to a one-sided flying card: that card is what quill saw floating off a
+// thread («quella non è una decal, è una faccia volante»).
+// Orientation: the normal is the AVERAGE of the surface under the box (a 5×5
+// grid of raycasts), not the one point touched — on an edge that would be a
+// coin toss; "up" is the camera's up projected on that plane, so the text reads
+// straight from where it was written; the size is the box in px → mm.
+// For the agent the label is DATA (text, place, size, the marks it sits next
+// to), not pixels: models that never look at the pictures still read it.
+// px, the box a tap without a drag makes — smaller on a phone, where 170 px is half the screen
+const LABEL_TAP = matchMedia('(max-width:760px)').matches ? [110, 34] : [170, 46];
+const LABEL_STYLES = ['paint', 'tag', 'decal'];
+let labelStyle = 'paint';                      // the default: paint goes on any surface
+try { const v = localStorage.getItem('noodle:view:labelStyle'); if (LABEL_STYLES.includes(v)) labelStyle = v; } catch {}
+$('d-lstyle').value = labelStyle;
+$('d-lstyle').addEventListener('change', e => {
+  labelStyle = LABEL_STYLES.includes(e.target.value) ? e.target.value : 'paint';
+  try { localStorage.setItem('noodle:view:labelStyle', labelStyle); } catch {}
+  setTool('text');
+});
+function boxRect(p, x, y) {
+  const w = Math.abs(x - p.x0), h = Math.abs(y - p.y0);
+  if (w < 14 && h < 14) {
+    const [W, H] = LABEL_TAP;
+    return { x0: p.x0 - W / 2, y0: p.y0 - H / 2, x1: p.x0 + W / 2, y1: p.y0 + H / 2, tap: true };
+  }
+  const y0 = Math.min(y, p.y0), y1 = Math.max(Math.max(y, p.y0), y0 + 18);   // one line, at least
+  return { x0: Math.min(x, p.x0), y0, x1: Math.max(Math.max(x, p.x0), Math.min(x, p.x0) + 24), y1 };
+}
+function showBox(r) {
+  const b = $('d-box'), v = vp.getBoundingClientRect();
+  if (r.tap) { b.style.display = 'none'; return; }
+  Object.assign(b.style, { display: 'block', left: (r.x0 - v.left) + 'px', top: (r.y0 - v.top) + 'px',
+    width: (r.x1 - r.x0) + 'px', height: (r.y1 - r.y0) + 'px' });
+}
+function hideBox() { $('d-box').style.display = 'none'; }
+// the draft label under the pointer, unless the part is in front of it
+function labelAt(x, y) {
+  const objs = labels.map(L => L.obj).filter(Boolean);
+  if (!objs.length) return null;
+  const r = $('c').getBoundingClientRect();
+  ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, viewer.camera);
+  const h = ray.intersectObjects(objs, true)[0];
+  if (!h) return null;
+  let o = h.object; while (o.parent && !objs.includes(o)) o = o.parent;
+  const L = labels.find(l => l.obj === o);
+  if (L && L.obj.userData.tag) return L;       // on screen — faded or not — so it can be tapped
+  const f = firstHit(x, y);
+  if (L && f && f.h.distance < h.distance - Math.max(L.w, L.h) * 0.5) return null;
+  return L || null;
+}
+function labelFrame(L, lift = 0) {
+  const right = L.up.clone().cross(L.n).normalize(), up = L.n.clone().cross(right).normalize();
+  return new THREE.Matrix4().makeBasis(right, up, L.n.clone().normalize())
+    .setPosition(L.at.clone().addScaledVector(L.n, lift));
+}
+// a label's box on screen, to put the editor back over it
+function labelRect(L) {
+  if (L.obj && L.obj.userData.tag) return tagRect(L);
+  if (L.style === 'paint') return paintRect(L);
+  const m = labelFrame(L), r = $('c').getBoundingClientRect();
+  const xs = [], ys = [];
+  for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+    const q = new THREE.Vector3(a * L.w / 2, b * L.h / 2, 0).applyMatrix4(m).project(viewer.camera);
+    xs.push(r.left + (q.x + 1) / 2 * r.width); ys.push(r.top + (1 - q.y) / 2 * r.height);
+  }
+  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+}
+function newLabel(p, r) {
+  const L = makeLabel(p, r, labelStyle);
+  if (L.style === 'paint') L.box = r;
+  openEditor(L, r, true);
+}
+// where a label (or a placed image) goes: the anchor, the mean normal under the
+// box, the camera's up, the size — and for a decal the fitted surface
+function makeLabel(p, r, style) {
+  const cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
+  const c = surfaceHit(cx, cy) || p.hit;
+  const k = mmPerPx(c.p), reach = Math.hypot(r.x1 - r.x0, r.y1 - r.y0) * k;
+  const n = new THREE.Vector3();
+  for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++) {
+    const h = surfaceHit(r.x0 + (r.x1 - r.x0) * (i + 0.5) / 5, r.y0 + (r.y1 - r.y0) * (j + 0.5) / 5);
+    if (h && h.p.distanceTo(c.p) < reach) n.add(h.n);     // not the face behind, across a hole
+  }
+  if (n.lengthSq() < 1e-9) n.copy(c.n);
+  n.normalize();
+  const cam = viewer.camera;
+  const up = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion);
+  up.addScaledVector(n, -up.dot(n));
+  if (up.lengthSq() < 1e-6) up.copy(n.clone().cross(new THREE.Vector3(1, 0, 0).applyQuaternion(cam.quaternion)));
+  up.normalize();
+  // a decal lies ON the plane (its size is measured there); a plate faces the
+  // screen, as the box did, so it keeps the box's own size
+  const [w, h] = style === 'decal' ? planeSize(r, c.p, n, up, k) : [(r.x1 - r.x0) * k, (r.y1 - r.y0) * k];
+  const L = { text: '', color: pen.color, style, at: c.p.clone(), n, up, w, h,
+              k: ++seq, piece: c.key, mesh: c.mesh, view: null, obj: null };
+  if (style === 'decal') Object.assign(L, fitSurface(r, c, reach, L));
+  else if (style === 'paint') { L.surface = 'paint'; L.obj = new THREE.Group(); }
+  else L.surface = 'tag';
+  return L;
+}
+
+// ── Img: a picture placed ON the part, with the decal ──
+// Pick a PNG/JPEG (on a phone also straight from the camera), drag a box: the
+// picture is placed in proportion, centred in the box, by the very path a
+// ▭ decal label takes — fitted patch on a plane / cylinder / sphere,
+// DecalGeometry elsewhere, a targhetta where neither works. Shrunk here to a
+// long side of 1600 px before it is ever sent; it travels as an asset of the
+// note (aK.img<N>.png|jpg), and the agent gets where it is (`images`).
+// ↶ and ⌫ treat it like a label; replacing = rub it out and place another.
+const IMG_MAX = 1600;
+let pendingImg = null;
+$('d-imgtool').onclick = () => { if (pendingImg) setTool('image'); $('d-imgfile').click(); };
+$('d-imgfile').addEventListener('change', async e => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  try {
+    const url = URL.createObjectURL(f), im = new Image();
+    await new Promise((ok, ko) => { im.onload = ok; im.onerror = ko; im.src = url; });
+    const k = Math.min(1, IMG_MAX / Math.max(im.naturalWidth, im.naturalHeight));
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(im.naturalWidth * k)); cv.height = Math.max(1, Math.round(im.naturalHeight * k));
+    cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+    URL.revokeObjectURL(url);
+    let data = f.type === 'image/png' ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg', 0.88);
+    if (data.length > 5.3e6) data = cv.toDataURL('image/jpeg', 0.85);     // over ~4 MB: a JPEG
+    pendingImg = { canvas: cv, data, aspect: cv.width / cv.height };
+    setTool('image');
+    toast('Ora trascina un riquadro sul pezzo per posare l\'immagine.', 3500);
+  } catch { toast('⚠ Immagine non leggibile.'); }
+});
+function newImage(p, r) {
+  if (!pendingImg) { $('d-imgfile').click(); return; }
+  const a = pendingImg.aspect, cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
+  let w = r.x1 - r.x0, h = r.y1 - r.y0;
+  if (w / h > a) w = h * a; else h = w / a;           // in proportion, inside the box
+  const box = { x0: cx - w / 2, y0: cy - h / 2, x1: cx + w / 2, y1: cy + h / 2 };
+  const L = makeLabel(p, box, 'decal');
+  // in proportion ON THE SURFACE: the box was proportional on screen, and a
+  // slanted face shortens it in depth (a 2:1 picture landed 1.2:1 on the nut)
+  L.h = L.w / a;
+  L.img = pendingImg; L.color = '#ffffff';
+  labels.push(L); drawLabel(L);
+  actions.push({ type: 'label', L });
+  takeView([L]);
+  syncDraw();
+}
+function imgTexture(L) {
+  if (L.img.texture) return L.img.texture;
+  const t = new THREE.CanvasTexture(L.img.canvas);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return t;
+}
+
+// ── ▭ decal on a REGULAR surface: fit it, then lay the text ON it ──
+// quill: «sulle flat va, è piatta per forza, ma su quelle curve proiettala o usa
+// uv per superfici regolari». A projection stretches the words towards the sides
+// of a cylinder (the box's edge meets the surface at a slant), so where the
+// surface under the box is a plane, a cylinder or a sphere it is FITTED from a
+// 7×7 grid of raycasts and the text is laid on a patch of that very surface,
+// with its own UVs: on a cylinder, which is developable, the map is an
+// isometry — the box width becomes arc length round the axis, the height runs
+// along it, at any angle the camera's up dictates. A sphere uses the
+// exponential map (distortion of the order of (size/R)², invisible on a label).
+// The fit uses the POINTS, not the normals, for the radius: the viewport mesh
+// has FLAT facets, whose normal is constant across the facet while the point
+// moves — a normal-based circle fit is off by half a facet. The axis does come
+// from the normals (facet normals are exactly ⟂ to a tessellated cylinder's
+// axis): the smallest eigenvector of Σ n nᵀ.
+// What is chosen goes into the label (`surface` + `fit`), so a saved note is
+// redrawn identical without refitting. Anything else — mixed, organic, an edge
+// — is DecalGeometry's projection; ridges (threads) are a targhetta.
+const ARC_MAX = 150 * Math.PI / 180;           // wider than this round an axis: not a patch
+function solveLin(A, b) {                       // Gaussian elimination, small dense systems
+  const n = b.length, M = A.map((row, i) => [...row, b[i]]);
+  for (let c = 0; c < n; c++) {
+    let p = c; for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    if (Math.abs(M[p][c]) < 1e-12) return null;
+    [M[c], M[p]] = [M[p], M[c]];
+    for (let r = 0; r < n; r++) if (r !== c) { const f = M[r][c] / M[c][c]; for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k]; }
+  }
+  return M.map((row, i) => row[n] / row[i]);
+}
+function lsq(rows, rhs) {                      // least squares via the normal equations
+  const m = rows[0].length, A = Array.from({ length: m }, () => new Array(m).fill(0)), b = new Array(m).fill(0);
+  rows.forEach((r, i) => { for (let a = 0; a < m; a++) { b[a] += r[a] * rhs[i]; for (let c = 0; c < m; c++) A[a][c] += r[a] * r[c]; } });
+  return solveLin(A, b);
+}
+function minEigvec(N) {                        // smallest eigenvector of Σ n nᵀ (power iteration on tr·I − M)
+  const M = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (const v of N) { const a = [v.x, v.y, v.z]; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) M[i][j] += a[i] * a[j]; }
+  const tr = M[0][0] + M[1][1] + M[2][2];
+  let x = new THREE.Vector3(0.577, 0.578, 0.576);
+  for (let it = 0; it < 80; it++) {
+    const a = [x.x, x.y, x.z], y = [0, 1, 2].map(i => tr * a[i] - (M[i][0] * a[0] + M[i][1] * a[1] + M[i][2] * a[2]));
+    x.set(...y); if (x.lengthSq() < 1e-30) return null; x.normalize();
+  }
+  const a = [x.x, x.y, x.z], lam = [0, 1, 2].reduce((t, i) => t + a[i] * (M[i][0] * a[0] + M[i][1] * a[1] + M[i][2] * a[2]), 0);
+  return { v: x, lam: lam / N.length };
+}
+function fitSurface(r, c, reach, L) {
+  const P = [], N = [], G = 7;
+  for (let i = 0; i < G; i++) for (let j = 0; j < G; j++) {
+    const h = surfaceHit(r.x0 + (r.x1 - r.x0) * (i + 0.5) / G, r.y0 + (r.y1 - r.y0) * (j + 0.5) / G);
+    if (h && h.key === c.key && h.p.distanceTo(c.p) < reach) { P.push(h.p); N.push(h.n); }
+  }
+  // a box hanging over an edge, or across two pieces, is not ONE regular surface
+  if (P.length < 0.9 * G * G) return { surface: 'decal' };
+  const size = Math.min(L.w, L.h), mean = N.reduce((a, b) => a.add(b), new THREE.Vector3()).normalize();
+  if (N.every(v => v.dot(mean) > Math.cos(THREE.MathUtils.degToRad(4)))
+      && P.every(p => Math.abs(p.clone().sub(c.p).dot(mean)) < 0.03 * size + 0.005)) {
+    return { surface: 'plane', n: mean };
+  }
+  const tol = R => 0.01 * R + 0.02 * size;      // rms of the points off the fitted surface
+  const sgn = (centre, axis) => {               // convex (+1) or concave (−1): do the normals point away?
+    let t = 0;
+    P.forEach((p, i) => { const d = p.clone().sub(centre); if (axis) d.addScaledVector(axis, -d.dot(axis)); t += d.dot(N[i]); });
+    return t >= 0 ? 1 : -1;
+  };
+  // every normal ⟂ one axis: a cylinder. A corner of the box may catch another
+  // face (on the nut, 2 samples of 49 landed on the ledge of a cross hole and
+  // turned a clean cylinder into a «sphere»): one round of outlier rejection,
+  // up to 10% of the samples, then the fit runs on what is left.
+  // The contaminated axis cannot be trusted to find its own outliers, so the
+  // candidates are the cross products of pairs of normals (RANSAC over all
+  // pairs — 49 samples are ~1200 pairs, nothing), refined on the inliers.
+  let ax = minEigvec(N), CP = P;
+  if (ax && ax.lam >= 0.003) {
+    let best = null;
+    for (let i = 0; i < N.length; i++) for (let j = i + 1; j < N.length; j++) {
+      const a = N[i].clone().cross(N[j]);
+      if (a.length() < 0.08) continue;           // nearly parallel: no axis in it
+      a.normalize();
+      const keep = N.map((v, q) => Math.abs(v.dot(a)) < 0.05 ? q : -1).filter(q => q >= 0);
+      if (!best || keep.length > best.length) best = keep;
+    }
+    if (best && best.length >= 0.9 * N.length) {
+      const ax2 = minEigvec(best.map(i => N[i]));
+      if (ax2 && ax2.lam < 0.003) { ax = ax2; CP = best.map(i => P[i]); }
+    }
+  }
+  if (ax && ax.lam < 0.003) {
+    const a = ax.v, u = new THREE.Vector3().crossVectors(a, Math.abs(a.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0)).normalize();
+    const v = new THREE.Vector3().crossVectors(a, u);
+    const xy = CP.map(p => [p.dot(u), p.dot(v)]);
+    const k = lsq(xy.map(([x, y]) => [x, y, 1]), xy.map(([x, y]) => -(x * x + y * y)));     // Kåsa
+    if (k) {
+      const cx = -k[0] / 2, cy = -k[1] / 2, R = Math.sqrt(Math.max(0, cx * cx + cy * cy - k[2]));
+      const rms = Math.sqrt(xy.reduce((t, [x, y]) => t + (Math.hypot(x - cx, y - cy) - R) ** 2, 0) / xy.length);
+      const centre = u.clone().multiplyScalar(cx).addScaledVector(v, cy);
+      if (R > 0.2 * size && R < 1e4 && rms < tol(R)) {
+        const fit = { axis: a, centre, radius: R, convex: sgn(centre, a) };
+        if (patchFits('cylinder', fit, L)) return { surface: 'cylinder', fit };
+      }
+    }
+  }
+  // a sphere only when the normals turn round TWO axes: a thin band of a
+  // cylinder fits a sphere of about its radius just as well
+  const k = ax && ax.lam > 0.01 ? lsq(P.map(p => [p.x, p.y, p.z, 1]), P.map(p => -p.lengthSq())) : null;
+  if (k) {
+    const centre = new THREE.Vector3(-k[0] / 2, -k[1] / 2, -k[2] / 2), R = Math.sqrt(Math.max(0, centre.lengthSq() - k[3]));
+    const rms = Math.sqrt(P.reduce((t, p) => t + (p.distanceTo(centre) - R) ** 2, 0) / P.length);
+    if (R > 0.2 * size && R < 1e4 && rms < tol(R)) {
+      const fit = { centre, radius: R, convex: sgn(centre, null) };
+      if (patchFits('sphere', fit, L)) return { surface: 'sphere', fit };
+    }
+  }
+  return { surface: 'decal' };
+}
+// the frame of the text at the anchor, on the fitted surface: normal (towards
+// the viewer), right, up — up being the camera's, projected
+function patchFrame(surface, fit, L) {
+  let n = L.n.clone();
+  if (surface === 'cylinder' || surface === 'sphere') {
+    n = L.at.clone().sub(fit.centre);
+    if (fit.axis) n.addScaledVector(fit.axis, -n.dot(fit.axis));
+    n.normalize().multiplyScalar(fit.convex);
+  }
+  const up = L.up.clone().addScaledVector(n, -L.up.dot(n));
+  if (up.lengthSq() < 1e-8) up.copy(new THREE.Vector3(0, 0, 1).addScaledVector(n, -n.z));
+  up.normalize();
+  return { n, up, right: up.clone().cross(n).normalize() };
+}
+function patchFits(surface, fit, L) {
+  const f = patchFrame(surface, fit, L), half = Math.hypot(L.w, L.h) / 2;
+  if (surface === 'cylinder') {
+    const R = L.at.clone().sub(fit.centre).addScaledVector(fit.axis, -L.at.clone().sub(fit.centre).dot(fit.axis)).length();
+    const arc = (Math.abs(L.w * f.right.dot(fit.axis.clone().cross(f.n).normalize())) +
+                 Math.abs(L.h * f.up.dot(fit.axis.clone().cross(f.n).normalize()))) / R;
+    return arc <= ARC_MAX;
+  }
+  return half / L.at.distanceTo(fit.centre) <= ARC_MAX / 2;
+}
+// The patch: a grid in the text's own (σ, τ) mm, mapped onto the surface and
+// lifted by ε along its normal. UVs are the grid itself: no projection at all.
+function patchGeometry(L) {
+  const { surface, fit } = L, f = patchFrame(surface, fit, L), eps = Math.max(0.01, 0.004 * Math.max(L.w, L.h));
+  const SU = surface === 'plane' ? 1 : 32, SV = surface === 'plane' ? 1 : 8;
+  const pos = [], uv = [], idx = [];
+  let map;
+  if (surface === 'plane') {
+    map = (s, t) => L.at.clone().addScaledVector(f.right, s).addScaledVector(f.up, t).addScaledVector(f.n, eps);
+  } else if (surface === 'cylinder') {
+    const a = fit.axis, rel = L.at.clone().sub(fit.centre), t0 = rel.dot(a);
+    const d0 = rel.clone().addScaledVector(a, -t0), R = d0.length(); d0.normalize();
+    const eth = a.clone().cross(d0);
+    map = (s, t) => {
+      const q = f.right.clone().multiplyScalar(s).addScaledVector(f.up, t);
+      const al = q.dot(eth) / R, be = q.dot(a);
+      const dir = d0.clone().multiplyScalar(Math.cos(al)).addScaledVector(eth, Math.sin(al));
+      return fit.centre.clone().addScaledVector(a, t0 + be).addScaledVector(dir, R + fit.convex * eps);
+    };
+  } else {
+    const d0 = L.at.clone().sub(fit.centre), R = d0.length(); d0.normalize();
+    map = (s, t) => {
+      const q = f.right.clone().multiplyScalar(s).addScaledVector(f.up, t), rho = q.length();
+      const dir = rho < 1e-9 ? d0.clone() : d0.clone().multiplyScalar(Math.cos(rho / R)).addScaledVector(q.normalize(), Math.sin(rho / R));
+      return fit.centre.clone().addScaledVector(dir, R + fit.convex * eps);
+    };
+  }
+  for (let j = 0; j <= SV; j++) for (let i = 0; i <= SU; i++) {
+    const U = i / SU, V = j / SV, p = map((U - 0.5) * L.w, (V - 0.5) * L.h);
+    pos.push(p.x, p.y, p.z); uv.push(U, V);
+  }
+  for (let j = 0; j < SV; j++) for (let i = 0; i < SU; i++) {
+    const a = j * (SU + 1) + i, b = a + 1, c = a + SU + 1, d = c + 1;
+    idx.push(a, b, d, a, d, c);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  return g;
+}
+// The box's size ON the label plane: its corners' rays met with the plane.
+// px × mmPerPx alone ignores foreshortening, and a box drawn on a top face seen
+// at a slant came out half as tall as the one on screen. Clamped to 4× the flat
+// estimate for a plane seen almost edge-on.
+function planeSize(r, at, n, up, k) {
+  const right = up.clone().cross(n).normalize(), pl = new THREE.Plane().setFromNormalAndCoplanarPoint(n, at);
+  const c = $('c').getBoundingClientRect(), us = [], vs = [], q = new THREE.Vector3();
+  for (const [x, y] of [[r.x0, r.y0], [r.x1, r.y0], [r.x1, r.y1], [r.x0, r.y1]]) {
+    ndc.set(((x - c.left) / c.width) * 2 - 1, -((y - c.top) / c.height) * 2 + 1);
+    ray.setFromCamera(ndc, viewer.camera);
+    if (!ray.ray.intersectPlane(pl, q)) continue;
+    q.sub(at); us.push(q.dot(right)); vs.push(q.dot(up));
+  }
+  const flatW = (r.x1 - r.x0) * k, flatH = (r.y1 - r.y0) * k;
+  if (us.length < 4) return [flatW, flatH];
+  return [Math.min(Math.max(...us) - Math.min(...us), 4 * flatW), Math.min(Math.max(...vs) - Math.min(...vs), 4 * flatH)];
+}
+let editing = null;
+function openEditor(L, r, isNew) {
+  closeEditor(true);
+  const inp = $('d-label'), v = vp.getBoundingClientRect();
+  editing = { L, isNew, rect: r };
+  const w = Math.max(140, r.x1 - r.x0), h = Math.max(32, Math.min(r.y1 - r.y0, 60));
+  const left = THREE.MathUtils.clamp(r.x0 - v.left, 4, Math.max(4, v.width - w - 4));
+  const top = THREE.MathUtils.clamp((r.y0 + r.y1) / 2 - v.top - h / 2, 4, Math.max(4, v.height - h - 4));
+  Object.assign(inp.style, { display: 'block', left: left + 'px', top: top + 'px', width: w + 'px',
+    height: h + 'px', color: L.color });
+  inp.value = L.text;
+  inp.focus(); inp.select();
+}
+function closeEditor(commit) {
+  const ed = editing;
+  if (!ed) return;
+  editing = null;
+  const inp = $('d-label'), text = inp.value.trim().slice(0, 200);
+  inp.style.display = 'none';
+  if (!commit) { syncDraw(); return; }
+  const L = ed.L;
+  if (ed.isNew && L.style === 'paint') {
+    if (!text) return;
+    L.text = text;
+    const st = paintText(L, L.box);
+    if (!st.length) { toast('⚠ Il testo cade fuori dal pezzo: riprova sul pezzo.'); return; }
+    labels.push(L); drawLabel(L);
+    actions.push({ type: 'label', L, strokes: st });
+    takeView([L, ...st]);
+  } else if (ed.isNew) {
+    if (!text) return;
+    L.text = text; labels.push(L); drawLabel(L);
+    actions.push({ type: 'label', L });
+    takeView([L]);
+  } else if (!text) {                          // emptied = rubbed out, and ↶ brings it back
+    const st = takeLabelStrokes(L);
+    labels.splice(labels.indexOf(L), 1); disposeObj(L.obj); L.obj = null;
+    actions.push({ type: 'erase', strokes: st, labels: [L] });
+    refreshViews(viewsOf([L, ...st]));
+  } else if (text !== L.text && L.style === 'paint') {
+    // re-lettered in its box as it shows NOW (from the current camera)
+    const before = L.text, oldSt = takeLabelStrokes(L);
+    L.text = text;
+    const newSt = paintText(L, ed.rect);
+    actions.push({ type: 'edit', L, before, oldStrokes: oldSt, newStrokes: newSt });
+    refreshViews(viewsOf([L, ...oldSt]));
+    takeView([L, ...newSt]);
+  } else if (text !== L.text) {
+    actions.push({ type: 'edit', L, before: L.text });
+    L.text = text; drawLabel(L);
+    refreshViews(viewsOf([L]));
+  }
+  syncDraw();
+}
+$('d-label').addEventListener('keydown', e => {
+  e.stopPropagation();                         // typing "a" must not show all pieces
+  if (e.key === 'Enter') { e.preventDefault(); closeEditor(true); }
+  else if (e.key === 'Escape') { e.preventDefault(); closeEditor(false); }
+});
+$('d-label').addEventListener('blur', () => closeEditor(true));
+function drawLabel(L) {
+  if (L.obj) disposeObj(L.obj);
+  L.obj = labelObject(L); annoGroup.add(L.obj); viewer.invalidate();
+}
+// the words on a card: ink in the label's colour on a contrasting backing, the
+// largest font whose wrapped lines fit the box
+function labelCanvas(text, color, w, h) {
+  const long = 512, cw = w >= h ? long : Math.max(32, Math.round(long * w / h));
+  const ch = w >= h ? Math.max(32, Math.round(long * h / w)) : long;
+  const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+  const c = cv.getContext('2d'), col = new THREE.Color(color);
+  const light = 0.2126 * col.r + 0.7152 * col.g + 0.0722 * col.b > 0.35;
+  const pad = Math.min(cw, ch) * 0.12, bw = Math.max(2, Math.min(cw, ch) * 0.05);
+  c.fillStyle = light ? 'rgba(11,14,20,0.80)' : 'rgba(255,255,255,0.88)';
+  c.strokeStyle = color; c.lineWidth = bw;
+  c.beginPath(); c.roundRect(bw / 2, bw / 2, cw - bw, ch - bw, Math.min(cw, ch) * 0.18); c.fill(); c.stroke();
+  const words = text.split(/\s+/);
+  let fs = ch, lines = [text];
+  for (; fs > 6; fs *= 0.9) {
+    c.font = `700 ${fs}px ${getComputedStyle(document.body).fontFamily}`;
+    lines = [];
+    for (const wd of words) {
+      const last = lines[lines.length - 1];
+      if (last != null && c.measureText(last + ' ' + wd).width <= cw - 2 * pad) lines[lines.length - 1] = last + ' ' + wd;
+      else lines.push(wd);
+    }
+    if (lines.length * fs * 1.12 <= ch - 1.2 * pad && lines.every(l => c.measureText(l).width <= cw - 2 * pad)) break;
+  }
+  c.fillStyle = color; c.textAlign = 'center'; c.textBaseline = 'middle';
+  lines.forEach((l, i) => c.fillText(l, cw / 2, ch / 2 + (i - (lines.length - 1) / 2) * fs * 1.12));
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  return tex;
+}
+// The visible mesh the label was written on — for a saved note, found again by
+// looking down its normal from just above it.
+const labelRay = new THREE.Raycaster();
+function meshUnder(L) {
+  const s = Math.max(L.w, L.h);
+  labelRay.set(L.at.clone().addScaledVector(L.n, s), L.n.clone().negate());
+  let best = null;
+  for (const h of labelRay.intersectObjects(viewer.previewGroup.children, true)) {
+    if (!h.object.isMesh || !h.face) continue;
+    let shown = true;
+    for (let o = h.object; o && o !== viewer.previewGroup; o = o.parent) if (!o.visible) shown = false;
+    if (!shown) continue;
+    const d = h.point.distanceTo(L.at);
+    if (!best || d < best.d) best = { d, o: h.object };
+  }
+  return best && best.d < s ? best.o : null;
+}
+// Keep only the decal triangles that FACE the projector: the box is deep enough
+// to reach round a curved side, so it also catches the back of a thin plate,
+// which would wear the text mirrored. Null when what is left covers less than
+// half the box — then the targhetta reads better than a torn decal.
+function frontFaces(geo, n, area) {
+  const P = geo.attributes.position, N = geo.attributes.normal, U = geo.attributes.uv;
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), fn = new THREE.Vector3();
+  const keep = [];
+  let covered = 0;
+  for (let i = 0; i + 2 < P.count; i += 3) {
+    a.fromBufferAttribute(P, i); b.fromBufferAttribute(P, i + 1); c.fromBufferAttribute(P, i + 2);
+    fn.subVectors(b, a).cross(c.clone().sub(a));
+    const d = fn.dot(n) / 2;                   // the triangle's area projected on the label plane
+    if (d <= 0 || d < 0.15 * fn.length() / 2) continue;
+    covered += d; keep.push(i);
+  }
+  geo.dispose();
+  if (!keep.length || covered < 0.5 * area) return null;
+  const out = new THREE.BufferGeometry(), pick = (attr, k) => {
+    const arr = new Float32Array(keep.length * 3 * k);
+    keep.forEach((i, t) => { for (let v = 0; v < 3; v++) for (let q = 0; q < k; q++) arr[(t * 3 + v) * k + q] = attr.array[(i + v) * k + q]; });
+    return new THREE.BufferAttribute(arr, k);
+  };
+  out.setAttribute('position', pick(P, 3)); out.setAttribute('uv', pick(U, 2));
+  if (N) out.setAttribute('normal', pick(N, 3));
+  return out;
+}
+// A ridged surface under the box — a thread, knurling — takes the flat card:
+// a decal projects along the normal, so the text lands on flanks at different
+// depths and, seen from any slant, comes out doubled by parallax (measured on
+// the bolt of zz-note-probe: «filetto M8?» drawn twice, half a line apart).
+// The test is how well the normals under the box AGREE: |Σn|/count is 1 on a
+// plane, 0.955 over 60° of a cylinder, 0.90 over 90°, and ~0.87 on a 60°
+// thread (flanks ±30° off radial). Raycast along −n on a 5×5 grid, so a saved
+// note decides exactly as the draft did.
+function probeUnder(L) {
+  const right = L.up.clone().cross(L.n).normalize(), s = Math.max(L.w, L.h), sum = new THREE.Vector3();
+  let hits = 0;
+  for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++) {
+    const o = L.at.clone().addScaledVector(right, ((i + 0.5) / 5 - 0.5) * L.w)
+      .addScaledVector(L.up, ((j + 0.5) / 5 - 0.5) * L.h).addScaledVector(L.n, s);
+    labelRay.set(o, L.n.clone().negate());
+    const h = labelRay.intersectObjects(viewer.previewGroup.children, true).find(x => x.face && x.object.visible);
+    if (!h || h.distance > 2 * s) continue;
+    const nn = h.face.normal.clone().transformDirection(h.object.matrixWorld);
+    sum.add(nn.dot(L.n) < 0 ? nn.negate() : nn); hits++;
+  }
+  return { ridged: hits >= 5 && sum.length() / hits < 0.9 };
+}
+function labelObject(L) {
+  if (L.style === 'paint') return new THREE.Group();   // the letters are strokes of their own
+  if (L.img && L.surface === 'tag') return tagObject(L, imgTexture(L), '#ffffff');
+  if (L.style !== 'decal' || L.surface === 'tag') return tagObject(L);
+  const mat = new THREE.MeshBasicMaterial({ map: L.img ? imgTexture(L) : labelCanvas(L.text, L.color, L.w, L.h), transparent: true,
+    depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+  if (['plane', 'cylinder', 'sphere'].includes(L.surface)) {
+    try {
+      const obj = new THREE.Mesh(patchGeometry(L), mat);
+      obj.renderOrder = 3; obj.userData.surface = L.surface;
+      return obj;
+    } catch { /* a broken fit: project instead */ }
+  }
+  const frame = labelFrame(L);
+  let geo = null;
+  const mesh = (L.mesh && L.mesh.parent) ? L.mesh : meshUnder(L), under = probeUnder(L);
+  if (mesh && !under.ridged) {
+    try {
+      const rot = new THREE.Euler().setFromRotationMatrix(frame);
+      const d = new DecalGeometry(mesh, L.at, rot, new THREE.Vector3(L.w, L.h, Math.max(L.w, L.h) * 0.8));
+      geo = frontFaces(d, L.n.clone().normalize(), L.w * L.h);
+    } catch { geo = null; }
+  }
+  if (!geo) {                                  // no flying card: a plate — and the data says so
+    mat.map.dispose(); mat.dispose(); L.surface = 'tag';
+    return L.img ? tagObject(L, imgTexture(L), '#ffffff') : tagObject(L);
+  }
+  const obj = new THREE.Mesh(geo, mat);
+  obj.renderOrder = 3;
+  return obj;
+}
+// the stem: a few mm, in proportion to the plate
+const stemOf = L => L.stem ?? Math.max(L.h * 1.2, 0.35 * L.w);
+const tipOf = L => L.at.clone().addScaledVector(L.n, stemOf(L));
+function tagRect(L) {
+  const r = $('c').getBoundingClientRect(), tip = tipOf(L), q = tip.clone().project(viewer.camera);
+  const k = mmPerPx(tip), w = L.w / k, h = L.h / k;
+  const x = r.left + (q.x + 1) / 2 * r.width, y = r.top + (1 - q.y) / 2 * r.height;
+  return { x0: x - w / 2, y0: y - h, x1: x + w / 2, y1: y };
+}
+// Dot + stem + plate, each twice: `solid` depth-tested at full opacity, `ghost`
+// with no depth test at 0.35, drawn after everything. Sprites need
+// `raycaster.camera` to be picked — setFromCamera sets it.
+const GHOST = 0.35;
+function tagObject(L, tex = labelCanvas(L.text, L.color, L.w, L.h), ink = L.color) {
+  const g = new THREE.Group();
+  const n = L.n.clone().normalize(), stem = stemOf(L), tip = tipOf(L);
+  const r = Math.max(L.h * 0.09, 0.03);        // the anchor dot
+  const dotG = new THREE.SphereGeometry(r, 12, 8);
+  const stemG = new THREE.CylinderGeometry(r * 0.35, r * 0.35, stem, 8);
+  stemG.translate(0, stem / 2, 0);
+  const qn = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), n);
+  for (const ghost of [false, true]) {
+    const opt = { color: ink, toneMapped: false, transparent: ghost, opacity: ghost ? GHOST : 1,
+                  depthTest: !ghost, depthWrite: !ghost };
+    const dot = new THREE.Mesh(dotG, new THREE.MeshBasicMaterial(opt)); dot.position.copy(L.at);
+    const st = new THREE.Mesh(stemG, new THREE.MeshBasicMaterial(opt)); st.position.copy(L.at); st.quaternion.copy(qn);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, toneMapped: false, transparent: true,
+      opacity: ghost ? GHOST : 1, depthTest: !ghost, depthWrite: false, sizeAttenuation: true }));
+    sp.center.set(0.5, 0);                     // the plate sits ON the tip of the stem
+    sp.position.copy(tip); sp.scale.set(L.w, L.h, 1);
+    for (const o of [dot, st, sp]) { o.renderOrder = ghost ? 10 : 3; g.add(o); }
+  }
+  g.userData.tag = true;
+  return g;
+}
+function camState() {
+  const c = viewer.camera, t = viewer.controls.target, r = $('c').getBoundingClientRect();
+  return { position: [c.position.x, c.position.y, c.position.z].map(r4),
+           target: [t.x, t.y, t.z].map(r4), ortho: viewer.isOrtho,
+           zoom: +(c.zoom || 1).toFixed(5), aspect: +(r.width / Math.max(r.height, 1)).toFixed(4) };
+}
+function sameCam(a, b) {
+  if (!a || !b || a.ortho !== b.ortho || Math.abs(a.zoom - b.zoom) > 1e-4) return false;
+  const d = Math.hypot(...a.position.map((v, i) => v - a.target[i])) || 1;
+  const near = (u, v) => Math.hypot(...u.map((x, i) => x - v[i])) < 1e-4 * d;
+  return near(a.position, b.position) && near(a.target, b.target);
+}
+const VIEW_SHOT = { frame: false, maxSize: 900, quality: 0.8 };
+function takeView(items) {
+  const cam = camState();
+  const image = viewer.snapshot(VIEW_SHOT);
+  if (!image) return;
+  // views[] keeps its indices (a dropped view keeps its camera, image null):
+  // strokes point at them, and an undone erase may bring a view back to life
+  let i = views.findIndex(v => sameCam(v.cam, cam));
+  if (i < 0) { views.push({ image, cam }); i = views.length - 1; }
+  else views[i].image = image;                 // now with this stroke on it too
+  for (const x of items) x.view = i;
+}
+// A view's picture must never show strokes that no longer exist. Paid for on
+// prova-disegno/g1#a1: ↶ took «xBIG» off the model but not off the photo of
+// its view, and an agent read the leftover «x» on a hole as "remove it". So
+// after every undo / erase each view that lost something is re-shot — from
+// ITS OWN camera, not the current one: the strokes left in it were drawn
+// from there (a cross under the head seen from below is in no other picture).
+// The swap is invisible: snapshot() renders and reads back in this task, and
+// the real frame is redrawn before the browser composites. Only a projection
+// change (persp ↔ ortho swaps the camera object) cannot be re-created; then
+// the survivors move to a fresh picture of the current view instead. A shot
+// that fails leaves NO picture (image null → the strokes fall back to the
+// main one at send), never the old one.
+function refreshViews(idxs) {
+  for (const i of new Set(idxs)) {
+    const v = views[i]; if (!v) continue;
+    const left = [...draft, ...labels].filter(x => x.view === i);
+    if (!left.length) { v.image = null; continue; }      // nothing left to show
+    if (sameCam(v.cam, camState())) { v.image = viewer.snapshot(VIEW_SHOT); continue; }
+    if (!!v.cam.ortho !== viewer.isOrtho) {
+      v.image = null;
+      for (const x of left) x.view = null;
+      takeView(left);
+      continue;
+    }
+    v.image = shootFrom(v.cam);
+  }
+}
+function shootFrom(c) {
+  const cam = viewer.camera, ctl = viewer.controls;
+  const saved = { pos: cam.position.clone(), quat: cam.quaternion.clone(), zoom: cam.zoom, tgt: ctl.target.clone() };
+  try {
+    cam.position.set(...c.position); ctl.target.set(...c.target);
+    cam.lookAt(ctl.target);
+    if (cam.isOrthographicCamera) cam.zoom = c.zoom || 1;
+    cam.updateProjectionMatrix(); cam.updateMatrixWorld(true);
+    return viewer.snapshot(VIEW_SHOT);
+  } finally {
+    cam.position.copy(saved.pos); cam.quaternion.copy(saved.quat); cam.zoom = saved.zoom;
+    cam.updateProjectionMatrix(); ctl.target.copy(saved.tgt); ctl.update();
+    viewer._renderFrame(true);                 // the user's frame, before it composites
+  }
+}
+// A second finger turned the gesture into a pinch: it never happened.
+function cancelGesture() {
+  const p = painting;
+  if (!p) return;
+  painting = null;
+  if (p.mode === 'erase') restore(p.erased);
+  else if (p.mode === 'text') hideBox();
+  else for (let i = draft.length - 1; i >= 0; i--) if (draft[i].g === p.g) { disposeObj(draft[i].obj); draft.splice(i, 1); }
+  viewer.invalidate(); syncDraw();
+}
+function removeGesture(g) {
+  const gone = [];
+  for (let i = draft.length - 1; i >= 0; i--) if (draft[i].g === g) { gone.push(draft[i]); disposeObj(draft[i].obj); draft.splice(i, 1); }
+  return gone;
+}
+function undo() {
+  const a = actions.pop();
+  if (!a) return;
+  let touched = [];
+  if (a.type === 'pen') touched = viewsOf(removeGesture(a.g));
+  else if (a.type === 'erase') { restore(a); touched = viewsOf([...a.strokes, ...a.labels]); }
+  else if (a.type === 'label') {
+    const st = takeLabelStrokes(a.L);
+    labels.splice(labels.indexOf(a.L), 1); disposeObj(a.L.obj); a.L.obj = null; touched = viewsOf([a.L, ...st]);
+  } else if (a.type === 'edit' && a.oldStrokes) {
+    touched = viewsOf([a.L, ...takeLabelStrokes(a.L)]);
+    a.L.text = a.before; restore({ strokes: a.oldStrokes }); touched.push(...viewsOf(a.oldStrokes));
+  } else if (a.type === 'edit') { a.L.text = a.before; drawLabel(a.L); touched = viewsOf([a.L]); }
+  refreshViews(touched);
+  viewer.invalidate(); syncDraw();
+}
+function clearDraft() {
+  closeEditor(false);
+  while (draft.length) disposeObj(draft.pop().obj);
+  while (labels.length) disposeObj(labels.pop().obj);
+  views.length = 0; actions.length = 0;
+  viewer.invalidate(); syncDraw();
+}
+function setTool(t) { tool = t; if (t !== 'erase') $('d-ring').style.display = 'none'; if (t !== 'text') closeEditor(true); syncDraw(); }
+function syncDraw() {
+  $('d-send').disabled = !draft.length && !labels.length && !$('d-text').value.trim();
+  $('d-undo').disabled = !actions.length; $('d-clear').disabled = !draft.length && !labels.length;
+  vp.classList.toggle('pen', drawing && tool === 'pen');
+  vp.dataset.tool = drawing ? tool : '';
+  for (const [id, t] of [['d-pen', 'pen'], ['d-texttool', 'text'], ['d-imgtool', 'image'], ['d-erase', 'erase'], ['d-hand', 'hand']]) $(id).classList.toggle('on', tool === t);
+  for (const b of $('d-colors').children) b.classList.toggle('on', b.dataset.c === pen.color);
+  for (const b of $('d-sizes').children) b.classList.toggle('on', +b.dataset.s === pen.size);
+}
+function setDrawing(on) {
+  drawing = on;
+  vp.classList.toggle('drawing', on);
+  if (on && clock.playing) setPlaying(false);
+  if (!on) { cancelGesture(); closeEditor(true); $('d-text').blur(); $('d-ring').style.display = 'none'; }
+  syncDraw();
+}
+for (const c of PEN_COLORS) {
+  const b = document.createElement('button');
+  b.className = 'sw-btn'; b.dataset.c = c; b.style.background = c; b.title = c;
+  b.onclick = () => { pen.color = c; if (tool !== 'pen' && tool !== 'text') setTool('pen'); else syncDraw(); };
+  $('d-colors').appendChild(b);
+}
+$('d-custom').addEventListener('input', e => { pen.color = e.target.value; if (tool !== 'pen' && tool !== 'text') setTool('pen'); else syncDraw(); });
+PEN_SIZES.forEach(sz => {
+  const b = document.createElement('button');
+  b.className = 'btn sz'; b.dataset.s = sz; b.title = `Tratto ${sz}px`;
+  b.innerHTML = `<i style="width:${4 + sz}px;height:${4 + sz}px"></i>`;
+  // a size is also the eraser's radius: picking one keeps the eraser in hand
+  b.onclick = () => { pen.size = sz; if (tool === 'hand') setTool('pen'); else syncDraw(); };
+  $('d-sizes').appendChild(b);
+});
+$('d-open').onclick = () => setDrawing(true);
+$('d-x').onclick = () => setDrawing(false);
+$('d-pen').onclick = () => setTool('pen');
+$('d-erase').onclick = () => setTool('erase');
+$('d-texttool').onclick = () => setTool('text');
+$('d-hand').onclick = () => setTool('hand');
+$('d-undo').onclick = undo;
+$('d-clear').onclick = () => { if (draft.length < 4 || confirm('Cancellare tutti i tratti non inviati?')) clearDraft(); };
+$('d-text').addEventListener('input', syncDraw);
+$('d-text').addEventListener('keydown', e => {
+  e.stopPropagation();                         // typing "a" must not show all pieces
+  if (e.key === 'Enter') { e.preventDefault(); sendNote(); }
+  if (e.key === 'Escape') e.target.blur();
+});
+addEventListener('keydown', e => {
+  if (!drawing || e.target.tagName === 'INPUT') return;
+  const k = e.key.toLowerCase();
+  if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); e.stopImmediatePropagation(); undo(); }
+  else if (e.key === 'Escape') { e.stopImmediatePropagation(); setDrawing(false); }
+  else if (e.ctrlKey || e.metaKey || e.altKey) return;
+  else if (k === 'p') { e.stopImmediatePropagation(); setTool('pen'); }
+  else if (k === 'e') { e.stopImmediatePropagation(); setTool('erase'); }
+  else if (k === 't') { e.stopImmediatePropagation(); setTool('text'); }
+}, true);
+
+const STATIC_SEND = '✎ Il disegno funziona, ma questa è l\'<b>anteprima statica</b>: qui non c\'è un agente '
+  + 'a cui mandarlo. Per inviare la nota (i tratti, il testo, le foto delle viste) a un agente, '
+  + '<a href="https://github.com/rederyk/noodle#install--run" target="_blank" rel="noopener">installa noodle</a> '
+  + '— un container Docker, e il tuo agente lo legge con <code>cad_notes</code>. Il disegno resta qui.';
+function toast(html, ms = 6000) {
+  $('toast').innerHTML = html; $('toast').classList.add('open');
+  clearTimeout(toast.t); toast.t = setTimeout(() => $('toast').classList.remove('open'), ms);
+}
+const r4 = v => +v.toFixed(4);
+const v3 = n => [+n.x.toFixed(4), +n.y.toFixed(4), +n.z.toFixed(4)];
+const fitOut = f => f ? { centre: [r4(f.centre.x), r4(f.centre.y), r4(f.centre.z)], radius: r4(f.radius),
+  convex: f.convex, ...(f.axis ? { axis: v3(f.axis) } : {}) } : null;
+const fitIn = f => f ? { centre: new THREE.Vector3(...f.centre), radius: f.radius, convex: f.convex || 1,
+  ...(f.axis ? { axis: new THREE.Vector3(...f.axis).normalize() } : {}) } : null;
+async function sendNote() {
+  const text = $('d-text').value.trim();
+  closeEditor(true);
+  if (!draft.length && !labels.length && !text) return;
+  $('d-send').disabled = true;
+  // the picture is the user's own view, strokes and all: the agent sees what
+  // they saw, at their zoom (frame:false keeps the camera where it is)
+  const image = viewer.snapshot({ frame: false, maxSize: 1400, quality: 0.85 });
+  const camera = camState();
+  // the views strokes were drawn from, minus the final one (that IS `image`)
+  // and minus any whose strokes were all undone
+  const keep = [], remap = new Map();
+  for (const s of [...draft, ...labels]) {
+    if (s.view == null || remap.has(s.view)) continue;
+    const v = views[s.view];
+    if (!v || !v.image || sameCam(v.cam, camera)) { remap.set(s.view, null); continue; }
+    remap.set(s.view, keep.length); keep.push(v);
+  }
+  const words = labels.filter(L => !L.img), pictures = labels.filter(L => L.img);
+  const placed = L => ({ at: [r4(L.at.x), r4(L.at.y), r4(L.at.z)], normal: v3(L.n), up: v3(L.up),
+    size_mm: [r4(L.w), r4(L.h)], surface: L.surface || null, fit: fitOut(L.fit),
+    view: L.view == null ? null : remap.get(L.view) });
+  const body = {
+    text, image, camera,
+    views: keep.map(v => ({ image: v.image, camera: v.cam })),
+    strokes: draft.map(s => ({ color: s.color, width: s.width, piece: s.piece, g: s.g,
+      ...(s.label && words.includes(s.label) ? { label: words.indexOf(s.label) } : {}),
+      view: s.view == null ? null : remap.get(s.view),
+      points: s.pts.map(p => [r4(p.x), r4(p.y), r4(p.z)]),
+      normals: s.nrm.map(n => [+n.x.toFixed(3), +n.y.toFixed(3), +n.z.toFixed(3)]) })),
+    // text written ON the part is DATA for the agent, not only pixels: a
+    // text-only model reads «qui 8 mm» and which mark it sits next to
+    labels: words.map(L => ({ text: L.text, color: L.color, style: L.style, piece: L.piece,
+      ...placed(L) })),
+    // pictures placed on the part: the picture travels as an asset of the note
+    images: pictures.map(L => ({ data: L.img.data, piece: L.piece, ...placed(L) })),
+    hide: location.hash.replace(/^#/, ''),
+  };
+  if (anims.length) body.t = clock.t;
+  try {
+    const r = await fetch(`/api/graph/${encodeURIComponent(NAME)}/gens/${GEN}/notes`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+    const note = await r.json();
+    clearDraft(); $('d-text').value = '';
+    shownNotes.add(note.id);
+    await loadNotes();
+    const ref = `${NAME}/${GEN}#${note.id}`;
+    toast(`✓ Nota inviata: <code>${esc(ref)}</code><br>Di' all'agente «guarda la nota ${esc(ref)}» (o solo «guarda cosa ho segnato»).`);
+    try { await navigator.clipboard.writeText(ref); } catch {}
+  } catch (err) {
+    if (err.message === 'STATIC_PREVIEW') toast(STATIC_SEND, 15000);
+    else toast(`⚠ Nota non salvata: ${esc(err.message)}`);
+  } finally { syncDraw(); }
+}
+$('d-send').onclick = sendNote;
+
+// ── saved notes: list, show/hide, go to, delete ──────────────────────────
+function noteObject(n) {
+  const g = new THREE.Group();
+  for (const s of n.strokes || []) {
+    const pts = (s.points || []).map(p => new THREE.Vector3(...p));
+    const nrm = (s.normals || []).map(p => new THREE.Vector3(...p));
+    if (pts.length) g.add(strokeObject({ color: s.color, width: s.width_mm || 1, pts, nrm }));
+  }
+  for (const l of n.labels || []) {
+    try {
+      g.add(labelObject({ text: l.text, color: l.color, style: l.style || 'tag', at: new THREE.Vector3(...l.at),
+        n: new THREE.Vector3(...l.normal), up: new THREE.Vector3(...l.up), w: l.size_mm[0], h: l.size_mm[1],
+        surface: l.surface, fit: fitIn(l.fit) }));
+    } catch {}
+  }
+  for (const im of n.images || []) {
+    new THREE.TextureLoader().load(`../data/${encodeURIComponent(NAME)}/${GEN}/notes/${im.file}`, tex => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      try {
+        g.add(labelObject({ text: '', color: '#ffffff', style: 'decal', img: { texture: tex },
+          at: new THREE.Vector3(...im.at), n: new THREE.Vector3(...im.normal), up: new THREE.Vector3(...im.up),
+          w: im.size_mm[0], h: im.size_mm[1], surface: im.surface, fit: fitIn(im.fit) }));
+        viewer.invalidate();
+      } catch {}
+    });
+  }
+  return g;
+}
+function showNote(id, on) {
+  on ? shownNotes.add(id) : shownNotes.delete(id);
+  const o = noteObjs.get(id); if (o) o.visible = on;
+  viewer.invalidate(); renderNotes();
+}
+// Back to the view the note was drawn from — on THIS screen. A note drawn on
+// a 16:10 desktop and opened on a phone held upright keeps its height and
+// loses two thirds of its width, so the camera first backs off by the aspect
+// ratio (what was in frame stays in frame), then until every stroke projects
+// inside the picture — which also covers old notes saved without an aspect.
+function goToNote(n) {
+  showNote(n.id, true);
+  if (anims.length && typeof n.t === 'number') poseAll(n.t);
+  const c = n.camera; if (!c) return;
+  if (!!c.ortho !== viewer.isOrtho) toggleOrtho();
+  const cam = viewer.camera, tgt = new THREE.Vector3(...c.target);
+  cam.position.set(...c.position);
+  viewer.controls.target.copy(tgt);
+  const r = $('c').getBoundingClientRect(), now = r.width / Math.max(r.height, 1);
+  let back = c.aspect ? Math.max(1, c.aspect / now) : 1;
+  if (cam.isOrthographicCamera) cam.zoom = (c.zoom || 1);
+  const apply = k => {
+    if (cam.isOrthographicCamera) { cam.zoom = (c.zoom || 1) / k; cam.updateProjectionMatrix(); }
+    else cam.position.copy(tgt).add(new THREE.Vector3(...c.position).sub(tgt).multiplyScalar(k));
+    cam.lookAt(tgt);                       // controls.update() orients it only at the end:
+    cam.updateMatrixWorld(true);           // without this every stroke tests as off-screen
+  };
+  apply(back);
+  const pts = [...(n.strokes || []).flatMap(s => s.points || []), ...(n.labels || []).map(l => l.at),
+    ...(n.images || []).map(l => l.at)]
+    .map(p => new THREE.Vector3(...p));
+  const inside = () => pts.every(p => { const q = p.clone().project(cam);
+    return Math.abs(q.x) <= 0.92 && Math.abs(q.y) <= 0.92 && q.z < 1; });
+  for (let i = 0; i < 12 && pts.length && !inside(); i++) apply(back *= 1.2);
+  viewer.controls.update(); viewer.invalidate();
+}
+async function loadNotes() {
+  try { notesData = (await getJSON(`/api/graph/${encodeURIComponent(NAME)}/gens/${GEN}/notes`)).notes || []; }
+  catch { notesData = []; }
+  for (const o of noteObjs.values()) disposeObj(o);
+  noteObjs.clear();
+  viewer.scene.updateMatrixWorld();            // labels find their mesh by raycast
+  for (const n of notesData) {
+    const o = noteObject(n); o.visible = shownNotes.has(n.id);
+    noteObjs.set(n.id, o); annoGroup.add(o);
+  }
+  viewer.invalidate(); renderNotes();
+}
+function renderNotes() {
+  const box = $('nlist'); box.innerHTML = '';
+  $('notes').hidden = !notesData.length;
+  $('d-count').textContent = notesData.filter(n => !n.done).length || '';
+  for (const n of [...notesData].reverse()) {
+    const on = shownNotes.has(n.id);
+    const row = document.createElement('div');
+    row.className = 'note' + (n.done ? ' done' : '') + (on ? '' : ' off');
+    const cols = [...new Set([...(n.strokes || []), ...(n.labels || [])].map(s => s.color))].slice(0, 5);
+    const said = [...(n.labels || []).map(l => `«${esc(l.text)}»`),
+      ...((n.images || []).length ? [`▣ ${n.images.length} immagin${n.images.length > 1 ? 'i' : 'e'}`] : [])].join(' ');
+    row.innerHTML = `<span class="dots">${cols.map(c => `<i style="background:${esc(c)}"></i>`).join('')}</span>
+      <span class="tx"><span class="id">${esc(n.id)}${n.done ? ' ✓' : ''}</span>${esc(n.text) || said || '<i>(solo disegno)</i>'}${n.text && said ? ` <span class="id">${said}</span>` : ''}
+        ${n.done && n.done.reply ? `<div class="rp">↳ ${esc(n.done.reply)}</div>` : ''}</span>
+      <span class="ib" role="button" title="Mostra/nascondi i tratti">${on ? '●' : '○'}</span>
+      <span class="ib" role="button" title="Elimina la nota">✕</span>`;
+    const [eye, del] = row.querySelectorAll('.ib');
+    eye.onclick = e => { e.stopPropagation(); showNote(n.id, !on); };
+    del.onclick = async e => {
+      e.stopPropagation();
+      if (!confirm(`Eliminare la nota ${n.id}?`)) return;
+      await fetch(`/api/graph/${encodeURIComponent(NAME)}/gens/${GEN}/notes/${n.id}`, { method: 'DELETE' });
+      shownNotes.delete(n.id); loadNotes();
+    };
+    row.onclick = () => goToNote(n);
+    box.appendChild(row);
+  }
+}
+
+// ── ✎ Vernice: text as PAINT — the letters are pen strokes ─────────────
+// quill: «come disegna già a mano può stampare testo? vedo che è già un solido
+// la vernice». So the default text style needs no new rendering at all: the
+// words are laid out in the dragged box in SCREEN coordinates, each glyph of a
+// single-stroke font is a polyline, every polyline is sampled every ~2.5 px and
+// each sample goes through the pen's own raycast (`surfaceHit`). Out come
+// ordinary strokes — points + normals, broken where the line leaves the
+// surface or jumps in depth, width from the size buttons — so they lie on a
+// plane, wrap a cylinder, follow a thread or an organic surface with no
+// special case, and orbit, undo, erase, photograph and save exactly like the
+// pen. (The decal needed a case per surface and doubled on ridges.)
+// The strokes carry `label` (their text): one gesture for ↶ and ⌫, a tap with
+// T re-opens the text, and the server keeps them out of `marks` — the agent
+// reads the WORDS in `labels`, not forty «line» marks for one word.
+// Font: Hershey Roman Simplex (A. V. Hershey, U.S. National Bureau of
+// Standards, 1967 — public domain), ASCII 32..126 as in Paul Bourke's
+// `simplex[95][112]` table (paulbourke.net/dataformats/hershey). One string per
+// glyph: char 0 = advance width, then strokes separated by spaces, each a run
+// of (x, y) pairs coded as charCode − 82 ('R' = 0); y points up, baseline 0,
+// capitals 21 high, descenders to −7.
+const HERSHEY = [
+  "b","\\WgWY WTVSWRXSWT","bVgV` ^g^`","g]kVK ck\\K V^d^ UXcX",
+  "fZkZN ^k^N cdaf^gZgWfUdUbV`W_Y^_\\a[bZcXcUaS^RZRWSUU",
+  "jggUR Zg\\e\\c[aY`W`UbUdVfXgZg\\f_ebeefgg cYaX`V`TbRdRfSgUgWeYcY",
+  "li^i_h`g`f_e]cXaU_S]RYRWSVTUVUXVZW[^__``b`d_f]g[fZdZb[_]\\bUdSfRhRiSiT","\\WeVfWgXfXdWbVa",
+  "`]k[iYfWbV]VYWTYP[M]K","`UkWiYf[b\\]\\Y[TYPWMUK","bZgZ[ Ud_^ _dU^","l_d_R V[h[","\\XSWRVSWTXSXQWOVN","lV[h[",
+  "\\WTVSWRXSWT","hfkTK","f[gXfVcU^U[VVXS[R]R`SbVc[c^bc`f]g[g","fXcZd]g]R","fVbVcWeXfZg^g`faebcbaa__\\URcR",
+  "fWgbg\\___a^b]cZcXbU`S]RZRWSVTUV","f_gUYdY _g_R","fagWgV^W_Z`]``_b]cZcXbU`S]RZRWSVTUV",
+  "fbdaf^g\\gYfWcV^VYWUYS\\R]R`SbUcXcYb\\`^]_\\_Y^W\\VY","fcgYR Ugcg",
+  "fZgWfVdVbW`Y_]^`]b[cYcVbTaS^RZRWSVTUVUYV[X][^__a`bbbdaf^gZg",
+  "fb`a]_[\\Z[ZX[V]U`UaVdXf[g\\g_fadb`b[aV_S\\RZRWSVU","\\W`V_W^X_W` WTVSWRXSWT",
+  "\\W`V_W^X_W` XSWRVSWTXSXQWOVN","jfdV[fR","lV^h^ VXhX","jVdf[VR","dUbUcVeWfYg]g_f`eacaa`__^[\\[Y [TZS[R\\S[T",
+  "md_caab^b\\a[`Z]ZZ[X]W`WbXcZ ^b\\`[][Z\\X]W dbcZcXeWgWiYj\\j^iahcfedfag^g[fYeWcVaU^U[VXWVYT[S^RaRdSfTgU ebdZdXeW",
+  "d[gSR [gcR VY`Y","gVgVR Vg_gbfcedcdac_b^_] V]_]b\\c[dYdVcTbS_RVR","gdbcdaf_g[gYfWdVbU_UZVWWUYS[R_RaScUdW",
+  "gVgVR Vg]g`fbdcbd_dZcWbU`S]RVR","eVgVR Vgcg V]^] VRcR","dVgVR Vgcg V]^]",
+  "gdbcdaf_g[gYfWdVbU_UZVWWUYS[R_RaScUdWdZ _ZdZ","hVgVR dgdR V]d]","ZVgVR","b^g^W]T\\SZRXRVSUTTWTY",
+  "gVgVR dgVY [^dR","cVgVR VRbR","jVgVR Vg^R fg^R fgfR","hVgVR VgdR dgdR",
+  "h[gYfWdVbU_UZVWWUYS[R_RaScUdWeZe_dbcdaf_g[g","gVgVR Vg_gbfcedcd`c^b]_\\V\\",
+  "h[gYfWdVbU_UZVWWUYS[R_RaScUdWeZe_dbcdaf_g[g ^VdP","gVgVR Vg_gbfcedcdac_b^_]V] ]]dR",
+  "fcdaf^gZgWfUdUbV`W_Y^_\\a[bZcXcUaS^RZRWSUU","bZgZR Sgag","hVgVXWUYS\\R^RaScUdXdg","dSg[R cg[R",
+  "jTgYR ^gYR ^gcR hgcR","fUgcR cgUR","dSg[][R cg[]","fcgUR Ugcg URcR","`VkVK WkWK Vk]k VK]K","`Rg`O",
+  "`[k[K \\k\\K Uk\\k UK\\K","bXaZd\\a U^Zc_^ ZcZR","bRPbP","\\XgWfVdVbWaXbWc",
+  "ea`aR a]__]`Z`X_V]UZUXVUXSZR]R_SaU","eVgVR V]X_Z`]`__a]bZbXaU_S]RZRXSVU","da]__]`Z`X_V]UZUXVUXSZR]R_SaU",
+  "eagaR a]__]`Z`X_V]UZUXVUXSZR]R_SaU","dUZaZa\\`^__]`Z`X_V]UZUXVUXSZR]R_SaU","^\\gZgXfWcWR T`[`",
+  "ea`aP`M_L]KZKXL a]__]`Z`X_V]UZUXVUXSZR]R_SaU","eVgVR V\\Y_[`^``_a\\aR","ZUgVfWgVhUg V`VR",
+  "\\WgXfYgXhWg X`XOWLUKSK","cVgVR ``VV ZZaR","ZVgVR","pV`VR V\\Y_[`^``_a\\aR a\\d_f`i`k_l\\lR",
+  "eV`VR V\\Y_[`^``_a\\aR","eZ`X_V]UZUXVUXSZR]R_SaUbXbZa]__]`Z`","eV`VK V]X_Z`]`__a]bZbXaU_S]RZRXSVU",
+  "ea`aK a]__]`Z`X_V]UZUXVUXSZR]R_SaU","_V`VR VZW]Y_[`^`","c`]__\\`Y`V_U]V[XZ]Y_X`V`U_S\\RYRVSUU",
+  "^WgWVXSZR\\R T`[`","eV`VVWSYR\\R^SaV a`aR","bT`ZR ``ZR","hU`YR ]`YR ]`aR e`aR","cU``R ``UR",
+  "bT`ZR ``ZRXNVLTKSK","c``UR U``` UR`R",
+  "`[kYjXiWgWeXcYbZ`Z^X\\ YjXhXfYdZc[a[_Z]V[ZY[W[UZSYRXPXNYL XZZXZVYTXSWQWOXMYL[K","ZVkVK",
+  "`WkYjZi[g[eZcYbX`X^Z\\ YjZhZfYdXcWaW_X]\\[XYWWWUXSYRZPZNYL ZZXXXVYTZS[Q[OZMYLWK",
+  "jUXUZV]X^Z^\\]`ZbYdYfZg\\ UZV\\X]Z]\\\\`YbXdXfYg\\g^"
+];
+const glyphOf = ch => {
+  const code = ch.charCodeAt(0), g = HERSHEY[code - 32] ?? HERSHEY['?'.charCodeAt(0) - 32];
+  const w = g.charCodeAt(0) - 82;
+  const strokes = g.slice(1).split(' ').filter(Boolean)
+    .map(t => Array.from({ length: t.length / 2 }, (_, i) => [t.charCodeAt(2 * i) - 82, t.charCodeAt(2 * i + 1) - 82]));
+  return { w, strokes };
+};
+// Italian accents: the base letter plus a short stroke above it (Simplex has
+// none of its own); capitals get it higher.
+const ACCENTS = { 'à': ['a', 1], 'è': ['e', 1], 'é': ['e', -1], 'ì': ['i', 1], 'í': ['i', -1], 'ò': ['o', 1],
+  'ó': ['o', -1], 'ù': ['u', 1], 'ú': ['u', -1], 'À': ['A', 1], 'È': ['E', 1], 'É': ['E', -1], 'Ì': ['I', 1],
+  'Ò': ['O', 1], 'Ù': ['U', 1] };
+function glyphWithAccent(ch) {
+  const acc = ACCENTS[ch];
+  if (!acc) return glyphOf(ch.charCodeAt(0) < 127 ? ch : '?');
+  const g = glyphOf(acc[0]), mid = g.w / 2, y = acc[0] === acc[0].toUpperCase() ? 24 : 17;
+  return { w: g.w, strokes: [...g.strokes, acc[1] > 0 ? [[mid - 2, y + 4], [mid + 1, y]] : [[mid + 2, y + 4], [mid - 1, y]]] };
+}
+const LINE_UNITS = 32;                        // one line of Simplex: 21 up, 7 down, a little air
+// Lay `text` out in the screen box r: the largest line height whose word-wrap
+// fits (one line = the box height, then smaller), lines centred.
+function layoutText(text, r) {
+  const W = r.x1 - r.x0, H = r.y1 - r.y0, words = text.split(/\s+/).filter(Boolean);
+  const adv = w => [...w].reduce((t, ch) => t + glyphWithAccent(ch).w, 0);
+  const space = glyphOf(' ').w;
+  for (let lh = H; lh >= 6; lh *= 0.92) {
+    const s = lh / LINE_UNITS, lines = [];
+    for (const w of words) {
+      const last = lines[lines.length - 1];
+      if (last && (adv(last) + space + adv(w)) * s <= W) lines[lines.length - 1] = last + ' ' + w;
+      else lines.push(w);
+    }
+    if (lines.length * lh <= H && lines.every(l => adv(l) * s <= W)) return { lines, lh, s, adv };
+    if (lh <= 6.5) return { lines, lh, s, adv };
+  }
+  return null;
+}
+function paintText(L, r) {
+  const lay = layoutText(L.text, r);
+  if (!lay) return [];
+  const { lines, lh, s, adv } = lay, g = ++gesture, out = [];
+  const top = (r.y0 + r.y1) / 2 - lines.length * lh / 2;
+  // width: the size button, but never fatter than a sixth of the letter height
+  const px = Math.max(1.2, Math.min(pen.size, lh / 6));
+  let width = null;
+  lines.forEach((line, li) => {
+    let x = (r.x0 + r.x1) / 2 - adv(line) * s / 2;
+    const base = top + li * lh + 23 * s;      // baseline: capital height + a little headroom
+    for (const ch of line) {
+      const gl = glyphWithAccent(ch);
+      for (const poly of gl.strokes) {
+        let cur = null, lastXY = null;
+        const pts = poly.map(([gx, gy]) => [x + gx * s, base - gy * s]);
+        for (let i = 0; i < pts.length; i++) {
+          const [ax, ay] = pts[Math.max(0, i - 1)], [bx, by] = pts[i];
+          const n = i === 0 ? 1 : Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 2.5));
+          for (let k = i === 0 ? 0 : 1; k <= n; k++) {
+            const sx = i === 0 ? bx : ax + (bx - ax) * k / n, sy = i === 0 ? by : ay + (by - ay) * k / n;
+            const hit = surfaceHit(sx, sy);
+            if (!hit) { cur = null; lastXY = null; continue; }        // off the part: the line breaks
+            if (width == null) width = px * mmPerPx(hit.p);
+            const last = cur && cur.pts[cur.pts.length - 1];
+            const d = lastXY ? Math.hypot(sx - lastXY[0], sy - lastXY[1]) : 0;
+            if (!cur || last.distanceTo(hit.p) > 4 * Math.max(d, 1) * mmPerPx(hit.p) + width) {
+              cur = { color: L.color, width, g, k: ++seq, piece: hit.key, pts: [hit.p], nrm: [hit.n],
+                      obj: null, label: L };
+              draft.push(cur); out.push(cur);
+            } else { cur.pts.push(hit.p); cur.nrm.push(hit.n); }
+            lastXY = [sx, sy];
+          }
+        }
+      }
+      x += gl.w * s;
+    }
+  });
+  for (const st of out) redrawStroke(st);
+  syncDraw();
+  return out;
+}
+// the strokes of a painted text, taken off the drawing (returned for undo)
+function takeLabelStrokes(L) {
+  const gone = [];
+  for (let i = draft.length - 1; i >= 0; i--) if (draft[i].label === L) {
+    gone.unshift(draft[i]); disposeObj(draft[i].obj); draft[i].obj = null; draft.splice(i, 1);
+  }
+  return gone;
+}
+function paintLabelNear(hit) {
+  const r = 12 * mmPerPx(hit.p);
+  const s = draft.find(x => x.label && strokeDist(x, hit.p) <= r + x.width / 2);
+  return s ? s.label : null;
+}
+function paintRect(L) {
+  const c = $('c').getBoundingClientRect(), xs = [], ys = [];
+  for (const st of draft) if (st.label === L) for (const p of st.pts) {
+    const q = p.clone().project(viewer.camera);
+    xs.push(c.left + (q.x + 1) / 2 * c.width); ys.push(c.top + (1 - q.y) / 2 * c.height);
+  }
+  if (!xs.length) return L.box;
+  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+}
+
+// ── the agent's tags: labels the agent pinned on this gen's pieces ───────
+// The other direction of a note: «coperchio v2», «foro M8 qui», written by the
+// agent (cad_tag_gen / tags.json beside the gen) and always drawn as
+// targhette, in the agent's own look (cyan rim, a ◆ mark) so they never read as
+// the user's. «Etichette» hides them all (#tags=0); a hidden piece hides its
+// tags; tapping one selects its piece. Without `at` the anchor is found here:
+// the TOPMOST point of the piece (within 2% of its height), the one nearest the
+// opening camera — always on that piece's outer surface and in view, where a
+// ray at the bbox centre would dive into the hole of a nut.
+const AGENT_INK = '#22d3ee';
+const agentGroup = new THREE.Group(); agentGroup.name = 'agent-tags';
+viewer.scene.add(agentGroup);
+let agentTags = [], tagsOn = true;
+function agentCanvas(text) {
+  const H = 128, pad = 26, icon = 44, f = `700 64px ${getComputedStyle(document.body).fontFamily}`;
+  const m = document.createElement('canvas').getContext('2d'); m.font = f;
+  const W = Math.min(2048, Math.ceil(pad + icon + 18 + m.measureText(text).width + pad));
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const c = cv.getContext('2d');
+  c.fillStyle = 'rgba(8,22,32,0.92)'; c.strokeStyle = AGENT_INK; c.lineWidth = 7;
+  c.beginPath(); c.roundRect(4, 4, W - 8, H - 8, 26); c.fill(); c.stroke();
+  const cx = pad + icon / 2, cy = H / 2;           // ◆: the agent's mark, drawn (no font needed)
+  c.fillStyle = AGENT_INK; c.beginPath();
+  c.moveTo(cx, cy - icon / 2); c.lineTo(cx + icon / 2, cy); c.lineTo(cx, cy + icon / 2); c.lineTo(cx - icon / 2, cy);
+  c.closePath(); c.fill();
+  c.font = f; c.fillStyle = '#fff'; c.textBaseline = 'middle'; c.fillText(text, pad + icon + 18, cy + 3, W - pad * 2 - icon - 18);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  return { tex, aspect: W / H };
+}
+function tagAnchor(n) {
+  const box = new THREE.Box3().setFromObject(n.obj), cam = viewer.camera.position;
+  const zTop = box.max.z - 0.02 * Math.max(box.max.z - box.min.z, 1e-6), v = new THREE.Vector3();
+  let best = null, bd = Infinity;
+  n.obj.updateMatrixWorld(true);
+  n.obj.traverse(o => {
+    const P = o.isMesh && o.geometry && o.geometry.attributes.position;
+    if (!P) return;
+    for (let i = 0; i < P.count; i++) {
+      v.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld);
+      if (v.z < zTop) continue;
+      const d = v.distanceToSquared(cam);
+      if (d < bd) { bd = d; best = v.clone(); }
+    }
+  });
+  return best ? { at: best, n: new THREE.Vector3(0, 0, 1) } : null;
+}
+async function loadTags(base) {
+  let raw = [];
+  try { raw = (await getJSON(`${base}/tags`)).tags || []; } catch { raw = []; }
+  if (!raw.length) return;
+  const size = visibleBox().getSize(new THREE.Vector3()).length() || 50;
+  const h = THREE.MathUtils.clamp(size * 0.035, 0.5, 200);
+  for (const t of raw) {
+    const n = nodes.find(x => x.id === t.node);
+    if (!n) continue;
+    let a;
+    if (Array.isArray(t.at)) {
+      const at = new THREE.Vector3(...t.at), c = new THREE.Box3().setFromObject(n.obj).getCenter(new THREE.Vector3());
+      const dir = at.clone().sub(c);
+      a = { at, n: dir.lengthSq() > 1e-12 ? dir.normalize() : new THREE.Vector3(0, 0, 1) };
+    } else a = tagAnchor(n);
+    if (!a) continue;
+    const { tex, aspect } = agentCanvas(t.text);
+    const T = { ...t, at: a.at, n: a.n, h, w: h * aspect, stem: h * 1.6, key: n.leaves[0].key };
+    T.obj = tagObject(T, tex, t.color || AGENT_INK);
+    T.obj.userData.agentTag = T;
+    agentGroup.add(T.obj);
+    agentTags.push(T);
+  }
+  $('b-tags').hidden = !agentTags.length;
+  syncTags();
+}
+function syncTags() {
+  agentGroup.visible = tagsOn;
+  for (const T of agentTags) {
+    const n = nodes.find(x => x.id === T.node);
+    T.obj.visible = !n || n.obj.visible;
+  }
+  $('b-tags').classList.toggle('on', tagsOn);
+  viewer.invalidate();
+}
+function agentTagAt(x, y) {
+  if (!tagsOn || !agentTags.length) return null;
+  const r = $('c').getBoundingClientRect();
+  ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, viewer.camera);
+  const h = ray.intersectObjects(agentTags.filter(T => T.obj.visible).map(T => T.obj), true)[0];
+  if (!h) return null;
+  let o = h.object; while (o && !o.userData.agentTag) o = o.parent;
+  return o ? o.userData.agentTag : null;
+}
+$('b-tags').onclick = () => { tagsOn = !tagsOn; syncTags(); writeHash(); };
 
 // ── load ─────────────────────────────────────────────────────────────────
 let sizeTxt = '';
 async function boot() {
   $('proj').textContent = NAME;
-  document.title = `${NAME} · noodle view`;
+  document.title = `${NAME} · noodle view`;   // refined to <graph>/gN below
   $('edit').href = $('m-edit').href = 'https://github.com/rederyk/noodle';
   let gens;
-  try { gens = (await getJSON(`/api/graph/${encodeURIComponent(NAME)}/gens`)).gens; }
+  try { gens = (await getJSON(`/api/gens/recent?limit=0&project=${encodeURIComponent(NAME)}`)).gens; }
   catch (e) { msg(`Workflow <b>${esc(NAME)}</b> non trovato.<br>${esc(e.message)}`); return; }
   if (!gens.length) { msg(`<b>${esc(NAME)}</b> non ha ancora generazioni salvate.<br>
     Creane una con <code>POST /api/graph/${esc(NAME)}/snapshot</code> o <code>cad_snapshot</code>.`); return; }
@@ -777,7 +2451,28 @@ async function boot() {
     sel.appendChild(o);
   }
   sel.value = GEN;
-  sel.onchange = () => { location.href = `?g=${encodeURIComponent(NAME)}&gen=${sel.value}`; };
+  const go = gen => { location.href = `?g=${encodeURIComponent(NAME)}&gen=${gen}`; };
+  sel.onchange = () => go(sel.value);
+  // gens is newest first: ‹ goes back in time, › forward
+  const i = gens.findIndex(g => g.gen === GEN);
+  $('prev').disabled = i < 0 || i >= gens.length - 1;
+  $('next').disabled = i <= 0;
+  $('prev').onclick = () => { if (!$('prev').disabled) go(gens[i + 1].gen); };
+  $('next').onclick = () => { if (!$('next').disabled) go(gens[i - 1].gen); };
+  $('all').href = $('m-all').href = '../';
+  const cur = gens[i] || {};
+  const REF = `${NAME}/${GEN}`, refText = cur.label ? `${REF} (${cur.label})` : REF;
+  $('ref').innerHTML = `${esc(NAME)}/<span class="g">${esc(GEN)}</span>`;
+  document.title = `${REF}${cur.label ? ' · ' + cur.label : ''} · noodle view`;
+  const copyRef = async btn => {
+    try { await navigator.clipboard.writeText(refText); } catch { prompt('Nome della preview:', refText); return; }
+    const old = btn.innerHTML; btn.textContent = '✓ copiato'; setTimeout(() => { btn.innerHTML = old; }, 1200);
+  };
+  $('ref').onclick = () => copyRef($('ref'));
+  $('m-ref').onclick = () => { copyRef($('m-ref')); };
+  // tell the server it is on screen: an agent asked "which one?" reads it back
+  // as `last_seen` from /api/gens/recent
+  fetch(`/api/graph/${encodeURIComponent(NAME)}/gens/${GEN}/seen`, { method: 'POST' }).catch(() => {});
 
   const base = `/api/graph/${encodeURIComponent(NAME)}/gens/${GEN}`;
   let view, graph, meta;
@@ -804,6 +2499,15 @@ async function boot() {
     wireOf: id => !!(byId[id] && byId[id].wireframe),
     onEmpty: () => msg('Questa generazione non contiene geometria disegnabile.'),
   });
+  // The gallery card picture, if nobody has drawn it yet: taken NOW, before the
+  // link's hidden pieces and timeline are applied, so it shows the whole gen
+  // as /views would have drawn it. Write-once on the server.
+  if (cur.gen && !cur.thumb && r.order.length) {
+    const url = viewer.snapshot({ maxSize: 480, quality: 0.85 });
+    if (url) fetch(url).then(x => x.blob())
+      .then(b => fetch(`${base}/thumb`, { method: 'PUT', body: b, headers: { 'Content-Type': 'image/jpeg' } }))
+      .catch(() => {});
+  }
   if (r.size) sizeTxt = `${r.size.x.toFixed(1)} × ${r.size.y.toFixed(1)} × ${r.size.z.toFixed(1)} mm`;
   for (const id of r.order) {
     const obj = r.meshes[id]; if (!obj) continue;
@@ -815,11 +2519,23 @@ async function boot() {
     nodes.push(n);
   }
   readHash();
+  if (hashParam('tags') === '0') tagsOn = false;
   apply();
   initTimeline(view);
   writeHash();
   if (hidden.size || anims.length) frameVisible();
+  // open notes are shown; #note=aK (the link cad_notes hands the agent) goes to one
+  const focus = hashParam('note');
+  await loadNotes();
+  for (const n of notesData) if (!n.done) shownNotes.add(n.id);
+  for (const [id, o] of noteObjs) o.visible = shownNotes.has(id);
+  renderNotes(); viewer.invalidate();
+  await loadTags(base);
+  renderList();
+  const fn = focus && notesData.find(n => n.id === focus);
+  if (fn) goToNote(fn);
 }
+window.__viewBooted = true;          // the error net above stands down
 boot();
 </script>
 </body>

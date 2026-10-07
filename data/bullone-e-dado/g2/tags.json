@@ -1,0 +1,27 @@
+{
+ "tags": [
+  {
+   "text": "dado M8 v2",
+   "node": "n8",
+   "title": "Move",
+   "tag": 1
+  },
+  {
+   "text": "foro M8 qui",
+   "node": "n8",
+   "title": "Move",
+   "at": [
+    30.3,
+    -0.2,
+    4.0
+   ],
+   "tag": 2
+  },
+  {
+   "text": "vite",
+   "node": "n4",
+   "title": "Thread",
+   "tag": 3
+  }
+ ]
+}
