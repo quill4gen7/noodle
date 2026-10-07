@@ -993,14 +993,57 @@ function sameCam(a, b) {
   const near = (u, v) => Math.hypot(...u.map((x, i) => x - v[i])) < 1e-4 * d;
   return near(a.position, b.position) && near(a.target, b.target);
 }
+const VIEW_SHOT = { frame: false, maxSize: 900, quality: 0.8 };
 function takeView(g) {
   const cam = camState();
-  const image = viewer.snapshot({ frame: false, maxSize: 900, quality: 0.8 });
+  const image = viewer.snapshot(VIEW_SHOT);
   if (!image) return;
-  let i = views.findIndex(v => sameCam(v.cam, cam));
+  // views[] keeps its indices (a dropped view becomes null): strokes point at them
+  let i = views.findIndex(v => v && sameCam(v.cam, cam));
   if (i < 0) { views.push({ image, cam }); i = views.length - 1; }
   else views[i].image = image;                 // now with this stroke on it too
   for (const s of draft) if (s.g === g) s.view = i;
+}
+// A view's picture must never show strokes that no longer exist. Paid for on
+// prova-disegno/g1#a1: ↶ took «xBIG» off the model but not off the photo of
+// its view, and an agent read the leftover «x» on a hole as "remove it". So
+// after every undo / erase each view that lost something is re-shot — from
+// ITS OWN camera, not the current one: the strokes left in it were drawn
+// from there (a cross under the head seen from below is in no other picture).
+// The swap is invisible: snapshot() renders and reads back in this task, and
+// the real frame is redrawn before the browser composites. Only a projection
+// change (persp ↔ ortho swaps the camera object) cannot be re-created; then
+// the survivors move to a fresh picture of the current view instead.
+function refreshViews(idxs) {
+  for (const i of new Set(idxs)) {
+    const v = views[i]; if (!v) continue;
+    const left = draft.filter(s => s.view === i);
+    if (!left.length) { views[i] = null; continue; }      // nothing left to show
+    if (sameCam(v.cam, camState())) { v.image = viewer.snapshot(VIEW_SHOT) || v.image; continue; }
+    if (!!v.cam.ortho !== viewer.isOrtho) {
+      views[i] = null;
+      const g = new Set(left.map(s => s.g));
+      for (const s of left) s.view = null;
+      for (const x of g) takeView(x);
+      continue;
+    }
+    v.image = shootFrom(v.cam) || v.image;
+  }
+}
+function shootFrom(c) {
+  const cam = viewer.camera, ctl = viewer.controls;
+  const saved = { pos: cam.position.clone(), quat: cam.quaternion.clone(), zoom: cam.zoom, tgt: ctl.target.clone() };
+  try {
+    cam.position.set(...c.position); ctl.target.set(...c.target);
+    cam.lookAt(ctl.target);
+    if (cam.isOrthographicCamera) cam.zoom = c.zoom || 1;
+    cam.updateProjectionMatrix(); cam.updateMatrixWorld(true);
+    return viewer.snapshot(VIEW_SHOT);
+  } finally {
+    cam.position.copy(saved.pos); cam.quaternion.copy(saved.quat); cam.zoom = saved.zoom;
+    cam.updateProjectionMatrix(); ctl.target.copy(saved.tgt); ctl.update();
+    viewer._renderFrame(true);                 // the user's frame, before it composites
+  }
 }
 function cancelStroke() {
   if (!painting) return;
@@ -1009,8 +1052,9 @@ function cancelStroke() {
 }
 function undoStroke() {
   if (!draft.length) return;
-  const g = draft[draft.length - 1].g;
-  while (draft.length && draft[draft.length - 1].g === g) disposeObj(draft.pop().obj);
+  const g = draft[draft.length - 1].g, hit = [];
+  while (draft.length && draft[draft.length - 1].g === g) { const s = draft.pop(); hit.push(s.view); disposeObj(s.obj); }
+  refreshViews(hit.filter(v => v != null));
   viewer.invalidate(); syncDraw();
 }
 function clearDraft() {
