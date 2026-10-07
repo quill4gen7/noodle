@@ -92,6 +92,7 @@
   #tl-time{font:11px var(--mono);color:var(--text-dim);white-space:nowrap;min-width:78px;text-align:right;}
   #tl select{max-width:none;}
   #tl-tracks{display:none;}
+  #tl-grab{display:none;}
   #tl-trk[hidden]{display:none;}
   #tl.tracks{flex-wrap:wrap;}
   #tl.tracks #tl-tracks{display:flex;flex-direction:column;gap:2px;order:-1;flex-basis:100%;max-height:40vh;overflow:auto;
@@ -152,19 +153,37 @@
       padding-bottom:env(safe-area-inset-bottom);}
     aside.closed{height:auto !important;}
     aside.closed #list,aside.closed .hint,aside.closed #notes{display:none;}
-    aside .grab{display:flex;justify-content:center;align-items:center;height:22px;cursor:grab;touch-action:none;
-      flex:0 0 auto;}
-    aside .grab::before{content:"";width:40px;height:5px;border-radius:3px;background:var(--border);}
+    /* the handle is a finger target, not a 5px line: 22px tall it was missed
+       more often than hit. The whole strip grabs; the pill only shows where. */
+    aside .grab{display:flex;justify-content:center;align-items:center;height:36px;margin-bottom:-8px;cursor:grab;
+      touch-action:none;flex:0 0 auto;user-select:none;-webkit-user-select:none;}
+    aside .grab::before{content:"";width:52px;height:6px;border-radius:3px;background:var(--text-dim);opacity:.7;}
+    aside .grab:active::before,aside .grab.drag::before{opacity:1;background:var(--accent);}
     aside .tools{padding:2px 8px 8px;}
     aside .tools .btn{flex-direction:column;gap:1px;font-size:11px;min-height:48px;}
     aside .tools .btn .ic{font-size:16px;}
     .hint{display:none;}
     #selbar{bottom:12px;}
     #stats{top:8px;bottom:auto;}
-    #tl{left:8px;right:8px;bottom:8px;flex-wrap:wrap;}
+    #tl{left:8px;right:8px;bottom:8px;flex-wrap:wrap;padding-top:0;}
+    /* the player folds down like the sheet: a handle on top, drag it down (or
+       tap it) and only ▶ and the time stay, as a pill — the model gets the
+       screen back. Drag up / tap to unfold. */
+    #tl-grab{display:flex;order:-2;flex-basis:100%;height:26px;justify-content:center;align-items:center;
+      touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none;}
+    #tl-grab::before{content:"";width:44px;height:5px;border-radius:3px;background:var(--text-dim);opacity:.7;}
+    #tl-grab.drag::before{opacity:1;background:var(--accent);}
+    #tl.min{right:auto;flex-wrap:nowrap;padding:0 8px 0 4px;gap:6px;}
+    #tl.min #tl-grab{order:5;flex-basis:auto;width:34px;height:var(--tap);}
+    #tl.min #tl-grab::before{width:5px;height:22px;}
+    #tl.min #tl-t,#tl.min #tl-mode,#tl.min #tl-speed,#tl.min #tl-trk,#tl.min #tl-tracks{display:none !important;}
+    #tl.min #tl-time{flex:0 0 auto;min-width:0;}
+
     #tl-t{order:5;flex-basis:100%;}
     #tl-time{flex:1;text-align:left;}
-    #vp.has-anim #selbar{bottom:112px;}
+    /* above the player, whatever height it has now (it wraps to 2-4 rows, or
+       folds to a pill): --tlh is measured by a ResizeObserver on #tl */
+    #vp.has-anim #selbar{bottom:calc(var(--tlh,104px) + 16px);}
     .trk{flex-wrap:wrap;} .trk .nm{flex:1;width:auto;} .trk input{order:5;flex-basis:100%;}
   }
   /* ── ✎ Disegna: strokes on the model, sent to the agent as a note ── */
@@ -227,7 +246,7 @@
   .note.off .dots{opacity:.3;}
   @media (max-width:760px){
     #d-open{top:auto;bottom:12px;right:10px;}
-    #vp.has-anim #d-open{bottom:112px;}
+    #vp.has-anim #d-open{bottom:calc(var(--tlh,104px) + 16px);}
     /* at the BOTTOM of the viewport, compact: the part sits in the middle and
        the bar must not hide what you are drawing on */
     #dbar{top:auto;bottom:6px;left:6px;right:6px;transform:none;width:auto;max-width:none;gap:4px;padding:5px;}
@@ -268,6 +287,7 @@
   <main>
     <div id="vp"><canvas id="c" tabindex="0"></canvas><div id="stats"></div><div id="msg"></div>
       <div id="tl" hidden>
+        <div id="tl-grab" role="button" aria-label="Riduci / espandi il player" title="Trascina giù per ridurre, su per espandere (o tocca)"></div>
         <div id="tl-tracks"></div>
         <button class="btn" id="tl-play" aria-label="Riproduci" title="Riproduci / pausa (spazio)">▶</button>
         <input type="range" id="tl-t" min="0" max="1" step="0.001" value="0" aria-label="Timeline">
@@ -850,11 +870,16 @@ $('m-share').onclick = async () => {
 // Tap the handle: collapse to the toolbar / reopen. Drag it: any height between
 // the toolbar and 85% of the screen. The canvas follows through the
 // ResizeObserver below, so the model is never drawn under the sheet.
+// The height it reopens at is the last OPEN height: dragging it shut used to
+// leave --sheet at ~90px, so a tap "reopened" it at the size of the closed bar
+// and the handle seemed not to work. A release below the threshold snaps shut.
 {
   const panel = $('panel'), grab = $('grab');
-  let start = null;
+  const MIN_OPEN = 150;
+  let start = null, openH = null;
   grab.addEventListener('pointerdown', e => {
     grab.setPointerCapture(e.pointerId);
+    grab.classList.add('drag');
     start = { y: e.clientY, h: panel.getBoundingClientRect().height, moved: false };
   });
   grab.addEventListener('pointermove', e => {
@@ -863,16 +888,58 @@ $('m-share').onclick = async () => {
     if (Math.abs(dy) > 6) start.moved = true;
     if (!start.moved) return;
     const vh = $('app').clientHeight;
-    const h = Math.max(90, Math.min(vh * 0.85, start.h + dy));
-    panel.classList.toggle('closed', h < 110);
+    const h = Math.max(70, Math.min(vh * 0.85, start.h + dy));
+    panel.classList.remove('closed');
     panel.style.setProperty('--sheet', h + 'px');
   });
   const end = () => {
-    if (start && !start.moved) panel.classList.toggle('closed');
+    grab.classList.remove('drag');
+    if (!start) return;
+    if (!start.moved) {
+      const shut = !panel.classList.contains('closed');
+      panel.classList.toggle('closed', shut);
+      if (!shut && openH) panel.style.setProperty('--sheet', openH + 'px');
+    } else {
+      const h = panel.getBoundingClientRect().height;
+      if (h < MIN_OPEN) panel.classList.add('closed');
+      else openH = h;
+      if (h < MIN_OPEN) panel.style.setProperty('--sheet', (openH || $('app').clientHeight * 0.42) + 'px');
+    }
     start = null;
   };
   grab.addEventListener('pointerup', end);
-  grab.addEventListener('pointercancel', () => { start = null; });
+  grab.addEventListener('pointercancel', end);
+}
+
+// The animation player folds the same way (narrow screens only — the handle
+// is display:none elsewhere): drag down / tap → only ▶ and the time remain.
+{
+  const tl = $('tl'), g = $('tl-grab');
+  let start = null;
+  const setMin = on => tl.classList.toggle('min', on);
+  // what floats over the viewport (✎ Disegna, the selection bar) sits above the
+  // player at its REAL height: a fixed 112px put ✎ Disegna on top of the
+  // player's own controls once they wrapped to four rows on a phone
+  new ResizeObserver(() => $('vp').style.setProperty('--tlh',
+    (tl.hidden ? 0 : Math.round(tl.getBoundingClientRect().height)) + 'px')).observe(tl);
+  g.addEventListener('pointerdown', e => {
+    g.setPointerCapture(e.pointerId); g.classList.add('drag');
+    start = { y: e.clientY, moved: false };
+  });
+  g.addEventListener('pointermove', e => {
+    if (!start) return;
+    const dy = e.clientY - start.y;
+    if (Math.abs(dy) < 18) return;
+    start.moved = true;
+    setMin(dy > 0);                    // down folds, up unfolds
+  });
+  const end = () => {
+    g.classList.remove('drag');
+    if (start && !start.moved) setMin(!tl.classList.contains('min'));
+    start = null;
+  };
+  g.addEventListener('pointerup', end);
+  g.addEventListener('pointercancel', end);
 }
 new ResizeObserver(() => viewer.resize()).observe($('vp'));
 
