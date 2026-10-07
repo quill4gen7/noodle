@@ -44,6 +44,15 @@
   .feature ul{padding-left:18px;margin:10px 0 0} .feature li{margin:5px 0}
   footer{padding:36px 0 50px;color:var(--text-dim);font-size:.9rem;text-align:center;border-top:1px solid var(--border)}
   @media (max-width:820px){ .feature,.feature.flip{grid-template-columns:1fr} .feature.flip .media{order:0} header.hero{padding-top:40px} }
+  .install{margin-top:22px;background:var(--bg-2,#151a22);border:1px solid var(--border,#1e2738);border-radius:12px;padding:16px 18px;}
+  .install h3{margin:0 0 6px;font-size:17px;}
+  .install p{margin:0 0 10px;color:var(--text-dim,#8b98a8);line-height:1.5;}
+  .install pre{white-space:pre-wrap;background:var(--bg-0,#0b0e14);border:1px solid var(--border,#1e2738);border-radius:8px;
+    padding:12px 14px;font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace;max-height:320px;overflow:auto;margin:0 0 10px;}
+  h3.sub{margin:26px 0 10px;font-size:17px;} h3.sub small{display:block;font-weight:400;color:var(--text-dim,#8b98a8);font-size:13px;margin-top:3px;}
+  .grid.five{grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;}
+  @media (max-width:900px){.grid.five{grid-template-columns:repeat(2,minmax(0,1fr));}}
+  .grid.five .card span{font-size:12.5px;}
 </style>
 </head>
 <body>
@@ -54,6 +63,7 @@
       get solid geometry — transpiled to Python, rendered live, and drivable by an AI coding agent.</p>
     <div class="btns">
       <a class="btn primary" href="#preview">▶ Open a 3D preview</a>
+      <a class="btn" href="#draw">✎ Draw on a part</a>
       <a class="btn" href="https://github.com/rederyk/noodle">GitHub</a>
     </div>
   </header>
@@ -79,6 +89,48 @@
       <a class="card" href="demo/?g=lego-brick&gen=g1"><img src="thumbs/lego-brick.jpg" alt="" loading="lazy">
         <div class="b"><b>LEGO brick</b><span>Parametric studs and embossed text.</span></div></a>
     </div>
+  </section>
+
+  <section id="draw">
+    <h2>✎ Disegna — draw on it<small>Paint on the part itself — circle a hole, write on a face, place a picture —
+      and send it to the agent as a note. Here the pen, text, pictures, eraser and undo all work; only sending the
+      note needs a running noodle, because that is where your agent reads it.</small></h2>
+    <div class="grid">
+      <a class="card" href="demo/?g=bullone-e-dado&gen=g2"><img src="thumbs/bullone-e-dado.jpg" alt="" loading="lazy">
+        <div class="b"><b>Bolt and nut, annotated <i class="tag-anim">draw</i></b><span>Where the feature was built: a circle round the hole, words painted on the thread, a decal wrapped on the head, a picture on the nut, and the agent's own tags.</span></div></a>
+      <a class="card" href="demo/?g=coniglietto-cube&gen=g1"><img src="thumbs/coniglietto-cube.jpg" alt="" loading="lazy">
+        <div class="b"><b>"Make it a bunny" <i class="tag-anim">draw</i></b><span>One note, 33 marks on 12 views: a bunny on the block, shapes on the plate, cut-outs on the cup — handed to five agents, below.</span></div></a>
+    </div>
+    <h3 class="sub">…and what five agents made of it<small>Each built that note on its own copy of the project, with the same prompt. These are their real models — open one and orbit it.</small></h3>
+    <div class="grid five">
+      <a class="card" href="demo/?g=coniglietto-cube-claude&gen=g1"><img src="thumbs/coniglietto-cube-claude.jpg" alt="" loading="lazy">
+        <div class="b"><b>Claude · Opus 5.5 <i class="tag-anim">sees images</i></b><span>Read “+” and “−” as a bigger and a smaller hole — the only one. A bunny with face, ears and paws; four equal cut-outs.</span></div></a>
+      <a class="card" href="demo/?g=coniglietto-cube-codex&gen=g2"><img src="thumbs/coniglietto-cube-codex.jpg" alt="" loading="lazy">
+        <div class="b"><b>Codex · gpt-6-sol <i class="tag-anim">sees images</i></b><span>Read “+” and “−” as “delete” and removed both holes. Four different cut-outs: rectangle, triangle, hexagon, heart.</span></div></a>
+      <a class="card" href="demo/?g=coniglietto-cube-kimi&gen=g1"><img src="thumbs/coniglietto-cube-kimi.jpg" alt="" loading="lazy">
+        <div class="b"><b>Kimi K3 <i class="tag-anim">sees images</i></b><span>Read the “x” left by a stroke that had been undone, and kept those holes round. A bunny made of spheres.</span></div></a>
+      <a class="card" href="demo/?g=coniglietto-cube-glm&gen=g1"><img src="thumbs/coniglietto-cube-glm.jpg" alt="" loading="lazy">
+        <div class="b"><b>GLM-5.3 <i class="tag-anim">text only</i></b><span>Never saw the pictures: worked from the coordinates alone and checked itself with ~300 probes. “+” and “−” read as “keep”.</span></div></a>
+      <a class="card" href="demo/?g=coniglietto-cube-deepseek&gen=g1"><img src="thumbs/coniglietto-cube-deepseek.jpg" alt="" loading="lazy">
+        <div class="b"><b>DeepSeek V4 Pro <i class="tag-anim">text only</i></b><span>Coordinates only, too. Left an extra slab on the plate — and got past the agent harness’s write guard to do it.</span></div></a>
+    </div>
+    <div class="install" id="install-agent">
+      <h3>The real thing: let your agent install it</h3>
+      <p>Sending a drawing to an agent needs noodle running on your machine. The quickest way: copy this and give it to
+        your coding agent (Claude Code, Codex, Cursor…). It reads the repo first, stops if Docker is missing, installs
+        noodle and connects itself — then "look at what I marked" works.</p>
+      <pre id="install-prompt">{{INSTALL_PROMPT}}</pre>
+      <button class="btn primary" id="install-copy" type="button">📋 Copy the prompt</button>
+      <a class="btn" href="https://github.com/rederyk/noodle#install--run">or install by hand</a>
+    </div>
+    <script>
+      document.getElementById('install-copy').onclick = async e => {
+        const t = document.getElementById('install-prompt').textContent;
+        try { await navigator.clipboard.writeText(t); e.target.textContent = '✓ Copied — paste it to your agent'; }
+        catch { const r = document.createRange(); r.selectNodeContents(document.getElementById('install-prompt'));
+                getSelection().removeAllRanges(); getSelection().addRange(r); e.target.textContent = 'Selected — copy it'; }
+      };
+    </script>
   </section>
 
   <section>
