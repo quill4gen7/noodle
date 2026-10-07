@@ -99,8 +99,11 @@ def test_the_viewer_reads_only_the_frozen_copy():
     assert "/view`" not in VIEW and "/view'" not in VIEW
     # it writes only BESIDE the gen — when it was seen, its card picture and the
     # user's drawn notes (notes/) — never the gen itself nor the project
-    writes = [ln for ln in VIEW.splitlines() if "method:" in ln]
+    # (+ the error net's report of a page that failed to start, which goes to
+    # the server log and touches no project)
+    writes = [ln for ln in VIEW.splitlines() if "method:" in ln and "client-error" not in ln]
     assert len(writes) == 4
+    assert sum("/api/client-error" in ln for ln in VIEW.splitlines()) == 1
     assert any("/seen`" in ln and "'POST'" in ln for ln in writes)
     assert any("/thumb`" in ln and "'PUT'" in ln for ln in writes)
     notes = [ln for ln in writes if "/notes" in ln or "method: 'POST', headers" in ln]
