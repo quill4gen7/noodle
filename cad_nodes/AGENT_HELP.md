@@ -66,6 +66,14 @@ More detail on demand — `cad_help(topic=...)` / `GET /api/agent/help?topic=...
    hides pieces and inverts the selection. The link stays fixed on THAT result
    while the workflow keeps changing. Append `#hide=n3,n7.2` to open it with
    pieces hidden (a node id = all its pieces, `id.i` = its i-th piece).
+   **Label what you show**: `cad_tag_gen(graph, gen, tags=[{text, node,
+   at?, color?}])` — or `cad_snapshot(..., tags=[...])` in one go — pins
+   plates like «coperchio v2», «foro M8 qui», «parete 2 mm» to the pieces
+   (`node` = id or exact title of the gen's pieces; `at` [x,y,z] mm where
+   the stem starts, else the viewer anchors it on the piece). They read from
+   any side, the user can hide them (`#tags=0`), and tapping one selects its
+   piece. HTTP: `POST /api/graph/{name}/gens/{gen}/tags` body `{tags,
+   replace?}`, or a `{tags}` body on `POST .../snapshot`.
    **Several alternatives to choose from?** Give each its own snapshot with a
    label that says what differs (`"B — wall 3mm, round lid"`), then send the
    gallery link `/views` (every generation of every project, as cards, newest

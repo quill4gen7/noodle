@@ -1366,13 +1366,24 @@ def _timeline(view: dict):
 
 
 def snapshot(store: GraphStore, graph_id: str, label: str = "",
-             run: bool = True, base_url: str = "") -> dict:
+             run: bool = True, base_url: str = "", tags: Optional[list] = None) -> dict:
     """Freeze the graph's current result as a new generation and return its
     viewer link. `run=True` (default) executes first, so the generation is the
     graph AS SAVED NOW, not whatever last ran; `run=False` freezes the last
     view.json as is. An unchanged result is not duplicated: if it is identical
     to the newest generation (same geometry, same label) that one is returned
-    with `reused: true`."""
+    with `reused: true`. `tags` (see tag_gen) label its pieces in the same call."""
+    out = _snapshot(store, graph_id, label, run, base_url)
+    if tags is not None:
+        # the gen exists by now: a bad tag must not read as a failed snapshot
+        try:
+            out["tags"] = tag_gen(store, graph_id, out["gen"], tags, base_url=base_url)["tags"]
+        except ValueError as e:
+            out["tags_error"] = str(e)
+    return out
+
+
+def _snapshot(store: GraphStore, graph_id: str, label: str, run: bool, base_url: str) -> dict:
     import datetime
     import hashlib
     import json as _json
@@ -1406,6 +1417,79 @@ def snapshot(store: GraphStore, graph_id: str, label: str = "",
     })
     return {**meta, "reused": False, "ref": gen_ref(graph_id, meta["gen"]),
             "url": gen_url(graph_id, meta["gen"], base_url)}
+
+
+# ---------------------------------------------------------------------------
+# Tags — the agent labels the pieces of a generation it sends the user
+# ---------------------------------------------------------------------------
+# The opposite direction of a note: «coperchio v2», «foro M8 qui», «parete 2 mm»
+# pinned to the pieces of a gen, drawn in /view as plates the user can read
+# from any side. Stored beside the gen (tags.json), so the gen stays immutable.
+
+_TAGS_MAX = 40
+
+
+def _resolve_piece(meta: dict, ref) -> dict:
+    """A piece of the FROZEN gen by node id or exact title."""
+    pieces = meta.get("pieces") or []
+    names = ", ".join(f"{p['id']} ({p.get('title') or p.get('type')})" for p in pieces) or "none"
+    if not isinstance(ref, str) or not ref.strip():
+        raise ValueError(f"tag: `node` must name a piece — the gen's pieces: {names}")
+    for p in pieces:
+        if p.get("id") == ref:
+            return p
+    hits = [p for p in pieces if (p.get("title") or "") == ref]
+    if len(hits) == 1:
+        return hits[0]
+    if hits:
+        raise ValueError(f"tag: title {ref!r} is ambiguous ({', '.join(p['id'] for p in hits)}): use the id")
+    raise ValueError(f"tag: no piece {ref!r} in {meta.get('graph')}/{meta.get('gen')} — its pieces: {names}")
+
+
+def tag_gen(store: GraphStore, graph_id: str, gen: str, tags: list,
+            replace: bool = True, base_url: str = "") -> dict:
+    """Label pieces of generation `gen`: `tags` = [{text, node, at?, color?}].
+    `node` is an id or a title of the gen's frozen pieces; `at` ([x,y,z] mm) is
+    where the stem starts — without it the viewer anchors the tag on the piece
+    itself. `replace=False` appends to the tags already there."""
+    meta = store.load_gen(graph_id, gen, "meta")
+    if not isinstance(tags, list):
+        raise ValueError("tags must be a list")
+    old = [] if replace else store.load_gen_tags(graph_id, gen)
+    if len(old) + len(tags) > _TAGS_MAX:
+        raise ValueError(f"at most {_TAGS_MAX} tags per generation")
+    out = [dict(t) for t in old]
+    for i, t in enumerate(tags):
+        if not isinstance(t, dict):
+            raise ValueError(f"tag {i} must be an object")
+        text = t.get("text")
+        if not isinstance(text, str) or not text.strip() or len(text) > 120:
+            raise ValueError(f"tag {i}: text must be 1..120 chars")
+        p = _resolve_piece(meta, t.get("node"))
+        o = {"text": text.strip(), "node": p["id"], "title": p.get("title") or p.get("type")}
+        if t.get("at") is not None:
+            o["at"] = [round(_num(c, f"tag {i} at"), 4) for c in _check3(t["at"], f"tag {i} at")]
+        if t.get("color") is not None:
+            color = str(t["color"]).lower()
+            if not re.fullmatch(r"#[0-9a-f]{6}", color):
+                raise ValueError(f"tag {i}: color must be #rrggbb")
+            o["color"] = color
+        out.append(o)
+    for k, o in enumerate(out, 1):
+        o["tag"] = k
+    store.save_gen_tags(graph_id, gen, out)
+    return {"gen": gen, "ref": gen_ref(graph_id, gen), "url": gen_url(graph_id, gen, base_url),
+            "tags": out}
+
+
+def _check3(v, what):
+    if not isinstance(v, (list, tuple)) or len(v) != 3:
+        raise ValueError(f"{what} must be [x, y, z]")
+    return v
+
+
+def gen_tags(store: GraphStore, graph_id: str, gen: str) -> list:
+    return store.load_gen_tags(graph_id, gen)
 
 
 def list_gens(store: GraphStore, graph_id: str, base_url: str = "") -> list[dict]:

@@ -107,7 +107,7 @@
   aside{width:300px;border-left:1px solid var(--border);background:var(--bg-1);display:flex;flex-direction:column;min-height:0;}
   aside .grab{display:none;}
   aside .tools{display:flex;gap:6px;padding:8px;border-bottom:1px solid var(--border);}
-  aside .tools .btn{flex:1;padding:5px 6px;}
+  aside .tools .btn{flex:1;padding:5px 6px;min-width:0;}
   #list{overflow:auto;flex:1;padding:4px 0;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;}
   .row{display:flex;align-items:center;gap:6px;padding:0 6px 0 4px;cursor:pointer;user-select:none;-webkit-user-select:none;
     min-height:var(--tap);}
@@ -126,6 +126,9 @@
   .row .name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:6px 0;}
   .row .id{color:var(--text-dim);font:10px var(--mono);}
   .row .tw{width:22px;}
+  .tgb{font:600 10px var(--mono);color:#22d3ee;border:1px solid #22d3ee;border-radius:8px;padding:0 4px;margin-left:4px;}
+  #b-tags.on{border-color:#22d3ee;color:#22d3ee;}
+  #b-tags[hidden]{display:none;}
   .hint{padding:8px 10px;border-top:1px solid var(--border);color:var(--text-dim);font-size:11px;line-height:1.5;}
   kbd{font:10px var(--mono);border:1px solid var(--border);border-radius:3px;padding:0 3px;}
   .touch-only{display:none;}
@@ -318,6 +321,7 @@
         <button class="btn" id="b-all" title="Mostra tutto (A)"><span class="ic">◉</span>Tutti</button>
         <button class="btn" id="b-inv" title="Inverti: i nascosti si vedono, i visibili si nascondono (I)"><span class="ic">⇄</span>Inverti</button>
         <button class="btn" id="b-frame" title="Inquadra i pezzi visibili (F)"><span class="ic">▣</span>Inquadra</button>
+        <button class="btn" id="b-tags" hidden title="Etichette dell'agente: mostra/nascondi"><span class="ic">◆</span>Tag</button>
         <button class="btn desk-ortho" id="b-ortho" title="Prospettiva / ortografica (O)"><span class="ic">▦</span><span id="b-ortho-t">Persp</span></button>
       </div>
       <div id="list"></div>
@@ -366,6 +370,7 @@ function apply() {
     for (const l of n.leaves) { const v = !hidden.has(l.key); l.apply(v); any = any || v; }
     n.obj.visible = any;
   }
+  if (agentTags.length) syncTags();
   viewer.invalidate();
   const shown = allLeaves().filter(k => !hidden.has(k)).length;
   $('stats').textContent = `${shown}/${allLeaves().length} pezzi visibili` + (sizeTxt ? ' · ' + sizeTxt : '');
@@ -394,6 +399,7 @@ function writeHash() {
   }
   const ps = [];
   if (out.length) ps.push('hide=' + out.join(','));
+  if (!tagsOn && agentTags.length) ps.push('tags=0');
   if (anims.length) {
     if (clock.playing) ps.push('play=1');
     else ps.push('t=' + (+clock.t.toFixed(3)));
@@ -559,6 +565,10 @@ function swatch(c) {
   if (c && c.isColor) return 'background:#' + c.getHexString();
   return 'background:' + (c || '#888');
 }
+function tagBadge(id) {
+  const c = agentTags.filter(T => T.node === id);
+  return c.length ? ` <span class="tgb" title="${esc(c.map(T => T.text).join(' · '))}">◆${c.length}</span>` : '';
+}
 function renderList() {
   const L = $('list'); const top = L.scrollTop; L.innerHTML = '';
   for (const n of nodes) {
@@ -570,7 +580,7 @@ function renderList() {
     row.innerHTML = `<span class="ib tw" ${multi ? 'role="button" aria-label="Espandi"' : ''}>${multi ? (open.has(n.id) ? '▾' : '▸') : ''}</span>
       <span class="ib eye" role="button" aria-label="Mostra/nascondi">${vis === n.leaves.length ? '●' : vis ? '◐' : '○'}</span>
       <span class="sw" style="${swatch(n.color)}"></span>
-      <span class="name" title="${esc(n.type)}">${esc(n.title)}${multi ? ` <span class="id">×${n.leaves.length}</span>` : ''}</span>
+      <span class="name" title="${esc(n.type)}">${esc(n.title)}${multi ? ` <span class="id">×${n.leaves.length}</span>` : ''}${tagBadge(n.id)}</span>
       <span class="id">${esc(n.id)}</span>
       <span class="ib solo" role="button" aria-label="Solo questo" title="Solo questo">◎</span>`;
     if (multi) row.querySelector('.tw').onclick = e => { e.stopPropagation(); open.has(n.id) ? open.delete(n.id) : open.add(n.id); renderList(); };
@@ -783,6 +793,8 @@ $('c').addEventListener('pointerup', e => {
     if (now - lastTap < 320) { lastTap = 0; frameVisible(); return; }
     lastTap = now;
   }
+  const tg = agentTagAt(e.clientX, e.clientY);  // an agent's tag names its piece
+  if (tg) { select(tg.key); return; }
   const k = pickLeaf(e.clientX, e.clientY);
   if (e.altKey && k) { hidden.add(k); select(null); apply(); return; }
   select(k);
@@ -1570,7 +1582,7 @@ function labelObject(L) {
   return obj;
 }
 // the stem: a few mm, in proportion to the plate
-const stemOf = L => Math.max(L.h * 1.2, 0.35 * L.w);
+const stemOf = L => L.stem ?? Math.max(L.h * 1.2, 0.35 * L.w);
 const tipOf = L => L.at.clone().addScaledVector(L.n, stemOf(L));
 function tagRect(L) {
   const r = $('c').getBoundingClientRect(), tip = tipOf(L), q = tip.clone().project(viewer.camera);
@@ -1582,15 +1594,14 @@ function tagRect(L) {
 // with no depth test at 0.35, drawn after everything. Sprites need
 // `raycaster.camera` to be picked — setFromCamera sets it.
 const GHOST = 0.35;
-function tagObject(L) {
-  const g = new THREE.Group(), tex = labelCanvas(L.text, L.color, L.w, L.h);
+function tagObject(L, tex = labelCanvas(L.text, L.color, L.w, L.h), ink = L.color) {
+  const g = new THREE.Group();
   const n = L.n.clone().normalize(), stem = stemOf(L), tip = tipOf(L);
   const r = Math.max(L.h * 0.09, 0.03);        // the anchor dot
   const dotG = new THREE.SphereGeometry(r, 12, 8);
   const stemG = new THREE.CylinderGeometry(r * 0.35, r * 0.35, stem, 8);
   stemG.translate(0, stem / 2, 0);
   const qn = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), n);
-  const ink = L.color;
   for (const ghost of [false, true]) {
     const opt = { color: ink, toneMapped: false, transparent: ghost, opacity: ghost ? GHOST : 1,
                   depthTest: !ghost, depthWrite: !ghost };
@@ -1915,6 +1926,100 @@ function renderNotes() {
   }
 }
 
+// ── the agent's tags: labels the agent pinned on this gen's pieces ───────
+// The other direction of a note: «coperchio v2», «foro M8 qui», written by the
+// agent (cad_tag_gen / tags.json beside the gen) and always drawn as
+// targhette, in the agent's own look (cyan rim, a ◆ mark) so they never read as
+// the user's. «Etichette» hides them all (#tags=0); a hidden piece hides its
+// tags; tapping one selects its piece. Without `at` the anchor is found here:
+// the TOPMOST point of the piece (within 2% of its height), the one nearest the
+// opening camera — always on that piece's outer surface and in view, where a
+// ray at the bbox centre would dive into the hole of a nut.
+const AGENT_INK = '#22d3ee';
+const agentGroup = new THREE.Group(); agentGroup.name = 'agent-tags';
+viewer.scene.add(agentGroup);
+let agentTags = [], tagsOn = true;
+function agentCanvas(text) {
+  const H = 128, pad = 26, icon = 44, f = `700 64px ${getComputedStyle(document.body).fontFamily}`;
+  const m = document.createElement('canvas').getContext('2d'); m.font = f;
+  const W = Math.min(2048, Math.ceil(pad + icon + 18 + m.measureText(text).width + pad));
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const c = cv.getContext('2d');
+  c.fillStyle = 'rgba(8,22,32,0.92)'; c.strokeStyle = AGENT_INK; c.lineWidth = 7;
+  c.beginPath(); c.roundRect(4, 4, W - 8, H - 8, 26); c.fill(); c.stroke();
+  const cx = pad + icon / 2, cy = H / 2;           // ◆: the agent's mark, drawn (no font needed)
+  c.fillStyle = AGENT_INK; c.beginPath();
+  c.moveTo(cx, cy - icon / 2); c.lineTo(cx + icon / 2, cy); c.lineTo(cx, cy + icon / 2); c.lineTo(cx - icon / 2, cy);
+  c.closePath(); c.fill();
+  c.font = f; c.fillStyle = '#fff'; c.textBaseline = 'middle'; c.fillText(text, pad + icon + 18, cy + 3, W - pad * 2 - icon - 18);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  return { tex, aspect: W / H };
+}
+function tagAnchor(n) {
+  const box = new THREE.Box3().setFromObject(n.obj), cam = viewer.camera.position;
+  const zTop = box.max.z - 0.02 * Math.max(box.max.z - box.min.z, 1e-6), v = new THREE.Vector3();
+  let best = null, bd = Infinity;
+  n.obj.updateMatrixWorld(true);
+  n.obj.traverse(o => {
+    const P = o.isMesh && o.geometry && o.geometry.attributes.position;
+    if (!P) return;
+    for (let i = 0; i < P.count; i++) {
+      v.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld);
+      if (v.z < zTop) continue;
+      const d = v.distanceToSquared(cam);
+      if (d < bd) { bd = d; best = v.clone(); }
+    }
+  });
+  return best ? { at: best, n: new THREE.Vector3(0, 0, 1) } : null;
+}
+async function loadTags(base) {
+  let raw = [];
+  try { raw = (await getJSON(`${base}/tags`)).tags || []; } catch { raw = []; }
+  if (!raw.length) return;
+  const size = visibleBox().getSize(new THREE.Vector3()).length() || 50;
+  const h = THREE.MathUtils.clamp(size * 0.035, 0.5, 200);
+  for (const t of raw) {
+    const n = nodes.find(x => x.id === t.node);
+    if (!n) continue;
+    let a;
+    if (Array.isArray(t.at)) {
+      const at = new THREE.Vector3(...t.at), c = new THREE.Box3().setFromObject(n.obj).getCenter(new THREE.Vector3());
+      const dir = at.clone().sub(c);
+      a = { at, n: dir.lengthSq() > 1e-12 ? dir.normalize() : new THREE.Vector3(0, 0, 1) };
+    } else a = tagAnchor(n);
+    if (!a) continue;
+    const { tex, aspect } = agentCanvas(t.text);
+    const T = { ...t, at: a.at, n: a.n, h, w: h * aspect, stem: h * 1.6, key: n.leaves[0].key };
+    T.obj = tagObject(T, tex, t.color || AGENT_INK);
+    T.obj.userData.agentTag = T;
+    agentGroup.add(T.obj);
+    agentTags.push(T);
+  }
+  $('b-tags').hidden = !agentTags.length;
+  syncTags();
+}
+function syncTags() {
+  agentGroup.visible = tagsOn;
+  for (const T of agentTags) {
+    const n = nodes.find(x => x.id === T.node);
+    T.obj.visible = !n || n.obj.visible;
+  }
+  $('b-tags').classList.toggle('on', tagsOn);
+  viewer.invalidate();
+}
+function agentTagAt(x, y) {
+  if (!tagsOn || !agentTags.length) return null;
+  const r = $('c').getBoundingClientRect();
+  ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, viewer.camera);
+  const h = ray.intersectObjects(agentTags.filter(T => T.obj.visible).map(T => T.obj), true)[0];
+  if (!h) return null;
+  let o = h.object; while (o && !o.userData.agentTag) o = o.parent;
+  return o ? o.userData.agentTag : null;
+}
+$('b-tags').onclick = () => { tagsOn = !tagsOn; syncTags(); writeHash(); };
+
 // ── load ─────────────────────────────────────────────────────────────────
 let sizeTxt = '';
 async function boot() {
@@ -2003,6 +2108,7 @@ async function boot() {
     nodes.push(n);
   }
   readHash();
+  if (hashParam('tags') === '0') tagsOn = false;
   apply();
   initTimeline(view);
   writeHash();
@@ -2013,6 +2119,8 @@ async function boot() {
   for (const n of notesData) if (!n.done) shownNotes.add(n.id);
   for (const [id, o] of noteObjs) o.visible = shownNotes.has(id);
   renderNotes(); viewer.invalidate();
+  await loadTags(base);
+  renderList();
   const fn = focus && notesData.find(n => n.id === focus);
   if (fn) goToNote(fn);
 }

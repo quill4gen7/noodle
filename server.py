@@ -588,13 +588,22 @@ def _gen_http(fn, *args, **kwargs):
 @app.post("/api/graph/{name}/snapshot")
 async def snapshot_graph(request: Request, name: str, label: str = "",
                          run: bool = True):
-    """Freeze the current result as a new generation; returns its viewer `url`."""
+    """Freeze the current result as a new generation; returns its viewer `url`.
+    Optional JSON body {tags: [{text, node, at?, color?}]} labels its pieces."""
     require_project(name)
     store = GraphStore(PROJECTS_DIR)
+    raw = await request.body()
+    tags = None
+    if raw.strip():
+        try:
+            body = json.loads(raw)
+        except ValueError as e:
+            raise HTTPException(400, f"Invalid JSON: {e}") from e
+        tags = body.get("tags") if isinstance(body, dict) else None
     try:
         # off the loop: with run=1 this executes the graph (see off_loop)
         return await off_loop(api.snapshot, store, name, label=label, run=run,
-                              base_url=_public_base(request))
+                              base_url=_public_base(request), tags=tags)
     except KeyError as e:
         raise HTTPException(404, str(e.args[0] if e.args else e)) from e
     except ValueError as e:
@@ -679,6 +688,27 @@ async def list_notes(request: Request, project: str = "", gen: str = "",
 async def get_generation_notes(name: str, gen: str):
     require_project(name)
     return {"notes": _gen_http(api.gen_notes_raw, GraphStore(PROJECTS_DIR), name, gen)}
+
+
+@app.get("/api/graph/{name}/gens/{gen}/tags")
+async def get_generation_tags(name: str, gen: str):
+    """The agent's labels on this gen's pieces (tags.json beside the gen)."""
+    require_project(name)
+    return {"tags": _gen_http(api.gen_tags, GraphStore(PROJECTS_DIR), name, gen)}
+
+
+@app.post("/api/graph/{name}/gens/{gen}/tags")
+async def tag_generation(request: Request, name: str, gen: str):
+    """Body {tags: [{text, node, at?, color?}], replace?: true}."""
+    require_project(name)
+    try:
+        body = await request.json()
+    except ValueError as e:
+        raise HTTPException(400, f"Invalid JSON: {e}") from e
+    if not isinstance(body, dict):
+        raise HTTPException(400, "Expected a JSON object")
+    return _gen_http(api.tag_gen, GraphStore(PROJECTS_DIR), name, gen, body.get("tags"),
+                     replace=body.get("replace", True) is not False, base_url=_public_base(request))
 
 
 @app.post("/api/graph/{name}/gens/{gen}/notes")

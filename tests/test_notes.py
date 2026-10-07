@@ -303,3 +303,52 @@ def test_regular_surfaces_are_fitted_and_mapped_without_projection():
     patch = patch[:patch.index("\n}\n")]
     assert "uv.push(U, V)" in patch and "Math.cos(al)" in patch     # arc length round the axis
     assert "surface: L.surface || null, fit: fitOut(L.fit)" in VIEW and "fit: fitIn(l.fit)" in VIEW
+
+
+def test_the_agent_tags_the_pieces_of_a_gen_beside_it(store):
+    """«coperchio v2» pinned on a piece: tags.json beside the gen (the gen's
+    own files never change), node by id or exact title, `at` optional."""
+    gen_files = sorted(p.name for p in store.gen_dir("demo", "g1").iterdir())
+    out = api.tag_gen(store, "demo", "g1", [{"text": "corpo v2", "node": "Body"},
+                                            {"text": "qui", "node": "n1", "at": [1, 2, 3], "color": "#22D3EE"}])
+    a, b = out["tags"]
+    assert a == {"text": "corpo v2", "node": "n1", "title": "Body", "tag": 1}
+    assert b["at"] == [1, 2, 3] and b["color"] == "#22d3ee" and b["tag"] == 2
+    assert out["ref"] == "demo/g1"
+    assert api.gen_tags(store, "demo", "g1") == out["tags"]
+    assert sorted(p.name for p in store.gen_dir("demo", "g1").iterdir()) == sorted(gen_files + ["tags.json"])
+    api.tag_gen(store, "demo", "g1", [{"text": "altro", "node": "n1"}], replace=False)
+    assert [t["tag"] for t in api.gen_tags(store, "demo", "g1")] == [1, 2, 3]
+    assert len(api.tag_gen(store, "demo", "g1", [{"text": "solo", "node": "n1"}])["tags"]) == 1
+
+
+def test_bad_tags_are_refused_and_name_the_pieces(store):
+    with pytest.raises(ValueError, match=r"n1 \(Body\)"):
+        api.tag_gen(store, "demo", "g1", [{"text": "x", "node": "Lid"}])
+    for bad in ({"text": "", "node": "n1"}, {"text": "x" * 121, "node": "n1"},
+                {"text": "x", "node": "n1", "at": [0, float("nan"), 0]},
+                {"text": "x", "node": "n1", "at": [0, 0]}, {"text": "x", "node": "n1", "color": "cyan"}):
+        with pytest.raises(ValueError):
+            api.tag_gen(store, "demo", "g1", [bad])
+    with pytest.raises(ValueError):
+        api.tag_gen(store, "demo", "g1", [{"text": "x", "node": "n1"}] * 41)
+    with pytest.raises(KeyError):
+        api.tag_gen(store, "demo", "g9", [])
+
+
+def test_snapshot_tags_in_one_call_and_a_bad_tag_does_not_fail_it(store):
+    out = api.snapshot(store, "demo", run=False, tags=[{"text": "corpo", "node": "n1"}])
+    assert out["tags"][0]["node"] == "n1" and api.gen_tags(store, "demo", out["gen"])[0]["text"] == "corpo"
+    out = api.snapshot(store, "demo", run=False, tags=[{"text": "x", "node": "nope"}])
+    assert "tags_error" in out and out["gen"]
+
+
+def test_tag_routes_tool_help_and_viewer():
+    assert '@app.get("/api/graph/{name}/gens/{gen}/tags")' in SERVER
+    assert SERVER.index('gens/{gen}/tags")') < SERVER.index('gens/{gen}/{part}")')
+    assert "def cad_tag_gen" in MCP and "tags=tags" in MCP
+    assert "cad_tag_gen" in HELP
+    # drawn as plates in the agent's look, hideable (#tags=0), tap = select the piece
+    assert "const AGENT_INK" in VIEW and "T.obj = tagObject(T, tex, t.color || AGENT_INK)" in VIEW
+    assert "ps.push('tags=0')" in VIEW and "hashParam('tags') === '0'" in VIEW
+    assert "if (tg) { select(tg.key); return; }" in VIEW and "function tagBadge" in VIEW
