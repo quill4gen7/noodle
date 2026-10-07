@@ -255,7 +255,7 @@ def test_the_text_tool_projects_a_decal_and_sends_labels():
     # two styles, the user's choice, remembered; a decal that cannot be made
     # becomes a plate — never the one-sided flying card it used to be
     assert 'id="d-lstyle"' in VIEW and "localStorage.getItem('noodle:view:labelStyle')" in VIEW
-    assert "if (mesh && !under.ridged)" in VIEW and "return tagObject(L); }" in VIEW
+    assert "if (mesh && !under.ridged)" in VIEW and "L.surface = 'tag'; return tagObject(L);" in VIEW
     assert "PlaneGeometry" not in VIEW
     # the plate faces the camera and shows through the part, faded
     tag = VIEW[VIEW.index("function tagObject"):]
@@ -271,3 +271,35 @@ def test_the_text_tool_projects_a_decal_and_sends_labels():
     assert "for (const l of n.labels || [])" in VIEW
     assert "labels" in HELP[HELP.index("cad_notes"):] and "near_marks" in HELP
     assert "near_marks" in MCP
+
+
+def test_a_decal_label_keeps_the_surface_it_was_fitted_to(store):
+    """▭ decal on a regular surface is laid on a FITTED patch; the fit travels
+    with the label so the viewer redraws a saved note without refitting."""
+    cyl = {**LABEL, "style": "decal", "surface": "cylinder",
+           "fit": {"centre": [0, 0, 0], "radius": 7.0, "convex": 1, "axis": [0, 0, 2]}}
+    note = api.add_note(store, "demo", "g1", {"labels": [cyl, {**LABEL, "style": "decal"}, LABEL]})
+    c, d, t = note["labels"]
+    assert c["surface"] == "cylinder" and c["fit"]["axis"] == [0, 0, 1] and c["fit"]["radius"] == 7.0
+    assert d["surface"] == "decal" and "fit" not in d          # absent: what the style implies
+    assert t["surface"] == "tag"
+    for bad in ({**cyl, "fit": None}, {**cyl, "fit": {**cyl["fit"], "axis": [0, 0, 0]}},
+                {**cyl, "fit": {**cyl["fit"], "radius": -1}}, {**cyl, "surface": "torus"},
+                {**cyl, "surface": "sphere", "fit": {"centre": [0, 0, float("nan")], "radius": 3}}):
+        with pytest.raises(ValueError):
+            api.add_note(store, "demo", "g1", {"labels": [bad]})
+
+
+def test_regular_surfaces_are_fitted_and_mapped_without_projection():
+    fit = VIEW[VIEW.index("function fitSurface"):]
+    fit = fit[:fit.index("\n}\n")]
+    # plane → cylinder (axis from the normals, RANSAC over pairs, radius from the
+    # POINTS: the mesh has flat facets) → sphere only if normals turn round two axes
+    for t in ("surface: 'plane'", "minEigvec(N)", "N[i].clone().cross(N[j])", "// Kåsa",
+              "ax && ax.lam > 0.01 ?", "return { surface: 'decal' }"):
+        assert t in fit, t
+    assert "const ARC_MAX = 150 * Math.PI / 180" in VIEW
+    patch = VIEW[VIEW.index("function patchGeometry"):]
+    patch = patch[:patch.index("\n}\n")]
+    assert "uv.push(U, V)" in patch and "Math.cos(al)" in patch     # arc length round the axis
+    assert "surface: L.surface || null, fit: fitOut(L.fit)" in VIEW and "fit: fitIn(l.fit)" in VIEW

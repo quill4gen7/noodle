@@ -1558,6 +1558,7 @@ def _marks(strokes: list[dict]) -> list[dict]:
 
 _NOTE_MAX_VIEWS = 24
 _NOTE_MAX_LABELS = 60
+_LABEL_SURFACES = {"plane", "cylinder", "sphere", "decal", "tag"}
 
 
 def _labels(labels_in, n_views: int, titles: dict) -> list[dict]:
@@ -1593,6 +1594,28 @@ def _labels(labels_in, n_views: int, titles: dict) -> list[dict]:
              "at": _vec(lb.get("at"), f"label {i} at"),
              "normal": unit["normal"], "up": unit["up"], "size_mm": size,
              "color": color, "color_name": _NOTE_COLORS.get(color, color)}
+        # what the text was laid on (a decal is fitted when it can be): kept
+        # with its fit, so the viewer redraws a saved note without refitting
+        surface = lb.get("surface") or ("tag" if style == "tag" else "decal")
+        if surface not in _LABEL_SURFACES:
+            raise ValueError(f"note: label {i} surface must be one of {sorted(_LABEL_SURFACES)}")
+        o["surface"] = surface
+        if surface in ("cylinder", "sphere"):
+            fit = lb.get("fit")
+            if not isinstance(fit, dict):
+                raise ValueError(f"note: label {i} on a {surface} needs its fit")
+            f = {"centre": _vec(fit.get("centre"), f"label {i} fit centre"),
+                 "radius": round(_num(fit.get("radius"), f"label {i} fit radius"), 4),
+                 "convex": -1 if fit.get("convex") == -1 else 1}
+            if not 0 < f["radius"] < 1e5:
+                raise ValueError(f"note: label {i} fit radius out of range")
+            if surface == "cylinder":
+                a = _vec(fit.get("axis"), f"label {i} fit axis")
+                na = math.hypot(*a)
+                if na < 1e-6:
+                    raise ValueError(f"note: label {i} fit axis must not be zero")
+                f["axis"] = [round(c / na, 4) for c in a]
+            o["fit"] = f
         v = lb.get("view")
         if v is not None:
             v = int(_num(v, f"label {i} view"))

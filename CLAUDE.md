@@ -1751,7 +1751,18 @@ result while the workflow moves on.
     bolt of `zz-note-probe` «filetto M8?» came out doubled by parallax. The old
     fallback, a one-sided flat card lifted to the highest crest, is gone: on a
     box straddling the bolt head it floated 3.4 mm off the part — the «faccia
-    volante» quill saw. The note carries `labels: [{text, style, at,
+    volante» quill saw. **Regular surfaces are not projected** (quill: «sulle
+    curve proiettala o usa uv per superfici regolari»): `fitSurface` samples a
+    7×7 raycast grid and tries plane (normals within 4°) → cylinder (axis =
+    smallest eigenvector of Σnnᵀ, after RANSAC over normal pairs — 2 samples of
+    49 on a cross-hole ledge had turned the nut's side into a «sphere»; radius
+    by a Kåsa fit on the POINTS, since the viewport's flat facets make normal-
+    based radii wrong by half a facet) → sphere (only if the normals turn round
+    two axes: a thin cylinder band fits a sphere just as well). A fit with low
+    residual gets its own grid patch with UVs (`patchGeometry`): on a cylinder
+    an isometry, box width = arc length, ≤150° of arc; sphere by the
+    exponential map. Stored as `surface` (plane|cylinder|sphere|decal|tag) +
+    `fit`, so a saved note is redrawn without refitting. The note carries `labels: [{text, style, surface, fit, at,
     normal, up, size_mm, color, node, view}]`; `_link_labels` adds
     `near_marks` (within 1.5 label sizes, else the nearest within 4) and lists
     the texts under each mark's `labels` — recomputed on read like `marks`.
