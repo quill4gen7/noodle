@@ -99,8 +99,11 @@ def test_the_viewer_reads_only_the_frozen_copy():
     assert "/view`" not in VIEW and "/view'" not in VIEW
     # it writes only BESIDE the gen — when it was seen, its card picture and the
     # user's drawn notes (notes/) — never the gen itself nor the project
-    writes = [ln for ln in VIEW.splitlines() if "method:" in ln]
+    # (+ the error net's report of a page that failed to start, which goes to
+    # the server log and touches no project)
+    writes = [ln for ln in VIEW.splitlines() if "method:" in ln and "client-error" not in ln]
     assert len(writes) == 4
+    assert sum("/api/client-error" in ln for ln in VIEW.splitlines()) == 1
     assert any("/seen`" in ln and "'POST'" in ln for ln in writes)
     assert any("/thumb`" in ln and "'PUT'" in ln for ln in writes)
     notes = [ln for ln in writes if "/notes" in ln or "method: 'POST', headers" in ln]
@@ -237,3 +240,14 @@ def test_gallery_routes_tool_and_links():
     assert "from '/static/viewer.js'" in GALLERY and "viewer.snapshot(" in GALLERY
     for page in ("view.html", "library.html", "home.html", "nodes.html"):
         assert 'href="/views' in (ROOT / "webui" / page).read_text(), page
+
+
+def test_on_a_phone_the_sheet_and_the_player_fold_by_a_real_handle():
+    """The sheet handle was a 22px strip and, once dragged shut, reopened at the
+    height it had been dragged to (~90px) — so a tap seemed to do nothing. The
+    animation player had no handle at all and covered the model."""
+    assert "aside .grab{display:flex;justify-content:center;align-items:center;height:36px" in VIEW
+    assert "openH" in VIEW and "MIN_OPEN" in VIEW            # reopens at the last OPEN height
+    assert 'id="tl-grab"' in VIEW and "#tl.min" in VIEW       # the player folds to ▶ + time
+    # floating buttons sit above the player at its real height, not a fixed 112px
+    assert "--tlh" in VIEW and "bottom:112px" not in VIEW
