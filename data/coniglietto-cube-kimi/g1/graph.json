@@ -1,0 +1,1070 @@
+{
+  "name": "prova-disegno-kimi",
+  "nodes": [
+    {
+      "id": "piastra_box",
+      "type": "Box",
+      "params": {
+        "width": 60.0,
+        "height": 40.0,
+        "depth": 6.0,
+        "centered": true
+      },
+      "position": [
+        80.0,
+        150.0
+      ],
+      "parent": null,
+      "title": "Piastra grezza"
+    },
+    {
+      "id": "p_foro1",
+      "type": "Vector",
+      "params": {
+        "x": 20.0,
+        "y": 12.0,
+        "z": 0.0
+      },
+      "position": [
+        80.0,
+        607.0
+      ],
+      "parent": null,
+      "title": "Pos. foro dietro dx"
+    },
+    {
+      "id": "foro1",
+      "type": "Cylinder",
+      "params": {
+        "radius": 3.0,
+        "height": 10.0,
+        "centered": true
+      },
+      "position": [
+        380.0,
+        556.95
+      ],
+      "parent": null,
+      "title": "Foro dietro dx"
+    },
+    {
+      "id": "p_foro4",
+      "type": "Vector",
+      "params": {
+        "x": 20.0,
+        "y": -12.0,
+        "z": 0.0
+      },
+      "position": [
+        80.0,
+        996.0
+      ],
+      "parent": null,
+      "title": "Pos. foro davanti dx"
+    },
+    {
+      "id": "foro4",
+      "type": "Cylinder",
+      "params": {
+        "radius": 3.0,
+        "height": 10.0,
+        "centered": true
+      },
+      "position": [
+        380.0,
+        969.95
+      ],
+      "parent": null,
+      "title": "Foro davanti dx"
+    },
+    {
+      "id": "fori",
+      "type": "Union",
+      "params": {},
+      "position": [
+        1280.0,
+        1153.0575000000001
+      ],
+      "parent": null,
+      "title": "Fori"
+    },
+    {
+      "id": "piastra_cut",
+      "type": "Subtract",
+      "params": {},
+      "position": [
+        1580.0,
+        845.1525000000001
+      ],
+      "parent": null,
+      "title": "Piastra forata"
+    },
+    {
+      "id": "piastra",
+      "type": "Move",
+      "params": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 3.0
+      },
+      "position": [
+        1880.0,
+        749.1525000000001
+      ],
+      "parent": null,
+      "preview": true,
+      "title": "Piastra"
+    },
+    {
+      "id": "bic_est",
+      "type": "Cylinder",
+      "params": {
+        "radius": 12.0,
+        "height": 30.0,
+        "centered": true
+      },
+      "position": [
+        80.0,
+        3808.411764705875
+      ],
+      "parent": null,
+      "title": "Bicchiere esterno"
+    },
+    {
+      "id": "p_bic_int",
+      "type": "Vector",
+      "params": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 2.0
+      },
+      "position": [
+        80.0,
+        4221.411764705876
+      ],
+      "parent": null,
+      "title": "Pos. cavit\u00e0"
+    },
+    {
+      "id": "bic_int",
+      "type": "Cylinder",
+      "params": {
+        "radius": 10.0,
+        "height": 30.0,
+        "centered": true
+      },
+      "position": [
+        380.0,
+        4266.220588235288
+      ],
+      "parent": null,
+      "title": "Cavit\u00e0"
+    },
+    {
+      "id": "bic_cut",
+      "type": "Subtract",
+      "params": {},
+      "position": [
+        680.0,
+        4250.55392156862
+      ],
+      "parent": null,
+      "title": "Bicchiere cavo"
+    },
+    {
+      "id": "bicchiere",
+      "type": "Move",
+      "params": {
+        "x": 60.0,
+        "y": 0.0,
+        "z": 15.0
+      },
+      "position": [
+        1280.0,
+        4399.3316993464
+      ],
+      "parent": null,
+      "preview": true,
+      "title": "Bicchiere"
+    },
+    {
+      "id": "blocco_box",
+      "type": "Box",
+      "params": {
+        "width": 30.0,
+        "height": 30.0,
+        "depth": 20.0,
+        "centered": true
+      },
+      "position": [
+        80.0,
+        5155.411764705876
+      ],
+      "parent": null,
+      "title": "Blocco grezzo"
+    },
+    {
+      "id": "blocco",
+      "type": "Move",
+      "params": {
+        "x": -60.0,
+        "y": 0.0,
+        "z": 10.0
+      },
+      "position": [
+        1280.0,
+        7783.243374272782
+      ],
+      "parent": null,
+      "preview": true,
+      "title": "Blocco"
+    },
+    {
+      "id": "tri_profile",
+      "type": "Polygon",
+      "params": {
+        "radius": 7.5,
+        "sides": 3,
+        "rotation": 90.0
+      },
+      "position": [
+        80.0,
+        1385.0
+      ],
+      "parent": null,
+      "title": "Profilo triangolo"
+    },
+    {
+      "id": "tri_face",
+      "type": "MakeFace",
+      "params": {},
+      "position": [
+        380.0,
+        1382.95
+      ],
+      "parent": null
+    },
+    {
+      "id": "tri_solid",
+      "type": "Extrude",
+      "params": {
+        "amount": 10.0,
+        "both": true
+      },
+      "position": [
+        680.0,
+        1131.6750000000002
+      ],
+      "parent": null
+    },
+    {
+      "id": "tri_pos",
+      "type": "Move",
+      "params": {
+        "x": -20.0,
+        "y": 12.0,
+        "z": 0.0
+      },
+      "position": [
+        980.0,
+        1074.0375000000001
+      ],
+      "parent": null,
+      "title": "Foro triangolo"
+    },
+    {
+      "id": "quad_foro",
+      "type": "Box",
+      "params": {
+        "width": 9.0,
+        "height": 9.0,
+        "depth": 10.0
+      },
+      "position": [
+        380.0,
+        1539.95
+      ],
+      "parent": null,
+      "title": "Foro quadrato"
+    },
+    {
+      "id": "p_quad",
+      "type": "Vector",
+      "params": {
+        "x": -20.0,
+        "y": -12.0,
+        "z": 0.0
+      },
+      "position": [
+        80.0,
+        1798.0
+      ],
+      "parent": null
+    },
+    {
+      "id": "orecchio1",
+      "type": "Box",
+      "params": {
+        "width": 5.0,
+        "height": 15.0,
+        "depth": 15.0
+      },
+      "position": [
+        380.0,
+        5683.669764059465
+      ],
+      "parent": null,
+      "title": "Orecchio sx"
+    },
+    {
+      "id": "p_or1",
+      "type": "Vector",
+      "params": {
+        "x": -10.1,
+        "y": -6.2,
+        "z": 16.5
+      },
+      "position": [
+        80.0,
+        5612.411764705876
+      ],
+      "parent": null
+    },
+    {
+      "id": "or1_fil",
+      "type": "FilletChamfer",
+      "params": {
+        "mode": "fillet",
+        "size": 2.2
+      },
+      "position": [
+        680.0,
+        6759.510302197797
+      ],
+      "parent": null
+    },
+    {
+      "id": "orecchio2",
+      "type": "Box",
+      "params": {
+        "width": 5.0,
+        "height": 15.0,
+        "depth": 15.0
+      },
+      "position": [
+        380.0,
+        6140.669764059465
+      ],
+      "parent": null,
+      "title": "Orecchio dx"
+    },
+    {
+      "id": "p_or2",
+      "type": "Vector",
+      "params": {
+        "x": 6.7,
+        "y": -2.7,
+        "z": 16.5
+      },
+      "position": [
+        80.0,
+        6001.411764705876
+      ],
+      "parent": null
+    },
+    {
+      "id": "or2_fil",
+      "type": "FilletChamfer",
+      "params": {
+        "mode": "fillet",
+        "size": 2.2
+      },
+      "position": [
+        680.0,
+        7032.510302197797
+      ],
+      "parent": null
+    },
+    {
+      "id": "occhio1",
+      "type": "Sphere",
+      "params": {
+        "radius": 3.2
+      },
+      "position": [
+        380.0,
+        6597.669764059465
+      ],
+      "parent": null,
+      "title": "Occhio sx"
+    },
+    {
+      "id": "p_oc1",
+      "type": "Vector",
+      "params": {
+        "x": -9.15,
+        "y": -15.5,
+        "z": 3.74
+      },
+      "position": [
+        80.0,
+        6390.411764705876
+      ],
+      "parent": null
+    },
+    {
+      "id": "occhio2",
+      "type": "Sphere",
+      "params": {
+        "radius": 3.2
+      },
+      "position": [
+        380.0,
+        6894.669764059465
+      ],
+      "parent": null,
+      "title": "Occhio dx"
+    },
+    {
+      "id": "p_oc2",
+      "type": "Vector",
+      "params": {
+        "x": 8.3,
+        "y": -15.5,
+        "z": 3.3
+      },
+      "position": [
+        80.0,
+        6779.411764705876
+      ],
+      "parent": null
+    },
+    {
+      "id": "pup1",
+      "type": "Sphere",
+      "params": {
+        "radius": 1.2
+      },
+      "position": [
+        380.0,
+        7191.669764059465
+      ],
+      "parent": null,
+      "title": "Pupilla sx"
+    },
+    {
+      "id": "p_pu1",
+      "type": "Vector",
+      "params": {
+        "x": -9.15,
+        "y": -18.3,
+        "z": 3.74
+      },
+      "position": [
+        80.0,
+        7168.411764705876
+      ],
+      "parent": null
+    },
+    {
+      "id": "pup2",
+      "type": "Sphere",
+      "params": {
+        "radius": 1.2
+      },
+      "position": [
+        380.0,
+        7488.669764059465
+      ],
+      "parent": null,
+      "title": "Pupilla dx"
+    },
+    {
+      "id": "p_pu2",
+      "type": "Vector",
+      "params": {
+        "x": 8.3,
+        "y": -18.3,
+        "z": 3.3
+      },
+      "position": [
+        80.0,
+        7557.411764705876
+      ],
+      "parent": null
+    },
+    {
+      "id": "naso",
+      "type": "Sphere",
+      "params": {
+        "radius": 1.6
+      },
+      "position": [
+        380.0,
+        7785.669764059465
+      ],
+      "parent": null,
+      "title": "Naso"
+    },
+    {
+      "id": "p_naso",
+      "type": "Vector",
+      "params": {
+        "x": -0.5,
+        "y": -16.0,
+        "z": -3.6
+      },
+      "position": [
+        80.0,
+        7946.411764705876
+      ],
+      "parent": null
+    },
+    {
+      "id": "dente1",
+      "type": "Box",
+      "params": {
+        "width": 2.8,
+        "height": 3.0,
+        "depth": 4.0
+      },
+      "position": [
+        380.0,
+        8082.669764059465
+      ],
+      "parent": null,
+      "title": "Dente sx"
+    },
+    {
+      "id": "p_de1",
+      "type": "Vector",
+      "params": {
+        "x": -4.2,
+        "y": -16.0,
+        "z": -7.0
+      },
+      "position": [
+        80.0,
+        8335.411764705876
+      ],
+      "parent": null
+    },
+    {
+      "id": "dente2",
+      "type": "Box",
+      "params": {
+        "width": 2.8,
+        "height": 3.0,
+        "depth": 4.0
+      },
+      "position": [
+        380.0,
+        8539.669764059465
+      ],
+      "parent": null,
+      "title": "Dente dx"
+    },
+    {
+      "id": "p_de2",
+      "type": "Vector",
+      "params": {
+        "x": -0.8,
+        "y": -16.0,
+        "z": -7.0
+      },
+      "position": [
+        80.0,
+        8724.411764705876
+      ],
+      "parent": null
+    },
+    {
+      "id": "zampa1",
+      "type": "Sphere",
+      "params": {
+        "radius": 3.2
+      },
+      "position": [
+        380.0,
+        8996.669764059465
+      ],
+      "parent": null,
+      "title": "Zampa ant sx"
+    },
+    {
+      "id": "p_za1",
+      "type": "Vector",
+      "params": {
+        "x": -15.3,
+        "y": -9.5,
+        "z": -8.5
+      },
+      "position": [
+        80.0,
+        9113.411764705876
+      ],
+      "parent": null
+    },
+    {
+      "id": "zampa2",
+      "type": "Sphere",
+      "params": {
+        "radius": 3.2
+      },
+      "position": [
+        380.0,
+        9293.669764059465
+      ],
+      "parent": null,
+      "title": "Zampa post sx"
+    },
+    {
+      "id": "p_za2",
+      "type": "Vector",
+      "params": {
+        "x": -15.3,
+        "y": 9.5,
+        "z": -8.5
+      },
+      "position": [
+        80.0,
+        9502.411764705876
+      ],
+      "parent": null
+    },
+    {
+      "id": "zampa3",
+      "type": "Sphere",
+      "params": {
+        "radius": 3.2
+      },
+      "position": [
+        380.0,
+        9590.669764059465
+      ],
+      "parent": null,
+      "title": "Zampa ant dx"
+    },
+    {
+      "id": "p_za3",
+      "type": "Vector",
+      "params": {
+        "x": 15.3,
+        "y": -9.5,
+        "z": -8.5
+      },
+      "position": [
+        80.0,
+        9891.411764705876
+      ],
+      "parent": null
+    },
+    {
+      "id": "zampa4",
+      "type": "Sphere",
+      "params": {
+        "radius": 3.2
+      },
+      "position": [
+        380.0,
+        9887.669764059465
+      ],
+      "parent": null,
+      "title": "Zampa post dx"
+    },
+    {
+      "id": "p_za4",
+      "type": "Vector",
+      "params": {
+        "x": 15.3,
+        "y": 9.5,
+        "z": -8.5
+      },
+      "position": [
+        80.0,
+        10280.411764705876
+      ],
+      "parent": null
+    },
+    {
+      "id": "coniglio",
+      "type": "Union",
+      "params": {},
+      "position": [
+        980.0,
+        7889.243374272782
+      ],
+      "parent": null,
+      "title": "Coniglietto"
+    },
+    {
+      "id": "intagli_bic",
+      "type": "CodeBlock",
+      "params": {
+        "code": "import build123d as B\nimport math\n\n# ---- parametri intagli laterali ----\nzc     = -1.5   #@param float min=-12 max=10 step=0.5\nprof   = 9.0    #@param float min=3 max=14 step=0.5\nr_est  = 12.0\n\n# ---- fori sul fondo ----\nr_foro = 1.6    #@param float min=0.5 max=4 step=0.1\nd_foro = 6.0    #@param float min=3 max=8.5 step=0.5\nn_fori = 4      #@param int min=2 max=8\n\npl = B.Plane(origin=(0, r_est + 5, 0), x_dir=(1, 0, 0), z_dir=(0, -1, 0))\n\ndef cutter(draw_fn):\n    with B.BuildPart() as bp:\n        with B.BuildSketch(pl):\n            with B.Locations((0, zc)):\n                draw_fn()\n        B.extrude(amount=prof)\n    return bp.part\n\n# ---- profilo rettangolo ----\ndef c_rect():\n    B.Rectangle(12.0, 15.0)\n\n# ---- profilo triangolo ----\ndef c_tri():\n    B.RegularPolygon(8.0, 3, rotation=90)\n\n# ---- profilo esagono ----\ndef c_hex():\n    B.RegularPolygon(7.5, 6)\n\n# ---- profilo cuore ----\ndef c_heart():\n    with B.Locations((-3.1, 1.8), (3.1, 1.8)):\n        B.Circle(3.5)\n    B.Polygon((-6.2, 1.4), (6.2, 1.4), (0.0, -7.8))\n\n# ---- i 4 intagli, equidistanti (90 gradi) ----\ncutters = [\n    cutter(c_rect ).rotate(B.Axis.Z, 180),\n    cutter(c_tri  ).rotate(B.Axis.Z, -90),\n    cutter(c_hex  ),\n    cutter(c_heart).rotate(B.Axis.Z, 90),\n]\n\n# ---- fori equidistanti nel fondo ----\nfor k in range(n_fori):\n    a = math.radians(k * 360.0 / n_fori)\n    cutters.append(B.Pos(d_foro * math.cos(a), d_foro * math.sin(a), -14.0) * B.Cylinder(r_foro, 6.0))\n\nresult = B.Compound(children=cutters)\n"
+      },
+      "position": [
+        80.0,
+        4610.411764705876
+      ],
+      "parent": null,
+      "title": "Intagli e fori fondo"
+    },
+    {
+      "id": "bic_cut2",
+      "type": "Subtract",
+      "params": {},
+      "position": [
+        980.0,
+        4495.3316993464
+      ],
+      "parent": null,
+      "title": "Bicchiere intagliato"
+    }
+  ],
+  "connections": [
+    {
+      "id": "c1",
+      "from_node": "p_foro1",
+      "from_socket": "vector",
+      "to_node": "foro1",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c4",
+      "from_node": "p_foro4",
+      "from_socket": "vector",
+      "to_node": "foro4",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c5",
+      "from_node": "foro1",
+      "from_socket": "result",
+      "to_node": "fori",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c8",
+      "from_node": "foro4",
+      "from_socket": "result",
+      "to_node": "fori",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c9",
+      "from_node": "piastra_box",
+      "from_socket": "result",
+      "to_node": "piastra_cut",
+      "to_socket": "a"
+    },
+    {
+      "id": "c10",
+      "from_node": "fori",
+      "from_socket": "result",
+      "to_node": "piastra_cut",
+      "to_socket": "b"
+    },
+    {
+      "id": "c11",
+      "from_node": "piastra_cut",
+      "from_socket": "result",
+      "to_node": "piastra",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c12",
+      "from_node": "p_bic_int",
+      "from_socket": "vector",
+      "to_node": "bic_int",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c13",
+      "from_node": "bic_est",
+      "from_socket": "result",
+      "to_node": "bic_cut",
+      "to_socket": "a"
+    },
+    {
+      "id": "c14",
+      "from_node": "bic_int",
+      "from_socket": "result",
+      "to_node": "bic_cut",
+      "to_socket": "b"
+    },
+    {
+      "id": "c17",
+      "from_node": "tri_profile",
+      "from_socket": "result",
+      "to_node": "tri_face",
+      "to_socket": "edges"
+    },
+    {
+      "id": "c18",
+      "from_node": "tri_face",
+      "from_socket": "result",
+      "to_node": "tri_solid",
+      "to_socket": "sketch"
+    },
+    {
+      "id": "c19",
+      "from_node": "tri_solid",
+      "from_socket": "result",
+      "to_node": "tri_pos",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c20",
+      "from_node": "tri_pos",
+      "from_socket": "result",
+      "to_node": "fori",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c21",
+      "from_node": "p_quad",
+      "from_socket": "vector",
+      "to_node": "quad_foro",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c22",
+      "from_node": "quad_foro",
+      "from_socket": "result",
+      "to_node": "fori",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c19_",
+      "from_node": "p_or1",
+      "from_socket": "vector",
+      "to_node": "orecchio1",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c20_",
+      "from_node": "orecchio1",
+      "from_socket": "result",
+      "to_node": "or1_fil",
+      "to_socket": "part"
+    },
+    {
+      "id": "c21_",
+      "from_node": "p_or2",
+      "from_socket": "vector",
+      "to_node": "orecchio2",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c22_",
+      "from_node": "orecchio2",
+      "from_socket": "result",
+      "to_node": "or2_fil",
+      "to_socket": "part"
+    },
+    {
+      "id": "c23",
+      "from_node": "p_oc1",
+      "from_socket": "vector",
+      "to_node": "occhio1",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c24",
+      "from_node": "p_oc2",
+      "from_socket": "vector",
+      "to_node": "occhio2",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c25",
+      "from_node": "p_pu1",
+      "from_socket": "vector",
+      "to_node": "pup1",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c26",
+      "from_node": "p_pu2",
+      "from_socket": "vector",
+      "to_node": "pup2",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c27",
+      "from_node": "p_naso",
+      "from_socket": "vector",
+      "to_node": "naso",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c28",
+      "from_node": "p_de1",
+      "from_socket": "vector",
+      "to_node": "dente1",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c29",
+      "from_node": "p_de2",
+      "from_socket": "vector",
+      "to_node": "dente2",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c30",
+      "from_node": "p_za1",
+      "from_socket": "vector",
+      "to_node": "zampa1",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c31",
+      "from_node": "p_za2",
+      "from_socket": "vector",
+      "to_node": "zampa2",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c32",
+      "from_node": "p_za3",
+      "from_socket": "vector",
+      "to_node": "zampa3",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c33",
+      "from_node": "p_za4",
+      "from_socket": "vector",
+      "to_node": "zampa4",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c34",
+      "from_node": "blocco_box",
+      "from_socket": "result",
+      "to_node": "coniglio",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c35",
+      "from_node": "or1_fil",
+      "from_socket": "result",
+      "to_node": "coniglio",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c36",
+      "from_node": "or2_fil",
+      "from_socket": "result",
+      "to_node": "coniglio",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c37",
+      "from_node": "occhio1",
+      "from_socket": "result",
+      "to_node": "coniglio",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c38",
+      "from_node": "occhio2",
+      "from_socket": "result",
+      "to_node": "coniglio",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c39",
+      "from_node": "pup1",
+      "from_socket": "result",
+      "to_node": "coniglio",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c40",
+      "from_node": "pup2",
+      "from_socket": "result",
+      "to_node": "coniglio",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c41",
+      "from_node": "naso",
+      "from_socket": "result",
+      "to_node": "coniglio",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c42",
+      "from_node": "dente1",
+      "from_socket": "result",
+      "to_node": "coniglio",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c43",
+      "from_node": "dente2",
+      "from_socket": "result",
+      "to_node": "coniglio",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c44",
+      "from_node": "zampa1",
+      "from_socket": "result",
+      "to_node": "coniglio",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c45",
+      "from_node": "zampa2",
+      "from_socket": "result",
+      "to_node": "coniglio",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c46",
+      "from_node": "zampa3",
+      "from_socket": "result",
+      "to_node": "coniglio",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c47",
+      "from_node": "zampa4",
+      "from_socket": "result",
+      "to_node": "coniglio",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c47_",
+      "from_node": "coniglio",
+      "from_socket": "result",
+      "to_node": "blocco",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c48",
+      "from_node": "bic_cut",
+      "from_socket": "result",
+      "to_node": "bic_cut2",
+      "to_socket": "a"
+    },
+    {
+      "id": "c49",
+      "from_node": "intagli_bic",
+      "from_socket": "result",
+      "to_node": "bic_cut2",
+      "to_socket": "b"
+    },
+    {
+      "id": "c49_",
+      "from_node": "bic_cut2",
+      "from_socket": "result",
+      "to_node": "bicchiere",
+      "to_socket": "shape"
+    }
+  ]
+}

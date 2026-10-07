@@ -1,0 +1,1147 @@
+{
+  "name": "prova-disegno-glm",
+  "nodes": [
+    {
+      "id": "piastra_box",
+      "type": "Box",
+      "params": {
+        "width": 60.0,
+        "height": 40.0,
+        "depth": 6.0,
+        "centered": true
+      },
+      "position": [
+        80.0,
+        563.0
+      ],
+      "parent": null,
+      "title": "Piastra grezza"
+    },
+    {
+      "id": "p_foro1",
+      "type": "Vector",
+      "params": {
+        "x": 20.0,
+        "y": 12.0,
+        "z": 0.0
+      },
+      "position": [
+        80.0,
+        1020.0
+      ],
+      "parent": null,
+      "title": "Pos. foro dietro dx"
+    },
+    {
+      "id": "foro1",
+      "type": "Cylinder",
+      "params": {
+        "radius": 3.0,
+        "height": 10.0,
+        "centered": true
+      },
+      "position": [
+        380.0,
+        807.893497347723
+      ],
+      "parent": null,
+      "title": "Foro dietro dx"
+    },
+    {
+      "id": "p_foro2",
+      "type": "Vector",
+      "params": {
+        "x": -20.0,
+        "y": 12.0,
+        "z": 0.0
+      },
+      "position": [
+        80.0,
+        1409.0
+      ],
+      "parent": null,
+      "title": "Pos. foro dietro sx"
+    },
+    {
+      "id": "foro2",
+      "type": "Cylinder",
+      "params": {
+        "radius": 3.0,
+        "height": 10.0,
+        "centered": true
+      },
+      "position": [
+        380.0,
+        1220.893497347723
+      ],
+      "parent": null,
+      "preview": false,
+      "title": "Foro dietro sx"
+    },
+    {
+      "id": "p_foro3",
+      "type": "Vector",
+      "params": {
+        "x": -20.0,
+        "y": -12.0,
+        "z": 0.0
+      },
+      "position": [
+        80.0,
+        1798.0
+      ],
+      "parent": null,
+      "title": "Pos. foro davanti sx"
+    },
+    {
+      "id": "foro3",
+      "type": "Cylinder",
+      "params": {
+        "radius": 3.0,
+        "height": 10.0,
+        "centered": true
+      },
+      "position": [
+        380.0,
+        1633.893497347723
+      ],
+      "parent": null,
+      "preview": false,
+      "title": "Foro davanti sx"
+    },
+    {
+      "id": "p_foro4",
+      "type": "Vector",
+      "params": {
+        "x": 20.0,
+        "y": -12.0,
+        "z": 0.0
+      },
+      "position": [
+        80.0,
+        2187.0
+      ],
+      "parent": null,
+      "title": "Pos. foro davanti dx"
+    },
+    {
+      "id": "foro4",
+      "type": "Cylinder",
+      "params": {
+        "radius": 3.0,
+        "height": 10.0,
+        "centered": true
+      },
+      "position": [
+        380.0,
+        2046.893497347723
+      ],
+      "parent": null,
+      "title": "Foro davanti dx"
+    },
+    {
+      "id": "fori",
+      "type": "Union",
+      "params": {},
+      "position": [
+        1296.8,
+        2028.5475717944037
+      ],
+      "parent": null,
+      "title": "Fori"
+    },
+    {
+      "id": "piastra_cut",
+      "type": "Subtract",
+      "params": {},
+      "position": [
+        1596.8,
+        1656.3497393451626
+      ],
+      "parent": null,
+      "title": "Piastra forata"
+    },
+    {
+      "id": "piastra",
+      "type": "Move",
+      "params": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 3.0
+      },
+      "position": [
+        1896.8,
+        1560.3497393451626
+      ],
+      "parent": null,
+      "preview": true,
+      "title": "Piastra"
+    },
+    {
+      "id": "bic_est",
+      "type": "Cylinder",
+      "params": {
+        "radius": 12.0,
+        "height": 30.0,
+        "centered": true
+      },
+      "position": [
+        80.0,
+        150.0
+      ],
+      "parent": null,
+      "title": "Bicchiere esterno"
+    },
+    {
+      "id": "p_bic_int",
+      "type": "Vector",
+      "params": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 2.0
+      },
+      "position": [
+        80.0,
+        3354.0
+      ],
+      "parent": null,
+      "title": "Pos. cavit\u00e0"
+    },
+    {
+      "id": "bic_int",
+      "type": "Cylinder",
+      "params": {
+        "radius": 10.0,
+        "height": 30.0,
+        "centered": true
+      },
+      "position": [
+        380.0,
+        3213.893497347723
+      ],
+      "parent": null,
+      "title": "Cavit\u00e0"
+    },
+    {
+      "id": "bic_cut",
+      "type": "Subtract",
+      "params": {},
+      "position": [
+        2496.8,
+        2068.0118508160713
+      ],
+      "parent": null,
+      "title": "Bicchiere cavo"
+    },
+    {
+      "id": "bicchiere",
+      "type": "Move",
+      "params": {
+        "x": 60.0,
+        "y": 0.0,
+        "z": 15.0
+      },
+      "position": [
+        2796.8,
+        1972.011850816071
+      ],
+      "parent": null,
+      "preview": true,
+      "title": "Bicchiere"
+    },
+    {
+      "id": "blocco_box",
+      "type": "Box",
+      "params": {
+        "width": 30.0,
+        "height": 30.0,
+        "depth": 20.0,
+        "centered": true
+      },
+      "position": [
+        80.0,
+        7668.103469300651
+      ],
+      "parent": null,
+      "title": "Blocco grezzo"
+    },
+    {
+      "id": "blocco",
+      "type": "Move",
+      "params": {
+        "x": -60.0,
+        "y": 0.0,
+        "z": 10.0
+      },
+      "position": [
+        2196.8,
+        8526.813712356206
+      ],
+      "parent": null,
+      "preview": true,
+      "title": "Blocco"
+    },
+    {
+      "id": "p_orecchio",
+      "type": "Vector",
+      "params": {
+        "x": 8.0,
+        "y": -6.25,
+        "z": 15.0
+      },
+      "position": [
+        80.0,
+        8125.103469300651
+      ],
+      "parent": null,
+      "title": "Pos. orecchio dx"
+    },
+    {
+      "id": "orecchio_box",
+      "type": "Box",
+      "params": {
+        "width": 6.0,
+        "height": 17.5,
+        "depth": 14.0,
+        "centered": true
+      },
+      "position": [
+        380.0,
+        8117.253469300651
+      ],
+      "parent": null,
+      "title": "Orecchio"
+    },
+    {
+      "id": "orecchio_fillet",
+      "type": "FilletChamfer",
+      "params": {
+        "mode": "fillet",
+        "size": 2.8
+      },
+      "position": [
+        680.0,
+        8242.828469300652
+      ],
+      "parent": null,
+      "title": "Orecchio arrotondato"
+    },
+    {
+      "id": "orecchie",
+      "type": "ArrayLinear",
+      "params": {
+        "count": 2,
+        "dx": -16.0,
+        "dy": 0.0,
+        "dz": 0.0
+      },
+      "position": [
+        996.8,
+        8233.74096930065
+      ],
+      "parent": null,
+      "title": "Orecchie (2)"
+    },
+    {
+      "id": "coniglio",
+      "type": "Union",
+      "params": {},
+      "position": [
+        1296.8,
+        8277.082635967317
+      ],
+      "parent": null,
+      "title": "Coniglio (testa+orecchie)"
+    },
+    {
+      "id": "occhio_cil",
+      "type": "Cylinder",
+      "params": {
+        "radius": 2.5,
+        "height": 3.0,
+        "centered": true
+      },
+      "position": [
+        80.0,
+        8514.103469300651
+      ],
+      "parent": null,
+      "title": "Occhio"
+    },
+    {
+      "id": "occhio_rot",
+      "type": "Rotate",
+      "params": {
+        "angle": 90.0,
+        "axis": "X",
+        "about": "world"
+      },
+      "position": [
+        380.0,
+        8574.253469300651
+      ],
+      "parent": null,
+      "title": "Occhio ruotato"
+    },
+    {
+      "id": "occhio_move",
+      "type": "Move",
+      "params": {
+        "x": -8.5,
+        "y": -14.5,
+        "z": 3.8
+      },
+      "position": [
+        680.0,
+        8570.203469300652
+      ],
+      "parent": null,
+      "title": "Pos. occhio sx"
+    },
+    {
+      "id": "occhi",
+      "type": "ArrayLinear",
+      "params": {
+        "count": 2,
+        "dx": 17.0,
+        "dy": 0.0,
+        "dz": 0.0
+      },
+      "position": [
+        996.8,
+        8582.74096930065
+      ],
+      "parent": null,
+      "title": "Occhi (2)"
+    },
+    {
+      "id": "baffo_cil",
+      "type": "Cylinder",
+      "params": {
+        "radius": 0.6,
+        "height": 7.0,
+        "centered": true
+      },
+      "position": [
+        80.0,
+        8927.103469300651
+      ],
+      "parent": null,
+      "title": "Baffo"
+    },
+    {
+      "id": "baffo_rot",
+      "type": "Rotate",
+      "params": {
+        "angle": 90.0,
+        "axis": "X",
+        "about": "world"
+      },
+      "position": [
+        380.0,
+        8944.753469300651
+      ],
+      "parent": null,
+      "title": "Baffo ruotato"
+    },
+    {
+      "id": "baffo_move",
+      "type": "Move",
+      "params": {
+        "x": -15.0,
+        "y": -9.5,
+        "z": -8.0
+      },
+      "position": [
+        680.0,
+        8939.203469300652
+      ],
+      "parent": null,
+      "title": "Pos. baffo"
+    },
+    {
+      "id": "baffi2",
+      "type": "ArrayLinear",
+      "params": {
+        "count": 2,
+        "dx": 0.0,
+        "dy": 19.0,
+        "dz": 0.0
+      },
+      "position": [
+        996.8,
+        8931.74096930065
+      ],
+      "parent": null,
+      "title": "Baffi lato sx (2)"
+    },
+    {
+      "id": "baffi4",
+      "type": "ArrayLinear",
+      "params": {
+        "count": 2,
+        "dx": 30.0,
+        "dy": 0.0,
+        "dz": 0.0
+      },
+      "position": [
+        1296.8,
+        8759.572219300651
+      ],
+      "parent": null,
+      "title": "Baffi (4)"
+    },
+    {
+      "id": "tratti_viso",
+      "type": "Union",
+      "params": {},
+      "position": [
+        1596.8,
+        8937.95503180065
+      ],
+      "parent": null,
+      "title": "Tratti del viso"
+    },
+    {
+      "id": "coniglietto",
+      "type": "Subtract",
+      "params": {},
+      "position": [
+        1896.8,
+        8622.813712356206
+      ],
+      "parent": null,
+      "title": "Coniglietto"
+    },
+    {
+      "id": "p_tri",
+      "type": "Vector",
+      "params": {
+        "x": -19.4,
+        "y": 11.5,
+        "z": 0.0
+      },
+      "position": [
+        80.0,
+        2576.0
+      ],
+      "parent": null,
+      "title": "Pos. triangolo"
+    },
+    {
+      "id": "tri",
+      "type": "Polygon",
+      "params": {
+        "radius": 9.0,
+        "sides": 3,
+        "rotation": 90.0,
+        "major": true
+      },
+      "position": [
+        380.0,
+        2459.893497347723
+      ],
+      "parent": null,
+      "title": "Triangolo"
+    },
+    {
+      "id": "tri_face",
+      "type": "MakeFace",
+      "params": {},
+      "position": [
+        680.0,
+        2325.4475717944033
+      ],
+      "parent": null,
+      "title": "Faccia triangolo"
+    },
+    {
+      "id": "tri_foro",
+      "type": "Extrude",
+      "params": {
+        "amount": 5.0,
+        "both": true,
+        "solid": true
+      },
+      "position": [
+        996.8,
+        2076.724609017743
+      ],
+      "parent": null,
+      "title": "Foro triangolo"
+    },
+    {
+      "id": "p_quad",
+      "type": "Vector",
+      "params": {
+        "x": -19.9,
+        "y": -12.0,
+        "z": 0.0
+      },
+      "position": [
+        80.0,
+        2965.0
+      ],
+      "parent": null,
+      "title": "Pos. quadrato"
+    },
+    {
+      "id": "quad",
+      "type": "Rectangle",
+      "params": {
+        "width": 10.0,
+        "height": 10.0
+      },
+      "position": [
+        380.0,
+        2872.893497347723
+      ],
+      "parent": null,
+      "title": "Quadrato"
+    },
+    {
+      "id": "quad_face",
+      "type": "MakeFace",
+      "params": {},
+      "position": [
+        680.0,
+        2708.4475717944033
+      ],
+      "parent": null,
+      "title": "Faccia quadrato"
+    },
+    {
+      "id": "quad_foro",
+      "type": "Extrude",
+      "params": {
+        "amount": 5.0,
+        "both": true,
+        "solid": true
+      },
+      "position": [
+        996.8,
+        2465.724609017743
+      ],
+      "parent": null,
+      "title": "Foro quadrato"
+    },
+    {
+      "id": "finestra",
+      "type": "RoundedRectangle",
+      "params": {
+        "width": 20.0,
+        "height": 15.0,
+        "radius": 3.0
+      },
+      "position": [
+        80.0,
+        3743.0
+      ],
+      "parent": null,
+      "title": "Finestra (profilo)"
+    },
+    {
+      "id": "finestra_face",
+      "type": "MakeFace",
+      "params": {},
+      "position": [
+        380.0,
+        3626.893497347723
+      ],
+      "parent": null,
+      "title": "Faccia finestra"
+    },
+    {
+      "id": "finestra_ext",
+      "type": "Extrude",
+      "params": {
+        "amount": 6.0,
+        "both": false,
+        "solid": true
+      },
+      "position": [
+        680.0,
+        2989.876143222975
+      ],
+      "parent": null,
+      "title": "Finestra estrusa"
+    },
+    {
+      "id": "finestra_rot",
+      "type": "Rotate",
+      "params": {
+        "angle": 90.0,
+        "axis": "Y",
+        "about": "world"
+      },
+      "position": [
+        996.8,
+        2864.1174661606005
+      ],
+      "parent": null,
+      "title": "Finestra ruotata"
+    },
+    {
+      "id": "finestra_move",
+      "type": "Move",
+      "params": {
+        "x": 10.0,
+        "y": 0.0,
+        "z": -1.5
+      },
+      "position": [
+        1296.8,
+        2793.2381276294136
+      ],
+      "parent": null,
+      "title": "Pos. finestra"
+    },
+    {
+      "id": "finestre",
+      "type": "ArrayPolar",
+      "params": {
+        "count": 4,
+        "angle": 360.0,
+        "axis": "Z"
+      },
+      "position": [
+        1596.8,
+        2760.79845836382
+      ],
+      "parent": null,
+      "title": "4 finestre (equidistanti)"
+    },
+    {
+      "id": "intagli",
+      "type": "Union",
+      "params": {},
+      "position": [
+        1896.8,
+        2847.578623731023
+      ],
+      "parent": null,
+      "title": "Intagli fianchi"
+    },
+    {
+      "id": "foro_fondo",
+      "type": "Cylinder",
+      "params": {
+        "radius": 2.0,
+        "height": 6.0,
+        "centered": true
+      },
+      "position": [
+        80.0,
+        4176.0
+      ],
+      "parent": null,
+      "title": "Foro fondo"
+    },
+    {
+      "id": "foro_fondo_move",
+      "type": "Move",
+      "params": {
+        "x": 6.0,
+        "y": 0.0,
+        "z": -15.0
+      },
+      "position": [
+        380.0,
+        3783.893497347723
+      ],
+      "parent": null,
+      "title": "Pos. foro fondo"
+    },
+    {
+      "id": "fori_fondo",
+      "type": "ArrayPolar",
+      "params": {
+        "count": 4,
+        "angle": 360.0,
+        "axis": "Z"
+      },
+      "position": [
+        680.0,
+        3378.876143222975
+      ],
+      "parent": null,
+      "title": "4 fori fondo (equidistanti)"
+    },
+    {
+      "id": "cavita_tot",
+      "type": "Union",
+      "params": {},
+      "position": [
+        2196.8,
+        3125.6767633499867
+      ],
+      "parent": null,
+      "title": "Cavit\u00e0+intagli+fori"
+    },
+    {
+      "id": "sorriso_cb",
+      "type": "CodeBlock",
+      "params": {
+        "code": "# ---- sorriso del coniglietto (incaso nel muso) ----\nimport math\nR_est = 8.2      #@param min=5 max=12\nR_int = 6.9      #@param min=3 max=11\narco  = 117.0    #@param min=40 max=170\nz_c   = 2.3      #@param min=-8 max=8\nprof  = 2.0      #@param min=0.5 max=5\n\nhalf = arco / 2.0\ntry:\n    faccia = (Sector(R_est, 270 - half, 270 + half)\n              - Sector(R_int, 270 - half, 270 + half))\nexcept Exception:\n    n = 33\n    def _pts(r, sgn):\n        return [(r * math.cos(math.radians(270 + sgn * half - sgn * arco * i / (n - 1))),\n                 r * math.sin(math.radians(270 + sgn * half - sgn * arco * i / (n - 1))))\n                for i in range(n)]\n    faccia = make_face(Polyline(*_pts(R_est, 1), *_pts(R_int, -1), close=True))\nresult = Pos(0, -15, z_c) * Rot(Axis.X, 90) * extrude(faccia, amount=-prof)\n"
+      },
+      "position": [
+        80.0,
+        9340.103469300651
+      ],
+      "parent": null,
+      "title": "Sorriso inciso"
+    }
+  ],
+  "connections": [
+    {
+      "id": "c1",
+      "from_node": "p_foro1",
+      "from_socket": "vector",
+      "to_node": "foro1",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c2",
+      "from_node": "p_foro2",
+      "from_socket": "vector",
+      "to_node": "foro2",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c3",
+      "from_node": "p_foro3",
+      "from_socket": "vector",
+      "to_node": "foro3",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c4",
+      "from_node": "p_foro4",
+      "from_socket": "vector",
+      "to_node": "foro4",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c5",
+      "from_node": "foro1",
+      "from_socket": "result",
+      "to_node": "fori",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c8",
+      "from_node": "foro4",
+      "from_socket": "result",
+      "to_node": "fori",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c9",
+      "from_node": "piastra_box",
+      "from_socket": "result",
+      "to_node": "piastra_cut",
+      "to_socket": "a"
+    },
+    {
+      "id": "c10",
+      "from_node": "fori",
+      "from_socket": "result",
+      "to_node": "piastra_cut",
+      "to_socket": "b"
+    },
+    {
+      "id": "c11",
+      "from_node": "piastra_cut",
+      "from_socket": "result",
+      "to_node": "piastra",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c12",
+      "from_node": "p_bic_int",
+      "from_socket": "vector",
+      "to_node": "bic_int",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c13",
+      "from_node": "bic_est",
+      "from_socket": "result",
+      "to_node": "bic_cut",
+      "to_socket": "a"
+    },
+    {
+      "id": "c15",
+      "from_node": "bic_cut",
+      "from_socket": "result",
+      "to_node": "bicchiere",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c17",
+      "from_node": "p_orecchio",
+      "from_socket": "vector",
+      "to_node": "orecchio_box",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c18",
+      "from_node": "orecchio_box",
+      "from_socket": "result",
+      "to_node": "orecchio_fillet",
+      "to_socket": "part"
+    },
+    {
+      "id": "c19",
+      "from_node": "orecchio_fillet",
+      "from_socket": "result",
+      "to_node": "orecchie",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c20",
+      "from_node": "blocco_box",
+      "from_socket": "result",
+      "to_node": "coniglio",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c21",
+      "from_node": "orecchie",
+      "from_socket": "result",
+      "to_node": "coniglio",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c22",
+      "from_node": "occhio_cil",
+      "from_socket": "result",
+      "to_node": "occhio_rot",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c23",
+      "from_node": "occhio_rot",
+      "from_socket": "result",
+      "to_node": "occhio_move",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c24",
+      "from_node": "occhio_move",
+      "from_socket": "result",
+      "to_node": "occhi",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c28",
+      "from_node": "baffo_cil",
+      "from_socket": "result",
+      "to_node": "baffo_rot",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c29",
+      "from_node": "baffo_rot",
+      "from_socket": "result",
+      "to_node": "baffo_move",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c30",
+      "from_node": "baffo_move",
+      "from_socket": "result",
+      "to_node": "baffi2",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c31",
+      "from_node": "baffi2",
+      "from_socket": "result",
+      "to_node": "baffi4",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c32",
+      "from_node": "occhi",
+      "from_socket": "result",
+      "to_node": "tratti_viso",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c34",
+      "from_node": "baffi4",
+      "from_socket": "result",
+      "to_node": "tratti_viso",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c35",
+      "from_node": "coniglio",
+      "from_socket": "result",
+      "to_node": "coniglietto",
+      "to_socket": "a"
+    },
+    {
+      "id": "c36",
+      "from_node": "tratti_viso",
+      "from_socket": "result",
+      "to_node": "coniglietto",
+      "to_socket": "b"
+    },
+    {
+      "id": "c36_",
+      "from_node": "coniglietto",
+      "from_socket": "result",
+      "to_node": "blocco",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c37",
+      "from_node": "p_tri",
+      "from_socket": "vector",
+      "to_node": "tri",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c38",
+      "from_node": "tri",
+      "from_socket": "result",
+      "to_node": "tri_face",
+      "to_socket": "edges"
+    },
+    {
+      "id": "c39",
+      "from_node": "tri_face",
+      "from_socket": "result",
+      "to_node": "tri_foro",
+      "to_socket": "sketch"
+    },
+    {
+      "id": "c40",
+      "from_node": "tri_foro",
+      "from_socket": "result",
+      "to_node": "fori",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c41",
+      "from_node": "p_quad",
+      "from_socket": "vector",
+      "to_node": "quad",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c42",
+      "from_node": "quad",
+      "from_socket": "result",
+      "to_node": "quad_face",
+      "to_socket": "edges"
+    },
+    {
+      "id": "c43",
+      "from_node": "quad_face",
+      "from_socket": "result",
+      "to_node": "quad_foro",
+      "to_socket": "sketch"
+    },
+    {
+      "id": "c44",
+      "from_node": "quad_foro",
+      "from_socket": "result",
+      "to_node": "fori",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c43_",
+      "from_node": "finestra",
+      "from_socket": "result",
+      "to_node": "finestra_face",
+      "to_socket": "edges"
+    },
+    {
+      "id": "c44_",
+      "from_node": "finestra_face",
+      "from_socket": "result",
+      "to_node": "finestra_ext",
+      "to_socket": "sketch"
+    },
+    {
+      "id": "c45",
+      "from_node": "finestra_ext",
+      "from_socket": "result",
+      "to_node": "finestra_rot",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c46",
+      "from_node": "finestra_rot",
+      "from_socket": "result",
+      "to_node": "finestra_move",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c47",
+      "from_node": "finestra_move",
+      "from_socket": "result",
+      "to_node": "finestre",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c48",
+      "from_node": "finestre",
+      "from_socket": "result",
+      "to_node": "intagli",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c49",
+      "from_node": "foro_fondo",
+      "from_socket": "result",
+      "to_node": "foro_fondo_move",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c50",
+      "from_node": "foro_fondo_move",
+      "from_socket": "result",
+      "to_node": "fori_fondo",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c51",
+      "from_node": "bic_int",
+      "from_socket": "result",
+      "to_node": "cavita_tot",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c52",
+      "from_node": "intagli",
+      "from_socket": "result",
+      "to_node": "cavita_tot",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c53",
+      "from_node": "fori_fondo",
+      "from_socket": "result",
+      "to_node": "cavita_tot",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c53_",
+      "from_node": "cavita_tot",
+      "from_socket": "result",
+      "to_node": "bic_cut",
+      "to_socket": "b"
+    },
+    {
+      "id": "c53__",
+      "from_node": "sorriso_cb",
+      "from_socket": "result",
+      "to_node": "tratti_viso",
+      "to_socket": "shapes"
+    }
+  ]
+}

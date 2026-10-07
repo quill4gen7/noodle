@@ -1,0 +1,315 @@
+{
+  "name": "prova-disegno-codex",
+  "nodes": [
+    {
+      "id": "piastra_box",
+      "type": "Box",
+      "params": {
+        "width": 60.0,
+        "height": 40.0,
+        "depth": 6.0,
+        "centered": true
+      },
+      "position": [
+        80.0,
+        150.0
+      ],
+      "parent": null,
+      "preview": false,
+      "title": "Piastra grezza"
+    },
+    {
+      "id": "fori",
+      "type": "Union",
+      "params": {},
+      "position": [
+        680.0,
+        1185.7199999999998
+      ],
+      "parent": null,
+      "preview": false,
+      "title": "Fori"
+    },
+    {
+      "id": "piastra_cut",
+      "type": "Subtract",
+      "params": {},
+      "position": [
+        980.0,
+        853.6399999999999
+      ],
+      "parent": null,
+      "preview": false,
+      "title": "Piastra forata"
+    },
+    {
+      "id": "piastra",
+      "type": "Move",
+      "params": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 3.0
+      },
+      "position": [
+        1280.0,
+        757.6399999999999
+      ],
+      "parent": null,
+      "preview": true,
+      "color": "#91ddc8",
+      "title": "Piastra"
+    },
+    {
+      "id": "bic_est",
+      "type": "Cylinder",
+      "params": {
+        "radius": 12.0,
+        "height": 30.0,
+        "centered": true
+      },
+      "position": [
+        80.0,
+        3672.7499999999995
+      ],
+      "parent": null,
+      "preview": false,
+      "title": "Bicchiere esterno"
+    },
+    {
+      "id": "p_bic_int",
+      "type": "Vector",
+      "params": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 2.0
+      },
+      "position": [
+        80.0,
+        4085.7499999999995
+      ],
+      "parent": null,
+      "title": "Pos. cavit\u00e0"
+    },
+    {
+      "id": "bic_int",
+      "type": "Cylinder",
+      "params": {
+        "radius": 10.0,
+        "height": 30.0,
+        "centered": true
+      },
+      "position": [
+        380.0,
+        3973.4999999999995
+      ],
+      "parent": null,
+      "preview": false,
+      "title": "Cavit\u00e0"
+    },
+    {
+      "id": "bic_cut",
+      "type": "Subtract",
+      "params": {},
+      "position": [
+        680.0,
+        3957.833333333333
+      ],
+      "parent": null,
+      "preview": false,
+      "title": "Bicchiere cavo"
+    },
+    {
+      "id": "bicchiere",
+      "type": "Move",
+      "params": {
+        "x": 60.0,
+        "y": 0.0,
+        "z": 15.0
+      },
+      "position": [
+        980.0,
+        3861.833333333333
+      ],
+      "parent": null,
+      "preview": true,
+      "color": "#4f8fdd",
+      "title": "Bicchiere"
+    },
+    {
+      "id": "blocco_box",
+      "type": "Box",
+      "params": {
+        "width": 30.0,
+        "height": 30.0,
+        "depth": 20.0,
+        "centered": true
+      },
+      "position": [
+        80.0,
+        4474.75
+      ],
+      "parent": null,
+      "preview": false,
+      "title": "Blocco grezzo"
+    },
+    {
+      "id": "blocco",
+      "type": "Move",
+      "params": {
+        "x": -60.0,
+        "y": 0.0,
+        "z": 10.0
+      },
+      "position": [
+        380.0,
+        4518.75
+      ],
+      "parent": null,
+      "preview": true,
+      "color": "#eabf65",
+      "title": "Blocco"
+    },
+    {
+      "id": "foro_triangolo",
+      "type": "CodeBlock",
+      "params": {
+        "code": "outline = Polygon((-28,7),(-11,7),(-20,19), align=None)\nresult = Pos(0,0,-5) * extrude(outline, amount=10)"
+      },
+      "position": [
+        1580,
+        150
+      ],
+      "parent": null,
+      "preview": false,
+      "title": "Foro triangolare grande"
+    },
+    {
+      "id": "foro_quadrato",
+      "type": "CodeBlock",
+      "params": {
+        "code": "result = Pos(-20,-12,0) * Box(10,10,10)"
+      },
+      "position": [
+        1880,
+        150
+      ],
+      "parent": null,
+      "preview": false,
+      "title": "Foro quadrato piccolo"
+    },
+    {
+      "id": "coniglio",
+      "type": "CodeBlock",
+      "params": {
+        "code": "# ---- testa cubica e orecchie ----\nresult = in_0\nfor x in (-9,9):\n    result = result + Pos(x,-7,18.25) * Box(6,8,17.5)\n    result = result + Pos(x,-7,27) * Cylinder(3,8,rotation=(90,0,0))\n# ---- occhi incavati ----\nfor x in (-9,9):\n    result = result - Pos(x,-15,3.5) * Cylinder(3,2,rotation=(90,0,0))\n    result = result - Pos(x-0.5,-13.8,3.4) * Cylinder(0.9,1.4,rotation=(90,0,0))\n# ---- sorriso inciso ----\nupper = [(i*0.8,-6.5+2.2*(i/9)**2+0.35) for i in range(-9,10)]\nlower = [(i*0.8,-6.5+2.2*(i/9)**2-0.35) for i in range(9,-10,-1)]\nsmile = Plane.XZ.offset(14.2) * Polygon(*(upper+lower),align=None)\nresult = result - extrude(smile,amount=2,dir=(0,-1,0))\n# ---- dentini ----\nfor x in (-1.2,1.2):\n    result = result - Pos(x,-15,-8) * Box(2,2,3)\n# ---- intagli ad arco per le zampe ----\nfor x in (-15,15):\n    for y in (-10,10):\n        result = result - Pos(x,y,-8) * Cylinder(3.0,2,rotation=(0,90,0))"
+      },
+      "position": [
+        380,
+        4863
+      ],
+      "parent": null,
+      "preview": false,
+      "title": "Coniglietto cube"
+    },
+    {
+      "id": "aperture_bicchiere",
+      "type": "CodeBlock",
+      "params": {
+        "code": "# ---- fondo forato ----\nresult = in_0\nfor x,y in ((-6,0),(6,0),(0,-6),(0,6)):\n    result = result - Pos(x,y,-14) * Cylinder(1.7,4)\n# ---- aperture laterali equidistanti ----\nsquare = [(-6,-10),(6,-10),(6,9),(-6,9)]\ntriangle = [(-7,-10),(7,-10),(0,9)]\nhexagon = [(-6,-5),(-3,-10),(3,-10),(6,-5),(6,4),(3,9),(-3,9),(-6,4)]\nheart = [(-7,3),(-6,7),(-3,9),(-1,8),(0,5),(1,8),(3,9),(6,7),(7,3),(6,0),(0,-10),(-6,0)]\nfor angle, coords in ((0,square),(90,triangle),(180,hexagon),(270,heart)):\n    profile = Plane.XZ.offset(8) * Polygon(*coords, align=None)\n    cutter = Rot(0,0,angle) * extrude(profile, amount=6)\n    result = result - cutter"
+      },
+      "position": [
+        980,
+        4206
+      ],
+      "parent": null,
+      "preview": false,
+      "title": "Fori e intagli del bicchiere"
+    }
+  ],
+  "connections": [
+    {
+      "id": "c9",
+      "from_node": "piastra_box",
+      "from_socket": "result",
+      "to_node": "piastra_cut",
+      "to_socket": "a"
+    },
+    {
+      "id": "c10",
+      "from_node": "fori",
+      "from_socket": "result",
+      "to_node": "piastra_cut",
+      "to_socket": "b"
+    },
+    {
+      "id": "c12",
+      "from_node": "p_bic_int",
+      "from_socket": "vector",
+      "to_node": "bic_int",
+      "to_socket": "origin"
+    },
+    {
+      "id": "c13",
+      "from_node": "bic_est",
+      "from_socket": "result",
+      "to_node": "bic_cut",
+      "to_socket": "a"
+    },
+    {
+      "id": "c14",
+      "from_node": "bic_int",
+      "from_socket": "result",
+      "to_node": "bic_cut",
+      "to_socket": "b"
+    },
+    {
+      "id": "c6",
+      "from_node": "foro_triangolo",
+      "from_socket": "result",
+      "to_node": "fori",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c7",
+      "from_node": "foro_quadrato",
+      "from_socket": "result",
+      "to_node": "fori",
+      "to_socket": "shapes"
+    },
+    {
+      "id": "c8",
+      "from_node": "piastra_cut",
+      "from_socket": "result",
+      "to_node": "piastra",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c9_",
+      "from_node": "blocco_box",
+      "from_socket": "result",
+      "to_node": "coniglio",
+      "to_socket": "in_0"
+    },
+    {
+      "id": "c10_",
+      "from_node": "coniglio",
+      "from_socket": "result",
+      "to_node": "blocco",
+      "to_socket": "shape"
+    },
+    {
+      "id": "c11",
+      "from_node": "bic_cut",
+      "from_socket": "result",
+      "to_node": "aperture_bicchiere",
+      "to_socket": "in_0"
+    },
+    {
+      "id": "c12_",
+      "from_node": "aperture_bicchiere",
+      "from_socket": "result",
+      "to_node": "bicchiere",
+      "to_socket": "shape"
+    }
+  ]
+}

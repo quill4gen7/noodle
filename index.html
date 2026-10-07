@@ -49,6 +49,10 @@
   .install p{margin:0 0 10px;color:var(--text-dim,#8b98a8);line-height:1.5;}
   .install pre{white-space:pre-wrap;background:var(--bg-0,#0b0e14);border:1px solid var(--border,#1e2738);border-radius:8px;
     padding:12px 14px;font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace;max-height:320px;overflow:auto;margin:0 0 10px;}
+  h3.sub{margin:26px 0 10px;font-size:17px;} h3.sub small{display:block;font-weight:400;color:var(--text-dim,#8b98a8);font-size:13px;margin-top:3px;}
+  .grid.five{grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;}
+  @media (max-width:900px){.grid.five{grid-template-columns:repeat(2,minmax(0,1fr));}}
+  .grid.five .card span{font-size:12.5px;}
 </style>
 </head>
 <body>
@@ -95,9 +99,20 @@
       <a class="card" href="demo/?g=bullone-e-dado&gen=g2"><img src="thumbs/bullone-e-dado.jpg" alt="" loading="lazy">
         <div class="b"><b>Bolt and nut, annotated <i class="tag-anim">draw</i></b><span>Where the feature was built: a circle round the hole, words painted on the thread, a decal wrapped on the head, a picture on the nut, and the agent's own tags.</span></div></a>
       <a class="card" href="demo/?g=coniglietto-cube&gen=g1"><img src="thumbs/coniglietto-cube.jpg" alt="" loading="lazy">
-        <div class="b"><b>"Make it a bunny" <i class="tag-anim">draw</i></b><span>One note, 33 marks on 12 views: a bunny on the block, shapes on the plate, cut-outs on the cup. The bench five agents were given.</span></div></a>
+        <div class="b"><b>"Make it a bunny" <i class="tag-anim">draw</i></b><span>One note, 33 marks on 12 views: a bunny on the block, shapes on the plate, cut-outs on the cup — handed to five agents, below.</span></div></a>
+    </div>
+    <h3 class="sub">…and what five agents made of it<small>Each built that note on its own copy of the project, with the same prompt. These are their real models — open one and orbit it.</small></h3>
+    <div class="grid five">
       <a class="card" href="demo/?g=coniglietto-cube-claude&gen=g1"><img src="thumbs/coniglietto-cube-claude.jpg" alt="" loading="lazy">
-        <div class="b"><b>…and what an agent made of it</b><span>Claude's reading of that note, built on its own copy of the project. All five are in the docs (NOTES_AGENT_TEST).</span></div></a>
+        <div class="b"><b>Claude · Opus 5.5 <i class="tag-anim">sees images</i></b><span>Read “+” and “−” as a bigger and a smaller hole — the only one. A bunny with face, ears and paws; four equal cut-outs.</span></div></a>
+      <a class="card" href="demo/?g=coniglietto-cube-codex&gen=g2"><img src="thumbs/coniglietto-cube-codex.jpg" alt="" loading="lazy">
+        <div class="b"><b>Codex · gpt-6-sol <i class="tag-anim">sees images</i></b><span>Read “+” and “−” as “delete” and removed both holes. Four different cut-outs: rectangle, triangle, hexagon, heart.</span></div></a>
+      <a class="card" href="demo/?g=coniglietto-cube-kimi&gen=g1"><img src="thumbs/coniglietto-cube-kimi.jpg" alt="" loading="lazy">
+        <div class="b"><b>Kimi K3 <i class="tag-anim">sees images</i></b><span>Read the “x” left by a stroke that had been undone, and kept those holes round. A bunny made of spheres.</span></div></a>
+      <a class="card" href="demo/?g=coniglietto-cube-glm&gen=g1"><img src="thumbs/coniglietto-cube-glm.jpg" alt="" loading="lazy">
+        <div class="b"><b>GLM-5.3 <i class="tag-anim">text only</i></b><span>Never saw the pictures: worked from the coordinates alone and checked itself with ~300 probes. “+” and “−” read as “keep”.</span></div></a>
+      <a class="card" href="demo/?g=coniglietto-cube-deepseek&gen=g1"><img src="thumbs/coniglietto-cube-deepseek.jpg" alt="" loading="lazy">
+        <div class="b"><b>DeepSeek V4 Pro <i class="tag-anim">text only</i></b><span>Coordinates only, too. Left an extra slab on the plate — and got past the agent harness’s write guard to do it.</span></div></a>
     </div>
     <div class="install" id="install-agent">
       <h3>The real thing: let your agent install it</h3>
