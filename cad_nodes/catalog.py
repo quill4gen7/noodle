@@ -1484,7 +1484,10 @@ register(NodeDef("Expression", "math", "Expression",
     inputs=[Socket("x", WIRE_DATA, required=False), Socket("y", WIRE_DATA, required=False)],
     params=[Param("expr", "str", "expr", "x + y", widget="input", raw=True)],
     outputs=_data(),
-    code_template={"algebra": "({expr})"},
+    # x and y are bound by the call, not by the context: a single wired number
+    # used to reach the expression as an undefined name, and only a LIST input
+    # worked (the fan-out lambda happens to name its parameters x and y).
+    code_template={"algebra": "(lambda x, y: ({expr}))({x}, {y})"},
     description="Evaluate an expression of inputs x, y."))
 
 

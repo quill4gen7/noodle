@@ -16,6 +16,7 @@
 // ════════════════════════════════════════════════════════════════════
 import * as THREE from 'three';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { ViewHelper } from 'three/addons/helpers/ViewHelper.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
@@ -102,8 +103,15 @@ export function rainbowHue(i) {
   c.setHSL(((i * 137.508) % 360) / 360, 0.62, 0.56);
   return c;
 }
-export function meshFromData(m, color, parts, finish) {
-  const geo = geomFromData(m);
+// A B-Rep tessellation arrives with every face's vertices of its own, so plain
+// vertex normals stay sharp at the edges. A mesh-lane body (manifold3d, trimesh)
+// arrives WELDED: one vertex shared by the three faces of a cube corner, and
+// averaging across it shades a cube like a pillow. Crease those at 30°, which
+// leaves the facets of a curved surface smooth.
+const CREASE = Math.PI / 6;
+export function meshFromData(m, color, parts, finish, kind) {
+  let geo = geomFromData(m);
+  if (kind === 'Mesh') { const c = toCreasedNormals(geo, CREASE); geo.dispose(); geo = c; }
   const std = c => makeMaterial(c, finish);
   // Rainbow over a fanned list: one geometry group per piece (`parts` counts
   // triangles, so the offsets are 3x that) and a material per group. Without it
@@ -186,7 +194,7 @@ function objFromPreview(p, color, opts, scale) {
     return grp;
   }
   if (p.mesh) {
-    const obj = meshFromData(p.mesh, color, p.parts, opts && opts.finish);
+    const obj = meshFromData(p.mesh, color, p.parts, opts && opts.finish, p.kind);
     if (opts && opts.wireframe) {
       for (const mt of (Array.isArray(obj.material) ? obj.material : [obj.material])) {
         mt.wireframe = true; mt.metalness = 0;

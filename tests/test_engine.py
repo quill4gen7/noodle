@@ -765,3 +765,25 @@ def test_bypassing_a_node_does_not_un_draw_it():
                    preview=True, bypassed=True)
     code = transpile(g)
     assert "# bypassed" in code and "e" in _previews(code)
+
+
+def _expression_value(src_value, expr):
+    """Run just the emitted Expression line — no build123d needed."""
+    g = Graph.from_dict({"name": "e", "nodes": [
+        {"id": "n1", "type": "NumberSlider", "params": {"value": src_value}},
+        {"id": "n2", "type": "Expression", "params": {"expr": expr}}],
+        "connections": [{"id": "l1", "from_node": "n1", "from_socket": "result",
+                         "to_node": "n2", "to_socket": "x"}]})
+    line = next(ln for ln in transpile(g).splitlines() if "@node:n2" in ln)
+    lhs, rhs = line.split("#")[0].split("=", 1)
+    src = next(ln for ln in transpile(g).splitlines() if "@node:n1" in ln)
+    ns = {}
+    exec(src.split("#")[0].strip(), ns)
+    return eval(rhs.strip(), ns)
+
+
+def test_expression_binds_a_single_wired_number():
+    # Only a LIST input used to work: a single number reached the expression
+    # as the undefined name `x` (the cubo-m10 graph, "Metà lato" = x / 2).
+    assert _expression_value(30, "x / 2") == 15
+    assert _expression_value(4, "x * 2 + (y or 0)") == 8
