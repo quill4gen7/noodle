@@ -1586,7 +1586,11 @@ def _labels(labels_in, n_views: int, titles: dict) -> list[dict]:
         color = str(lb.get("color") or "#ef4444").lower()
         if not re.fullmatch(r"#[0-9a-f]{6}", color):
             raise ValueError(f"note: label {i} color must be #rrggbb")
-        o = {"label": i + 1, "text": text.strip(), "at": _vec(lb.get("at"), f"label {i} at"),
+        style = lb.get("style") or "tag"          # old notes carry none: a plate
+        if style not in ("tag", "decal"):
+            raise ValueError(f"note: label {i} style must be 'tag' or 'decal'")
+        o = {"label": i + 1, "text": text.strip(), "style": style,
+             "at": _vec(lb.get("at"), f"label {i} at"),
              "normal": unit["normal"], "up": unit["up"], "size_mm": size,
              "color": color, "color_name": _NOTE_COLORS.get(color, color)}
         v = lb.get("view")

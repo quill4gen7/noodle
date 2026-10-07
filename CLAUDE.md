@@ -1733,17 +1733,25 @@ result while the workflow moves on.
     polyline, radius from the size buttons in px → mm (`ERASE_PX`). Picking
     the tubes would miss 3px lines and catch strokes on the far side. Draft
     only; sent notes stay immutable.
-  - **T — text ON the part, and it is DATA.** Drag a box (a tap = default box),
-    type, Enter; tap a label with T to edit; ⌫ rubs it out. Rendered with
-    three's vendored `DecalGeometry` from a `CanvasTexture`; normal = mean of a
+  - **T — text ON the part, and it is DATA.** Drag a box (a tap = default box,
+    smaller on a phone), type, Enter; tap a label with T to edit; ⌫ rubs it
+    out. Two STYLES, picked next to T and remembered (`noodle:view:labelStyle`),
+    stored per label as `style`: **⚑ targhetta** (default) — anchor dot + stem
+    along the normal + a `THREE.Sprite` plate that always faces the camera,
+    every piece drawn twice (depth-tested full, and `depthTest:false` at 0.35
+    on top) so it reads from behind and shows through the part faded. Asked by
+    quill: a decal vanishes as soon as you orbit behind. **▭ decal** — three's
+    vendored `DecalGeometry` from a `CanvasTexture`; normal = mean of a
     5×5 raycast grid under the box, up = camera up projected on the plane,
     size = the box's corners met with that plane (`planeSize` — px×mmPerPx
     ignored foreshortening and halved labels on a slanted top face). Back
-    faces are dropped (`frontFaces`) and coverage < 50% → a flat card. RIDGED
-    surfaces get the card too (`probeUnder`: |Σn|/n < 0.9 — a thread is ~0.87,
-    90° of cylinder 0.90): a decal projects along the normal, and on the bolt
-    of `zz-note-probe` «filetto M8?» came out doubled by parallax. The card is
-    lifted to the highest crest under it. The note carries `labels: [{text, at,
+    faces are dropped (`frontFaces`) and coverage < 50% → a targhetta. RIDGED
+    surfaces get the targhetta too (`probeUnder`: |Σn|/n < 0.9 — a thread is
+    ~0.87, 90° of cylinder 0.90): a decal projects along the normal, and on the
+    bolt of `zz-note-probe` «filetto M8?» came out doubled by parallax. The old
+    fallback, a one-sided flat card lifted to the highest crest, is gone: on a
+    box straddling the bolt head it floated 3.4 mm off the part — the «faccia
+    volante» quill saw. The note carries `labels: [{text, style, at,
     normal, up, size_mm, color, node, view}]`; `_link_labels` adds
     `near_marks` (within 1.5 label sizes, else the nearest within 4) and lists
     the texts under each mark's `labels` — recomputed on read like `marks`.
