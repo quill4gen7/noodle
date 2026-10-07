@@ -269,7 +269,9 @@ def cad_notes(graph_id: str = "", gen: str = "", limit: int = 10,
     `labels` — `text`, `at`/`normal`/`up`/`size_mm` (mm), `near_marks` = the
     marks it sits next to (and each mark lists them under `labels`): «qui 8
     mm» beside mark 1 is information about mark 1. A `paint` label is written
-    with pen strokes; those strokes are not marks. `points=True` adds the raw
+    with pen strokes; those strokes are not marks. Pictures the user placed on
+    the part are `images` (same placement fields, plus `image_path`/`image_url`
+    of the picture itself — open it). `points=True` adds the raw
     `strokes` (surface points + normals, split where the pen left the surface).
     Once handled, close it with `cad_note_done` so the user sees your answer."""
     return _safe(api.list_notes, STORE, graph_id=graph_id, gen=gen, limit=limit,

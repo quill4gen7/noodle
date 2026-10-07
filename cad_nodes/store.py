@@ -520,7 +520,8 @@ class GraphStore:
 
     def save_gen_note(self, graph_id: str, gen: str, note: dict,
                       jpeg: bytes | None = None,
-                      view_jpegs: list[bytes | None] | None = None) -> dict:
+                      view_jpegs: list[bytes | None] | None = None,
+                      images: list[tuple[str, bytes]] | None = None) -> dict:
         """Store a NEW note; returns it with its id. Image first, JSON last and
         atomic, so a listed note always has its picture."""
         d = self.gen_notes_dir(graph_id, gen)
@@ -542,6 +543,11 @@ class GraphStore:
         for k, data in enumerate(view_jpegs or [], 1):
             if data:
                 (d / f"{nid}.v{k}.jpg").write_bytes(data)
+        # pictures the user PLACED on the part (✎ Disegna → Immagine): assets of
+        # the note, named in its `images` so the agent can open them
+        for k, (ext, data) in enumerate(images or [], 1):
+            (d / f"{nid}.img{k}.{ext}").write_bytes(data)
+            note["images"][k - 1]["file"] = f"{nid}.img{k}.{ext}"
         atomic_write(d / f"{nid}.json", json.dumps(note, indent=1))
         return note
 
@@ -562,6 +568,16 @@ class GraphStore:
         (d / f"{note_id}.jpg").unlink(missing_ok=True)
         for v in d.glob(f"{note_id}.v*.jpg"):
             v.unlink()
+        for v in d.glob(f"{note_id}.img*"):
+            v.unlink()
+
+    def gen_note_asset(self, graph_id: str, gen: str, note_id: str, k: int) -> Path:
+        """The k-th picture placed on the part with note `note_id` (1-based)."""
+        d = self.gen_notes_dir(graph_id, gen)
+        hits = sorted(d.glob(f"{validate_note_id(note_id)}.img{int(k)}.*"))
+        if not hits:
+            raise KeyError(f"No image {k} on note {note_id!r} of {graph_id}/{gen}")
+        return hits[0]
 
     def gen_note_image(self, graph_id: str, gen: str, note_id: str, view: int = 0) -> Path:
         """view 0 = the main picture (the last view); k >= 1 = the k-th other view."""

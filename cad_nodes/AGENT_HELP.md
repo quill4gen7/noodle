@@ -120,7 +120,11 @@ More detail on demand — `cad_help(topic=...)` / `GET /api/agent/help?topic=...
    only. A label's `style` says how it was drawn: `paint` (the letters are
    pen strokes on the surface — they are NOT in `marks`; with `points=True`
    they show up as strokes with `kind: "text"`), `tag` (a plate on a stem) or
-   `decal`. The pictures never show a stroke the user took back. Aim
+   `decal`. Pictures the user PLACED on the part (a PNG/JPEG — a sketch, a
+   photo of the real part, a logo) come as `images`: `file`, the same
+   `at`/`normal`/`up`/`size_mm`/`node`/`near_marks` as a label, `image_path`
+   / `image_url` to open the picture itself and `view_image_path` for the
+   photo of the view it was placed from. The pictures never show a stroke the user took back. Aim
    `cad_measure` / a section at the centre to find the feature, fix it,
    snapshot, then `cad_note_done(graph, gen, id, reply="…see g8")` so the
    user sees it closed with your answer.
