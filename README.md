@@ -41,7 +41,9 @@ on meshes (manifold-wasm) at every frame — every frame of this GIF is that, wi
 and the exact build123d result lands once, when the slider stops. Example: <code>glow-pierce</code>.</em></p>
 
 **▶ [Live preview](https://quill4gen7.github.io/noodle/)** — the read-only 3D viewer running on
-GitHub Pages: orbit real generations, hide pieces, play their timelines. No install.
+GitHub Pages: orbit real generations, hide pieces, play their timelines, and
+**[✎ draw on them](https://quill4gen7.github.io/noodle/#draw)** — pen, text, pictures, eraser. No install;
+sending the drawing to an agent is the one thing that needs noodle running.
 
 <p align="center">
   <img src="docs/asset/noodle-view-tracks.gif" alt="noodle /view page: a jar pour plays as a whole, then the Tracce panel plays the cap and the falling bolts one at a time" width="880">
