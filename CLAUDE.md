@@ -1718,6 +1718,36 @@ result while the workflow moves on.
     views equal to the final one are dropped at send. Files `aK.vN.jpg`, a
     mark carries `view` (0 = main) + its own `image_path`, `cad_note_image(…,
     mark=N)`.
+  - **↶ takes back ACTIONS and never leaves a lying photo.** The undo stack
+    holds actions (pen gesture, ⌫ erase drag, T label, label edit), so undoing
+    an erase puts the strokes back in their original order (`k`). Paid for on
+    `prova-disegno/g1#a1`: ↶ took «xBIG» off the model but not off the photo
+    of its view, and an agent read the leftover «x» on a hole as "remove it".
+    Now every view that lost (or regained) something is re-shot FROM ITS OWN
+    camera (`refreshViews` → `shootFrom`: camera swapped in and out inside one
+    task, `_renderFrame` before the browser composites); a view left empty
+    keeps its camera with `image: null` and is not sent; only a persp↔ortho
+    change falls back to a fresh picture of the current view.
+  - **⌫ eraser**: whole strokes (the pen already splits them where it leaves
+    the surface), hit-tested in 3D — the point on the PART vs each stroke's
+    polyline, radius from the size buttons in px → mm (`ERASE_PX`). Picking
+    the tubes would miss 3px lines and catch strokes on the far side. Draft
+    only; sent notes stay immutable.
+  - **T — text ON the part, and it is DATA.** Drag a box (a tap = default box),
+    type, Enter; tap a label with T to edit; ⌫ rubs it out. Rendered with
+    three's vendored `DecalGeometry` from a `CanvasTexture`; normal = mean of a
+    5×5 raycast grid under the box, up = camera up projected on the plane,
+    size = the box's corners met with that plane (`planeSize` — px×mmPerPx
+    ignored foreshortening and halved labels on a slanted top face). Back
+    faces are dropped (`frontFaces`) and coverage < 50% → a flat card. RIDGED
+    surfaces get the card too (`probeUnder`: |Σn|/n < 0.9 — a thread is ~0.87,
+    90° of cylinder 0.90): a decal projects along the normal, and on the bolt
+    of `zz-note-probe` «filetto M8?» came out doubled by parallax. The card is
+    lifted to the highest crest under it. The note carries `labels: [{text, at,
+    normal, up, size_mm, color, node, view}]`; `_link_labels` adds
+    `near_marks` (within 1.5 label sizes, else the nearest within 4) and lists
+    the texts under each mark's `labels` — recomputed on read like `marks`.
+    A note of labels alone is valid.
   - **Opening a note fits it to THIS screen** (`goToNote`): the camera carries
     `aspect` (and ortho `zoom`); on a narrower screen it backs off by the ratio,
     then until every stroke projects inside. `cam.lookAt` inside that loop is

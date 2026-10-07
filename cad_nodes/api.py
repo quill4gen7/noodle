@@ -1557,6 +1557,81 @@ def _marks(strokes: list[dict]) -> list[dict]:
 
 
 _NOTE_MAX_VIEWS = 24
+_NOTE_MAX_LABELS = 60
+
+
+def _labels(labels_in, n_views: int, titles: dict) -> list[dict]:
+    """Text the user wrote ON the part (the T tool): validated like strokes."""
+    import math
+    if not isinstance(labels_in, list) or len(labels_in) > _NOTE_MAX_LABELS:
+        raise ValueError(f"note: labels must be a list of at most {_NOTE_MAX_LABELS}")
+    out = []
+    for i, lb in enumerate(labels_in):
+        if not isinstance(lb, dict):
+            raise ValueError(f"note: label {i} must be an object")
+        text = lb.get("text")
+        if not isinstance(text, str) or not text.strip() or len(text) > 200:
+            raise ValueError(f"note: label {i} text must be 1..200 chars")
+        unit = {}
+        for k in ("normal", "up"):
+            v = _vec(lb.get(k), f"label {i} {k}")
+            norm = math.hypot(*v)
+            if norm < 1e-6:
+                raise ValueError(f"note: label {i} {k} must not be zero")
+            unit[k] = [round(c / norm, 4) for c in v]
+        size = lb.get("size_mm")
+        if not isinstance(size, (list, tuple)) or len(size) != 2:
+            raise ValueError(f"note: label {i} size_mm must be [w, h]")
+        size = [round(max(0.001, min(_num(v, f"label {i} size"), 1e4)), 3) for v in size]
+        color = str(lb.get("color") or "#ef4444").lower()
+        if not re.fullmatch(r"#[0-9a-f]{6}", color):
+            raise ValueError(f"note: label {i} color must be #rrggbb")
+        o = {"label": i + 1, "text": text.strip(), "at": _vec(lb.get("at"), f"label {i} at"),
+             "normal": unit["normal"], "up": unit["up"], "size_mm": size,
+             "color": color, "color_name": _NOTE_COLORS.get(color, color)}
+        v = lb.get("view")
+        if v is not None:
+            v = int(_num(v, f"label {i} view"))
+            if not 0 <= v < n_views:
+                raise ValueError(f"note: label {i} view {v} out of range")
+            o["view"] = v + 1
+        piece = str(lb["piece"])[:40] if lb.get("piece") else None
+        if piece:
+            node = piece.split(".")[0]
+            o.update(piece=piece, node=node)
+            if node in titles:
+                o["title"] = titles[node].get("title")
+                o["type"] = titles[node].get("type")
+        out.append(o)
+    return out
+
+
+def _link_labels(marks: list[dict], strokes: list[dict], labels: list[dict]) -> list[dict]:
+    """Which marks each label is written next to — «qui 8 mm» beside a red
+    circle is a fact about THAT circle. Distance from the label's centre to the
+    nearest point of each mark; near = within 1.5 label sizes, and the closest
+    one within 4 sizes is kept even if none is that near. Marks get the texts
+    back (`labels`), so a reader of marks alone does not miss them either."""
+    import math
+    pts: dict[int, list] = {}
+    for s in strokes:
+        pts.setdefault(s.get("g"), []).extend(s["points"])
+    by_mark = list(pts.values())            # same order as _marks (gesture insertion)
+    out = []
+    for lb in labels:
+        size = max(lb["size_mm"])
+        dist = sorted((min(math.dist(lb["at"], p) for p in ps), k + 1)
+                      for k, ps in enumerate(by_mark) if ps)
+        near = [m for d, m in dist if d <= 1.5 * size]
+        if not near and dist and dist[0][0] <= 4 * size:
+            near = [dist[0][1]]
+        lb = {**lb, "near_marks": near}
+        if dist:
+            lb["nearest_mark_mm"] = round(dist[0][0], 2)
+        out.append(lb)
+        for m in near:
+            marks[m - 1].setdefault("labels", []).append(lb["text"])
+    return out
 
 
 def _camera(cam, what="camera") -> Optional[dict]:
@@ -1584,7 +1659,8 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
     strokes_in = payload.get("strokes") or []
     if not isinstance(strokes_in, list) or len(strokes_in) > _NOTE_MAX_STROKES:
         raise ValueError(f"note: strokes must be a list of at most {_NOTE_MAX_STROKES}")
-    if not strokes_in and not text.strip():
+    labels_in = payload.get("labels") or []
+    if not strokes_in and not labels_in and not text.strip():
         raise ValueError("note: nothing drawn and nothing written")
     views_in = payload.get("views") or []
     if not isinstance(views_in, list) or len(views_in) > _NOTE_MAX_VIEWS:
@@ -1629,9 +1705,13 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
                 out["type"] = titles[node].get("type")
         out.update(_stroke_summary(pts, width))
         strokes.append(out)
+    labels = _labels(labels_in, len(views), titles)
+    marks = _marks(strokes)
     note = {"text": text.strip(),
             "created": datetime.datetime.now().isoformat(timespec="seconds"),
-            "marks": _marks(strokes), "strokes": strokes, "done": None}
+            "marks": marks, "strokes": strokes, "done": None}
+    if labels:
+        note["labels"] = _link_labels(marks, strokes, labels)
     cam = _camera(payload.get("camera"))
     if cam:
         note["camera"] = cam
@@ -1665,6 +1745,11 @@ def _note_for_agent(n: dict, base_url: str, points: bool) -> dict:
         "marks": (_marks(n["strokes"]) if n.get("strokes") and all("g" in x for x in n["strokes"])
                   else n.get("marks") or []),
     }
+    if n.get("labels"):
+        # recomputed like the marks; a mark gets the texts written next to it
+        out["labels"] = [{k: v for k, v in lb.items() if k not in ("near_marks", "nearest_mark_mm")}
+                         for lb in n["labels"]]
+        out["labels"] = _link_labels(out["marks"], n.get("strokes") or [], out["labels"])
     if points:
         out["strokes"] = n.get("strokes", [])
     for k in ("t", "hide", "camera"):
@@ -1675,7 +1760,7 @@ def _note_for_agent(n: dict, base_url: str, points: bool) -> dict:
         out["image_path"] = f"projects/{g}/gens/{gen}/notes/{nid}.jpg"
     # a mark drawn from another angle than the last one is NOT in the main
     # picture: it gets the picture of its own view
-    for m in out["marks"]:
+    for m in out["marks"] + out.get("labels", []):
         if m.get("view"):
             k = m["view"]
             m["image_url"] = f"{base}/api/graph/{quote(g)}/gens/{gen}/notes/{nid}.jpg?view={k}"
