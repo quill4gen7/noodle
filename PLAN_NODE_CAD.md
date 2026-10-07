@@ -872,11 +872,17 @@ Length: 5
   persp↔ortho manda i superstiti in una foto nuova della vista corrente.
 - *Undo*: la pila è di **azioni** (tratto, cancellatura, riquadro, modifica).
 - *Solo la bozza*: sì; le note inviate restano immutabili.
-- *Testo*: decal (`DecalGeometry` vendorizzato, 0.170.0) con normale media
-  sotto il riquadro e «su» della camera; ripiego a **cartellino piatto** se il
-  decal copre < 50% del riquadro **o se la superficie è a creste** (filetti:
-  il decal proiettato lungo la normale si sdoppia per parallasse — misurato
-  sul bullone di `zz-note-probe`). Per l'agente: `labels` con `near_marks`.
+- *Testo*: due stili scelti dall'utente accanto a T. **Targhetta** (default):
+  ancora + gambo + sprite rivolto alla camera, disegnato due volte (normale e
+  senza depth test a 0.35) — chiesta da quill perché il decal sparisce appena
+  giri dietro. **Decal**: su piano / cilindro / sfera la superficie si STIMA
+  (griglia 7×7) e il testo va su una patch con le sue UV (sul cilindro la
+  larghezza diventa lunghezza d'arco, niente stiramento ai lati); il resto è
+  `DecalGeometry` (vendorizzato, 0.170.0). Ripiego sulla **targhetta** se la
+  superficie è a creste (filetti: la proiezione si sdoppia per parallasse) o
+  il decal copre < 50% — non più il cartellino piatto a una faccia, che sul
+  bullone galleggiava a 3,4 mm (la «faccia volante»). Per l'agente: `labels`
+  con `style`, `surface`, `fit`, `near_marks`.
 
 Il resto di questa voce è la richiesta originale.
 

@@ -1196,7 +1196,190 @@ function newLabel(p, r) {
   const [w, h] = labelStyle === 'decal' ? planeSize(r, c.p, n, up, k) : [(r.x1 - r.x0) * k, (r.y1 - r.y0) * k];
   const L = { text: '', color: pen.color, style: labelStyle, at: c.p.clone(), n, up, w, h,
               k: ++seq, piece: c.key, mesh: c.mesh, view: null, obj: null };
+  if (labelStyle === 'decal') Object.assign(L, fitSurface(r, c, reach, L));
+  else L.surface = 'tag';
   openEditor(L, r, true);
+}
+
+// ── ▭ decal on a REGULAR surface: fit it, then lay the text ON it ──
+// quill: «sulle flat va, è piatta per forza, ma su quelle curve proiettala o usa
+// uv per superfici regolari». A projection stretches the words towards the sides
+// of a cylinder (the box's edge meets the surface at a slant), so where the
+// surface under the box is a plane, a cylinder or a sphere it is FITTED from a
+// 7×7 grid of raycasts and the text is laid on a patch of that very surface,
+// with its own UVs: on a cylinder, which is developable, the map is an
+// isometry — the box width becomes arc length round the axis, the height runs
+// along it, at any angle the camera's up dictates. A sphere uses the
+// exponential map (distortion of the order of (size/R)², invisible on a label).
+// The fit uses the POINTS, not the normals, for the radius: the viewport mesh
+// has FLAT facets, whose normal is constant across the facet while the point
+// moves — a normal-based circle fit is off by half a facet. The axis does come
+// from the normals (facet normals are exactly ⟂ to a tessellated cylinder's
+// axis): the smallest eigenvector of Σ n nᵀ.
+// What is chosen goes into the label (`surface` + `fit`), so a saved note is
+// redrawn identical without refitting. Anything else — mixed, organic, an edge
+// — is DecalGeometry's projection; ridges (threads) are a targhetta.
+const ARC_MAX = 150 * Math.PI / 180;           // wider than this round an axis: not a patch
+function solveLin(A, b) {                       // Gaussian elimination, small dense systems
+  const n = b.length, M = A.map((row, i) => [...row, b[i]]);
+  for (let c = 0; c < n; c++) {
+    let p = c; for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    if (Math.abs(M[p][c]) < 1e-12) return null;
+    [M[c], M[p]] = [M[p], M[c]];
+    for (let r = 0; r < n; r++) if (r !== c) { const f = M[r][c] / M[c][c]; for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k]; }
+  }
+  return M.map((row, i) => row[n] / row[i]);
+}
+function lsq(rows, rhs) {                      // least squares via the normal equations
+  const m = rows[0].length, A = Array.from({ length: m }, () => new Array(m).fill(0)), b = new Array(m).fill(0);
+  rows.forEach((r, i) => { for (let a = 0; a < m; a++) { b[a] += r[a] * rhs[i]; for (let c = 0; c < m; c++) A[a][c] += r[a] * r[c]; } });
+  return solveLin(A, b);
+}
+function minEigvec(N) {                        // smallest eigenvector of Σ n nᵀ (power iteration on tr·I − M)
+  const M = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (const v of N) { const a = [v.x, v.y, v.z]; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) M[i][j] += a[i] * a[j]; }
+  const tr = M[0][0] + M[1][1] + M[2][2];
+  let x = new THREE.Vector3(0.577, 0.578, 0.576);
+  for (let it = 0; it < 80; it++) {
+    const a = [x.x, x.y, x.z], y = [0, 1, 2].map(i => tr * a[i] - (M[i][0] * a[0] + M[i][1] * a[1] + M[i][2] * a[2]));
+    x.set(...y); if (x.lengthSq() < 1e-30) return null; x.normalize();
+  }
+  const a = [x.x, x.y, x.z], lam = [0, 1, 2].reduce((t, i) => t + a[i] * (M[i][0] * a[0] + M[i][1] * a[1] + M[i][2] * a[2]), 0);
+  return { v: x, lam: lam / N.length };
+}
+function fitSurface(r, c, reach, L) {
+  const P = [], N = [], G = 7;
+  for (let i = 0; i < G; i++) for (let j = 0; j < G; j++) {
+    const h = surfaceHit(r.x0 + (r.x1 - r.x0) * (i + 0.5) / G, r.y0 + (r.y1 - r.y0) * (j + 0.5) / G);
+    if (h && h.key === c.key && h.p.distanceTo(c.p) < reach) { P.push(h.p); N.push(h.n); }
+  }
+  // a box hanging over an edge, or across two pieces, is not ONE regular surface
+  if (P.length < 0.9 * G * G) return { surface: 'decal' };
+  const size = Math.min(L.w, L.h), mean = N.reduce((a, b) => a.add(b), new THREE.Vector3()).normalize();
+  if (N.every(v => v.dot(mean) > Math.cos(THREE.MathUtils.degToRad(4)))
+      && P.every(p => Math.abs(p.clone().sub(c.p).dot(mean)) < 0.03 * size + 0.005)) {
+    return { surface: 'plane', n: mean };
+  }
+  const tol = R => 0.01 * R + 0.02 * size;      // rms of the points off the fitted surface
+  const sgn = (centre, axis) => {               // convex (+1) or concave (−1): do the normals point away?
+    let t = 0;
+    P.forEach((p, i) => { const d = p.clone().sub(centre); if (axis) d.addScaledVector(axis, -d.dot(axis)); t += d.dot(N[i]); });
+    return t >= 0 ? 1 : -1;
+  };
+  // every normal ⟂ one axis: a cylinder. A corner of the box may catch another
+  // face (on the nut, 2 samples of 49 landed on the ledge of a cross hole and
+  // turned a clean cylinder into a «sphere»): one round of outlier rejection,
+  // up to 10% of the samples, then the fit runs on what is left.
+  // The contaminated axis cannot be trusted to find its own outliers, so the
+  // candidates are the cross products of pairs of normals (RANSAC over all
+  // pairs — 49 samples are ~1200 pairs, nothing), refined on the inliers.
+  let ax = minEigvec(N), CP = P;
+  if (ax && ax.lam >= 0.003) {
+    let best = null;
+    for (let i = 0; i < N.length; i++) for (let j = i + 1; j < N.length; j++) {
+      const a = N[i].clone().cross(N[j]);
+      if (a.length() < 0.08) continue;           // nearly parallel: no axis in it
+      a.normalize();
+      const keep = N.map((v, q) => Math.abs(v.dot(a)) < 0.05 ? q : -1).filter(q => q >= 0);
+      if (!best || keep.length > best.length) best = keep;
+    }
+    if (best && best.length >= 0.9 * N.length) {
+      const ax2 = minEigvec(best.map(i => N[i]));
+      if (ax2 && ax2.lam < 0.003) { ax = ax2; CP = best.map(i => P[i]); }
+    }
+  }
+  if (ax && ax.lam < 0.003) {
+    const a = ax.v, u = new THREE.Vector3().crossVectors(a, Math.abs(a.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0)).normalize();
+    const v = new THREE.Vector3().crossVectors(a, u);
+    const xy = CP.map(p => [p.dot(u), p.dot(v)]);
+    const k = lsq(xy.map(([x, y]) => [x, y, 1]), xy.map(([x, y]) => -(x * x + y * y)));     // Kåsa
+    if (k) {
+      const cx = -k[0] / 2, cy = -k[1] / 2, R = Math.sqrt(Math.max(0, cx * cx + cy * cy - k[2]));
+      const rms = Math.sqrt(xy.reduce((t, [x, y]) => t + (Math.hypot(x - cx, y - cy) - R) ** 2, 0) / xy.length);
+      const centre = u.clone().multiplyScalar(cx).addScaledVector(v, cy);
+      if (R > 0.2 * size && R < 1e4 && rms < tol(R)) {
+        const fit = { axis: a, centre, radius: R, convex: sgn(centre, a) };
+        if (patchFits('cylinder', fit, L)) return { surface: 'cylinder', fit };
+      }
+    }
+  }
+  // a sphere only when the normals turn round TWO axes: a thin band of a
+  // cylinder fits a sphere of about its radius just as well
+  const k = ax && ax.lam > 0.01 ? lsq(P.map(p => [p.x, p.y, p.z, 1]), P.map(p => -p.lengthSq())) : null;
+  if (k) {
+    const centre = new THREE.Vector3(-k[0] / 2, -k[1] / 2, -k[2] / 2), R = Math.sqrt(Math.max(0, centre.lengthSq() - k[3]));
+    const rms = Math.sqrt(P.reduce((t, p) => t + (p.distanceTo(centre) - R) ** 2, 0) / P.length);
+    if (R > 0.2 * size && R < 1e4 && rms < tol(R)) {
+      const fit = { centre, radius: R, convex: sgn(centre, null) };
+      if (patchFits('sphere', fit, L)) return { surface: 'sphere', fit };
+    }
+  }
+  return { surface: 'decal' };
+}
+// the frame of the text at the anchor, on the fitted surface: normal (towards
+// the viewer), right, up — up being the camera's, projected
+function patchFrame(surface, fit, L) {
+  let n = L.n.clone();
+  if (surface === 'cylinder' || surface === 'sphere') {
+    n = L.at.clone().sub(fit.centre);
+    if (fit.axis) n.addScaledVector(fit.axis, -n.dot(fit.axis));
+    n.normalize().multiplyScalar(fit.convex);
+  }
+  const up = L.up.clone().addScaledVector(n, -L.up.dot(n));
+  if (up.lengthSq() < 1e-8) up.copy(new THREE.Vector3(0, 0, 1).addScaledVector(n, -n.z));
+  up.normalize();
+  return { n, up, right: up.clone().cross(n).normalize() };
+}
+function patchFits(surface, fit, L) {
+  const f = patchFrame(surface, fit, L), half = Math.hypot(L.w, L.h) / 2;
+  if (surface === 'cylinder') {
+    const R = L.at.clone().sub(fit.centre).addScaledVector(fit.axis, -L.at.clone().sub(fit.centre).dot(fit.axis)).length();
+    const arc = (Math.abs(L.w * f.right.dot(fit.axis.clone().cross(f.n).normalize())) +
+                 Math.abs(L.h * f.up.dot(fit.axis.clone().cross(f.n).normalize()))) / R;
+    return arc <= ARC_MAX;
+  }
+  return half / L.at.distanceTo(fit.centre) <= ARC_MAX / 2;
+}
+// The patch: a grid in the text's own (σ, τ) mm, mapped onto the surface and
+// lifted by ε along its normal. UVs are the grid itself: no projection at all.
+function patchGeometry(L) {
+  const { surface, fit } = L, f = patchFrame(surface, fit, L), eps = Math.max(0.01, 0.004 * Math.max(L.w, L.h));
+  const SU = surface === 'plane' ? 1 : 32, SV = surface === 'plane' ? 1 : 8;
+  const pos = [], uv = [], idx = [];
+  let map;
+  if (surface === 'plane') {
+    map = (s, t) => L.at.clone().addScaledVector(f.right, s).addScaledVector(f.up, t).addScaledVector(f.n, eps);
+  } else if (surface === 'cylinder') {
+    const a = fit.axis, rel = L.at.clone().sub(fit.centre), t0 = rel.dot(a);
+    const d0 = rel.clone().addScaledVector(a, -t0), R = d0.length(); d0.normalize();
+    const eth = a.clone().cross(d0);
+    map = (s, t) => {
+      const q = f.right.clone().multiplyScalar(s).addScaledVector(f.up, t);
+      const al = q.dot(eth) / R, be = q.dot(a);
+      const dir = d0.clone().multiplyScalar(Math.cos(al)).addScaledVector(eth, Math.sin(al));
+      return fit.centre.clone().addScaledVector(a, t0 + be).addScaledVector(dir, R + fit.convex * eps);
+    };
+  } else {
+    const d0 = L.at.clone().sub(fit.centre), R = d0.length(); d0.normalize();
+    map = (s, t) => {
+      const q = f.right.clone().multiplyScalar(s).addScaledVector(f.up, t), rho = q.length();
+      const dir = rho < 1e-9 ? d0.clone() : d0.clone().multiplyScalar(Math.cos(rho / R)).addScaledVector(q.normalize(), Math.sin(rho / R));
+      return fit.centre.clone().addScaledVector(dir, R + fit.convex * eps);
+    };
+  }
+  for (let j = 0; j <= SV; j++) for (let i = 0; i <= SU; i++) {
+    const U = i / SU, V = j / SV, p = map((U - 0.5) * L.w, (V - 0.5) * L.h);
+    pos.push(p.x, p.y, p.z); uv.push(U, V);
+  }
+  for (let j = 0; j < SV; j++) for (let i = 0; i < SU; i++) {
+    const a = j * (SU + 1) + i, b = a + 1, c = a + SU + 1, d = c + 1;
+    idx.push(a, b, d, a, d, c);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  return g;
 }
 // The box's size ON the label plane: its corners' rays met with the plane.
 // px × mmPerPx alone ignores foreshortening, and a box drawn on a top face seen
@@ -1359,9 +1542,16 @@ function probeUnder(L) {
   return { ridged: hits >= 5 && sum.length() / hits < 0.9 };
 }
 function labelObject(L) {
-  if (L.style !== 'decal') return tagObject(L);
+  if (L.style !== 'decal' || L.surface === 'tag') return tagObject(L);
   const mat = new THREE.MeshBasicMaterial({ map: labelCanvas(L.text, L.color, L.w, L.h), transparent: true,
     depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+  if (['plane', 'cylinder', 'sphere'].includes(L.surface)) {
+    try {
+      const obj = new THREE.Mesh(patchGeometry(L), mat);
+      obj.renderOrder = 3; obj.userData.surface = L.surface;
+      return obj;
+    } catch { /* a broken fit: project instead */ }
+  }
   const frame = labelFrame(L);
   let geo = null;
   const mesh = (L.mesh && L.mesh.parent) ? L.mesh : meshUnder(L), under = probeUnder(L);
@@ -1372,7 +1562,9 @@ function labelObject(L) {
       geo = frontFaces(d, L.n.clone().normalize(), L.w * L.h);
     } catch { geo = null; }
   }
-  if (!geo) { mat.map.dispose(); mat.dispose(); return tagObject(L); }   // no flying card: a plate
+  if (!geo) {                                  // no flying card: a plate — and the data says so
+    mat.map.dispose(); mat.dispose(); L.surface = 'tag'; return tagObject(L);
+  }
   const obj = new THREE.Mesh(geo, mat);
   obj.renderOrder = 3;
   return obj;
@@ -1576,6 +1768,10 @@ function toast(html, ms = 6000) {
 }
 const r4 = v => +v.toFixed(4);
 const v3 = n => [+n.x.toFixed(4), +n.y.toFixed(4), +n.z.toFixed(4)];
+const fitOut = f => f ? { centre: [r4(f.centre.x), r4(f.centre.y), r4(f.centre.z)], radius: r4(f.radius),
+  convex: f.convex, ...(f.axis ? { axis: v3(f.axis) } : {}) } : null;
+const fitIn = f => f ? { centre: new THREE.Vector3(...f.centre), radius: f.radius, convex: f.convex || 1,
+  ...(f.axis ? { axis: new THREE.Vector3(...f.axis).normalize() } : {}) } : null;
 async function sendNote() {
   const text = $('d-text').value.trim();
   closeEditor(true);
@@ -1605,6 +1801,7 @@ async function sendNote() {
     // text-only model reads «qui 8 mm» and which mark it sits next to
     labels: labels.map(L => ({ text: L.text, color: L.color, style: L.style, piece: L.piece,
       at: [r4(L.at.x), r4(L.at.y), r4(L.at.z)], normal: v3(L.n), up: v3(L.up), size_mm: [r4(L.w), r4(L.h)],
+      surface: L.surface || null, fit: fitOut(L.fit),
       view: L.view == null ? null : remap.get(L.view) })),
     hide: location.hash.replace(/^#/, ''),
   };
@@ -1637,7 +1834,8 @@ function noteObject(n) {
   for (const l of n.labels || []) {
     try {
       g.add(labelObject({ text: l.text, color: l.color, style: l.style || 'tag', at: new THREE.Vector3(...l.at),
-        n: new THREE.Vector3(...l.normal), up: new THREE.Vector3(...l.up), w: l.size_mm[0], h: l.size_mm[1] }));
+        n: new THREE.Vector3(...l.normal), up: new THREE.Vector3(...l.up), w: l.size_mm[0], h: l.size_mm[1],
+        surface: l.surface, fit: fitIn(l.fit) }));
     } catch {}
   }
   return g;
