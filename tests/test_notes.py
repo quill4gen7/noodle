@@ -218,6 +218,7 @@ def test_a_label_is_data_next_to_the_mark_it_talks_about(store):
     assert near["normal"] == [0, 0, 1]                   # normalised
     assert near["color"] == "#ffffff" and near["color_name"] == "white"
     assert near["node"] == "n1" and near["title"] == "Body"
+    assert near["style"] == "tag"                        # absent = a plate (old notes too)
     assert alone["near_marks"] == []
     assert note["marks"][0]["labels"] == ["qui 8 mm"] and "labels" not in note["marks"][1]
     lean = api.list_notes(store)[0]
@@ -234,7 +235,7 @@ def test_a_note_of_labels_only_is_a_note(store):
 def test_bad_labels_are_refused(store):
     bad = [{**LABEL, "text": "  "}, {**LABEL, "text": "x" * 201}, {**LABEL, "at": [0, 0, float("inf")]},
            {**LABEL, "normal": [0, 0, 0]}, {**LABEL, "size_mm": [1]}, {**LABEL, "color": "white"},
-           {**LABEL, "view": 0}, "qui"]
+           {**LABEL, "view": 0}, {**LABEL, "style": "sticker"}, "qui"]
     for b in bad:
         with pytest.raises(ValueError):
             api.add_note(store, "demo", "g1", {"labels": [b]})
@@ -251,8 +252,16 @@ def test_the_text_tool_projects_a_decal_and_sends_labels():
     new = VIEW[VIEW.index("function newLabel"):]
     new = new[:new.index("\n}\n")]
     assert "for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++)" in new and "planeSize(" in new
-    # ridged surfaces and failed decals fall back to the flat card
-    assert "if (mesh && !under.ridged)" in VIEW and "new THREE.PlaneGeometry(L.w, L.h)" in VIEW
+    # two styles, the user's choice, remembered; a decal that cannot be made
+    # becomes a plate — never the one-sided flying card it used to be
+    assert 'id="d-lstyle"' in VIEW and "localStorage.getItem('noodle:view:labelStyle')" in VIEW
+    assert "if (mesh && !under.ridged)" in VIEW and "return tagObject(L); }" in VIEW
+    assert "PlaneGeometry" not in VIEW
+    # the plate faces the camera and shows through the part, faded
+    tag = VIEW[VIEW.index("function tagObject"):]
+    tag = tag[:tag.index("\n}\n")]
+    assert "new THREE.Sprite(" in tag and "depthTest: !ghost" in tag and "for (const ghost of [false, true])" in tag
+    assert "style: L.style" in VIEW and "style: l.style || 'tag'" in VIEW
     # labels are data in the note, and part of the undo / eraser / views machinery
     assert "labels: labels.map(L => ({ text: L.text" in VIEW
     for t in ("else if (a.type === 'label')", "else if (a.type === 'edit')", "er.labels.push(L)",

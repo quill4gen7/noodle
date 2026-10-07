@@ -182,6 +182,7 @@
   #vp:not([data-tool=erase]) #d-ring{display:none !important;}
   #vp.drawing[data-tool=text] canvas{cursor:text;}
   #d-texttool{font:700 15px Georgia,serif;}
+  #d-lstyle{min-height:var(--tap);padding:4px 4px;max-width:112px;}
   #d-box{position:absolute;display:none;pointer-events:none;z-index:6;border:2px dashed #fff;border-radius:4px;
     box-shadow:0 0 0 1px rgba(0,0,0,.6);}
   #d-label{position:absolute;display:none;z-index:9;min-width:140px;min-height:32px;background:rgba(11,14,20,.92);
@@ -195,7 +196,7 @@
   .sz{width:var(--tap);padding:0;}
   .sz i{display:block;border-radius:50%;background:var(--text);}
   .sz.on,.tool.on{border-color:var(--accent);background:var(--bg-2);}
-  #d-text{flex:1 1 220px;min-width:160px;min-height:var(--tap);background:var(--bg-0);color:var(--text);
+  #d-text{flex:1 1 150px;min-width:120px;min-height:var(--tap);background:var(--bg-0);color:var(--text);
     border:1px solid var(--border);border-radius:8px;padding:5px 9px;font:13px var(--font);}
   #d-send{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;}
   #d-send:disabled{opacity:.4;cursor:default;}
@@ -230,6 +231,7 @@
     #dbar .sz{width:36px;}
     #dbar .sep,#d-hint{display:none;}
     #dbar .tool{min-width:36px;padding:4px 6px;}
+    #d-lstyle{min-height:36px;max-width:104px;}
     #d-text{flex:1 1 140px;min-height:36px;min-width:0;}
     #toast{top:8px;}
   }
@@ -282,6 +284,8 @@
         <div class="grp">
           <button class="btn tool on" id="d-pen" title="Penna: trascina SUL pezzo per disegnare (P)">✎</button>
           <button class="btn tool" id="d-texttool" title="Testo SUL pezzo: tocca e trascina per il riquadro, poi scrivi (T) — tocca un riquadro per correggerlo">T</button>
+          <select id="d-lstyle" title="Stile del testo T: targhetta (si legge da ogni lato, anche da dietro) o decal (incollato alla superficie)">
+            <option value="tag">⚑ Targhetta</option><option value="decal">▭ Decal</option></select>
           <button class="btn tool" id="d-erase" title="Gomma: passa sopra un tratto per toglierlo intero (E) — la misura sceglie il raggio">⌫</button>
           <button class="btn tool" id="d-hand" title="Muovi: ruota/zoom senza disegnare (anche: trascina fuori dal pezzo, tasto destro, rotella)">Muovi</button>
         </div>
@@ -971,7 +975,7 @@ vp.addEventListener('pointerdown', e => {
   }
   if (tool === 'hand' || e.button !== 0 || !e.isPrimary) return;
   const hit = surfaceHit(e.clientX, e.clientY);
-  const onLabel = tool === 'text' ? labelAt(e.clientX, e.clientY) : null;
+  const onLabel = tool === 'text' || tool === 'erase' ? labelAt(e.clientX, e.clientY) : null;
   if (!hit && !onLabel) return;                // the background still orbits
   e.stopPropagation(); e.preventDefault();
   if (clock.playing) setPlaying(false);        // paint on a part that stays put
@@ -979,7 +983,7 @@ vp.addEventListener('pointerdown', e => {
   const down = { pointerId: e.pointerId, pointerType: e.pointerType, isPrimary: true, button: 0, buttons: 1,
                  clientX: e.clientX, clientY: e.clientY, bubbles: true, cancelable: true };
   painting = { id: e.pointerId, mode: tool, x: e.clientX, y: e.clientY, down, hit };
-  if (tool === 'erase') { painting.erased = { strokes: [], labels: [] }; eraseAt(hit); return; }
+  if (tool === 'erase') { painting.erased = { strokes: [], labels: [] }; eraseAt(hit, e.clientX, e.clientY); return; }
   if (tool === 'text') { painting.x0 = e.clientX; painting.y0 = e.clientY; painting.edit = onLabel; return; }
   painting.g = ++gesture;
   painting.s = startStroke(hit, painting.g);
@@ -993,7 +997,7 @@ vp.addEventListener('pointermove', e => {
   if (d < 3) return;
   const hit = surfaceHit(e.clientX, e.clientY);
   if (painting.mode === 'erase') {
-    if (hit) eraseAt(hit);
+    eraseAt(hit, e.clientX, e.clientY);
     painting.x = e.clientX; painting.y = e.clientY;
     return;
   }
@@ -1054,8 +1058,11 @@ function strokeDist(s, p) {
   for (let i = 1; i < s.pts.length; i++) d = Math.min(d, segDist(p, s.pts[i - 1], s.pts[i]));
   return d;
 }
-function eraseAt(hit) {
-  const r = ERASE_PX() * mmPerPx(hit.p), er = painting.erased;
+function eraseAt(hit, x, y) {
+  const er = painting.erased, over = labelAt(x, y);
+  if (over) { labels.splice(labels.indexOf(over), 1); disposeObj(over.obj); over.obj = null; er.labels.push(over); }
+  if (!hit) { viewer.invalidate(); syncDraw(); return; }
+  const r = ERASE_PX() * mmPerPx(hit.p);
   for (let i = draft.length - 1; i >= 0; i--) {
     const s = draft[i];
     if (strokeDist(s, hit.p) > r + s.width / 2) continue;
@@ -1063,7 +1070,7 @@ function eraseAt(hit) {
   }
   for (let i = labels.length - 1; i >= 0; i--) {
     const L = labels[i];
-    if (!inLabel(L, hit.p, r)) continue;
+    if (L.obj && L.obj.userData.tag ? L.at.distanceTo(hit.p) > r : !inLabel(L, hit.p, r)) continue;
     labels.splice(i, 1); disposeObj(L.obj); L.obj = null; er.labels.push(L);
   }
   viewer.invalidate(); syncDraw();
@@ -1089,21 +1096,37 @@ function moveRing(e) {
     left: (e.clientX - r.left - d / 2) + 'px', top: (e.clientY - r.top - d / 2) + 'px' });
 }
 
-// ── T: text ON the part ──
+// ── T: text ON the part — two styles, the user picks (⚑ / ▭ next to T) ──
 // Press on the part and drag a box (a tap gives a default one), type, Enter.
-// The text is projected onto the surface with three's DecalGeometry: it cuts
-// the mesh's triangles inside the box and maps a CanvasTexture of the words on
-// them, so a label lies flat on a face and wraps a cylinder with no UVs. Where
-// a decal cannot work — a box hanging over an edge, nothing facing the camera
-// under it — a flat card, lifted off the surface, takes its place: ugly on a
-// corner, and that is accepted (nobody writes on a corner).
+// ⚑ TARGHETTA (default — the one you can always read): a dot on the surface, a
+// short stem along the normal, and a plate with the words that always FACES THE
+// CAMERA (a THREE.Sprite orients itself at every render, so the on-demand
+// viewer needs no per-frame code). Every piece is drawn twice — depth-tested
+// at full opacity, and without the depth test at 0.35 on top — so the part
+// covers a plate the way it covers anything, yet the plate never disappears:
+// quill asked for it because a decal vanishes as soon as you orbit behind.
+// ▭ DECAL: the words projected onto the surface with three's DecalGeometry —
+// it cuts the triangles inside the box and maps a CanvasTexture on them, flat
+// on a face, wrapped round a cylinder, no UVs. Where a decal cannot work (a box
+// hanging over an edge, a RIDGED surface) it falls back to the targhetta, never
+// to a one-sided flying card: that card is what quill saw floating off a
+// thread («quella non è una decal, è una faccia volante»).
 // Orientation: the normal is the AVERAGE of the surface under the box (a 5×5
 // grid of raycasts), not the one point touched — on an edge that would be a
 // coin toss; "up" is the camera's up projected on that plane, so the text reads
 // straight from where it was written; the size is the box in px → mm.
 // For the agent the label is DATA (text, place, size, the marks it sits next
 // to), not pixels: models that never look at the pictures still read it.
-const LABEL_TAP = [170, 46];                   // px, the box a tap without a drag makes
+// px, the box a tap without a drag makes — smaller on a phone, where 170 px is half the screen
+const LABEL_TAP = matchMedia('(max-width:760px)').matches ? [110, 34] : [170, 46];
+let labelStyle = 'tag';
+try { if (localStorage.getItem('noodle:view:labelStyle') === 'decal') labelStyle = 'decal'; } catch {}
+$('d-lstyle').value = labelStyle;
+$('d-lstyle').addEventListener('change', e => {
+  labelStyle = e.target.value === 'decal' ? 'decal' : 'tag';
+  try { localStorage.setItem('noodle:view:labelStyle', labelStyle); } catch {}
+  setTool('text');
+});
 function boxRect(p, x, y) {
   const w = Math.abs(x - p.x0), h = Math.abs(y - p.y0);
   if (w < 14 && h < 14) {
@@ -1131,6 +1154,7 @@ function labelAt(x, y) {
   if (!h) return null;
   let o = h.object; while (o.parent && !objs.includes(o)) o = o.parent;
   const L = labels.find(l => l.obj === o);
+  if (L && L.obj.userData.tag) return L;       // on screen — faded or not — so it can be tapped
   const f = firstHit(x, y);
   if (L && f && f.h.distance < h.distance - Math.max(L.w, L.h) * 0.5) return null;
   return L || null;
@@ -1142,6 +1166,7 @@ function labelFrame(L, lift = 0) {
 }
 // a label's box on screen, to put the editor back over it
 function labelRect(L) {
+  if (L.obj && L.obj.userData.tag) return tagRect(L);
   const m = labelFrame(L), r = $('c').getBoundingClientRect();
   const xs = [], ys = [];
   for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
@@ -1166,8 +1191,10 @@ function newLabel(p, r) {
   up.addScaledVector(n, -up.dot(n));
   if (up.lengthSq() < 1e-6) up.copy(n.clone().cross(new THREE.Vector3(1, 0, 0).applyQuaternion(cam.quaternion)));
   up.normalize();
-  const [w, h] = planeSize(r, c.p, n, up, k);
-  const L = { text: '', color: pen.color, at: c.p.clone(), n, up, w, h,
+  // a decal lies ON the plane (its size is measured there); a plate faces the
+  // screen, as the box did, so it keeps the box's own size
+  const [w, h] = labelStyle === 'decal' ? planeSize(r, c.p, n, up, k) : [(r.x1 - r.x0) * k, (r.y1 - r.y0) * k];
+  const L = { text: '', color: pen.color, style: labelStyle, at: c.p.clone(), n, up, w, h,
               k: ++seq, piece: c.key, mesh: c.mesh, view: null, obj: null };
   openEditor(L, r, true);
 }
@@ -1285,7 +1312,7 @@ function meshUnder(L) {
 // Keep only the decal triangles that FACE the projector: the box is deep enough
 // to reach round a curved side, so it also catches the back of a thin plate,
 // which would wear the text mirrored. Null when what is left covers less than
-// half the box — then the flat card reads better than a torn decal.
+// half the box — then the targhetta reads better than a torn decal.
 function frontFaces(geo, n, area) {
   const P = geo.attributes.position, N = geo.attributes.normal, U = geo.attributes.uv;
   const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), fn = new THREE.Vector3();
@@ -1316,12 +1343,10 @@ function frontFaces(geo, n, area) {
 // The test is how well the normals under the box AGREE: |Σn|/count is 1 on a
 // plane, 0.955 over 60° of a cylinder, 0.90 over 90°, and ~0.87 on a 60°
 // thread (flanks ±30° off radial). Raycast along −n on a 5×5 grid, so a saved
-// note decides exactly as the draft did. The same rays say how far the surface
-// rises above the label's centre (`lift`): the card sits on the crests, not
-// half-sunk in a thread with the words cut by its ridges.
+// note decides exactly as the draft did.
 function probeUnder(L) {
   const right = L.up.clone().cross(L.n).normalize(), s = Math.max(L.w, L.h), sum = new THREE.Vector3();
-  let hits = 0, lift = 0;
+  let hits = 0;
   for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++) {
     const o = L.at.clone().addScaledVector(right, ((i + 0.5) / 5 - 0.5) * L.w)
       .addScaledVector(L.up, ((j + 0.5) / 5 - 0.5) * L.h).addScaledVector(L.n, s);
@@ -1330,11 +1355,11 @@ function probeUnder(L) {
     if (!h || h.distance > 2 * s) continue;
     const nn = h.face.normal.clone().transformDirection(h.object.matrixWorld);
     sum.add(nn.dot(L.n) < 0 ? nn.negate() : nn); hits++;
-    lift = Math.max(lift, s - h.distance);
   }
-  return { ridged: hits >= 5 && sum.length() / hits < 0.9, lift };
+  return { ridged: hits >= 5 && sum.length() / hits < 0.9 };
 }
 function labelObject(L) {
+  if (L.style !== 'decal') return tagObject(L);
   const mat = new THREE.MeshBasicMaterial({ map: labelCanvas(L.text, L.color, L.w, L.h), transparent: true,
     depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
   const frame = labelFrame(L);
@@ -1347,16 +1372,46 @@ function labelObject(L) {
       geo = frontFaces(d, L.n.clone().normalize(), L.w * L.h);
     } catch { geo = null; }
   }
-  let obj;
-  if (geo) obj = new THREE.Mesh(geo, mat);
-  else {                                       // the flat card, a hair off the surface
-    obj = new THREE.Mesh(new THREE.PlaneGeometry(L.w, L.h), mat);
-    obj.matrixAutoUpdate = false;
-    obj.matrix.copy(labelFrame(L, under.lift + Math.max(0.02, 0.01 * Math.max(L.w, L.h))));
-    obj.userData.flat = true;
-  }
+  if (!geo) { mat.map.dispose(); mat.dispose(); return tagObject(L); }   // no flying card: a plate
+  const obj = new THREE.Mesh(geo, mat);
   obj.renderOrder = 3;
   return obj;
+}
+// the stem: a few mm, in proportion to the plate
+const stemOf = L => Math.max(L.h * 1.2, 0.35 * L.w);
+const tipOf = L => L.at.clone().addScaledVector(L.n, stemOf(L));
+function tagRect(L) {
+  const r = $('c').getBoundingClientRect(), tip = tipOf(L), q = tip.clone().project(viewer.camera);
+  const k = mmPerPx(tip), w = L.w / k, h = L.h / k;
+  const x = r.left + (q.x + 1) / 2 * r.width, y = r.top + (1 - q.y) / 2 * r.height;
+  return { x0: x - w / 2, y0: y - h, x1: x + w / 2, y1: y };
+}
+// Dot + stem + plate, each twice: `solid` depth-tested at full opacity, `ghost`
+// with no depth test at 0.35, drawn after everything. Sprites need
+// `raycaster.camera` to be picked — setFromCamera sets it.
+const GHOST = 0.35;
+function tagObject(L) {
+  const g = new THREE.Group(), tex = labelCanvas(L.text, L.color, L.w, L.h);
+  const n = L.n.clone().normalize(), stem = stemOf(L), tip = tipOf(L);
+  const r = Math.max(L.h * 0.09, 0.03);        // the anchor dot
+  const dotG = new THREE.SphereGeometry(r, 12, 8);
+  const stemG = new THREE.CylinderGeometry(r * 0.35, r * 0.35, stem, 8);
+  stemG.translate(0, stem / 2, 0);
+  const qn = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), n);
+  const ink = L.color;
+  for (const ghost of [false, true]) {
+    const opt = { color: ink, toneMapped: false, transparent: ghost, opacity: ghost ? GHOST : 1,
+                  depthTest: !ghost, depthWrite: !ghost };
+    const dot = new THREE.Mesh(dotG, new THREE.MeshBasicMaterial(opt)); dot.position.copy(L.at);
+    const st = new THREE.Mesh(stemG, new THREE.MeshBasicMaterial(opt)); st.position.copy(L.at); st.quaternion.copy(qn);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, toneMapped: false, transparent: true,
+      opacity: ghost ? GHOST : 1, depthTest: !ghost, depthWrite: false, sizeAttenuation: true }));
+    sp.center.set(0.5, 0);                     // the plate sits ON the tip of the stem
+    sp.position.copy(tip); sp.scale.set(L.w, L.h, 1);
+    for (const o of [dot, st, sp]) { o.renderOrder = ghost ? 10 : 3; g.add(o); }
+  }
+  g.userData.tag = true;
+  return g;
 }
 function camState() {
   const c = viewer.camera, t = viewer.controls.target, r = $('c').getBoundingClientRect();
@@ -1548,7 +1603,7 @@ async function sendNote() {
       normals: s.nrm.map(n => [+n.x.toFixed(3), +n.y.toFixed(3), +n.z.toFixed(3)]) })),
     // text written ON the part is DATA for the agent, not only pixels: a
     // text-only model reads «qui 8 mm» and which mark it sits next to
-    labels: labels.map(L => ({ text: L.text, color: L.color, piece: L.piece,
+    labels: labels.map(L => ({ text: L.text, color: L.color, style: L.style, piece: L.piece,
       at: [r4(L.at.x), r4(L.at.y), r4(L.at.z)], normal: v3(L.n), up: v3(L.up), size_mm: [r4(L.w), r4(L.h)],
       view: L.view == null ? null : remap.get(L.view) })),
     hide: location.hash.replace(/^#/, ''),
@@ -1581,7 +1636,7 @@ function noteObject(n) {
   }
   for (const l of n.labels || []) {
     try {
-      g.add(labelObject({ text: l.text, color: l.color, at: new THREE.Vector3(...l.at),
+      g.add(labelObject({ text: l.text, color: l.color, style: l.style || 'tag', at: new THREE.Vector3(...l.at),
         n: new THREE.Vector3(...l.normal), up: new THREE.Vector3(...l.up), w: l.size_mm[0], h: l.size_mm[1] }));
     } catch {}
   }
