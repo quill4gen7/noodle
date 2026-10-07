@@ -55,6 +55,11 @@ More detail on demand — `cad_help(topic=...)` / `GET /api/agent/help?topic=...
    mesh and green tests and still be plainly wrong: a boolean that filled the
    feature it was meant to cut, an array pointing the wrong way, a part sunk
    through the bed. One picture settles it.
+   **In Claude Code with the `anteprima` plugin** (you have the tool
+   `mcp__anteprima__mostra`) you can also put the part, in 3D, in the user's
+   terminal: `mostra(tipo="modello3d", file="<repo>/projects/<graph>/view.json")`
+   — the last run, one colour per output piece, which the user orbits there
+   (topic `screenshots`).
    **To SHOW the user a result, send a link, not pictures**: `cad_snapshot(graph_id,
    label=...)` freezes the current geometry as a generation and returns a `url`
    (`/view/<graph>/g<N>`) to a read-only 3D viewer where the user orbits it,
@@ -99,7 +104,12 @@ More detail on demand — `cad_help(topic=...)` / `GET /api/agent/help?topic=...
    node(s) it was drawn on — ids of the gen's FROZEN graph (`ref` `graph/gN#aK`).
    The main picture is only the LAST view: a mark drawn from another angle
    has `view` > 0 and its own `image_path` — `cad_note_image(..., mark=N)`
-   shows it. Look at every mark's picture before acting on it. Aim
+   shows it. Look at every mark's picture before acting on it. Words the
+   user wrote ON the part (the T tool) arrive as `labels`: `text`, `at` /
+   `normal` / `up` / `size_mm` in model mm, the `node` it is on, `near_marks` =
+   the marks it sits next to («qui 8 mm» beside mark 1 is about mark 1; each
+   mark also lists them under its own `labels`). A note may hold labels
+   only. The pictures never show a stroke the user took back. Aim
    `cad_measure` / a section at the centre to find the feature, fix it,
    snapshot, then `cad_note_done(graph, gen, id, reply="…see g8")` so the
    user sees it closed with your answer.
@@ -357,6 +367,18 @@ Habits that pay: take **two angles** when a shape is ambiguous from one;
 `top`/`front` in `ortho` to check that things line up; isolate the node you
 just changed; re-shoot with `run=0` for extra angles. The browser is kept warm
 and needs no GPU.
+
+**In the terminal (Claude Code + `anteprima` plugin).** With the tool
+`mcp__anteprima__mostra` the user can look without leaving the terminal:
+- `tipo="modello3d"`, `file="<repo>/projects/<graph>/view.json"`: a 3D view of
+  the last run (every `previews.<node>.mesh`, one colour each) that the user
+  rotates and zooms with keys. It reads `view.json` as saved, so run the graph
+  after an edit first; an exported `.stl` works the same way.
+- `tipo="immagine"`, `file=<a PNG from this endpoint saved to disk>`: the
+  screenshot itself. Inside zellij it is drawn in characters (coarse), so for
+  details prefer the 3D view or the `/view` link.
+The panel shows up on its own only in a terminal ≥ 144 columns; when the tool
+answers that it is not on screen, ask the user to type `/anteprima` once.
 
 ## topic: retroeng
 

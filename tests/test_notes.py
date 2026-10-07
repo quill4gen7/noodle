@@ -160,7 +160,7 @@ def test_routes_tools_and_help_exist():
 def test_the_pen_paints_on_the_surface_and_leaves_the_background_to_orbit():
     # strokes come from a raycast on the part, not from screen coordinates, and a
     # press that misses the part is left to OrbitControls
-    assert "function surfaceHit" in VIEW and "if (!hit) return;" in VIEW
+    assert "function surfaceHit" in VIEW and "if (!hit && !onLabel) return;" in VIEW
     assert "vp.addEventListener('pointerdown'" in VIEW and "}, true);" in VIEW
     # the picture is the user's own view, not a re-framed one — and one more per
     # view the user drew from, taken when the pen lifts
@@ -200,3 +200,65 @@ def test_the_eraser_takes_whole_draft_strokes_and_undo_gives_them_back():
     assert "if (p.mode === 'erase') restore(p.erased);" in VIEW
     # only the draft: saved notes are never touched by the eraser
     assert "notesData" not in erase
+
+
+LABEL = {"text": "qui 8 mm", "at": [7.5, 5, 10], "normal": [0, 0, 2], "up": [0, 1, 0],
+         "size_mm": [4, 1.5], "color": "#FFFFFF", "piece": "n1"}
+
+
+def test_a_label_is_data_next_to_the_mark_it_talks_about(store):
+    """Text written ON the part reaches the agent as text, tied to the marks it
+    sits next to — a text-only model reads «qui 8 mm» about THAT circle."""
+    note = api.add_note(store, "demo", "g1", {
+        "strokes": [{"g": 1, "piece": "n1", "points": _circle()},           # mark 1: round (5,5)
+                    {"g": 2, "points": [[40, 40, 10], [45, 40, 10]]}],     # mark 2: far away
+        "labels": [LABEL, {**LABEL, "text": "lontano", "at": [100, 100, 10]}]})
+    near, alone = note["labels"]
+    assert near["text"] == "qui 8 mm" and near["near_marks"] == [1] and near["label"] == 1
+    assert near["normal"] == [0, 0, 1]                   # normalised
+    assert near["color"] == "#ffffff" and near["color_name"] == "white"
+    assert near["node"] == "n1" and near["title"] == "Body"
+    assert alone["near_marks"] == []
+    assert note["marks"][0]["labels"] == ["qui 8 mm"] and "labels" not in note["marks"][1]
+    lean = api.list_notes(store)[0]
+    assert lean["labels"][0]["near_marks"] == [1] and lean["marks"][0]["labels"] == ["qui 8 mm"]
+    assert "strokes" not in lean
+
+
+def test_a_note_of_labels_only_is_a_note(store):
+    note = api.add_note(store, "demo", "g1", {"labels": [LABEL]})
+    assert note["marks"] == [] and note["labels"][0]["near_marks"] == []
+    assert api.list_notes(store)[0]["labels"][0]["text"] == "qui 8 mm"
+
+
+def test_bad_labels_are_refused(store):
+    bad = [{**LABEL, "text": "  "}, {**LABEL, "text": "x" * 201}, {**LABEL, "at": [0, 0, float("inf")]},
+           {**LABEL, "normal": [0, 0, 0]}, {**LABEL, "size_mm": [1]}, {**LABEL, "color": "white"},
+           {**LABEL, "view": 0}, "qui"]
+    for b in bad:
+        with pytest.raises(ValueError):
+            api.add_note(store, "demo", "g1", {"labels": [b]})
+    with pytest.raises(ValueError):
+        api.add_note(store, "demo", "g1", {"labels": [LABEL] * 61})
+
+
+def test_the_text_tool_projects_a_decal_and_sends_labels():
+    # three's DecalGeometry, vendored at the pinned version, imported via the map
+    assert "from 'three/addons/geometries/DecalGeometry.js'" in VIEW
+    assert (ROOT / "webui/vendor/three-0.170.0/examples/jsm/geometries/DecalGeometry.js").exists()
+    assert 'id="d-texttool"' in VIEW
+    # the normal is the surface under the WHOLE box, size measured on its plane
+    new = VIEW[VIEW.index("function newLabel"):]
+    new = new[:new.index("\n}\n")]
+    assert "for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++)" in new and "planeSize(" in new
+    # ridged surfaces and failed decals fall back to the flat card
+    assert "if (mesh && !under.ridged)" in VIEW and "new THREE.PlaneGeometry(L.w, L.h)" in VIEW
+    # labels are data in the note, and part of the undo / eraser / views machinery
+    assert "labels: labels.map(L => ({ text: L.text" in VIEW
+    for t in ("else if (a.type === 'label')", "else if (a.type === 'edit')", "er.labels.push(L)",
+              "[...draft, ...labels].filter(x => x.view === i)"):
+        assert t in VIEW
+    # saved notes draw their labels too
+    assert "for (const l of n.labels || [])" in VIEW
+    assert "labels" in HELP[HELP.index("cad_notes"):] and "near_marks" in HELP
+    assert "near_marks" in MCP

@@ -247,7 +247,10 @@ def cad_notes(graph_id: str = "", gen: str = "", limit: int = 10,
     (loop = circled something, line, dot), `centre` + `bbox` in model mm and
     `on` = the node(s) it was drawn on, read off the gen's frozen graph
     (cad_get_graph may have moved on: compare against the gen). The centre is
-    where to aim `cad_measure` or a section. `points=True` adds the raw
+    where to aim `cad_measure` or a section. Text written ON the part comes as
+    `labels` — `text`, `at`/`normal`/`up`/`size_mm` (mm), `near_marks` = the
+    marks it sits next to (and each mark lists them under `labels`): «qui 8
+    mm» beside mark 1 is information about mark 1. `points=True` adds the raw
     `strokes` (surface points + normals, split where the pen left the surface).
     Once handled, close it with `cad_note_done` so the user sees your answer."""
     return _safe(api.list_notes, STORE, graph_id=graph_id, gen=gen, limit=limit,

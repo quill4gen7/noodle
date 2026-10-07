@@ -180,6 +180,12 @@
   #d-ring{position:absolute;display:none;pointer-events:none;z-index:6;border-radius:50%;
     border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.6),inset 0 0 0 1px rgba(0,0,0,.6);}
   #vp:not([data-tool=erase]) #d-ring{display:none !important;}
+  #vp.drawing[data-tool=text] canvas{cursor:text;}
+  #d-texttool{font:700 15px Georgia,serif;}
+  #d-box{position:absolute;display:none;pointer-events:none;z-index:6;border:2px dashed #fff;border-radius:4px;
+    box-shadow:0 0 0 1px rgba(0,0,0,.6);}
+  #d-label{position:absolute;display:none;z-index:9;min-width:140px;min-height:32px;background:rgba(11,14,20,.92);
+    border:2px solid currentColor;border-radius:6px;padding:4px 8px;font:600 15px var(--font);outline:none;}
   #dbar .grp{display:flex;align-items:center;gap:4px;}
   #dbar .sep{width:1px;align-self:stretch;background:var(--border);}
   .sw-btn{width:24px;height:24px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;
@@ -223,6 +229,7 @@
     #dbar .btn{min-height:36px;padding:4px 8px;}
     #dbar .sz{width:36px;}
     #dbar .sep,#d-hint{display:none;}
+    #dbar .tool{min-width:36px;padding:4px 6px;}
     #d-text{flex:1 1 140px;min-height:36px;min-width:0;}
     #toast{top:8px;}
   }
@@ -274,6 +281,7 @@
       <div id="dbar">
         <div class="grp">
           <button class="btn tool on" id="d-pen" title="Penna: trascina SUL pezzo per disegnare (P)">✎</button>
+          <button class="btn tool" id="d-texttool" title="Testo SUL pezzo: tocca e trascina per il riquadro, poi scrivi (T) — tocca un riquadro per correggerlo">T</button>
           <button class="btn tool" id="d-erase" title="Gomma: passa sopra un tratto per toglierlo intero (E) — la misura sceglie il raggio">⌫</button>
           <button class="btn tool" id="d-hand" title="Muovi: ruota/zoom senza disegnare (anche: trascina fuori dal pezzo, tasto destro, rotella)">Muovi</button>
         </div>
@@ -283,14 +291,15 @@
         <span class="sep"></span>
         <div class="grp" id="d-sizes"></div>
         <span class="sep"></span>
-        <button class="btn" id="d-undo" title="Annulla l'ultima azione: tratto, cancellatura (Ctrl+Z)">↶</button>
+        <button class="btn" id="d-undo" title="Annulla l'ultima azione: tratto, testo, cancellatura (Ctrl+Z)">↶</button>
         <button class="btn" id="d-clear" title="Cancella tutti i tratti non inviati">Pulisci</button>
         <input id="d-text" placeholder="Nota per l'agente: es. «questo foro si può fare meglio»" maxlength="4000" autocomplete="off">
         <button class="btn" id="d-send" title="Salva la nota (tratti + testo + la tua vista) per l'agente">Invia all'agente ➤</button>
         <button class="btn" id="d-x" aria-label="Chiudi" title="Esci dal disegno (Esc)">✕</button>
-        <div id="d-hint">Disegna trascinando sul pezzo · ⌫ gomma: passa sopra un tratto · fuori dal pezzo / tasto destro / rotella / due dita: muovi la vista · un tocco = un punto</div>
+        <div id="d-hint">Disegna trascinando sul pezzo · T: trascina un riquadro e scrivi · ⌫ gomma: passa sopra un tratto · fuori dal pezzo / tasto destro / rotella / due dita: muovi la vista · un tocco = un punto</div>
       </div>
-      <div id="d-ring"></div>
+      <div id="d-ring"></div><div id="d-box"></div>
+      <input id="d-label" maxlength="200" autocomplete="off" placeholder="scrivi… (Invio)">
       <div id="toast"></div>
       <div id="selbar">
         <span class="nm" id="sel-name"></span>
@@ -319,6 +328,7 @@
 </div>
 <script type="module">
 import * as THREE from 'three';
+import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
 import { CadViewer, PALETTE, poseAnim } from '/static/viewer.js';
 
 const $ = id => document.getElementById(id);
@@ -874,9 +884,12 @@ viewer.scene.add(annoGroup);
 const PEN_COLORS = ['#ef4444', '#f59e0b', '#facc15', '#22c55e', '#3b82f6', '#ffffff', '#111827'];
 const PEN_SIZES = [3, 6, 12];                  // px on screen at the stroke's start
 const pen = { color: PEN_COLORS[0], size: PEN_SIZES[1] };
-let tool = 'pen';                              // pen | erase | hand
+let tool = 'pen';                              // pen | text | erase | hand
 const draft = [];                              // [{color, width, g, k, piece, pts:[V3], nrm:[V3], view, obj}]
-const actions = [];                            // the undo stack: {type: 'pen', g} | {type: 'erase', strokes}
+// [{text, color, at, n, up:V3, w, h (mm), k, piece, mesh, view, obj}] — text ON the part
+const labels = [];
+// the undo stack: {type: 'pen', g} | {type: 'erase', strokes, labels} | {type: 'label', L} | {type: 'edit', L, before}
+const actions = [];
 let gesture = 0, seq = 0, painting = null, drawing = false;
 let notesData = [];                            // this gen's notes, as stored
 // One picture per VIEW the user drew from, taken when the pen lifts. The note's
@@ -900,7 +913,7 @@ function surfaceHit(x, y) {
   if (!f || !f.h.face) return null;            // lines and dots are not a surface
   const n = f.h.face.normal.clone().transformDirection(f.h.object.matrixWorld);
   if (n.dot(ray.ray.direction) > 0) n.negate(); // the side you are looking at
-  return { p: f.h.point.clone(), n, key: f.key };
+  return { p: f.h.point.clone(), n, key: f.key, mesh: f.h.object };
 }
 function strokeMat(color) {
   return new THREE.MeshBasicMaterial({ color, toneMapped: false,
@@ -928,7 +941,7 @@ function strokeObject(s) {
 function disposeObj(o) {
   const mats = new Set();
   o.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) mats.add(c.material); });
-  mats.forEach(m => m.dispose());
+  mats.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); });   // a label's text is a texture
   if (o.parent) o.parent.remove(o);
 }
 function redrawStroke(s) {
@@ -958,14 +971,16 @@ vp.addEventListener('pointerdown', e => {
   }
   if (tool === 'hand' || e.button !== 0 || !e.isPrimary) return;
   const hit = surfaceHit(e.clientX, e.clientY);
-  if (!hit) return;                            // the background still orbits
+  const onLabel = tool === 'text' ? labelAt(e.clientX, e.clientY) : null;
+  if (!hit && !onLabel) return;                // the background still orbits
   e.stopPropagation(); e.preventDefault();
   if (clock.playing) setPlaying(false);        // paint on a part that stays put
   try { $('c').setPointerCapture(e.pointerId); } catch {}
   const down = { pointerId: e.pointerId, pointerType: e.pointerType, isPrimary: true, button: 0, buttons: 1,
                  clientX: e.clientX, clientY: e.clientY, bubbles: true, cancelable: true };
   painting = { id: e.pointerId, mode: tool, x: e.clientX, y: e.clientY, down, hit };
-  if (tool === 'erase') { painting.erased = { strokes: [] }; eraseAt(hit); return; }
+  if (tool === 'erase') { painting.erased = { strokes: [], labels: [] }; eraseAt(hit); return; }
+  if (tool === 'text') { painting.x0 = e.clientX; painting.y0 = e.clientY; painting.edit = onLabel; return; }
   painting.g = ++gesture;
   painting.s = startStroke(hit, painting.g);
 }, true);
@@ -973,6 +988,7 @@ vp.addEventListener('pointermove', e => {
   if (drawing && tool === 'erase' && e.pointerType === 'mouse') moveRing(e);
   if (!painting || e.pointerId !== painting.id) return;
   e.stopPropagation();
+  if (painting.mode === 'text') { showBox(boxRect(painting, e.clientX, e.clientY)); return; }
   const d = Math.hypot(e.clientX - painting.x, e.clientY - painting.y);
   if (d < 3) return;
   const hit = surfaceHit(e.clientX, e.clientY);
@@ -1000,9 +1016,17 @@ const endPaint = e => {
   if (p.mode === 'pen') {
     const mine = draft.filter(s => s.g === p.g);
     if (mine.length) { actions.push({ type: 'pen', g: p.g }); takeView(mine); }
-  } else if (p.mode === 'erase' && p.erased.strokes.length) {
+  } else if (p.mode === 'erase' && (p.erased.strokes.length || p.erased.labels.length)) {
     actions.push({ type: 'erase', ...p.erased });
-    refreshViews(viewsOf(p.erased.strokes));
+    refreshViews(viewsOf([...p.erased.strokes, ...p.erased.labels]));
+  } else if (p.mode === 'text') {
+    hideBox();
+    const r = boxRect(p, e.clientX, e.clientY);
+    // a tap on a label edits it; a drag that starts on one still draws a new box
+    if (e.type === 'pointerup') {
+      if (p.edit && r.tap) openEditor(p.edit, labelRect(p.edit), false);
+      else if (p.hit) newLabel(p, r);
+    }
   }
   syncDraw();
 };
@@ -1037,19 +1061,302 @@ function eraseAt(hit) {
     if (strokeDist(s, hit.p) > r + s.width / 2) continue;
     draft.splice(i, 1); disposeObj(s.obj); s.obj = null; er.strokes.push(s);
   }
+  for (let i = labels.length - 1; i >= 0; i--) {
+    const L = labels[i];
+    if (!inLabel(L, hit.p, r)) continue;
+    labels.splice(i, 1); disposeObj(L.obj); L.obj = null; er.labels.push(L);
+  }
   viewer.invalidate(); syncDraw();
+}
+// inside a label's box, measured in its own frame (right, up, normal)
+function inLabel(L, p, margin) {
+  const v = p.clone().sub(L.at), right = L.up.clone().cross(L.n).normalize();
+  return Math.abs(v.dot(right)) <= L.w / 2 + margin && Math.abs(v.dot(L.up)) <= L.h / 2 + margin
+    && Math.abs(v.dot(L.n)) <= Math.max(L.w, L.h) * 0.6;
 }
 // put erased strokes back in their original order (`k`): a circle broken over
 // a hole is read by the server in stroke order, and must stay a loop
 function restore(er) {
   for (const s of er.strokes) { draft.push(s); redrawStroke(s); }
   draft.sort((a, b) => a.k - b.k);
+  for (const L of er.labels || []) { labels.push(L); drawLabel(L); }
+  labels.sort((a, b) => a.k - b.k);
 }
 const viewsOf = items => items.map(x => x.view).filter(v => v != null);
 function moveRing(e) {
   const ring = $('d-ring'), r = vp.getBoundingClientRect(), d = 2 * ERASE_PX();
   Object.assign(ring.style, { display: 'block', width: d + 'px', height: d + 'px',
     left: (e.clientX - r.left - d / 2) + 'px', top: (e.clientY - r.top - d / 2) + 'px' });
+}
+
+// ── T: text ON the part ──
+// Press on the part and drag a box (a tap gives a default one), type, Enter.
+// The text is projected onto the surface with three's DecalGeometry: it cuts
+// the mesh's triangles inside the box and maps a CanvasTexture of the words on
+// them, so a label lies flat on a face and wraps a cylinder with no UVs. Where
+// a decal cannot work — a box hanging over an edge, nothing facing the camera
+// under it — a flat card, lifted off the surface, takes its place: ugly on a
+// corner, and that is accepted (nobody writes on a corner).
+// Orientation: the normal is the AVERAGE of the surface under the box (a 5×5
+// grid of raycasts), not the one point touched — on an edge that would be a
+// coin toss; "up" is the camera's up projected on that plane, so the text reads
+// straight from where it was written; the size is the box in px → mm.
+// For the agent the label is DATA (text, place, size, the marks it sits next
+// to), not pixels: models that never look at the pictures still read it.
+const LABEL_TAP = [170, 46];                   // px, the box a tap without a drag makes
+function boxRect(p, x, y) {
+  const w = Math.abs(x - p.x0), h = Math.abs(y - p.y0);
+  if (w < 14 && h < 14) {
+    const [W, H] = LABEL_TAP;
+    return { x0: p.x0 - W / 2, y0: p.y0 - H / 2, x1: p.x0 + W / 2, y1: p.y0 + H / 2, tap: true };
+  }
+  const y0 = Math.min(y, p.y0), y1 = Math.max(Math.max(y, p.y0), y0 + 18);   // one line, at least
+  return { x0: Math.min(x, p.x0), y0, x1: Math.max(Math.max(x, p.x0), Math.min(x, p.x0) + 24), y1 };
+}
+function showBox(r) {
+  const b = $('d-box'), v = vp.getBoundingClientRect();
+  if (r.tap) { b.style.display = 'none'; return; }
+  Object.assign(b.style, { display: 'block', left: (r.x0 - v.left) + 'px', top: (r.y0 - v.top) + 'px',
+    width: (r.x1 - r.x0) + 'px', height: (r.y1 - r.y0) + 'px' });
+}
+function hideBox() { $('d-box').style.display = 'none'; }
+// the draft label under the pointer, unless the part is in front of it
+function labelAt(x, y) {
+  const objs = labels.map(L => L.obj).filter(Boolean);
+  if (!objs.length) return null;
+  const r = $('c').getBoundingClientRect();
+  ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, viewer.camera);
+  const h = ray.intersectObjects(objs, true)[0];
+  if (!h) return null;
+  let o = h.object; while (o.parent && !objs.includes(o)) o = o.parent;
+  const L = labels.find(l => l.obj === o);
+  const f = firstHit(x, y);
+  if (L && f && f.h.distance < h.distance - Math.max(L.w, L.h) * 0.5) return null;
+  return L || null;
+}
+function labelFrame(L, lift = 0) {
+  const right = L.up.clone().cross(L.n).normalize(), up = L.n.clone().cross(right).normalize();
+  return new THREE.Matrix4().makeBasis(right, up, L.n.clone().normalize())
+    .setPosition(L.at.clone().addScaledVector(L.n, lift));
+}
+// a label's box on screen, to put the editor back over it
+function labelRect(L) {
+  const m = labelFrame(L), r = $('c').getBoundingClientRect();
+  const xs = [], ys = [];
+  for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+    const q = new THREE.Vector3(a * L.w / 2, b * L.h / 2, 0).applyMatrix4(m).project(viewer.camera);
+    xs.push(r.left + (q.x + 1) / 2 * r.width); ys.push(r.top + (1 - q.y) / 2 * r.height);
+  }
+  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+}
+function newLabel(p, r) {
+  const cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
+  const c = surfaceHit(cx, cy) || p.hit;
+  const k = mmPerPx(c.p), reach = Math.hypot(r.x1 - r.x0, r.y1 - r.y0) * k;
+  const n = new THREE.Vector3();
+  for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++) {
+    const h = surfaceHit(r.x0 + (r.x1 - r.x0) * (i + 0.5) / 5, r.y0 + (r.y1 - r.y0) * (j + 0.5) / 5);
+    if (h && h.p.distanceTo(c.p) < reach) n.add(h.n);     // not the face behind, across a hole
+  }
+  if (n.lengthSq() < 1e-9) n.copy(c.n);
+  n.normalize();
+  const cam = viewer.camera;
+  const up = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion);
+  up.addScaledVector(n, -up.dot(n));
+  if (up.lengthSq() < 1e-6) up.copy(n.clone().cross(new THREE.Vector3(1, 0, 0).applyQuaternion(cam.quaternion)));
+  up.normalize();
+  const [w, h] = planeSize(r, c.p, n, up, k);
+  const L = { text: '', color: pen.color, at: c.p.clone(), n, up, w, h,
+              k: ++seq, piece: c.key, mesh: c.mesh, view: null, obj: null };
+  openEditor(L, r, true);
+}
+// The box's size ON the label plane: its corners' rays met with the plane.
+// px × mmPerPx alone ignores foreshortening, and a box drawn on a top face seen
+// at a slant came out half as tall as the one on screen. Clamped to 4× the flat
+// estimate for a plane seen almost edge-on.
+function planeSize(r, at, n, up, k) {
+  const right = up.clone().cross(n).normalize(), pl = new THREE.Plane().setFromNormalAndCoplanarPoint(n, at);
+  const c = $('c').getBoundingClientRect(), us = [], vs = [], q = new THREE.Vector3();
+  for (const [x, y] of [[r.x0, r.y0], [r.x1, r.y0], [r.x1, r.y1], [r.x0, r.y1]]) {
+    ndc.set(((x - c.left) / c.width) * 2 - 1, -((y - c.top) / c.height) * 2 + 1);
+    ray.setFromCamera(ndc, viewer.camera);
+    if (!ray.ray.intersectPlane(pl, q)) continue;
+    q.sub(at); us.push(q.dot(right)); vs.push(q.dot(up));
+  }
+  const flatW = (r.x1 - r.x0) * k, flatH = (r.y1 - r.y0) * k;
+  if (us.length < 4) return [flatW, flatH];
+  return [Math.min(Math.max(...us) - Math.min(...us), 4 * flatW), Math.min(Math.max(...vs) - Math.min(...vs), 4 * flatH)];
+}
+let editing = null;
+function openEditor(L, r, isNew) {
+  closeEditor(true);
+  const inp = $('d-label'), v = vp.getBoundingClientRect();
+  editing = { L, isNew };
+  const w = Math.max(140, r.x1 - r.x0), h = Math.max(32, Math.min(r.y1 - r.y0, 60));
+  const left = THREE.MathUtils.clamp(r.x0 - v.left, 4, Math.max(4, v.width - w - 4));
+  const top = THREE.MathUtils.clamp((r.y0 + r.y1) / 2 - v.top - h / 2, 4, Math.max(4, v.height - h - 4));
+  Object.assign(inp.style, { display: 'block', left: left + 'px', top: top + 'px', width: w + 'px',
+    height: h + 'px', color: L.color });
+  inp.value = L.text;
+  inp.focus(); inp.select();
+}
+function closeEditor(commit) {
+  const ed = editing;
+  if (!ed) return;
+  editing = null;
+  const inp = $('d-label'), text = inp.value.trim().slice(0, 200);
+  inp.style.display = 'none';
+  if (!commit) { syncDraw(); return; }
+  const L = ed.L;
+  if (ed.isNew) {
+    if (!text) return;
+    L.text = text; labels.push(L); drawLabel(L);
+    actions.push({ type: 'label', L });
+    takeView([L]);
+  } else if (!text) {                          // emptied = rubbed out, and ↶ brings it back
+    labels.splice(labels.indexOf(L), 1); disposeObj(L.obj); L.obj = null;
+    actions.push({ type: 'erase', strokes: [], labels: [L] });
+    refreshViews(viewsOf([L]));
+  } else if (text !== L.text) {
+    actions.push({ type: 'edit', L, before: L.text });
+    L.text = text; drawLabel(L);
+    refreshViews(viewsOf([L]));
+  }
+  syncDraw();
+}
+$('d-label').addEventListener('keydown', e => {
+  e.stopPropagation();                         // typing "a" must not show all pieces
+  if (e.key === 'Enter') { e.preventDefault(); closeEditor(true); }
+  else if (e.key === 'Escape') { e.preventDefault(); closeEditor(false); }
+});
+$('d-label').addEventListener('blur', () => closeEditor(true));
+function drawLabel(L) {
+  if (L.obj) disposeObj(L.obj);
+  L.obj = labelObject(L); annoGroup.add(L.obj); viewer.invalidate();
+}
+// the words on a card: ink in the label's colour on a contrasting backing, the
+// largest font whose wrapped lines fit the box
+function labelCanvas(text, color, w, h) {
+  const long = 512, cw = w >= h ? long : Math.max(32, Math.round(long * w / h));
+  const ch = w >= h ? Math.max(32, Math.round(long * h / w)) : long;
+  const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+  const c = cv.getContext('2d'), col = new THREE.Color(color);
+  const light = 0.2126 * col.r + 0.7152 * col.g + 0.0722 * col.b > 0.35;
+  const pad = Math.min(cw, ch) * 0.12, bw = Math.max(2, Math.min(cw, ch) * 0.05);
+  c.fillStyle = light ? 'rgba(11,14,20,0.80)' : 'rgba(255,255,255,0.88)';
+  c.strokeStyle = color; c.lineWidth = bw;
+  c.beginPath(); c.roundRect(bw / 2, bw / 2, cw - bw, ch - bw, Math.min(cw, ch) * 0.18); c.fill(); c.stroke();
+  const words = text.split(/\s+/);
+  let fs = ch, lines = [text];
+  for (; fs > 6; fs *= 0.9) {
+    c.font = `700 ${fs}px ${getComputedStyle(document.body).fontFamily}`;
+    lines = [];
+    for (const wd of words) {
+      const last = lines[lines.length - 1];
+      if (last != null && c.measureText(last + ' ' + wd).width <= cw - 2 * pad) lines[lines.length - 1] = last + ' ' + wd;
+      else lines.push(wd);
+    }
+    if (lines.length * fs * 1.12 <= ch - 1.2 * pad && lines.every(l => c.measureText(l).width <= cw - 2 * pad)) break;
+  }
+  c.fillStyle = color; c.textAlign = 'center'; c.textBaseline = 'middle';
+  lines.forEach((l, i) => c.fillText(l, cw / 2, ch / 2 + (i - (lines.length - 1) / 2) * fs * 1.12));
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  return tex;
+}
+// The visible mesh the label was written on — for a saved note, found again by
+// looking down its normal from just above it.
+const labelRay = new THREE.Raycaster();
+function meshUnder(L) {
+  const s = Math.max(L.w, L.h);
+  labelRay.set(L.at.clone().addScaledVector(L.n, s), L.n.clone().negate());
+  let best = null;
+  for (const h of labelRay.intersectObjects(viewer.previewGroup.children, true)) {
+    if (!h.object.isMesh || !h.face) continue;
+    let shown = true;
+    for (let o = h.object; o && o !== viewer.previewGroup; o = o.parent) if (!o.visible) shown = false;
+    if (!shown) continue;
+    const d = h.point.distanceTo(L.at);
+    if (!best || d < best.d) best = { d, o: h.object };
+  }
+  return best && best.d < s ? best.o : null;
+}
+// Keep only the decal triangles that FACE the projector: the box is deep enough
+// to reach round a curved side, so it also catches the back of a thin plate,
+// which would wear the text mirrored. Null when what is left covers less than
+// half the box — then the flat card reads better than a torn decal.
+function frontFaces(geo, n, area) {
+  const P = geo.attributes.position, N = geo.attributes.normal, U = geo.attributes.uv;
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), fn = new THREE.Vector3();
+  const keep = [];
+  let covered = 0;
+  for (let i = 0; i + 2 < P.count; i += 3) {
+    a.fromBufferAttribute(P, i); b.fromBufferAttribute(P, i + 1); c.fromBufferAttribute(P, i + 2);
+    fn.subVectors(b, a).cross(c.clone().sub(a));
+    const d = fn.dot(n) / 2;                   // the triangle's area projected on the label plane
+    if (d <= 0 || d < 0.15 * fn.length() / 2) continue;
+    covered += d; keep.push(i);
+  }
+  geo.dispose();
+  if (!keep.length || covered < 0.5 * area) return null;
+  const out = new THREE.BufferGeometry(), pick = (attr, k) => {
+    const arr = new Float32Array(keep.length * 3 * k);
+    keep.forEach((i, t) => { for (let v = 0; v < 3; v++) for (let q = 0; q < k; q++) arr[(t * 3 + v) * k + q] = attr.array[(i + v) * k + q]; });
+    return new THREE.BufferAttribute(arr, k);
+  };
+  out.setAttribute('position', pick(P, 3)); out.setAttribute('uv', pick(U, 2));
+  if (N) out.setAttribute('normal', pick(N, 3));
+  return out;
+}
+// A ridged surface under the box — a thread, knurling — takes the flat card:
+// a decal projects along the normal, so the text lands on flanks at different
+// depths and, seen from any slant, comes out doubled by parallax (measured on
+// the bolt of zz-note-probe: «filetto M8?» drawn twice, half a line apart).
+// The test is how well the normals under the box AGREE: |Σn|/count is 1 on a
+// plane, 0.955 over 60° of a cylinder, 0.90 over 90°, and ~0.87 on a 60°
+// thread (flanks ±30° off radial). Raycast along −n on a 5×5 grid, so a saved
+// note decides exactly as the draft did. The same rays say how far the surface
+// rises above the label's centre (`lift`): the card sits on the crests, not
+// half-sunk in a thread with the words cut by its ridges.
+function probeUnder(L) {
+  const right = L.up.clone().cross(L.n).normalize(), s = Math.max(L.w, L.h), sum = new THREE.Vector3();
+  let hits = 0, lift = 0;
+  for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++) {
+    const o = L.at.clone().addScaledVector(right, ((i + 0.5) / 5 - 0.5) * L.w)
+      .addScaledVector(L.up, ((j + 0.5) / 5 - 0.5) * L.h).addScaledVector(L.n, s);
+    labelRay.set(o, L.n.clone().negate());
+    const h = labelRay.intersectObjects(viewer.previewGroup.children, true).find(x => x.face && x.object.visible);
+    if (!h || h.distance > 2 * s) continue;
+    const nn = h.face.normal.clone().transformDirection(h.object.matrixWorld);
+    sum.add(nn.dot(L.n) < 0 ? nn.negate() : nn); hits++;
+    lift = Math.max(lift, s - h.distance);
+  }
+  return { ridged: hits >= 5 && sum.length() / hits < 0.9, lift };
+}
+function labelObject(L) {
+  const mat = new THREE.MeshBasicMaterial({ map: labelCanvas(L.text, L.color, L.w, L.h), transparent: true,
+    depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+  const frame = labelFrame(L);
+  let geo = null;
+  const mesh = (L.mesh && L.mesh.parent) ? L.mesh : meshUnder(L), under = probeUnder(L);
+  if (mesh && !under.ridged) {
+    try {
+      const rot = new THREE.Euler().setFromRotationMatrix(frame);
+      const d = new DecalGeometry(mesh, L.at, rot, new THREE.Vector3(L.w, L.h, Math.max(L.w, L.h) * 0.8));
+      geo = frontFaces(d, L.n.clone().normalize(), L.w * L.h);
+    } catch { geo = null; }
+  }
+  let obj;
+  if (geo) obj = new THREE.Mesh(geo, mat);
+  else {                                       // the flat card, a hair off the surface
+    obj = new THREE.Mesh(new THREE.PlaneGeometry(L.w, L.h), mat);
+    obj.matrixAutoUpdate = false;
+    obj.matrix.copy(labelFrame(L, under.lift + Math.max(0.02, 0.01 * Math.max(L.w, L.h))));
+    obj.userData.flat = true;
+  }
+  obj.renderOrder = 3;
+  return obj;
 }
 function camState() {
   const c = viewer.camera, t = viewer.controls.target, r = $('c').getBoundingClientRect();
@@ -1090,7 +1397,7 @@ function takeView(items) {
 function refreshViews(idxs) {
   for (const i of new Set(idxs)) {
     const v = views[i]; if (!v) continue;
-    const left = draft.filter(s => s.view === i);
+    const left = [...draft, ...labels].filter(x => x.view === i);
     if (!left.length) { v.image = null; continue; }      // nothing left to show
     if (sameCam(v.cam, camState())) { v.image = viewer.snapshot(VIEW_SHOT); continue; }
     if (!!v.cam.ortho !== viewer.isOrtho) {
@@ -1123,6 +1430,7 @@ function cancelGesture() {
   if (!p) return;
   painting = null;
   if (p.mode === 'erase') restore(p.erased);
+  else if (p.mode === 'text') hideBox();
   else for (let i = draft.length - 1; i >= 0; i--) if (draft[i].g === p.g) { disposeObj(draft[i].obj); draft.splice(i, 1); }
   viewer.invalidate(); syncDraw();
 }
@@ -1136,22 +1444,27 @@ function undo() {
   if (!a) return;
   let touched = [];
   if (a.type === 'pen') touched = viewsOf(removeGesture(a.g));
-  else if (a.type === 'erase') { restore(a); touched = viewsOf(a.strokes); }
+  else if (a.type === 'erase') { restore(a); touched = viewsOf([...a.strokes, ...a.labels]); }
+  else if (a.type === 'label') {
+    labels.splice(labels.indexOf(a.L), 1); disposeObj(a.L.obj); a.L.obj = null; touched = viewsOf([a.L]);
+  } else if (a.type === 'edit') { a.L.text = a.before; drawLabel(a.L); touched = viewsOf([a.L]); }
   refreshViews(touched);
   viewer.invalidate(); syncDraw();
 }
 function clearDraft() {
+  closeEditor(false);
   while (draft.length) disposeObj(draft.pop().obj);
+  while (labels.length) disposeObj(labels.pop().obj);
   views.length = 0; actions.length = 0;
   viewer.invalidate(); syncDraw();
 }
-function setTool(t) { tool = t; if (t !== 'erase') $('d-ring').style.display = 'none'; syncDraw(); }
+function setTool(t) { tool = t; if (t !== 'erase') $('d-ring').style.display = 'none'; if (t !== 'text') closeEditor(true); syncDraw(); }
 function syncDraw() {
-  $('d-send').disabled = !draft.length && !$('d-text').value.trim();
-  $('d-undo').disabled = !actions.length; $('d-clear').disabled = !draft.length;
+  $('d-send').disabled = !draft.length && !labels.length && !$('d-text').value.trim();
+  $('d-undo').disabled = !actions.length; $('d-clear').disabled = !draft.length && !labels.length;
   vp.classList.toggle('pen', drawing && tool === 'pen');
   vp.dataset.tool = drawing ? tool : '';
-  for (const [id, t] of [['d-pen', 'pen'], ['d-erase', 'erase'], ['d-hand', 'hand']]) $(id).classList.toggle('on', tool === t);
+  for (const [id, t] of [['d-pen', 'pen'], ['d-texttool', 'text'], ['d-erase', 'erase'], ['d-hand', 'hand']]) $(id).classList.toggle('on', tool === t);
   for (const b of $('d-colors').children) b.classList.toggle('on', b.dataset.c === pen.color);
   for (const b of $('d-sizes').children) b.classList.toggle('on', +b.dataset.s === pen.size);
 }
@@ -1159,16 +1472,16 @@ function setDrawing(on) {
   drawing = on;
   vp.classList.toggle('drawing', on);
   if (on && clock.playing) setPlaying(false);
-  if (!on) { cancelGesture(); $('d-text').blur(); $('d-ring').style.display = 'none'; }
+  if (!on) { cancelGesture(); closeEditor(true); $('d-text').blur(); $('d-ring').style.display = 'none'; }
   syncDraw();
 }
 for (const c of PEN_COLORS) {
   const b = document.createElement('button');
   b.className = 'sw-btn'; b.dataset.c = c; b.style.background = c; b.title = c;
-  b.onclick = () => { pen.color = c; if (tool !== 'pen') setTool('pen'); else syncDraw(); };
+  b.onclick = () => { pen.color = c; if (tool !== 'pen' && tool !== 'text') setTool('pen'); else syncDraw(); };
   $('d-colors').appendChild(b);
 }
-$('d-custom').addEventListener('input', e => { pen.color = e.target.value; if (tool !== 'pen') setTool('pen'); else syncDraw(); });
+$('d-custom').addEventListener('input', e => { pen.color = e.target.value; if (tool !== 'pen' && tool !== 'text') setTool('pen'); else syncDraw(); });
 PEN_SIZES.forEach(sz => {
   const b = document.createElement('button');
   b.className = 'btn sz'; b.dataset.s = sz; b.title = `Tratto ${sz}px`;
@@ -1181,6 +1494,7 @@ $('d-open').onclick = () => setDrawing(true);
 $('d-x').onclick = () => setDrawing(false);
 $('d-pen').onclick = () => setTool('pen');
 $('d-erase').onclick = () => setTool('erase');
+$('d-texttool').onclick = () => setTool('text');
 $('d-hand').onclick = () => setTool('hand');
 $('d-undo').onclick = undo;
 $('d-clear').onclick = () => { if (draft.length < 4 || confirm('Cancellare tutti i tratti non inviati?')) clearDraft(); };
@@ -1198,6 +1512,7 @@ addEventListener('keydown', e => {
   else if (e.ctrlKey || e.metaKey || e.altKey) return;
   else if (k === 'p') { e.stopImmediatePropagation(); setTool('pen'); }
   else if (k === 'e') { e.stopImmediatePropagation(); setTool('erase'); }
+  else if (k === 't') { e.stopImmediatePropagation(); setTool('text'); }
 }, true);
 
 function toast(html, ms = 6000) {
@@ -1205,9 +1520,11 @@ function toast(html, ms = 6000) {
   clearTimeout(toast.t); toast.t = setTimeout(() => $('toast').classList.remove('open'), ms);
 }
 const r4 = v => +v.toFixed(4);
+const v3 = n => [+n.x.toFixed(4), +n.y.toFixed(4), +n.z.toFixed(4)];
 async function sendNote() {
   const text = $('d-text').value.trim();
-  if (!draft.length && !text) return;
+  closeEditor(true);
+  if (!draft.length && !labels.length && !text) return;
   $('d-send').disabled = true;
   // the picture is the user's own view, strokes and all: the agent sees what
   // they saw, at their zoom (frame:false keeps the camera where it is)
@@ -1216,7 +1533,7 @@ async function sendNote() {
   // the views strokes were drawn from, minus the final one (that IS `image`)
   // and minus any whose strokes were all undone
   const keep = [], remap = new Map();
-  for (const s of draft) {
+  for (const s of [...draft, ...labels]) {
     if (s.view == null || remap.has(s.view)) continue;
     const v = views[s.view];
     if (!v || !v.image || sameCam(v.cam, camera)) { remap.set(s.view, null); continue; }
@@ -1229,6 +1546,11 @@ async function sendNote() {
       view: s.view == null ? null : remap.get(s.view),
       points: s.pts.map(p => [r4(p.x), r4(p.y), r4(p.z)]),
       normals: s.nrm.map(n => [+n.x.toFixed(3), +n.y.toFixed(3), +n.z.toFixed(3)]) })),
+    // text written ON the part is DATA for the agent, not only pixels: a
+    // text-only model reads «qui 8 mm» and which mark it sits next to
+    labels: labels.map(L => ({ text: L.text, color: L.color, piece: L.piece,
+      at: [r4(L.at.x), r4(L.at.y), r4(L.at.z)], normal: v3(L.n), up: v3(L.up), size_mm: [r4(L.w), r4(L.h)],
+      view: L.view == null ? null : remap.get(L.view) })),
     hide: location.hash.replace(/^#/, ''),
   };
   if (anims.length) body.t = clock.t;
@@ -1256,6 +1578,12 @@ function noteObject(n) {
     const pts = (s.points || []).map(p => new THREE.Vector3(...p));
     const nrm = (s.normals || []).map(p => new THREE.Vector3(...p));
     if (pts.length) g.add(strokeObject({ color: s.color, width: s.width_mm || 1, pts, nrm }));
+  }
+  for (const l of n.labels || []) {
+    try {
+      g.add(labelObject({ text: l.text, color: l.color, at: new THREE.Vector3(...l.at),
+        n: new THREE.Vector3(...l.normal), up: new THREE.Vector3(...l.up), w: l.size_mm[0], h: l.size_mm[1] }));
+    } catch {}
   }
   return g;
 }
@@ -1287,7 +1615,8 @@ function goToNote(n) {
     cam.updateMatrixWorld(true);           // without this every stroke tests as off-screen
   };
   apply(back);
-  const pts = (n.strokes || []).flatMap(s => s.points || []).map(p => new THREE.Vector3(...p));
+  const pts = [...(n.strokes || []).flatMap(s => s.points || []), ...(n.labels || []).map(l => l.at)]
+    .map(p => new THREE.Vector3(...p));
   const inside = () => pts.every(p => { const q = p.clone().project(cam);
     return Math.abs(q.x) <= 0.92 && Math.abs(q.y) <= 0.92 && q.z < 1; });
   for (let i = 0; i < 12 && pts.length && !inside(); i++) apply(back *= 1.2);
@@ -1298,6 +1627,7 @@ async function loadNotes() {
   catch { notesData = []; }
   for (const o of noteObjs.values()) disposeObj(o);
   noteObjs.clear();
+  viewer.scene.updateMatrixWorld();            // labels find their mesh by raycast
   for (const n of notesData) {
     const o = noteObject(n); o.visible = shownNotes.has(n.id);
     noteObjs.set(n.id, o); annoGroup.add(o);
@@ -1312,9 +1642,10 @@ function renderNotes() {
     const on = shownNotes.has(n.id);
     const row = document.createElement('div');
     row.className = 'note' + (n.done ? ' done' : '') + (on ? '' : ' off');
-    const cols = [...new Set((n.strokes || []).map(s => s.color))].slice(0, 5);
+    const cols = [...new Set([...(n.strokes || []), ...(n.labels || [])].map(s => s.color))].slice(0, 5);
+    const said = (n.labels || []).map(l => `«${esc(l.text)}»`).join(' ');
     row.innerHTML = `<span class="dots">${cols.map(c => `<i style="background:${esc(c)}"></i>`).join('')}</span>
-      <span class="tx"><span class="id">${esc(n.id)}${n.done ? ' ✓' : ''}</span>${esc(n.text) || '<i>(solo disegno)</i>'}
+      <span class="tx"><span class="id">${esc(n.id)}${n.done ? ' ✓' : ''}</span>${esc(n.text) || said || '<i>(solo disegno)</i>'}${n.text && said ? ` <span class="id">${said}</span>` : ''}
         ${n.done && n.done.reply ? `<div class="rp">↳ ${esc(n.done.reply)}</div>` : ''}</span>
       <span class="ib" role="button" title="Mostra/nascondi i tratti">${on ? '●' : '○'}</span>
       <span class="ib" role="button" title="Elimina la nota">✕</span>`;

@@ -859,7 +859,26 @@ Length: 5
 
 ---
 
-### 3. ✎ Disegna: la gomma, il testo sul pezzo, e le foto che mentono
+### 3. ✅ ✎ Disegna: la gomma, il testo sul pezzo, e le foto che mentono (2026-10-07)
+
+**Fatto** — come sono state prese le decisioni qui sotto:
+
+- *Cosa cancella*: il **tratto intero** (gomma "a oggetto").
+- *Come si colpisce*: **distanza 3D** fra il punto colpito sul pezzo e la
+  polilinea di ogni tratto, raggio in px dai bottoni della misura → mm lì.
+- *Foto delle viste*: dopo ↶ o gomma ogni vista toccata si **riscatta dalla
+  SUA camera** (scambiata e rimessa nello stesso task, invisibile), non solo se
+  la camera è ancora quella; una vista vuota non si invia. Solo un cambio
+  persp↔ortho manda i superstiti in una foto nuova della vista corrente.
+- *Undo*: la pila è di **azioni** (tratto, cancellatura, riquadro, modifica).
+- *Solo la bozza*: sì; le note inviate restano immutabili.
+- *Testo*: decal (`DecalGeometry` vendorizzato, 0.170.0) con normale media
+  sotto il riquadro e «su» della camera; ripiego a **cartellino piatto** se il
+  decal copre < 50% del riquadro **o se la superficie è a creste** (filetti:
+  il decal proiettato lungo la normale si sdoppia per parallasse — misurato
+  sul bullone di `zz-note-probe`). Per l'agente: `labels` con `near_marks`.
+
+Il resto di questa voce è la richiesta originale.
 
 **Problema** (quill, 2026-10-07, disegnando la prima nota vera: 33 segni su 12
 viste). Nel viewer `/view` oggi si può solo **annullare l'ultimo tratto** (↶,
