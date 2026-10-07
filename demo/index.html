@@ -286,6 +286,7 @@
     box-shadow:0 8px 24px rgba(0,0,0,.5);max-width:calc(100% - 20px);font-size:12px;line-height:1.5;}
   #toast.open{display:block;}
   #toast code{font:600 12px var(--mono);color:#fff;}
+  #toast a{color:#7dd3fc;}           /* a link on the dark toast must read as one */
   /* the gen's notes, in the side panel */
   #notes{border-top:1px solid var(--border);max-height:40%;overflow:auto;flex:0 0 auto;}
   #notes .nh{padding:7px 10px 3px;color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:.5px;}
@@ -2005,10 +2006,18 @@ addEventListener('keydown', e => {
   else if (k === 't') { e.stopImmediatePropagation(); setTool('text'); }
 }, true);
 
+const INSTALL_PROMPT = "Install noodle (https://github.com/rederyk/noodle) on this machine and connect yourself to it.\n\n1. Check it first: read README.md (\"Install & run\"), AGENTS.md and the security note \u2014 noodle runs graph code as unsandboxed Python, so it is for local, single-user use only. Tell me if anything there worries you before going on.\n2. Check that Docker is installed and running (`docker info`). If it is not, tell me how to install it on my OS and stop there.\n3. Clone the repo and start it: `docker compose up -d --build` (the first build downloads ~1 GB and takes a few minutes). Wait until http://localhost:8090/health answers.\n4. Connect yourself through its MCP server \u2014 for Claude Code: `claude mcp add noodle -- docker exec -i noodle python mcp_server.py`; for other agents use the config in AGENTS.md. Then call `cad_help` and read it.\n5. Tell me the editor URL (http://localhost:8090/nodes) and that, from now on, I can draw on a part in the viewer (\u270e Disegna) and ask you \"look at what I marked\" \u2014 you read it with `cad_notes`.";
+window.__copyInstall = async b => {
+  try { await navigator.clipboard.writeText(INSTALL_PROMPT); b.textContent = '✓ Copiato: incollalo al tuo agente'; }
+  catch { prompt('Copia questo e dallo al tuo agente:', INSTALL_PROMPT); }
+};
 const STATIC_SEND = '✎ Il disegno funziona, ma questa è l\'<b>anteprima statica</b>: qui non c\'è un agente '
-  + 'a cui mandarlo. Per inviare la nota (i tratti, il testo, le foto delle viste) a un agente, '
-  + '<a href="https://github.com/rederyk/noodle#install--run" target="_blank" rel="noopener">installa noodle</a> '
-  + '— un container Docker, e il tuo agente lo legge con <code>cad_notes</code>. Il disegno resta qui.';
+  + 'a cui mandarlo. Per mandarlo davvero, <b>fai installare noodle al tuo agente</b> (Claude Code, Codex, Cursor…): '
+  + 'controlla il repo, lo installa con Docker e si collega da solo.<br>'
+  + '<button class="btn" style="margin:6px 0" onclick="__copyInstall(this)">📋 Copia il prompt di installazione</button> '
+  + '<a href="../#install-agent">vedi il prompt</a> · '
+  + '<a href="https://github.com/rederyk/noodle#install--run" target="_blank" rel="noopener">a mano</a><br>'
+  + 'Il disegno resta qui.';
 function toast(html, ms = 6000) {
   $('toast').innerHTML = html; $('toast').classList.add('open');
   clearTimeout(toast.t); toast.t = setTimeout(() => $('toast').classList.remove('open'), ms);
@@ -2070,7 +2079,7 @@ async function sendNote() {
     toast(`✓ Nota inviata: <code>${esc(ref)}</code><br>Di' all'agente «guarda la nota ${esc(ref)}» (o solo «guarda cosa ho segnato»).`);
     try { await navigator.clipboard.writeText(ref); } catch {}
   } catch (err) {
-    if (err.message === 'STATIC_PREVIEW') toast(STATIC_SEND, 15000);
+    if (err.message === 'STATIC_PREVIEW') toast(STATIC_SEND, 30000);
     else toast(`⚠ Nota non salvata: ${esc(err.message)}`);
   } finally { syncDraw(); }
 }
