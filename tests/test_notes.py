@@ -352,3 +352,36 @@ def test_tag_routes_tool_help_and_viewer():
     assert "const AGENT_INK" in VIEW and "T.obj = tagObject(T, tex, t.color || AGENT_INK)" in VIEW
     assert "ps.push('tags=0')" in VIEW and "hashParam('tags') === '0'" in VIEW
     assert "if (tg) { select(tg.key); return; }" in VIEW and "function tagBadge" in VIEW
+
+
+def test_painted_text_is_data_and_its_letters_are_not_marks(store):
+    """✎ Vernice: the letters are pen strokes (`label` → kind "text"). The agent
+    reads the WORDS in `labels`; forty «line» marks for one word would bury
+    the one circle the user actually drew."""
+    letters = [{"g": 7, "label": 0, "points": [[5 + i, 9, 10], [5 + i, 10, 10]]} for i in range(6)]
+    note = api.add_note(store, "demo", "g1", {
+        "strokes": [{"g": 1, "piece": "n1", "points": _circle()}, *letters],
+        "labels": [{**LABEL, "style": "paint", "text": "foro 8"}]})
+    assert [s.get("kind") for s in note["strokes"]] == [None] + ["text"] * 6
+    assert note["strokes"][1]["label"] == 1
+    (mark,) = note["marks"]
+    assert mark["shape"] == "loop" and mark["labels"] == ["foro 8"]
+    lb = note["labels"][0]
+    assert lb["style"] == "paint" and lb["surface"] == "paint" and lb["near_marks"] == [1]
+    assert len(api.list_notes(store)[0]["marks"]) == 1
+    with pytest.raises(ValueError):
+        api.add_note(store, "demo", "g1", {"strokes": [{"label": 3, "points": [[0, 0, 0]]}],
+                                           "labels": [{**LABEL, "style": "paint"}]})
+
+
+def test_paint_text_goes_through_the_pens_raycast():
+    # a single-stroke font, public domain, with its provenance
+    assert "Hershey Roman Simplex" in VIEW and "const HERSHEY = [" in VIEW
+    paint = VIEW[VIEW.index("function paintText"):]
+    paint = paint[:paint.index("\n}\n")]
+    # every sample is the pen's raycast; broken off the surface and on depth jumps
+    assert "surfaceHit(sx, sy)" in paint and "off the part: the line breaks" in paint
+    assert "label: L" in paint and "draft.push(cur)" in paint
+    # default style, remembered; ↶ and ⌫ treat the text as one gesture
+    assert "let labelStyle = 'paint'" in VIEW and "er.strokes.push(...takeLabelStrokes(L))" in VIEW
+    assert "label: labels.indexOf(s.label)" in VIEW

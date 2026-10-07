@@ -107,7 +107,7 @@
   aside{width:300px;border-left:1px solid var(--border);background:var(--bg-1);display:flex;flex-direction:column;min-height:0;}
   aside .grab{display:none;}
   aside .tools{display:flex;gap:6px;padding:8px;border-bottom:1px solid var(--border);}
-  aside .tools .btn{flex:1;padding:5px 6px;min-width:0;}
+  aside .tools .btn{flex:1;padding:5px 3px;min-width:0;gap:3px;font-size:11px;}
   #list{overflow:auto;flex:1;padding:4px 0;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;}
   .row{display:flex;align-items:center;gap:6px;padding:0 6px 0 4px;cursor:pointer;user-select:none;-webkit-user-select:none;
     min-height:var(--tap);}
@@ -287,8 +287,8 @@
         <div class="grp">
           <button class="btn tool on" id="d-pen" title="Penna: trascina SUL pezzo per disegnare (P)">✎</button>
           <button class="btn tool" id="d-texttool" title="Testo SUL pezzo: tocca e trascina per il riquadro, poi scrivi (T) — tocca un riquadro per correggerlo">T</button>
-          <select id="d-lstyle" title="Stile del testo T: targhetta (si legge da ogni lato, anche da dietro) o decal (incollato alla superficie)">
-            <option value="tag">⚑ Targhetta</option><option value="decal">▭ Decal</option></select>
+          <select id="d-lstyle" title="Stile del testo T: vernice (lettere a tratto dipinte come la penna, su ogni superficie), targhetta (si legge da ogni lato) o decal (incollato alla superficie)">
+            <option value="paint">✎ Vernice</option><option value="tag">⚑ Targhetta</option><option value="decal">▭ Decal</option></select>
           <button class="btn tool" id="d-erase" title="Gomma: passa sopra un tratto per toglierlo intero (E) — la misura sceglie il raggio">⌫</button>
           <button class="btn tool" id="d-hand" title="Muovi: ruota/zoom senza disegnare (anche: trascina fuori dal pezzo, tasto destro, rotella)">Muovi</button>
         </div>
@@ -996,7 +996,11 @@ vp.addEventListener('pointerdown', e => {
                  clientX: e.clientX, clientY: e.clientY, bubbles: true, cancelable: true };
   painting = { id: e.pointerId, mode: tool, x: e.clientX, y: e.clientY, down, hit };
   if (tool === 'erase') { painting.erased = { strokes: [], labels: [] }; eraseAt(hit, e.clientX, e.clientY); return; }
-  if (tool === 'text') { painting.x0 = e.clientX; painting.y0 = e.clientY; painting.edit = onLabel; return; }
+  if (tool === 'text') {
+    painting.x0 = e.clientX; painting.y0 = e.clientY;
+    painting.edit = onLabel || (hit && paintLabelNear(hit));
+    return;
+  }
   painting.g = ++gesture;
   painting.s = startStroke(hit, painting.g);
 }, true);
@@ -1077,11 +1081,19 @@ function eraseAt(hit, x, y) {
   const r = ERASE_PX() * mmPerPx(hit.p);
   for (let i = draft.length - 1; i >= 0; i--) {
     const s = draft[i];
-    if (strokeDist(s, hit.p) > r + s.width / 2) continue;
+    if (!s || strokeDist(s, hit.p) > r + s.width / 2) continue;
+    if (s.label) {                             // a letter: the whole text goes, as one gesture
+      const L = s.label;
+      er.strokes.push(...takeLabelStrokes(L));
+      if (labels.includes(L)) { labels.splice(labels.indexOf(L), 1); disposeObj(L.obj); L.obj = null; er.labels.push(L); }
+      i = draft.length;                        // indices moved: scan again from the top
+      continue;
+    }
     draft.splice(i, 1); disposeObj(s.obj); s.obj = null; er.strokes.push(s);
   }
   for (let i = labels.length - 1; i >= 0; i--) {
     const L = labels[i];
+    if (L.style === 'paint') continue;        // its letters are hit as strokes, above
     if (L.obj && L.obj.userData.tag ? L.at.distanceTo(hit.p) > r : !inLabel(L, hit.p, r)) continue;
     labels.splice(i, 1); disposeObj(L.obj); L.obj = null; er.labels.push(L);
   }
@@ -1131,11 +1143,12 @@ function moveRing(e) {
 // to), not pixels: models that never look at the pictures still read it.
 // px, the box a tap without a drag makes — smaller on a phone, where 170 px is half the screen
 const LABEL_TAP = matchMedia('(max-width:760px)').matches ? [110, 34] : [170, 46];
-let labelStyle = 'tag';
-try { if (localStorage.getItem('noodle:view:labelStyle') === 'decal') labelStyle = 'decal'; } catch {}
+const LABEL_STYLES = ['paint', 'tag', 'decal'];
+let labelStyle = 'paint';                      // the default: paint goes on any surface
+try { const v = localStorage.getItem('noodle:view:labelStyle'); if (LABEL_STYLES.includes(v)) labelStyle = v; } catch {}
 $('d-lstyle').value = labelStyle;
 $('d-lstyle').addEventListener('change', e => {
-  labelStyle = e.target.value === 'decal' ? 'decal' : 'tag';
+  labelStyle = LABEL_STYLES.includes(e.target.value) ? e.target.value : 'paint';
   try { localStorage.setItem('noodle:view:labelStyle', labelStyle); } catch {}
   setTool('text');
 });
@@ -1179,6 +1192,7 @@ function labelFrame(L, lift = 0) {
 // a label's box on screen, to put the editor back over it
 function labelRect(L) {
   if (L.obj && L.obj.userData.tag) return tagRect(L);
+  if (L.style === 'paint') return paintRect(L);
   const m = labelFrame(L), r = $('c').getBoundingClientRect();
   const xs = [], ys = [];
   for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
@@ -1209,6 +1223,7 @@ function newLabel(p, r) {
   const L = { text: '', color: pen.color, style: labelStyle, at: c.p.clone(), n, up, w, h,
               k: ++seq, piece: c.key, mesh: c.mesh, view: null, obj: null };
   if (labelStyle === 'decal') Object.assign(L, fitSurface(r, c, reach, L));
+  else if (labelStyle === 'paint') { L.surface = 'paint'; L.box = r; L.obj = new THREE.Group(); }
   else L.surface = 'tag';
   openEditor(L, r, true);
 }
@@ -1414,7 +1429,7 @@ let editing = null;
 function openEditor(L, r, isNew) {
   closeEditor(true);
   const inp = $('d-label'), v = vp.getBoundingClientRect();
-  editing = { L, isNew };
+  editing = { L, isNew, rect: r };
   const w = Math.max(140, r.x1 - r.x0), h = Math.max(32, Math.min(r.y1 - r.y0, 60));
   const left = THREE.MathUtils.clamp(r.x0 - v.left, 4, Math.max(4, v.width - w - 4));
   const top = THREE.MathUtils.clamp((r.y0 + r.y1) / 2 - v.top - h / 2, 4, Math.max(4, v.height - h - 4));
@@ -1431,15 +1446,32 @@ function closeEditor(commit) {
   inp.style.display = 'none';
   if (!commit) { syncDraw(); return; }
   const L = ed.L;
-  if (ed.isNew) {
+  if (ed.isNew && L.style === 'paint') {
+    if (!text) return;
+    L.text = text;
+    const st = paintText(L, L.box);
+    if (!st.length) { toast('⚠ Il testo cade fuori dal pezzo: riprova sul pezzo.'); return; }
+    labels.push(L); drawLabel(L);
+    actions.push({ type: 'label', L, strokes: st });
+    takeView([L, ...st]);
+  } else if (ed.isNew) {
     if (!text) return;
     L.text = text; labels.push(L); drawLabel(L);
     actions.push({ type: 'label', L });
     takeView([L]);
   } else if (!text) {                          // emptied = rubbed out, and ↶ brings it back
+    const st = takeLabelStrokes(L);
     labels.splice(labels.indexOf(L), 1); disposeObj(L.obj); L.obj = null;
-    actions.push({ type: 'erase', strokes: [], labels: [L] });
-    refreshViews(viewsOf([L]));
+    actions.push({ type: 'erase', strokes: st, labels: [L] });
+    refreshViews(viewsOf([L, ...st]));
+  } else if (text !== L.text && L.style === 'paint') {
+    // re-lettered in its box as it shows NOW (from the current camera)
+    const before = L.text, oldSt = takeLabelStrokes(L);
+    L.text = text;
+    const newSt = paintText(L, ed.rect);
+    actions.push({ type: 'edit', L, before, oldStrokes: oldSt, newStrokes: newSt });
+    refreshViews(viewsOf([L, ...oldSt]));
+    takeView([L, ...newSt]);
   } else if (text !== L.text) {
     actions.push({ type: 'edit', L, before: L.text });
     L.text = text; drawLabel(L);
@@ -1554,6 +1586,7 @@ function probeUnder(L) {
   return { ridged: hits >= 5 && sum.length() / hits < 0.9 };
 }
 function labelObject(L) {
+  if (L.style === 'paint') return new THREE.Group();   // the letters are strokes of their own
   if (L.style !== 'decal' || L.surface === 'tag') return tagObject(L);
   const mat = new THREE.MeshBasicMaterial({ map: labelCanvas(L.text, L.color, L.w, L.h), transparent: true,
     depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
@@ -1704,7 +1737,11 @@ function undo() {
   if (a.type === 'pen') touched = viewsOf(removeGesture(a.g));
   else if (a.type === 'erase') { restore(a); touched = viewsOf([...a.strokes, ...a.labels]); }
   else if (a.type === 'label') {
-    labels.splice(labels.indexOf(a.L), 1); disposeObj(a.L.obj); a.L.obj = null; touched = viewsOf([a.L]);
+    const st = takeLabelStrokes(a.L);
+    labels.splice(labels.indexOf(a.L), 1); disposeObj(a.L.obj); a.L.obj = null; touched = viewsOf([a.L, ...st]);
+  } else if (a.type === 'edit' && a.oldStrokes) {
+    touched = viewsOf([a.L, ...takeLabelStrokes(a.L)]);
+    a.L.text = a.before; restore({ strokes: a.oldStrokes }); touched.push(...viewsOf(a.oldStrokes));
   } else if (a.type === 'edit') { a.L.text = a.before; drawLabel(a.L); touched = viewsOf([a.L]); }
   refreshViews(touched);
   viewer.invalidate(); syncDraw();
@@ -1805,6 +1842,7 @@ async function sendNote() {
     text, image, camera,
     views: keep.map(v => ({ image: v.image, camera: v.cam })),
     strokes: draft.map(s => ({ color: s.color, width: s.width, piece: s.piece, g: s.g,
+      ...(s.label && labels.includes(s.label) ? { label: labels.indexOf(s.label) } : {}),
       view: s.view == null ? null : remap.get(s.view),
       points: s.pts.map(p => [r4(p.x), r4(p.y), r4(p.z)]),
       normals: s.nrm.map(n => [+n.x.toFixed(3), +n.y.toFixed(3), +n.z.toFixed(3)]) })),
@@ -1924,6 +1962,162 @@ function renderNotes() {
     row.onclick = () => goToNote(n);
     box.appendChild(row);
   }
+}
+
+// ── ✎ Vernice: text as PAINT — the letters are pen strokes ─────────────
+// quill: «come disegna già a mano può stampare testo? vedo che è già un solido
+// la vernice». So the default text style needs no new rendering at all: the
+// words are laid out in the dragged box in SCREEN coordinates, each glyph of a
+// single-stroke font is a polyline, every polyline is sampled every ~2.5 px and
+// each sample goes through the pen's own raycast (`surfaceHit`). Out come
+// ordinary strokes — points + normals, broken where the line leaves the
+// surface or jumps in depth, width from the size buttons — so they lie on a
+// plane, wrap a cylinder, follow a thread or an organic surface with no
+// special case, and orbit, undo, erase, photograph and save exactly like the
+// pen. (The decal needed a case per surface and doubled on ridges.)
+// The strokes carry `label` (their text): one gesture for ↶ and ⌫, a tap with
+// T re-opens the text, and the server keeps them out of `marks` — the agent
+// reads the WORDS in `labels`, not forty «line» marks for one word.
+// Font: Hershey Roman Simplex (A. V. Hershey, U.S. National Bureau of
+// Standards, 1967 — public domain), ASCII 32..126 as in Paul Bourke's
+// `simplex[95][112]` table (paulbourke.net/dataformats/hershey). One string per
+// glyph: char 0 = advance width, then strokes separated by spaces, each a run
+// of (x, y) pairs coded as charCode − 82 ('R' = 0); y points up, baseline 0,
+// capitals 21 high, descenders to −7.
+const HERSHEY = [
+  "b","\\WgWY WTVSWRXSWT","bVgV` ^g^`","g]kVK ck\\K V^d^ UXcX",
+  "fZkZN ^k^N cdaf^gZgWfUdUbV`W_Y^_\\a[bZcXcUaS^RZRWSUU",
+  "jggUR Zg\\e\\c[aY`W`UbUdVfXgZg\\f_ebeefgg cYaX`V`TbRdRfSgUgWeYcY",
+  "li^i_h`g`f_e]cXaU_S]RYRWSVTUVUXVZW[^__``b`d_f]g[fZdZb[_]\\bUdSfRhRiSiT","\\WeVfWgXfXdWbVa",
+  "`]k[iYfWbV]VYWTYP[M]K","`UkWiYf[b\\]\\Y[TYPWMUK","bZgZ[ Ud_^ _dU^","l_d_R V[h[","\\XSWRVSWTXSXQWOVN","lV[h[",
+  "\\WTVSWRXSWT","hfkTK","f[gXfVcU^U[VVXS[R]R`SbVc[c^bc`f]g[g","fXcZd]g]R","fVbVcWeXfZg^g`faebcbaa__\\URcR",
+  "fWgbg\\___a^b]cZcXbU`S]RZRWSVTUV","f_gUYdY _g_R","fagWgV^W_Z`]``_b]cZcXbU`S]RZRWSVTUV",
+  "fbdaf^g\\gYfWcV^VYWUYS\\R]R`SbUcXcYb\\`^]_\\_Y^W\\VY","fcgYR Ugcg",
+  "fZgWfVdVbW`Y_]^`]b[cYcVbTaS^RZRWSVTUVUYV[X][^__a`bbbdaf^gZg",
+  "fb`a]_[\\Z[ZX[V]U`UaVdXf[g\\g_fadb`b[aV_S\\RZRWSVU","\\W`V_W^X_W` WTVSWRXSWT",
+  "\\W`V_W^X_W` XSWRVSWTXSXQWOVN","jfdV[fR","lV^h^ VXhX","jVdf[VR","dUbUcVeWfYg]g_f`eacaa`__^[\\[Y [TZS[R\\S[T",
+  "md_caab^b\\a[`Z]ZZ[X]W`WbXcZ ^b\\`[][Z\\X]W dbcZcXeWgWiYj\\j^iahcfedfag^g[fYeWcVaU^U[VXWVYT[S^RaRdSfTgU ebdZdXeW",
+  "d[gSR [gcR VY`Y","gVgVR Vg_gbfcedcdac_b^_] V]_]b\\c[dYdVcTbS_RVR","gdbcdaf_g[gYfWdVbU_UZVWWUYS[R_RaScUdW",
+  "gVgVR Vg]g`fbdcbd_dZcWbU`S]RVR","eVgVR Vgcg V]^] VRcR","dVgVR Vgcg V]^]",
+  "gdbcdaf_g[gYfWdVbU_UZVWWUYS[R_RaScUdWdZ _ZdZ","hVgVR dgdR V]d]","ZVgVR","b^g^W]T\\SZRXRVSUTTWTY",
+  "gVgVR dgVY [^dR","cVgVR VRbR","jVgVR Vg^R fg^R fgfR","hVgVR VgdR dgdR",
+  "h[gYfWdVbU_UZVWWUYS[R_RaScUdWeZe_dbcdaf_g[g","gVgVR Vg_gbfcedcd`c^b]_\\V\\",
+  "h[gYfWdVbU_UZVWWUYS[R_RaScUdWeZe_dbcdaf_g[g ^VdP","gVgVR Vg_gbfcedcdac_b^_]V] ]]dR",
+  "fcdaf^gZgWfUdUbV`W_Y^_\\a[bZcXcUaS^RZRWSUU","bZgZR Sgag","hVgVXWUYS\\R^RaScUdXdg","dSg[R cg[R",
+  "jTgYR ^gYR ^gcR hgcR","fUgcR cgUR","dSg[][R cg[]","fcgUR Ugcg URcR","`VkVK WkWK Vk]k VK]K","`Rg`O",
+  "`[k[K \\k\\K Uk\\k UK\\K","bXaZd\\a U^Zc_^ ZcZR","bRPbP","\\XgWfVdVbWaXbWc",
+  "ea`aR a]__]`Z`X_V]UZUXVUXSZR]R_SaU","eVgVR V]X_Z`]`__a]bZbXaU_S]RZRXSVU","da]__]`Z`X_V]UZUXVUXSZR]R_SaU",
+  "eagaR a]__]`Z`X_V]UZUXVUXSZR]R_SaU","dUZaZa\\`^__]`Z`X_V]UZUXVUXSZR]R_SaU","^\\gZgXfWcWR T`[`",
+  "ea`aP`M_L]KZKXL a]__]`Z`X_V]UZUXVUXSZR]R_SaU","eVgVR V\\Y_[`^``_a\\aR","ZUgVfWgVhUg V`VR",
+  "\\WgXfYgXhWg X`XOWLUKSK","cVgVR ``VV ZZaR","ZVgVR","pV`VR V\\Y_[`^``_a\\aR a\\d_f`i`k_l\\lR",
+  "eV`VR V\\Y_[`^``_a\\aR","eZ`X_V]UZUXVUXSZR]R_SaUbXbZa]__]`Z`","eV`VK V]X_Z`]`__a]bZbXaU_S]RZRXSVU",
+  "ea`aK a]__]`Z`X_V]UZUXVUXSZR]R_SaU","_V`VR VZW]Y_[`^`","c`]__\\`Y`V_U]V[XZ]Y_X`V`U_S\\RYRVSUU",
+  "^WgWVXSZR\\R T`[`","eV`VVWSYR\\R^SaV a`aR","bT`ZR ``ZR","hU`YR ]`YR ]`aR e`aR","cU``R ``UR",
+  "bT`ZR ``ZRXNVLTKSK","c``UR U``` UR`R",
+  "`[kYjXiWgWeXcYbZ`Z^X\\ YjXhXfYdZc[a[_Z]V[ZY[W[UZSYRXPXNYL XZZXZVYTXSWQWOXMYL[K","ZVkVK",
+  "`WkYjZi[g[eZcYbX`X^Z\\ YjZhZfYdXcWaW_X]\\[XYWWWUXSYRZPZNYL ZZXXXVYTZS[Q[OZMYLWK",
+  "jUXUZV]X^Z^\\]`ZbYdYfZg\\ UZV\\X]Z]\\\\`YbXdXfYg\\g^"
+];
+const glyphOf = ch => {
+  const code = ch.charCodeAt(0), g = HERSHEY[code - 32] ?? HERSHEY['?'.charCodeAt(0) - 32];
+  const w = g.charCodeAt(0) - 82;
+  const strokes = g.slice(1).split(' ').filter(Boolean)
+    .map(t => Array.from({ length: t.length / 2 }, (_, i) => [t.charCodeAt(2 * i) - 82, t.charCodeAt(2 * i + 1) - 82]));
+  return { w, strokes };
+};
+// Italian accents: the base letter plus a short stroke above it (Simplex has
+// none of its own); capitals get it higher.
+const ACCENTS = { 'à': ['a', 1], 'è': ['e', 1], 'é': ['e', -1], 'ì': ['i', 1], 'í': ['i', -1], 'ò': ['o', 1],
+  'ó': ['o', -1], 'ù': ['u', 1], 'ú': ['u', -1], 'À': ['A', 1], 'È': ['E', 1], 'É': ['E', -1], 'Ì': ['I', 1],
+  'Ò': ['O', 1], 'Ù': ['U', 1] };
+function glyphWithAccent(ch) {
+  const acc = ACCENTS[ch];
+  if (!acc) return glyphOf(ch.charCodeAt(0) < 127 ? ch : '?');
+  const g = glyphOf(acc[0]), mid = g.w / 2, y = acc[0] === acc[0].toUpperCase() ? 24 : 17;
+  return { w: g.w, strokes: [...g.strokes, acc[1] > 0 ? [[mid - 2, y + 4], [mid + 1, y]] : [[mid + 2, y + 4], [mid - 1, y]]] };
+}
+const LINE_UNITS = 32;                        // one line of Simplex: 21 up, 7 down, a little air
+// Lay `text` out in the screen box r: the largest line height whose word-wrap
+// fits (one line = the box height, then smaller), lines centred.
+function layoutText(text, r) {
+  const W = r.x1 - r.x0, H = r.y1 - r.y0, words = text.split(/\s+/).filter(Boolean);
+  const adv = w => [...w].reduce((t, ch) => t + glyphWithAccent(ch).w, 0);
+  const space = glyphOf(' ').w;
+  for (let lh = H; lh >= 6; lh *= 0.92) {
+    const s = lh / LINE_UNITS, lines = [];
+    for (const w of words) {
+      const last = lines[lines.length - 1];
+      if (last && (adv(last) + space + adv(w)) * s <= W) lines[lines.length - 1] = last + ' ' + w;
+      else lines.push(w);
+    }
+    if (lines.length * lh <= H && lines.every(l => adv(l) * s <= W)) return { lines, lh, s, adv };
+    if (lh <= 6.5) return { lines, lh, s, adv };
+  }
+  return null;
+}
+function paintText(L, r) {
+  const lay = layoutText(L.text, r);
+  if (!lay) return [];
+  const { lines, lh, s, adv } = lay, g = ++gesture, out = [];
+  const top = (r.y0 + r.y1) / 2 - lines.length * lh / 2;
+  // width: the size button, but never fatter than a sixth of the letter height
+  const px = Math.max(1.2, Math.min(pen.size, lh / 6));
+  let width = null;
+  lines.forEach((line, li) => {
+    let x = (r.x0 + r.x1) / 2 - adv(line) * s / 2;
+    const base = top + li * lh + 23 * s;      // baseline: capital height + a little headroom
+    for (const ch of line) {
+      const gl = glyphWithAccent(ch);
+      for (const poly of gl.strokes) {
+        let cur = null, lastXY = null;
+        const pts = poly.map(([gx, gy]) => [x + gx * s, base - gy * s]);
+        for (let i = 0; i < pts.length; i++) {
+          const [ax, ay] = pts[Math.max(0, i - 1)], [bx, by] = pts[i];
+          const n = i === 0 ? 1 : Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 2.5));
+          for (let k = i === 0 ? 0 : 1; k <= n; k++) {
+            const sx = i === 0 ? bx : ax + (bx - ax) * k / n, sy = i === 0 ? by : ay + (by - ay) * k / n;
+            const hit = surfaceHit(sx, sy);
+            if (!hit) { cur = null; lastXY = null; continue; }        // off the part: the line breaks
+            if (width == null) width = px * mmPerPx(hit.p);
+            const last = cur && cur.pts[cur.pts.length - 1];
+            const d = lastXY ? Math.hypot(sx - lastXY[0], sy - lastXY[1]) : 0;
+            if (!cur || last.distanceTo(hit.p) > 4 * Math.max(d, 1) * mmPerPx(hit.p) + width) {
+              cur = { color: L.color, width, g, k: ++seq, piece: hit.key, pts: [hit.p], nrm: [hit.n],
+                      obj: null, label: L };
+              draft.push(cur); out.push(cur);
+            } else { cur.pts.push(hit.p); cur.nrm.push(hit.n); }
+            lastXY = [sx, sy];
+          }
+        }
+      }
+      x += gl.w * s;
+    }
+  });
+  for (const st of out) redrawStroke(st);
+  syncDraw();
+  return out;
+}
+// the strokes of a painted text, taken off the drawing (returned for undo)
+function takeLabelStrokes(L) {
+  const gone = [];
+  for (let i = draft.length - 1; i >= 0; i--) if (draft[i].label === L) {
+    gone.unshift(draft[i]); disposeObj(draft[i].obj); draft[i].obj = null; draft.splice(i, 1);
+  }
+  return gone;
+}
+function paintLabelNear(hit) {
+  const r = 12 * mmPerPx(hit.p);
+  const s = draft.find(x => x.label && strokeDist(x, hit.p) <= r + x.width / 2);
+  return s ? s.label : null;
+}
+function paintRect(L) {
+  const c = $('c').getBoundingClientRect(), xs = [], ys = [];
+  for (const st of draft) if (st.label === L) for (const p of st.pts) {
+    const q = p.clone().project(viewer.camera);
+    xs.push(c.left + (q.x + 1) / 2 * c.width); ys.push(c.top + (1 - q.y) / 2 * c.height);
+  }
+  if (!xs.length) return L.box;
+  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
 }
 
 // ── the agent's tags: labels the agent pinned on this gen's pieces ───────
