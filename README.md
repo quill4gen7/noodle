@@ -60,7 +60,8 @@ together, or one track at a time (≡ Tracce).</em></p>
 <p align="center"><em><strong>✎ Disegna — tell the agent by drawing.</strong> Paint on the part itself,
 right where something is wrong (a hole, a fillet), add a sentence, and send it. The agent gets
 your view as a picture plus every stroke in model millimetres with the node it lies on
-(<code>cad_notes</code>), acts on it, and closes the note with its reply.</em></p>
+(<code>cad_notes</code>), acts on it, and closes the note with its reply.
+<a href="docs/NOTES_AGENT_TEST.md">One note, five agents</a> — the same drawing handed to Claude, Codex, Kimi, GLM and DeepSeek.</em></p>
 
 <p align="center">
   <img src="docs/asset/noodle-sections.gif" alt="▦ Sezioni on a 572-line CodeBlock: the front shell's sections are clicked one after another and each preview shows the part at that step" width="880">
