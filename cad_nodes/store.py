@@ -463,6 +463,26 @@ class GraphStore:
         tmp.replace(d / self.GEN_THUMB)
         return True
 
+    # `tags.json`: the agent's labels on the pieces of a gen it sends the user
+    # ("coperchio v2", "foro M8 qui") — beside the gen like seen.json, so the
+    # gen itself stays immutable and the tags can be rewritten.
+    GEN_TAGS = "tags.json"
+
+    def save_gen_tags(self, graph_id: str, gen: str, tags: list) -> None:
+        d = self.gen_dir(graph_id, gen)
+        if not (d / "meta.json").exists():
+            raise KeyError(f"No generation {gen!r} in {graph_id!r}")
+        atomic_write(d / self.GEN_TAGS, json.dumps({"tags": tags}, indent=1))
+
+    def load_gen_tags(self, graph_id: str, gen: str) -> list:
+        d = self.gen_dir(graph_id, gen)
+        if not (d / "meta.json").exists():
+            raise KeyError(f"No generation {gen!r} in {graph_id!r}")
+        try:
+            return json.loads((d / self.GEN_TAGS).read_text()).get("tags") or []
+        except (OSError, ValueError):
+            return []
+
     def mark_gen_seen(self, graph_id: str, gen: str, when: str) -> None:
         d = self.gen_dir(graph_id, gen)
         if not (d / "meta.json").exists():

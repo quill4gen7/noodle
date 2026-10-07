@@ -1767,6 +1767,19 @@ result while the workflow moves on.
     `near_marks` (within 1.5 label sizes, else the nearest within 4) and lists
     the texts under each mark's `labels` — recomputed on read like `marks`.
     A note of labels alone is valid.
+  - **The other way round: the agent TAGS the pieces it shows.**
+    `api.tag_gen` / `POST …/gens/{gen}/tags` / MCP `cad_tag_gen` (or `tags=` on
+    `cad_snapshot`, one call; a bad tag there is `tags_error`, not a failed
+    snapshot) write `gens/gN/tags.json` beside the gen — `[{text, node, at?,
+    color?}]`, `node` resolved against the gen's frozen `pieces` (id or exact
+    title; unknown/ambiguous → an error listing them). /view draws them as
+    targhette — anchor dot + stem + a `THREE.Sprite` plate facing the camera,
+    each piece drawn twice (depth-tested, and `depthTest:false` at 0.35) so a
+    tag reads from behind and shows through the part faded — in the agent's
+    look (cyan rim, a drawn ◆). Without `at` the anchor is the piece's topmost
+    point nearest the opening camera (a ray at the bbox centre dives into the
+    hole of a nut). «◆ Tag» hides them all (`#tags=0`), a hidden piece hides
+    its tags, a tap selects the piece, the piece row carries a ◆N badge.
   - **Opening a note fits it to THIS screen** (`goToNote`): the camera carries
     `aspect` (and ortho `zoom`); on a narrower screen it backs off by the ratio,
     then until every stroke projects inside. `cam.lookAt` inside that loop is

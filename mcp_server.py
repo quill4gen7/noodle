@@ -12,6 +12,7 @@ Or mount the SSE app into another ASGI server via `mcp.sse_app()`.
 """
 
 import json
+from typing import Optional
 
 from mcp.server.fastmcp import FastMCP, Image
 
@@ -200,7 +201,8 @@ async def cad_screenshot(graph_id: str, view: str = "iso", azim: float = None,
 
 
 @mcp.tool()
-def cad_snapshot(graph_id: str, label: str = "", run: bool = True) -> dict:
+def cad_snapshot(graph_id: str, label: str = "", run: bool = True,
+                 tags: Optional[list] = None) -> dict:
     """SHOW the user a result: freeze the graph's current geometry as a new
     GENERATION and get back a `url` to the read-only 3D viewer. Send that link
     instead of screenshots — the user orbits it, hides pieces, inverts the
@@ -211,8 +213,24 @@ def cad_snapshot(graph_id: str, label: str = "", run: bool = True) -> dict:
     open it with those nodes' pieces hidden (e.g. a lid, to show the inside).
     If the graph has Animate/Drop nodes the viewer PLAYS them (`timeline` in the
     result): send one link for a movement — open ⇄ close — rather than one per
-    pose; `#play=1` autoplays, `#t=0.5` / `#mode=pingpong|loop|once`."""
-    return _safe(api.snapshot, STORE, graph_id, label=label, run=run)
+    pose; `#play=1` autoplays, `#t=0.5` / `#mode=pingpong|loop|once`.
+    `tags` labels its pieces in the same call — see `cad_tag_gen`."""
+    return _safe(api.snapshot, STORE, graph_id, label=label, run=run, tags=tags)
+
+
+@mcp.tool()
+def cad_tag_gen(graph_id: str, gen: str, tags: list, replace: bool = True) -> dict:
+    """LABEL the pieces of a generation you send the user: «coperchio v2»,
+    «foro M8 qui», «parete 2 mm». The viewer draws each as a plate on a stem,
+    readable from any side (faded where the part covers it), in the agent's
+    own style; the user can hide them all (`#tags=0`) and tapping one selects
+    its piece. `tags` = [{text (1..120 chars), node, at?, color?}]: `node` is
+    an id or exact title of the gen's FROZEN pieces (an unknown or ambiguous
+    one is an error listing them); `at` = [x,y,z] mm where the stem starts —
+    omit it and the viewer anchors the tag on the piece's visible surface.
+    At most 40. `replace=False` appends to the tags already there. Stored
+    beside the gen (tags.json): the gen itself never changes."""
+    return _safe(api.tag_gen, STORE, graph_id, gen, tags, replace=replace)
 
 
 @mcp.tool()
