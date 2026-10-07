@@ -1782,6 +1782,15 @@ result while the workflow moves on.
     the texts under each mark's `labels` — recomputed on read like `marks`.
     A note of labels alone is valid. `near_marks`' fallback (the nearest mark
     when none is within 1.5 sizes) reaches 2 label sizes, no further.
+  - **Img — a picture placed on the part.** «Img» picks a PNG/JPEG (on a phone
+    the camera too: `accept="image/*"`), shrunk in the browser to a long side
+    of 1600 px; drag a box and it lands in proportion — on the SURFACE, not on
+    screen (`L.h = L.w / aspect`: a 2:1 picture came out 1.2:1 on the slanted
+    top of the nut) — through the ▭ decal path (fitted patch, DecalGeometry,
+    targhetta). Stored as `aK.img<N>.png|jpg` beside the note (PNG/JPEG by
+    magic bytes, ≤ 4 MB each, ≤ 8; body limit 40 MB), described in `images`
+    like a label; `GET …/notes/{id}/img/{k}`; `cad_notes` gives each its
+    `image_path`/`image_url`. ↶ and ⌫ as a label; replacing = rub out + place.
   - **The other way round: the agent TAGS the pieces it shows.**
     `api.tag_gen` / `POST …/gens/{gen}/tags` / MCP `cad_tag_gen` (or `tags=` on
     `cad_snapshot`, one call; a bad tag there is `tags_error`, not a failed

@@ -1745,7 +1745,8 @@ def _link_labels(marks: list[dict], strokes: list[dict], labels: list[dict]) -> 
             lb["nearest_mark_mm"] = round(dist[0][0], 2)
         out.append(lb)
         for m in near:
-            marks[m - 1].setdefault("labels", []).append(lb["text"])
+            if "text" in lb:                 # a placed image has no words to lend
+                marks[m - 1].setdefault("labels", []).append(lb["text"])
     return out
 
 
@@ -1760,9 +1761,23 @@ def _camera(cam, what="camera") -> Optional[dict]:
     return out
 
 
+_NOTE_MAX_IMAGES = 8
+_NOTE_IMAGE_BYTES = 4 * 1024 * 1024
+
+
+def _image_kind(data: bytes) -> str:
+    """png | jpg from the magic bytes, as the photos are checked."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpg"
+    raise ValueError("note: a placed image must be a PNG or a JPEG")
+
+
 def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
              jpeg: Optional[bytes] = None,
-             view_jpegs: Optional[list] = None) -> dict:
+             view_jpegs: Optional[list] = None,
+             image_blobs: Optional[list] = None) -> dict:
     """Validate and store what the /view page sends. `payload` = {text, strokes:
     [{color, width, points:[[x,y,z]…], normals?, piece?}], camera?, t?, hide?}."""
     import datetime
@@ -1776,7 +1791,17 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
         raise ValueError(f"note: strokes must be a list of at most {_NOTE_MAX_STROKES}")
     labels_in = payload.get("labels") or []
     n_labels = len(labels_in) if isinstance(labels_in, list) else 0
-    if not strokes_in and not labels_in and not text.strip():
+    images_in = payload.get("images") or []
+    if not isinstance(images_in, list) or len(images_in) > _NOTE_MAX_IMAGES:
+        raise ValueError(f"note: images must be a list of at most {_NOTE_MAX_IMAGES}")
+    image_blobs = list(image_blobs or [])
+    if len(image_blobs) != len(images_in) or not all(image_blobs):
+        raise ValueError("note: every placed image needs its picture")
+    for b in image_blobs:
+        if len(b) > _NOTE_IMAGE_BYTES:
+            raise ValueError(f"note: a placed image is over {_NOTE_IMAGE_BYTES // (1024 * 1024)} MB")
+    kinds = [_image_kind(b) for b in image_blobs]
+    if not strokes_in and not labels_in and not images_in and not text.strip():
         raise ValueError("note: nothing drawn and nothing written")
     views_in = payload.get("views") or []
     if not isinstance(views_in, list) or len(views_in) > _NOTE_MAX_VIEWS:
@@ -1827,12 +1852,23 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
         out.update(_stroke_summary(pts, width))
         strokes.append(out)
     labels = _labels(labels_in, len(views), titles)
+    # a placed image is placed exactly like a label: same frame, same checks
+    images = []
+    for i, im in enumerate(images_in):
+        if not isinstance(im, dict):
+            raise ValueError(f"note: image {i} must be an object")
+        (o,) = _labels([{**im, "text": "image", "style": "decal"}], len(views), titles)
+        o = {"image": i + 1, **{k: v for k, v in o.items()
+                                if k not in ("label", "text", "style", "color", "color_name")}}
+        images.append(o)
     marks = _marks(strokes)
     note = {"text": text.strip(),
             "created": datetime.datetime.now().isoformat(timespec="seconds"),
             "marks": marks, "strokes": strokes, "done": None}
     if labels:
         note["labels"] = _link_labels(marks, strokes, labels)
+    if images:
+        note["images"] = _link_labels(marks, strokes, images)
     cam = _camera(payload.get("camera"))
     if cam:
         note["camera"] = cam
@@ -1842,7 +1878,8 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
         note["t"] = round(min(max(float(payload["t"]), 0.0), 1.0), 4)
     if isinstance(payload.get("hide"), str):
         note["hide"] = payload["hide"][:500]
-    return store.save_gen_note(graph_id, gen, note, jpeg, view_jpegs)
+    return store.save_gen_note(graph_id, gen, note, jpeg, view_jpegs,
+                               list(zip(kinds, image_blobs, strict=True)))
 
 
 def _open_notes(store: GraphStore, graph_id: str, gen: str) -> int:
@@ -1871,6 +1908,15 @@ def _note_for_agent(n: dict, base_url: str, points: bool) -> dict:
         out["labels"] = [{k: v for k, v in lb.items() if k not in ("near_marks", "nearest_mark_mm")}
                          for lb in n["labels"]]
         out["labels"] = _link_labels(out["marks"], n.get("strokes") or [], out["labels"])
+    if n.get("images"):
+        out["images"] = _link_labels(out["marks"], n.get("strokes") or [],
+                                     [{k: v for k, v in im.items() if k not in ("near_marks", "nearest_mark_mm")}
+                                      for im in n["images"]])
+        for im in out["images"]:
+            im["image_url"] = f"{base}/api/graph/{quote(g)}/gens/{gen}/notes/{nid}/img/{im['image']}"
+            im["image_path"] = f"projects/{g}/gens/{gen}/notes/{im.get('file', '')}"
+            if im.get("view"):                 # the photo of the view it was placed from
+                im["view_image_path"] = f"projects/{g}/gens/{gen}/notes/{nid}.v{im['view']}.jpg"
     if points:
         out["strokes"] = n.get("strokes", [])
     for k in ("t", "hide", "camera"):
@@ -1936,6 +1982,12 @@ def resolve_note(store: GraphStore, graph_id: str, gen: str, note_id: str,
     state = ({"when": datetime.datetime.now().isoformat(timespec="seconds"),
               "reply": reply.strip()} if done else None)
     return store.update_gen_note(graph_id, gen, note_id, done=state)
+
+
+def note_asset(store: GraphStore, graph_id: str, gen: str, note_id: str, k: int) -> tuple:
+    """(bytes, media type) of the k-th picture the user placed with a note."""
+    p = store.gen_note_asset(graph_id, gen, note_id, k)
+    return p.read_bytes(), "image/png" if p.suffix == ".png" else "image/jpeg"
 
 
 def note_image(store: GraphStore, graph_id: str, gen: str, note_id: str,

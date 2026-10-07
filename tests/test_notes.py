@@ -249,13 +249,13 @@ def test_the_text_tool_projects_a_decal_and_sends_labels():
     assert (ROOT / "webui/vendor/three-0.170.0/examples/jsm/geometries/DecalGeometry.js").exists()
     assert 'id="d-texttool"' in VIEW
     # the normal is the surface under the WHOLE box, size measured on its plane
-    new = VIEW[VIEW.index("function newLabel"):]
+    new = VIEW[VIEW.index("function makeLabel"):]
     new = new[:new.index("\n}\n")]
     assert "for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++)" in new and "planeSize(" in new
     # two styles, the user's choice, remembered; a decal that cannot be made
     # becomes a plate — never the one-sided flying card it used to be
     assert 'id="d-lstyle"' in VIEW and "localStorage.getItem('noodle:view:labelStyle')" in VIEW
-    assert "if (mesh && !under.ridged)" in VIEW and "L.surface = 'tag'; return tagObject(L);" in VIEW
+    assert "if (mesh && !under.ridged)" in VIEW and "mat.map.dispose(); mat.dispose(); L.surface = 'tag';" in VIEW
     assert "PlaneGeometry" not in VIEW
     # the plate faces the camera and shows through the part, faded
     tag = VIEW[VIEW.index("function tagObject"):]
@@ -263,7 +263,7 @@ def test_the_text_tool_projects_a_decal_and_sends_labels():
     assert "new THREE.Sprite(" in tag and "depthTest: !ghost" in tag and "for (const ghost of [false, true])" in tag
     assert "style: L.style" in VIEW and "style: l.style || 'tag'" in VIEW
     # labels are data in the note, and part of the undo / eraser / views machinery
-    assert "labels: labels.map(L => ({ text: L.text" in VIEW
+    assert "labels: words.map(L => ({ text: L.text" in VIEW
     for t in ("else if (a.type === 'label')", "else if (a.type === 'edit')", "er.labels.push(L)",
               "[...draft, ...labels].filter(x => x.view === i)"):
         assert t in VIEW
@@ -384,4 +384,42 @@ def test_paint_text_goes_through_the_pens_raycast():
     assert "label: L" in paint and "draft.push(cur)" in paint
     # default style, remembered; ↶ and ⌫ treat the text as one gesture
     assert "let labelStyle = 'paint'" in VIEW and "er.strokes.push(...takeLabelStrokes(L))" in VIEW
-    assert "label: labels.indexOf(s.label)" in VIEW
+    assert "label: words.indexOf(s.label)" in VIEW
+
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 200
+
+
+def test_a_picture_placed_on_the_part_is_an_asset_of_the_note(store):
+    """Img: the picture travels beside the note (aK.img1.png), checked by its
+    magic bytes; the note says where it lies, like a label."""
+    im = {"at": [5, 5, 10], "normal": [0, 0, 1], "up": [0, 1, 0], "size_mm": [4, 2], "piece": "n1",
+          "surface": "plane"}
+    note = api.add_note(store, "demo", "g1", {"images": [im, {**im, "at": [6, 6, 10]}]}, None, None,
+                        [PNG, JPEG])
+    a, b = note["images"]
+    assert a["file"] == f"{note['id']}.img1.png" and b["file"] == f"{note['id']}.img2.jpg"
+    assert a["node"] == "n1" and a["surface"] == "plane" and "text" not in a and "color" not in a
+    assert api.note_asset(store, "demo", "g1", note["id"], 1) == (PNG, "image/png")
+    lean = api.list_notes(store)[0]
+    assert lean["images"][0]["image_path"].endswith(".img1.png") and "/img/1" in lean["images"][0]["image_url"]
+    store.delete_gen_note("demo", "g1", note["id"])
+    assert not list((store.gen_dir("demo", "g1") / "notes").glob("*.img*"))
+
+
+def test_bad_placed_pictures_are_refused(store):
+    im = {"at": [5, 5, 10], "normal": [0, 0, 1], "up": [0, 1, 0], "size_mm": [4, 2]}
+    for blobs in ([b"GIF89a" + b"0" * 100], [None], [], [PNG + b"0" * (4 * 1024 * 1024)]):
+        with pytest.raises(ValueError):
+            api.add_note(store, "demo", "g1", {"images": [im]}, None, None, blobs)
+    with pytest.raises(ValueError):
+        api.add_note(store, "demo", "g1", {"images": [{**im, "normal": [0, 0, 0]}]}, None, None, [PNG])
+    with pytest.raises(ValueError):
+        api.add_note(store, "demo", "g1", {"images": [im] * 9}, None, None, [PNG] * 9)
+
+
+def test_the_image_tool_and_its_route():
+    assert 'id="d-imgfile" accept="image/*"' in VIEW and "const IMG_MAX = 1600" in VIEW
+    assert "images: pictures.map(L => ({ data: L.img.data" in VIEW
+    assert '@app.get("/api/graph/{name}/gens/{gen}/notes/{note_id}/img/{k}")' in SERVER
+    assert "images" in HELP[HELP.index("cad_notes"):] and "image_path" in MCP
