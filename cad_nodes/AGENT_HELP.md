@@ -117,7 +117,10 @@ More detail on demand — `cad_help(topic=...)` / `GET /api/agent/help?topic=...
    `normal` / `up` / `size_mm` in model mm, the `node` it is on, `near_marks` =
    the marks it sits next to («qui 8 mm» beside mark 1 is about mark 1; each
    mark also lists them under its own `labels`). A note may hold labels
-   only. The pictures never show a stroke the user took back. Aim
+   only. A label's `style` says how it was drawn: `paint` (the letters are
+   pen strokes on the surface — they are NOT in `marks`; with `points=True`
+   they show up as strokes with `kind: "text"`), `tag` (a plate on a stem) or
+   `decal`. The pictures never show a stroke the user took back. Aim
    `cad_measure` / a section at the centre to find the feature, fix it,
    snapshot, then `cad_note_done(graph, gen, id, reply="…see g8")` so the
    user sees it closed with your answer.

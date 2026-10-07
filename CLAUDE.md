@@ -1735,8 +1735,22 @@ result while the workflow moves on.
     only; sent notes stay immutable.
   - **T — text ON the part, and it is DATA.** Drag a box (a tap = default box,
     smaller on a phone), type, Enter; tap a label with T to edit; ⌫ rubs it
-    out. Two STYLES, picked next to T and remembered (`noodle:view:labelStyle`),
-    stored per label as `style`: **⚑ targhetta** (default) — anchor dot + stem
+    out. Three STYLES, picked next to T and remembered (`noodle:view:labelStyle`),
+    stored per label as `style` ("tag" when absent, for old notes):
+    **✎ vernice** (`paint`, the default) — quill: «come disegna già a mano può
+    stampare testo?». The words are laid out in the box in SCREEN space with a
+    single-stroke font (Hershey Roman Simplex, public domain, embedded as
+    `HERSHEY`; à è é ì ò ù = base + a drawn accent), every glyph polyline is
+    sampled every ~2.5 px and each sample goes through the pen's `surfaceHit`.
+    Out come ordinary pen strokes (broken off the surface and on depth jumps,
+    width from the size button capped at a sixth of the letter height), so the
+    text lies on a plane, a cylinder, a thread, anything, with no special case
+    and no new rendering. The strokes carry `label`: one gesture for ↶ and ⌫, a
+    tap with T re-letters it, and the server marks them `kind: "text"` and keeps
+    them OUT of `marks` (forty «line» marks for one word buried the real
+    circle). Why the decal stopped being the default: it doubled on ridges by
+    parallax and needed a special case per surface (plane, cylinder, sphere…).
+    **⚑ targhetta** — anchor dot + stem
     along the normal + a `THREE.Sprite` plate that always faces the camera,
     every piece drawn twice (depth-tested full, and `depthTest:false` at 0.35
     on top) so it reads from behind and shows through the part faded. Asked by
@@ -1764,9 +1778,10 @@ result while the workflow moves on.
     exponential map. Stored as `surface` (plane|cylinder|sphere|decal|tag) +
     `fit`, so a saved note is redrawn without refitting. The note carries `labels: [{text, style, surface, fit, at,
     normal, up, size_mm, color, node, view}]`; `_link_labels` adds
-    `near_marks` (within 1.5 label sizes, else the nearest within 4) and lists
+    `near_marks` (within 1.5 label sizes, else the nearest within 2) and lists
     the texts under each mark's `labels` — recomputed on read like `marks`.
-    A note of labels alone is valid.
+    A note of labels alone is valid. `near_marks`' fallback (the nearest mark
+    when none is within 1.5 sizes) reaches 2 label sizes, no further.
   - **The other way round: the agent TAGS the pieces it shows.**
     `api.tag_gen` / `POST …/gens/{gen}/tags` / MCP `cad_tag_gen` (or `tags=` on
     `cad_snapshot`, one call; a bad tag there is `tags_error`, not a failed

@@ -872,7 +872,14 @@ Length: 5
   persp↔ortho manda i superstiti in una foto nuova della vista corrente.
 - *Undo*: la pila è di **azioni** (tratto, cancellatura, riquadro, modifica).
 - *Solo la bozza*: sì; le note inviate restano immutabili.
-- *Testo*: due stili scelti dall'utente accanto a T. **Targhetta** (default):
+- *Testo*: **è vernice** (default, «✎ Vernice»): il testo si impagina nel
+  riquadro sullo schermo con un font a tratto singolo (Hershey Simplex,
+  pubblico dominio) e ogni glifo diventa un tratto di penna proiettato col
+  raycast della penna — va su piano, cilindro, filetto, organico senza casi
+  speciali. Il decal non è più il default: sdoppiava sulle creste per
+  parallasse e su curve e superfici miste servivano casi speciali. I tratti
+  delle lettere non finiscono nei `marks`. Restano, a scelta, gli altri due
+  stili. **Targhetta**:
   ancora + gambo + sprite rivolto alla camera, disegnato due volte (normale e
   senza depth test a 0.35) — chiesta da quill perché il decal sparisce appena
   giri dietro. **Decal**: su piano / cilindro / sfera la superficie si STIMA

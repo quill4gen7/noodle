@@ -1621,8 +1621,11 @@ def _marks(strokes: list[dict]) -> list[dict]:
     leaves the surface (over the hole, across a silhouette); joined back in
     order they are a loop again, and that is what the agent needs to read."""
     by_g: dict[int, list[dict]] = {}
+    # the strokes of a painted TEXT are not marks: the agent reads its words in
+    # `labels`, not forty «line» marks for one word
     for s in strokes:
-        by_g.setdefault(s["g"], []).append(s)
+        if s.get("kind") != "text":
+            by_g.setdefault(s["g"], []).append(s)
     out = []
     for ss in by_g.values():
         pts = [p for s in ss for p in s["points"]]
@@ -1642,7 +1645,7 @@ def _marks(strokes: list[dict]) -> list[dict]:
 
 _NOTE_MAX_VIEWS = 24
 _NOTE_MAX_LABELS = 60
-_LABEL_SURFACES = {"plane", "cylinder", "sphere", "decal", "tag"}
+_LABEL_SURFACES = {"plane", "cylinder", "sphere", "decal", "tag", "paint"}
 
 
 def _labels(labels_in, n_views: int, titles: dict) -> list[dict]:
@@ -1672,15 +1675,15 @@ def _labels(labels_in, n_views: int, titles: dict) -> list[dict]:
         if not re.fullmatch(r"#[0-9a-f]{6}", color):
             raise ValueError(f"note: label {i} color must be #rrggbb")
         style = lb.get("style") or "tag"          # old notes carry none: a plate
-        if style not in ("tag", "decal"):
-            raise ValueError(f"note: label {i} style must be 'tag' or 'decal'")
+        if style not in ("paint", "tag", "decal"):
+            raise ValueError(f"note: label {i} style must be 'paint', 'tag' or 'decal'")
         o = {"label": i + 1, "text": text.strip(), "style": style,
              "at": _vec(lb.get("at"), f"label {i} at"),
              "normal": unit["normal"], "up": unit["up"], "size_mm": size,
              "color": color, "color_name": _NOTE_COLORS.get(color, color)}
         # what the text was laid on (a decal is fitted when it can be): kept
         # with its fit, so the viewer redraws a saved note without refitting
-        surface = lb.get("surface") or ("tag" if style == "tag" else "decal")
+        surface = lb.get("surface") or {"tag": "tag", "paint": "paint"}.get(style, "decal")
         if surface not in _LABEL_SURFACES:
             raise ValueError(f"note: label {i} surface must be one of {sorted(_LABEL_SURFACES)}")
         o["surface"] = surface
@@ -1721,12 +1724,13 @@ def _link_labels(marks: list[dict], strokes: list[dict], labels: list[dict]) -> 
     """Which marks each label is written next to — «qui 8 mm» beside a red
     circle is a fact about THAT circle. Distance from the label's centre to the
     nearest point of each mark; near = within 1.5 label sizes, and the closest
-    one within 4 sizes is kept even if none is that near. Marks get the texts
+    one within 2 sizes is kept even if none is that near. Marks get the texts
     back (`labels`), so a reader of marks alone does not miss them either."""
     import math
     pts: dict[int, list] = {}
     for s in strokes:
-        pts.setdefault(s.get("g"), []).extend(s["points"])
+        if s.get("kind") != "text":         # same filter, same order as _marks
+            pts.setdefault(s.get("g"), []).extend(s["points"])
     by_mark = list(pts.values())            # same order as _marks (gesture insertion)
     out = []
     for lb in labels:
@@ -1734,7 +1738,7 @@ def _link_labels(marks: list[dict], strokes: list[dict], labels: list[dict]) -> 
         dist = sorted((min(math.dist(lb["at"], p) for p in ps), k + 1)
                       for k, ps in enumerate(by_mark) if ps)
         near = [m for d, m in dist if d <= 1.5 * size]
-        if not near and dist and dist[0][0] <= 4 * size:
+        if not near and dist and dist[0][0] <= 2 * size:
             near = [dist[0][1]]
         lb = {**lb, "near_marks": near}
         if dist:
@@ -1771,6 +1775,7 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
     if not isinstance(strokes_in, list) or len(strokes_in) > _NOTE_MAX_STROKES:
         raise ValueError(f"note: strokes must be a list of at most {_NOTE_MAX_STROKES}")
     labels_in = payload.get("labels") or []
+    n_labels = len(labels_in) if isinstance(labels_in, list) else 0
     if not strokes_in and not labels_in and not text.strip():
         raise ValueError("note: nothing drawn and nothing written")
     views_in = payload.get("views") or []
@@ -1800,6 +1805,11 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
         g = s.get("g", i)
         out = {"color": color, "color_name": _NOTE_COLORS.get(color, color),
                "width_mm": round(width, 3), "g": int(_num(g, f"stroke {i} g")), "points": pts}
+        if s.get("label") is not None:          # a letter of painted text (the T tool)
+            k = int(_num(s["label"], f"stroke {i} label"))
+            if not 0 <= k < n_labels:
+                raise ValueError(f"note: stroke {i} label {k} out of range")
+            out.update(kind="text", label=k + 1)
         v = s.get("view")
         if v is not None:
             v = int(_num(v, f"stroke {i} view"))
