@@ -165,7 +165,7 @@ def test_the_pen_paints_on_the_surface_and_leaves_the_background_to_orbit():
     # the picture is the user's own view, not a re-framed one — and one more per
     # view the user drew from, taken when the pen lifts
     assert "snapshot({ frame: false" in VIEW
-    assert "if (draft.some(s => s.g === g)) takeView(g);" in VIEW
+    assert "if (mine.length) { actions.push({ type: 'pen', g: p.g }); takeView(mine); }" in VIEW
     # a note opened on another screen backs off by the aspect ratio, then
     # until every stroke is inside the picture
     assert "c.aspect / now" in VIEW and "!inside()" in VIEW
@@ -177,7 +177,26 @@ def test_a_view_photo_never_shows_strokes_that_were_taken_back():
     Undo re-shoots every view that lost something, from that view's own camera;
     a view left with nothing is dropped (null keeps the other indices valid)."""
     assert "function refreshViews" in VIEW and "function shootFrom" in VIEW
-    undo = VIEW[VIEW.index("function undoStroke"):]
-    assert "refreshViews(" in undo[:undo.index("\n}\n")]
-    assert "if (!left.length) { views[i] = null; continue; }" in VIEW
-    assert "views.findIndex(v => v && sameCam(v.cam, cam))" in VIEW
+    undo = VIEW[VIEW.index("function undo()"):]
+    assert "refreshViews(touched)" in undo[:undo.index("\n}\n")]
+    assert "if (!left.length) { v.image = null; continue; }" in VIEW
+    # a dropped view (image null) is not sent; its strokes fall back to the main picture
+    assert "if (!v || !v.image || sameCam(v.cam, camera))" in VIEW
+
+
+def test_the_eraser_takes_whole_draft_strokes_and_undo_gives_them_back():
+    """⌫ hits in 3D: distance from the point on the PART to each stroke's
+    polyline, radius from the size buttons in px → mm. ↶ is a stack of
+    actions, so it restores what an erase removed, in the original order."""
+    assert 'id="d-erase"' in VIEW
+    erase = VIEW[VIEW.index("function eraseAt"):]
+    erase = erase[:erase.index("\n}\n")]
+    assert "strokeDist(s, hit.p) > r + s.width / 2" in erase and "mmPerPx(hit.p)" in erase
+    assert "er.strokes.push(s)" in erase
+    assert "else if (a.type === 'erase') { restore(a);" in VIEW
+    assert "draft.sort((a, b) => a.k - b.k)" in VIEW
+    # an erase drag is ONE action, pushed at pointer-up; a pinch undoes it on the spot
+    assert "actions.push({ type: 'erase', ...p.erased })" in VIEW
+    assert "if (p.mode === 'erase') restore(p.erased);" in VIEW
+    # only the draft: saved notes are never touched by the eraser
+    assert "notesData" not in erase

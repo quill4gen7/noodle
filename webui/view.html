@@ -176,6 +176,10 @@
   #vp.drawing #dbar{display:flex;}
   #vp.drawing #d-open,#vp.drawing #stats{display:none;}
   #vp.drawing.pen canvas{cursor:crosshair;}
+  #vp.drawing[data-tool=erase] canvas{cursor:none;}
+  #d-ring{position:absolute;display:none;pointer-events:none;z-index:6;border-radius:50%;
+    border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.6),inset 0 0 0 1px rgba(0,0,0,.6);}
+  #vp:not([data-tool=erase]) #d-ring{display:none !important;}
   #dbar .grp{display:flex;align-items:center;gap:4px;}
   #dbar .sep{width:1px;align-self:stretch;background:var(--border);}
   .sw-btn{width:24px;height:24px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;
@@ -269,7 +273,8 @@
       <button class="btn" id="d-open" title="Disegna sul pezzo e manda la nota all'agente (D)">✎ Disegna <span class="n" id="d-count"></span></button>
       <div id="dbar">
         <div class="grp">
-          <button class="btn tool on" id="d-pen" title="Penna: trascina SUL pezzo per disegnare">✎</button>
+          <button class="btn tool on" id="d-pen" title="Penna: trascina SUL pezzo per disegnare (P)">✎</button>
+          <button class="btn tool" id="d-erase" title="Gomma: passa sopra un tratto per toglierlo intero (E) — la misura sceglie il raggio">⌫</button>
           <button class="btn tool" id="d-hand" title="Muovi: ruota/zoom senza disegnare (anche: trascina fuori dal pezzo, tasto destro, rotella)">Muovi</button>
         </div>
         <span class="sep"></span>
@@ -278,13 +283,14 @@
         <span class="sep"></span>
         <div class="grp" id="d-sizes"></div>
         <span class="sep"></span>
-        <button class="btn" id="d-undo" title="Annulla l'ultimo tratto (Ctrl+Z)">↶</button>
+        <button class="btn" id="d-undo" title="Annulla l'ultima azione: tratto, cancellatura (Ctrl+Z)">↶</button>
         <button class="btn" id="d-clear" title="Cancella tutti i tratti non inviati">Pulisci</button>
         <input id="d-text" placeholder="Nota per l'agente: es. «questo foro si può fare meglio»" maxlength="4000" autocomplete="off">
         <button class="btn" id="d-send" title="Salva la nota (tratti + testo + la tua vista) per l'agente">Invia all'agente ➤</button>
         <button class="btn" id="d-x" aria-label="Chiudi" title="Esci dal disegno (Esc)">✕</button>
-        <div id="d-hint">Disegna trascinando sul pezzo · fuori dal pezzo / tasto destro / rotella / due dita: muovi la vista · un tocco = un punto</div>
+        <div id="d-hint">Disegna trascinando sul pezzo · ⌫ gomma: passa sopra un tratto · fuori dal pezzo / tasto destro / rotella / due dita: muovi la vista · un tocco = un punto</div>
       </div>
+      <div id="d-ring"></div>
       <div id="toast"></div>
       <div id="selbar">
         <span class="nm" id="sel-name"></span>
@@ -858,14 +864,20 @@ new ResizeObserver(() => viewer.resize()).observe($('vp'));
 // stopped before it reaches OrbitControls (capture listener on #vp); a press on
 // the background, the right button, the wheel and two fingers still move the
 // view — so you can zoom onto the hole and circle it without switching tools.
-// "Muovi" turns the pen off when the part fills the screen.
+// "Muovi" turns the pen off when the part fills the screen. The ⌫ eraser and
+// the T text tool route the same way: what lands on the part is theirs.
+//
+// ↶ takes back ACTIONS, not strokes: a pen gesture, an erase drag, a label, an
+// edit — so undoing an erase puts the strokes back, where they were.
 const annoGroup = new THREE.Group(); annoGroup.name = 'notes';
 viewer.scene.add(annoGroup);
 const PEN_COLORS = ['#ef4444', '#f59e0b', '#facc15', '#22c55e', '#3b82f6', '#ffffff', '#111827'];
 const PEN_SIZES = [3, 6, 12];                  // px on screen at the stroke's start
-const pen = { on: true, color: PEN_COLORS[0], size: PEN_SIZES[1] };
-const draft = [];                              // [{color, width, g, piece, pts:[V3], nrm:[V3], obj}]
-let gesture = 0, painting = null, drawing = false;
+const pen = { color: PEN_COLORS[0], size: PEN_SIZES[1] };
+let tool = 'pen';                              // pen | erase | hand
+const draft = [];                              // [{color, width, g, k, piece, pts:[V3], nrm:[V3], view, obj}]
+const actions = [];                            // the undo stack: {type: 'pen', g} | {type: 'erase', strokes}
+let gesture = 0, seq = 0, painting = null, drawing = false;
 let notesData = [];                            // this gen's notes, as stored
 // One picture per VIEW the user drew from, taken when the pen lifts. The note's
 // main picture is only the last view, and a cross drawn under the head from
@@ -924,7 +936,7 @@ function redrawStroke(s) {
   s.obj = strokeObject(s); annoGroup.add(s.obj); viewer.invalidate();
 }
 function startStroke(hit, g) {
-  const s = { color: pen.color, width: pen.size * mmPerPx(hit.p), g, piece: hit.key,
+  const s = { color: pen.color, width: pen.size * mmPerPx(hit.p), g, k: ++seq, piece: hit.key,
               pts: [hit.p], nrm: [hit.n], obj: null };
   draft.push(s); redrawStroke(s); syncDraw();
   return s;
@@ -938,13 +950,13 @@ vp.addEventListener('pointerdown', e => {
     // a second finger: this was a pinch, not a stroke. Drop the stroke and hand
     // the first finger back to OrbitControls, which never saw it.
     if (e.pointerType === 'touch' && painting.id !== e.pointerId) {
-      const first = painting.down; cancelStroke();
+      const first = painting.down; cancelGesture();
       redispatch = true;
       try { $('c').dispatchEvent(new PointerEvent('pointerdown', first)); } finally { redispatch = false; }
     }
     return;
   }
-  if (!pen.on || e.button !== 0 || !e.isPrimary) return;
+  if (tool === 'hand' || e.button !== 0 || !e.isPrimary) return;
   const hit = surfaceHit(e.clientX, e.clientY);
   if (!hit) return;                            // the background still orbits
   e.stopPropagation(); e.preventDefault();
@@ -952,15 +964,23 @@ vp.addEventListener('pointerdown', e => {
   try { $('c').setPointerCapture(e.pointerId); } catch {}
   const down = { pointerId: e.pointerId, pointerType: e.pointerType, isPrimary: true, button: 0, buttons: 1,
                  clientX: e.clientX, clientY: e.clientY, bubbles: true, cancelable: true };
-  painting = { id: e.pointerId, g: ++gesture, x: e.clientX, y: e.clientY, down, n: 0 };
+  painting = { id: e.pointerId, mode: tool, x: e.clientX, y: e.clientY, down, hit };
+  if (tool === 'erase') { painting.erased = { strokes: [] }; eraseAt(hit); return; }
+  painting.g = ++gesture;
   painting.s = startStroke(hit, painting.g);
 }, true);
 vp.addEventListener('pointermove', e => {
+  if (drawing && tool === 'erase' && e.pointerType === 'mouse') moveRing(e);
   if (!painting || e.pointerId !== painting.id) return;
   e.stopPropagation();
   const d = Math.hypot(e.clientX - painting.x, e.clientY - painting.y);
   if (d < 3) return;
   const hit = surfaceHit(e.clientX, e.clientY);
+  if (painting.mode === 'erase') {
+    if (hit) eraseAt(hit);
+    painting.x = e.clientX; painting.y = e.clientY;
+    return;
+  }
   if (!hit) { painting.s = null; return; }     // off the part: the line breaks
   const s = painting.s, last = s && s.pts[s.pts.length - 1];
   // a jump in depth (across the silhouette onto a face behind) breaks it too,
@@ -975,12 +995,62 @@ vp.addEventListener('pointermove', e => {
 const endPaint = e => {
   if (!painting || e.pointerId !== painting.id) return;
   e.stopPropagation();
-  const g = painting.g;
-  painting = null; syncDraw();
-  if (draft.some(s => s.g === g)) takeView(g);
+  const p = painting;
+  painting = null;
+  if (p.mode === 'pen') {
+    const mine = draft.filter(s => s.g === p.g);
+    if (mine.length) { actions.push({ type: 'pen', g: p.g }); takeView(mine); }
+  } else if (p.mode === 'erase' && p.erased.strokes.length) {
+    actions.push({ type: 'erase', ...p.erased });
+    refreshViews(viewsOf(p.erased.strokes));
+  }
+  syncDraw();
 };
 vp.addEventListener('pointerup', endPaint, true);
 vp.addEventListener('pointercancel', endPaint, true);
+vp.addEventListener('pointerleave', () => { $('d-ring').style.display = 'none'; });
+
+// ── ⌫ the eraser ──
+// Removes WHOLE strokes, like the "object" eraser of most paint apps: the pen
+// already lifts wherever it leaves the surface, so a stroke is a natural piece.
+// The hit test is in 3D — the distance from the point under the pointer ON THE
+// PART to each stroke's polyline, against a radius set in screen px (the size
+// buttons) and turned into mm right there. Picking the thin tubes themselves
+// would miss a 3px line and catch strokes on the far side of the part.
+// Only the unsent draft is erasable: a sent note is immutable, deleted whole.
+const ERASE_PX = () => 6 + pen.size * 1.5;   // radius: 10.5 / 15 / 24 px
+function segDist(p, a, b) {
+  const ab = b.clone().sub(a), l2 = ab.lengthSq();
+  const t = l2 ? THREE.MathUtils.clamp(p.clone().sub(a).dot(ab) / l2, 0, 1) : 0;
+  return a.clone().addScaledVector(ab, t).distanceTo(p);
+}
+function strokeDist(s, p) {
+  if (s.pts.length === 1) return s.pts[0].distanceTo(p);
+  let d = Infinity;
+  for (let i = 1; i < s.pts.length; i++) d = Math.min(d, segDist(p, s.pts[i - 1], s.pts[i]));
+  return d;
+}
+function eraseAt(hit) {
+  const r = ERASE_PX() * mmPerPx(hit.p), er = painting.erased;
+  for (let i = draft.length - 1; i >= 0; i--) {
+    const s = draft[i];
+    if (strokeDist(s, hit.p) > r + s.width / 2) continue;
+    draft.splice(i, 1); disposeObj(s.obj); s.obj = null; er.strokes.push(s);
+  }
+  viewer.invalidate(); syncDraw();
+}
+// put erased strokes back in their original order (`k`): a circle broken over
+// a hole is read by the server in stroke order, and must stay a loop
+function restore(er) {
+  for (const s of er.strokes) { draft.push(s); redrawStroke(s); }
+  draft.sort((a, b) => a.k - b.k);
+}
+const viewsOf = items => items.map(x => x.view).filter(v => v != null);
+function moveRing(e) {
+  const ring = $('d-ring'), r = vp.getBoundingClientRect(), d = 2 * ERASE_PX();
+  Object.assign(ring.style, { display: 'block', width: d + 'px', height: d + 'px',
+    left: (e.clientX - r.left - d / 2) + 'px', top: (e.clientY - r.top - d / 2) + 'px' });
+}
 function camState() {
   const c = viewer.camera, t = viewer.controls.target, r = $('c').getBoundingClientRect();
   return { position: [c.position.x, c.position.y, c.position.z].map(r4),
@@ -994,15 +1064,16 @@ function sameCam(a, b) {
   return near(a.position, b.position) && near(a.target, b.target);
 }
 const VIEW_SHOT = { frame: false, maxSize: 900, quality: 0.8 };
-function takeView(g) {
+function takeView(items) {
   const cam = camState();
   const image = viewer.snapshot(VIEW_SHOT);
   if (!image) return;
-  // views[] keeps its indices (a dropped view becomes null): strokes point at them
-  let i = views.findIndex(v => v && sameCam(v.cam, cam));
+  // views[] keeps its indices (a dropped view keeps its camera, image null):
+  // strokes point at them, and an undone erase may bring a view back to life
+  let i = views.findIndex(v => sameCam(v.cam, cam));
   if (i < 0) { views.push({ image, cam }); i = views.length - 1; }
   else views[i].image = image;                 // now with this stroke on it too
-  for (const s of draft) if (s.g === g) s.view = i;
+  for (const x of items) x.view = i;
 }
 // A view's picture must never show strokes that no longer exist. Paid for on
 // prova-disegno/g1#a1: ↶ took «xBIG» off the model but not off the photo of
@@ -1013,21 +1084,22 @@ function takeView(g) {
 // The swap is invisible: snapshot() renders and reads back in this task, and
 // the real frame is redrawn before the browser composites. Only a projection
 // change (persp ↔ ortho swaps the camera object) cannot be re-created; then
-// the survivors move to a fresh picture of the current view instead.
+// the survivors move to a fresh picture of the current view instead. A shot
+// that fails leaves NO picture (image null → the strokes fall back to the
+// main one at send), never the old one.
 function refreshViews(idxs) {
   for (const i of new Set(idxs)) {
     const v = views[i]; if (!v) continue;
     const left = draft.filter(s => s.view === i);
-    if (!left.length) { views[i] = null; continue; }      // nothing left to show
-    if (sameCam(v.cam, camState())) { v.image = viewer.snapshot(VIEW_SHOT) || v.image; continue; }
+    if (!left.length) { v.image = null; continue; }      // nothing left to show
+    if (sameCam(v.cam, camState())) { v.image = viewer.snapshot(VIEW_SHOT); continue; }
     if (!!v.cam.ortho !== viewer.isOrtho) {
-      views[i] = null;
-      const g = new Set(left.map(s => s.g));
-      for (const s of left) s.view = null;
-      for (const x of g) takeView(x);
+      v.image = null;
+      for (const x of left) x.view = null;
+      takeView(left);
       continue;
     }
-    v.image = shootFrom(v.cam) || v.image;
+    v.image = shootFrom(v.cam);
   }
 }
 function shootFrom(c) {
@@ -1045,28 +1117,41 @@ function shootFrom(c) {
     viewer._renderFrame(true);                 // the user's frame, before it composites
   }
 }
-function cancelStroke() {
-  if (!painting) return;
-  for (let i = draft.length - 1; i >= 0; i--) if (draft[i].g === painting.g) { disposeObj(draft[i].obj); draft.splice(i, 1); }
-  painting = null; viewer.invalidate(); syncDraw();
+// A second finger turned the gesture into a pinch: it never happened.
+function cancelGesture() {
+  const p = painting;
+  if (!p) return;
+  painting = null;
+  if (p.mode === 'erase') restore(p.erased);
+  else for (let i = draft.length - 1; i >= 0; i--) if (draft[i].g === p.g) { disposeObj(draft[i].obj); draft.splice(i, 1); }
+  viewer.invalidate(); syncDraw();
 }
-function undoStroke() {
-  if (!draft.length) return;
-  const g = draft[draft.length - 1].g, hit = [];
-  while (draft.length && draft[draft.length - 1].g === g) { const s = draft.pop(); hit.push(s.view); disposeObj(s.obj); }
-  refreshViews(hit.filter(v => v != null));
+function removeGesture(g) {
+  const gone = [];
+  for (let i = draft.length - 1; i >= 0; i--) if (draft[i].g === g) { gone.push(draft[i]); disposeObj(draft[i].obj); draft.splice(i, 1); }
+  return gone;
+}
+function undo() {
+  const a = actions.pop();
+  if (!a) return;
+  let touched = [];
+  if (a.type === 'pen') touched = viewsOf(removeGesture(a.g));
+  else if (a.type === 'erase') { restore(a); touched = viewsOf(a.strokes); }
+  refreshViews(touched);
   viewer.invalidate(); syncDraw();
 }
 function clearDraft() {
   while (draft.length) disposeObj(draft.pop().obj);
-  views.length = 0;
+  views.length = 0; actions.length = 0;
   viewer.invalidate(); syncDraw();
 }
+function setTool(t) { tool = t; if (t !== 'erase') $('d-ring').style.display = 'none'; syncDraw(); }
 function syncDraw() {
   $('d-send').disabled = !draft.length && !$('d-text').value.trim();
-  $('d-undo').disabled = !draft.length; $('d-clear').disabled = !draft.length;
-  vp.classList.toggle('pen', drawing && pen.on);
-  $('d-pen').classList.toggle('on', pen.on); $('d-hand').classList.toggle('on', !pen.on);
+  $('d-undo').disabled = !actions.length; $('d-clear').disabled = !draft.length;
+  vp.classList.toggle('pen', drawing && tool === 'pen');
+  vp.dataset.tool = drawing ? tool : '';
+  for (const [id, t] of [['d-pen', 'pen'], ['d-erase', 'erase'], ['d-hand', 'hand']]) $(id).classList.toggle('on', tool === t);
   for (const b of $('d-colors').children) b.classList.toggle('on', b.dataset.c === pen.color);
   for (const b of $('d-sizes').children) b.classList.toggle('on', +b.dataset.s === pen.size);
 }
@@ -1074,28 +1159,30 @@ function setDrawing(on) {
   drawing = on;
   vp.classList.toggle('drawing', on);
   if (on && clock.playing) setPlaying(false);
-  if (!on) { painting = null; $('d-text').blur(); }
+  if (!on) { cancelGesture(); $('d-text').blur(); $('d-ring').style.display = 'none'; }
   syncDraw();
 }
 for (const c of PEN_COLORS) {
   const b = document.createElement('button');
   b.className = 'sw-btn'; b.dataset.c = c; b.style.background = c; b.title = c;
-  b.onclick = () => { pen.color = c; pen.on = true; syncDraw(); };
+  b.onclick = () => { pen.color = c; if (tool !== 'pen') setTool('pen'); else syncDraw(); };
   $('d-colors').appendChild(b);
 }
-$('d-custom').addEventListener('input', e => { pen.color = e.target.value; pen.on = true; syncDraw(); });
+$('d-custom').addEventListener('input', e => { pen.color = e.target.value; if (tool !== 'pen') setTool('pen'); else syncDraw(); });
 PEN_SIZES.forEach(sz => {
   const b = document.createElement('button');
   b.className = 'btn sz'; b.dataset.s = sz; b.title = `Tratto ${sz}px`;
   b.innerHTML = `<i style="width:${4 + sz}px;height:${4 + sz}px"></i>`;
-  b.onclick = () => { pen.size = sz; pen.on = true; syncDraw(); };
+  // a size is also the eraser's radius: picking one keeps the eraser in hand
+  b.onclick = () => { pen.size = sz; if (tool === 'hand') setTool('pen'); else syncDraw(); };
   $('d-sizes').appendChild(b);
 });
 $('d-open').onclick = () => setDrawing(true);
 $('d-x').onclick = () => setDrawing(false);
-$('d-pen').onclick = () => { pen.on = true; syncDraw(); };
-$('d-hand').onclick = () => { pen.on = false; syncDraw(); };
-$('d-undo').onclick = undoStroke;
+$('d-pen').onclick = () => setTool('pen');
+$('d-erase').onclick = () => setTool('erase');
+$('d-hand').onclick = () => setTool('hand');
+$('d-undo').onclick = undo;
 $('d-clear').onclick = () => { if (draft.length < 4 || confirm('Cancellare tutti i tratti non inviati?')) clearDraft(); };
 $('d-text').addEventListener('input', syncDraw);
 $('d-text').addEventListener('keydown', e => {
@@ -1105,8 +1192,12 @@ $('d-text').addEventListener('keydown', e => {
 });
 addEventListener('keydown', e => {
   if (!drawing || e.target.tagName === 'INPUT') return;
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.stopImmediatePropagation(); undoStroke(); }
+  const k = e.key.toLowerCase();
+  if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); e.stopImmediatePropagation(); undo(); }
   else if (e.key === 'Escape') { e.stopImmediatePropagation(); setDrawing(false); }
+  else if (e.ctrlKey || e.metaKey || e.altKey) return;
+  else if (k === 'p') { e.stopImmediatePropagation(); setTool('pen'); }
+  else if (k === 'e') { e.stopImmediatePropagation(); setTool('erase'); }
 }, true);
 
 function toast(html, ms = 6000) {
@@ -1128,7 +1219,7 @@ async function sendNote() {
   for (const s of draft) {
     if (s.view == null || remap.has(s.view)) continue;
     const v = views[s.view];
-    if (!v || sameCam(v.cam, camera)) { remap.set(s.view, null); continue; }
+    if (!v || !v.image || sameCam(v.cam, camera)) { remap.set(s.view, null); continue; }
     remap.set(s.view, keep.length); keep.push(v);
   }
   const body = {
