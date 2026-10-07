@@ -162,6 +162,24 @@ noodle runs in **Docker**, so it works the same on **Windows, Linux and macOS**.
 The only thing to install is Docker itself; the B-Rep kernel (OpenCASCADE) ships
 inside the build123d wheel — **nothing to compile**.
 
+### The quick way — ask your AI agent to do it
+
+Paste this to your coding agent (Claude Code, Codex, Cursor…). It checks the repo
+before running anything, stops if Docker is missing, and connects itself to noodle
+when it is done:
+
+```text
+Install noodle (https://github.com/rederyk/noodle) on this machine and connect yourself to it.
+
+1. Check it first: read README.md ("Install & run"), AGENTS.md and the security note — noodle runs graph code as unsandboxed Python, so it is for local, single-user use only. Tell me if anything there worries you before going on.
+2. Check that Docker is installed and running (`docker info`). If it is not, tell me how to install it on my OS and stop there.
+3. Clone the repo and start it: `docker compose up -d --build` (the first build downloads ~1 GB and takes a few minutes). Wait until http://localhost:8090/health answers.
+4. Connect yourself through its MCP server — for Claude Code: `claude mcp add noodle -- docker exec -i noodle python mcp_server.py`; for other agents use the config in AGENTS.md. Then call `cad_help` and read it.
+5. Tell me the editor URL (http://localhost:8090/nodes) and that, from now on, I can draw on a part in the viewer (✎ Disegna) and ask you "look at what I marked" — you read it with `cad_notes`.
+```
+
+Rather do it by hand? The two steps below are all there is.
+
 ### Step 1 — install Docker (once)
 
 - **Windows** → [Docker Desktop](https://docs.docker.com/desktop/install/windows-install/)

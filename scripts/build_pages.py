@@ -39,6 +39,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 WEBUI = ROOT / "webui"
+# What to paste to your own agent to get noodle installed. ONE file: the build
+# puts it on the landing page and in the preview's "send" message, and the
+# README quotes it verbatim (tests/test_pages.py keeps the copy honest).
+INSTALL_PROMPT = (ROOT / "scripts" / "pages" / "install-prompt.txt").read_text().strip()
 
 # Runs before the page's module: the read-only viewer asks the API for a few
 # things; on Pages they are files next to the demo. Writes have nowhere to go:
@@ -105,13 +109,21 @@ def _patch_view(html: str) -> str:
     # ✎ Disegna works here — strokes, text, pictures, eraser, undo — but a note
     # is sent to an agent through a running noodle: say so, keep the drawing
     sub("    toast(`⚠ Nota non salvata: ${esc(err.message)}`);",
-        "    if (err.message === 'STATIC_PREVIEW') toast(STATIC_SEND, 15000);\n"
+        "    if (err.message === 'STATIC_PREVIEW') toast(STATIC_SEND, 30000);\n"
         "    else toast(`⚠ Nota non salvata: ${esc(err.message)}`);")
     sub("function toast(html, ms = 6000) {",
+        "const INSTALL_PROMPT = " + json.dumps(INSTALL_PROMPT) + ";\n"
+        "window.__copyInstall = async b => {\n"
+        "  try { await navigator.clipboard.writeText(INSTALL_PROMPT); b.textContent = '✓ Copiato: incollalo al tuo agente'; }\n"
+        "  catch { prompt('Copia questo e dallo al tuo agente:', INSTALL_PROMPT); }\n"
+        "};\n"
         "const STATIC_SEND = '✎ Il disegno funziona, ma questa è l\\'<b>anteprima statica</b>: qui non c\\'è un agente '\n"
-        "  + 'a cui mandarlo. Per inviare la nota (i tratti, il testo, le foto delle viste) a un agente, '\n"
-        "  + '<a href=\"https://github.com/rederyk/noodle#install--run\" target=\"_blank\" rel=\"noopener\">installa noodle</a> '\n"
-        "  + '— un container Docker, e il tuo agente lo legge con <code>cad_notes</code>. Il disegno resta qui.';\n"
+        "  + 'a cui mandarlo. Per mandarlo davvero, <b>fai installare noodle al tuo agente</b> (Claude Code, Codex, Cursor…): '\n"
+        "  + 'controlla il repo, lo installa con Docker e si collega da solo.<br>'\n"
+        "  + '<button class=\"btn\" style=\"margin:6px 0\" onclick=\"__copyInstall(this)\">📋 Copia il prompt di installazione</button> '\n"
+        "  + '<a href=\"../#install-agent\">vedi il prompt</a> · '\n"
+        "  + '<a href=\"https://github.com/rederyk/noodle#install--run\" target=\"_blank\" rel=\"noopener\">a mano</a><br>'\n"
+        "  + 'Il disegno resta qui.';\n"
         "function toast(html, ms = 6000) {")
     return html.replace("<head>", "<head>\n" + FETCH_SHIM, 1)
 
@@ -161,7 +173,9 @@ def build(projects: Path, out: Path, gens: list[str], base_site: Path | None = N
     # landing page + media
     pages = ROOT / "scripts" / "pages"
     if (pages / "index.html").exists():
-        shutil.copy(pages / "index.html", out / "index.html")
+        import html as _html
+        (out / "index.html").write_text((pages / "index.html").read_text()
+                                        .replace("{{INSTALL_PROMPT}}", _html.escape(INSTALL_PROMPT)))
     if (pages / "thumbs").is_dir():
         shutil.copytree(pages / "thumbs", out / "thumbs")
     shutil.copytree(ROOT / "docs" / "asset", out / "assets")

@@ -44,6 +44,11 @@
   .feature ul{padding-left:18px;margin:10px 0 0} .feature li{margin:5px 0}
   footer{padding:36px 0 50px;color:var(--text-dim);font-size:.9rem;text-align:center;border-top:1px solid var(--border)}
   @media (max-width:820px){ .feature,.feature.flip{grid-template-columns:1fr} .feature.flip .media{order:0} header.hero{padding-top:40px} }
+  .install{margin-top:22px;background:var(--bg-2,#151a22);border:1px solid var(--border,#1e2738);border-radius:12px;padding:16px 18px;}
+  .install h3{margin:0 0 6px;font-size:17px;}
+  .install p{margin:0 0 10px;color:var(--text-dim,#8b98a8);line-height:1.5;}
+  .install pre{white-space:pre-wrap;background:var(--bg-0,#0b0e14);border:1px solid var(--border,#1e2738);border-radius:8px;
+    padding:12px 14px;font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace;max-height:320px;overflow:auto;margin:0 0 10px;}
 </style>
 </head>
 <body>
@@ -94,6 +99,23 @@
       <a class="card" href="demo/?g=coniglietto-cube-claude&gen=g1"><img src="thumbs/coniglietto-cube-claude.jpg" alt="" loading="lazy">
         <div class="b"><b>…and what an agent made of it</b><span>Claude's reading of that note, built on its own copy of the project. All five are in the docs (NOTES_AGENT_TEST).</span></div></a>
     </div>
+    <div class="install" id="install-agent">
+      <h3>The real thing: let your agent install it</h3>
+      <p>Sending a drawing to an agent needs noodle running on your machine. The quickest way: copy this and give it to
+        your coding agent (Claude Code, Codex, Cursor…). It reads the repo first, stops if Docker is missing, installs
+        noodle and connects itself — then "look at what I marked" works.</p>
+      <pre id="install-prompt">{{INSTALL_PROMPT}}</pre>
+      <button class="btn primary" id="install-copy" type="button">📋 Copy the prompt</button>
+      <a class="btn" href="https://github.com/rederyk/noodle#install--run">or install by hand</a>
+    </div>
+    <script>
+      document.getElementById('install-copy').onclick = async e => {
+        const t = document.getElementById('install-prompt').textContent;
+        try { await navigator.clipboard.writeText(t); e.target.textContent = '✓ Copied — paste it to your agent'; }
+        catch { const r = document.createRange(); r.selectNodeContents(document.getElementById('install-prompt'));
+                getSelection().removeAllRanges(); getSelection().addRange(r); e.target.textContent = 'Selected — copy it'; }
+      };
+    </script>
   </section>
 
   <section>
