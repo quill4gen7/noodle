@@ -169,3 +169,15 @@ def test_the_pen_paints_on_the_surface_and_leaves_the_background_to_orbit():
     # a note opened on another screen backs off by the aspect ratio, then
     # until every stroke is inside the picture
     assert "c.aspect / now" in VIEW and "!inside()" in VIEW
+
+
+def test_a_view_photo_never_shows_strokes_that_were_taken_back():
+    """prova-disegno/g1#a1: ↶ removed «xBIG» from the model but not from the
+    photo of its view, and an agent read the leftover «x» as "remove the hole".
+    Undo re-shoots every view that lost something, from that view's own camera;
+    a view left with nothing is dropped (null keeps the other indices valid)."""
+    assert "function refreshViews" in VIEW and "function shootFrom" in VIEW
+    undo = VIEW[VIEW.index("function undoStroke"):]
+    assert "refreshViews(" in undo[:undo.index("\n}\n")]
+    assert "if (!left.length) { views[i] = null; continue; }" in VIEW
+    assert "views.findIndex(v => v && sameCam(v.cam, cam))" in VIEW
