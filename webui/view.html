@@ -252,6 +252,10 @@
   #s-modes .btn{padding:4px 8px;gap:4px;white-space:nowrap;}
   #s-modes .gm.on,#s-cagemode.on{border-color:#a78bfa;background:var(--bg-2);color:#e9e3ff;}
   #s-cagemode{display:none;font-size:11px;}
+  /* standard sizes, next to the size label: small, never a row of their own on a desktop */
+  #s-presets{display:inline-flex;gap:3px;}
+  #s-presets .btn{padding:2px 6px;font-size:11px;white-space:nowrap;}
+  #s-presets .btn:disabled{opacity:.45;cursor:default;}
   #s-bar[data-gm=cage] #s-cagemode{display:inline-flex;}
   #s-cagemode:disabled{opacity:.45;cursor:default;}
   #m-lens{position:absolute;display:none;pointer-events:none;z-index:7;width:120px;}
@@ -319,6 +323,12 @@
     #s-bar{top:8px;bottom:auto;}          /* the draw bar owns the bottom on a phone */
     /* the modes row stays ONE row in 390px: short labels, tight padding */
     #s-modes .btn{min-height:36px;padding:3px 6px;font-size:12px;gap:3px;}
+    /* the size row stays ONE row in 390px with the three presets in it */
+    #s-bar{gap:4px;padding:5px 4px 5px 8px;}
+    #s-presets{gap:2px;}
+    #s-dims{font-size:11px;}
+    #s-presets .btn{min-height:36px;padding:2px 4px;min-width:0;}
+    #s-del,#s-done{padding:4px 8px;min-width:0;}
     #d-lstyle{min-height:36px;max-width:104px;}
     #d-text{flex:1 1 140px;min-height:36px;min-width:0;}
     #toast{top:8px;}
@@ -410,7 +420,7 @@
       </div>
       <div id="d-ring"></div><div id="d-box"></div>
       <div id="m-snap"></div>
-      <div id="s-bar"><span id="s-dims"></span><button class="btn" id="s-del" title="Togli questa forma (Canc)">Togli</button><button class="btn" id="s-done" title="Fatto (Esc)">✓</button>
+      <div id="s-bar"><span id="s-dims"></span><span id="s-presets" role="group" aria-label="Misure standard"><button class="btn sp" data-sp="1" title="Misura 1 mm: lati / diametro e altezza a 1 mm, la base resta sul pezzo">1mm</button><button class="btn sp" data-sp="10" title="Misura 10 mm: lati / diametro e altezza a 10 mm, la base resta sul pezzo">10mm</button><button class="btn sp" data-sp="half" id="s-halfvol" title="½ volume del pezzo su cui poggia: stessa forma, scalata in proporzione">½ vol</button></span><button class="btn" id="s-del" title="Togli questa forma (Canc)">Togli</button><button class="btn" id="s-done" title="Fatto (Esc)">✓</button>
         <div id="s-modes" role="radiogroup" aria-label="Maniglie della forma">
           <button class="btn gm" id="s-gm-move" data-gm="move" role="radio" title="Sposta: solo le frecce X/Y/Z (G)">✥<span>Sposta</span></button>
           <button class="btn gm" id="s-gm-rotate" data-gm="rotate" role="radio" title="Ruota: solo gli anelli, Shift a 15° (R)">⟳<span>Ruota</span></button>
@@ -1849,8 +1859,12 @@ function pieceBox(S) {
 function shapeMin(S) {
   const box = pieceBox(S);
   const L = box.isEmpty() ? 0 : box.getSize(new THREE.Vector3()).length();
-  return Math.max(0.02 * L, 1e-3);
+  // …but never above 1 mm: «1 mm» is a standard size (the preset button), and
+  // on a big piece 2% is several mm — the next corner / centre drag would have
+  // snapped a 1 mm cube straight back up. Below 1 mm the 2% rule still holds.
+  return Math.min(Math.max(0.02 * L, 1e-3), SHAPE_MM_FLOOR);
 }
+const SHAPE_MM_FLOOR = 1;
 // How far the arrows may take a shape: its centre stays inside the box of the
 // piece it sits on, grown by a quarter of that piece (or the shape's own size,
 // if bigger) — near the part, never wandering off into the scene.
@@ -1897,6 +1911,7 @@ function refreshCage() {
   $('s-bar').classList.toggle('open', !!S);
   if (!S) { viewer.invalidate(); return; }
   $('s-dims').textContent = shapeText(S.kind, S.size);
+  syncSizePresets(S);
   const q = shapeQuat(S), touch = matchMedia('(pointer:coarse)').matches;
   // the marks shrink WITH the shape (never bigger than a slice of its shortest
   // side, or a tiny cage hides the part under its own corners); what the
@@ -2137,6 +2152,71 @@ vp.addEventListener('pointerup', endShapeDrag, true);
 vp.addEventListener('pointercancel', endShapeDrag, true);
 $('s-del').onclick = () => { if (selShape && !sBarGhost()) deleteShape(selShape); };
 $('s-done').onclick = () => selectShape(null);
+// ── standard sizes (quill: «bottoncini per misure standard 10mm 1mm e 50% del
+// volume del pezzo originale») ──
+// 1 mm / 10 mm: every side (cube), Ø and height (cylinder), Ø (sphere) = the
+// value. ½ vol: the SAME shape scaled uniformly until its volume is half the
+// volume of the piece it sits on (S.piece). Either way the anchor — the
+// centre of the base, on the surface — stays put, so the shape stays seated
+// (placeShape grows it off the surface, as the centre handle does).
+// The piece's volume is the gen's own (view.json previews[id].volume, exact
+// from the engine); a collide-scene body has its own; a fanned list (`parts`)
+// carries none, so its part's triangles are summed (signed tetrahedra).
+let genPreviews = {};                          // set at boot: view.previews
+function shapeVolume(S) {
+  // the NOMINAL shape (size fields): task C's S.ffd deformation, if any, is
+  // ignored on purpose — "half the piece" means half, in the shape's own box
+  const s = S.size;
+  if (S.kind === 'sphere') return Math.PI / 6 * s.x * s.y * s.z;
+  if (S.kind === 'cylinder') return Math.PI / 4 * s.x * s.y * s.z;
+  return s.x * s.y * s.z;
+}
+function meshVolume(geo, from, count) {
+  const P = geo.attributes.position, I = geo.index;
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  let v = 0;
+  for (let k = from; k < from + count; k += 3) {
+    const [i, j, l] = I ? [I.getX(k), I.getX(k + 1), I.getX(k + 2)] : [k, k + 1, k + 2];
+    a.fromBufferAttribute(P, i); b.fromBufferAttribute(P, j); c.fromBufferAttribute(P, l);
+    v += a.dot(b.cross(c)) / 6;
+  }
+  return Math.abs(v);
+}
+function pieceVolume(key) {
+  const li = key && leafIndex.get(key);
+  if (!li) return null;
+  const id = li.node.id, pv = genPreviews[id] || {}, leaf = li.leaf;
+  let v = null;
+  if (pv.bodies) { const i = +String(key).slice(id.length + 1); v = pv.bodies[i] && pv.bodies[i].volume; }
+  else if (leaf.part != null) {
+    const g = leaf.obj.geometry, gr = g.groups[leaf.part];
+    if (gr) v = meshVolume(g, gr.start, gr.count);
+  } else v = pv.volume;
+  return typeof v === 'number' && isFinite(v) && v > 1e-9 ? v : null;
+}
+function syncSizePresets(S) {
+  const b = $('s-halfvol'), v = pieceVolume(S.piece);
+  b.disabled = v == null;
+  b.title = v == null
+    ? '½ vol: il volume del pezzo sotto la forma non è noto (non è un solido chiuso, o la forma non poggia su un pezzo)'
+    : `½ volume del pezzo su cui poggia (${fmtNum(v)} mm³ → ${fmtNum(v / 2)} mm³): stessa forma, scalata in proporzione`;
+}
+function setShapePreset(S, p) {
+  let size;
+  if (p === 'half') {
+    const vp = pieceVolume(S.piece), vs = shapeVolume(S);
+    if (vp == null || !(vs > 0)) return;
+    size = S.size.clone().multiplyScalar(Math.cbrt(0.5 * vp / vs));
+  } else size = new THREE.Vector3(+p, +p, +p);   // an explicit size: not clamped by shapeMin
+  if (size.distanceTo(S.size) < 1e-9) return;
+  actions.push({ type: 'shape', S, before: shapeState(S) });
+  S.size = size;
+  drawShape(S); refreshCage();
+  refreshViews(viewsOf([S])); takeView([S]);
+  syncDraw();
+}
+for (const b of $('s-presets').querySelectorAll('.sp'))
+  b.onclick = () => { if (selShape && !sBarGhost() && !b.disabled) setShapePreset(selShape, b.dataset.sp); };
 // the cage is drawn at a size in px: keep it so while the view zooms
 viewer.controls.addEventListener('change', () => { if (selShape && !sDrag) refreshCage(); });
 
@@ -3747,6 +3827,7 @@ async function boot() {
       .then(b => fetch(`${base}/thumb`, { method: 'PUT', body: b, headers: { 'Content-Type': 'image/jpeg' } }))
       .catch(() => {});
   }
+  genPreviews = view.previews || {};          // ▣ ½ vol reads the pieces' volumes
   if (r.size) sizeTxt = `${r.size.x.toFixed(1)} × ${r.size.y.toFixed(1)} × ${r.size.z.toFixed(1)} mm`;
   for (const id of r.order) {
     const obj = r.meshes[id]; if (!obj) continue;

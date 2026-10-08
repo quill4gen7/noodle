@@ -610,3 +610,34 @@ def test_a_pen_colour_recolours_the_selected_shape():
     assert "if (st.color) S.color = st.color;" in VIEW[VIEW.index("function setShapeState(S, st)"):].split("\n")[0]
     # …and the note says it
     assert "return { kind: S.kind, color: S.color," in VIEW
+
+
+def test_shapes_have_standard_sizes():
+    # quill: «bottoncini per misure standard 10mm 1mm e 50% del volume del
+    # pezzo originale» — 50% of the piece the shape SITS ON
+    for sp, label in (("1", "1mm"), ("10", "10mm"), ("half", "½ vol")):
+        assert f'data-sp="{sp}"' in VIEW and f">{label}</button>" in VIEW
+    # the shape's own volume, from its size fields, per kind
+    fn = VIEW[VIEW.index("function shapeVolume(S)"):]
+    fn = fn[:fn.index("\n}\n")]
+    assert "if (S.kind === 'sphere') return Math.PI / 6 * s.x * s.y * s.z;" in fn
+    assert "if (S.kind === 'cylinder') return Math.PI / 4 * s.x * s.y * s.z;" in fn
+    assert "return s.x * s.y * s.z;" in fn
+    # the piece's: the gen's own volume (a body's, or a fanned part's triangles)
+    pv = VIEW[VIEW.index("function pieceVolume(key)"):]
+    pv = pv[:pv.index("\n}\n")]
+    assert "pv.bodies[i].volume" in pv and "meshVolume(g, gr.start, gr.count)" in pv and "v = pv.volume;" in pv
+    assert "genPreviews = view.previews || {};" in VIEW
+    # uniform scale to half, one undo step, re-shot views, through the ghost guard
+    fn = VIEW[VIEW.index("function setShapePreset(S, p)"):]
+    fn = fn[:fn.index("\n}\n")]
+    assert "Math.cbrt(0.5 * vp / vs)" in fn
+    assert "new THREE.Vector3(+p, +p, +p)" in fn
+    assert "actions.push({ type: 'shape', S, before: shapeState(S) });" in fn
+    assert "refreshViews(viewsOf([S])); takeView([S]);" in fn
+    assert "if (selShape && !sBarGhost() && !b.disabled) setShapePreset(selShape, b.dataset.sp);" in VIEW
+    # no volume known → the button says why instead of doing nothing
+    assert "b.disabled = v == null;" in VIEW and "syncSizePresets(S);" in VIEW
+    # a drag never snaps the 1 mm preset back up: the minimum is capped at 1 mm
+    assert "return Math.min(Math.max(0.02 * L, 1e-3), SHAPE_MM_FLOOR);" in VIEW
+    assert "const SHAPE_MM_FLOOR = 1;" in VIEW
