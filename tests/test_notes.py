@@ -472,3 +472,8 @@ def test_the_measure_tool_is_part_of_the_draft():
     assert "if (tool === 'hand' || tool === 'measure' || e.button !== 0" in VIEW
     # saved notes draw their dimensions
     assert "for (const m of n.measures || [])" in VIEW
+    # the snaps come from webui/measure.js (tested in tests/ui/measure.test.cjs)
+    assert "import * as MS from '/static/measure.js';" in VIEW
+    assert (ROOT / "webui" / "measure.js").exists()
+    for mode in ("auto", "p2p", "edge", "hole", "faces"):
+        assert f'<option value="{mode}">' in VIEW

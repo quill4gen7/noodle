@@ -239,6 +239,13 @@
   #vp.drawing[data-tool=text] canvas{cursor:text;}
   #vp.drawing[data-tool=image] canvas{cursor:copy;}
   #vp.drawing[data-tool=measure] canvas{cursor:crosshair;}
+  #m-snap{position:absolute;display:none;pointer-events:none;z-index:6;padding:2px 7px;border-radius:6px;
+    background:rgba(10,12,20,.88);border:1px solid #a78bfa;color:#e9e3ff;font-size:12px;white-space:nowrap;}
+  #m-lens{position:absolute;display:none;pointer-events:none;z-index:7;width:120px;}
+  #m-lens canvas{width:120px;height:120px;border-radius:50%;border:2px solid #a78bfa;background:#000;
+    box-shadow:0 4px 18px rgba(0,0,0,.6);display:block;}
+  #m-lens-t{margin-top:4px;text-align:center;font-size:12px;color:#e9e3ff;background:rgba(10,12,20,.88);
+    border-radius:6px;padding:1px 6px;}
   #d-texttool{font:700 15px Georgia,serif;}
   #d-lstyle{min-height:var(--tap);padding:4px 4px;max-width:112px;}
   #d-box{position:absolute;display:none;pointer-events:none;z-index:6;border:2px dashed #fff;border-radius:4px;
@@ -350,7 +357,11 @@
           <input type="file" id="d-imgfile" accept="image/*" hidden>
           <button class="btn tool" id="d-measure" title="Metro: tocca due punti sul pezzo per misurarne la distanza (M) — Shift blocca la quota su X/Y/Z, Esc annulla il primo punto">↔</button>
           <select id="d-mmode" title="Cosa misurare col metro">
+            <option value="auto">Auto</option>
             <option value="p2p">Punto–punto</option>
+            <option value="edge">Spigolo</option>
+            <option value="hole">Foro / cerchio</option>
+            <option value="faces">Faccia–faccia</option>
           </select>
           <button class="btn tool" id="d-erase" title="Gomma: passa sopra un tratto per toglierlo intero (E) — la misura sceglie il raggio">⌫</button>
           <button class="btn tool" id="d-hand" title="Muovi: ruota/zoom senza disegnare (anche: trascina fuori dal pezzo, tasto destro, rotella)">Muovi</button>
@@ -369,6 +380,8 @@
         <div id="d-hint">Disegna trascinando sul pezzo · T: trascina un riquadro e scrivi · ⌫ gomma: passa sopra un tratto · fuori dal pezzo / tasto destro / rotella / due dita: muovi la vista · un tocco = un punto</div>
       </div>
       <div id="d-ring"></div><div id="d-box"></div>
+      <div id="m-snap"></div>
+      <div id="m-lens"><canvas></canvas><div id="m-lens-t"></div></div>
       <input id="d-label" maxlength="200" autocomplete="off" placeholder="scrivi… (Invio)">
       <div id="toast"></div>
       <div id="selbar">
@@ -402,6 +415,7 @@
 import * as THREE from 'three';
 import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
 import { CadViewer, PALETTE, poseAnim } from '/static/viewer.js';
+import * as MS from '/static/measure.js';
 
 const $ = id => document.getElementById(id);
 const seg = location.pathname.split('/').filter(Boolean);     // ['view', name, gen?]
@@ -1045,7 +1059,7 @@ function surfaceHit(x, y) {
   if (!f || !f.h.face) return null;            // lines and dots are not a surface
   const n = f.h.face.normal.clone().transformDirection(f.h.object.matrixWorld);
   if (n.dot(ray.ray.direction) > 0) n.negate(); // the side you are looking at
-  return { p: f.h.point.clone(), n, key: f.key, mesh: f.h.object };
+  return { p: f.h.point.clone(), n, key: f.key, mesh: f.h.object, tri: f.h.faceIndex };
 }
 function strokeMat(color) {
   return new THREE.MeshBasicMaterial({ color, toneMapped: false,
@@ -1249,108 +1263,340 @@ function moveRing(e) {
 }
 
 // ── ↔ Metro: the user measures on the part ──
-// Tap (or click) a point ON the part, then a second one: a dimension between
-// them, drawn as the agent's would be (measureObject) in the user's violet. A
-// tap, not a press: the tool never captures the pointer, so a drag still
-// orbits and the user can turn the part between the two points. With a mouse,
-// after the first point a rubber dimension follows the pointer with its value
-// live. Shift locks it to the dominant world axis (X/Y/Z), as a CAD does —
+// Tap (or click) ON the part, then again: a dimension between the two, drawn
+// as the agent's would be (measureObject) in the user's violet. A tap, not a
+// press: the tool never captures the pointer, so a drag still orbits and the
+// part can be turned between the two points.
+// WHAT is taken is the menu next to ↔ (remembered): Auto snaps like a CAD — a
+// vertex within ~10 px, else the centre of a circle whose rim is near, else an
+// edge, else a planar face, else a free point (webui/measure.js rebuilds those
+// features from the triangles, lazily, once per piece); the feature under the
+// pointer is highlighted with its icon before you tap. Two faces that are
+// parallel = the thickness, perpendicular; a face and a point = the distance to
+// the plane; the SAME circle or edge twice (or Enter after one) = its Ø /
+// length. Punto–punto = free points only. Spigolo, Foro / cerchio: one tap.
+// Faccia–faccia: two parallel faces.
+// Shift locks a distance to the dominant world axis (X/Y/Z), as a CAD does —
 // the second point stays where it was picked and an extension line joins it.
-// The menu says WHAT to measure; this phase has point–point only, the snaps
-// (edges, vertices, circles, faces) come with Auto. Esc drops the first point.
-// A dimension is part of the draft like a stroke: ↶, ⌫, the view pictures.
-const MEASURE_MODES = ['p2p'];
-let measureMode = 'p2p';
+// On a phone, press and HOLD to aim: a lens above the finger shows what is
+// under it (the finger covers it), and lifting takes it. Esc drops the first
+// point. A dimension is part of the draft like a stroke: ↶, ⌫, view pictures.
+const MEASURE_MODES = ['auto', 'p2p', 'edge', 'hole', 'faces'];
+const ONE_TAP = new Set(['edge', 'hole']);
+let measureMode = 'auto';
 try { const v = localStorage.getItem('noodle:view:measureMode'); if (MEASURE_MODES.includes(v)) measureMode = v; } catch {}
 $('d-mmode').value = measureMode;
 $('d-mmode').addEventListener('change', e => {
-  measureMode = MEASURE_MODES.includes(e.target.value) ? e.target.value : MEASURE_MODES[0];
+  measureMode = MEASURE_MODES.includes(e.target.value) ? e.target.value : 'auto';
   try { localStorage.setItem('noodle:view:measureMode', measureMode); } catch {}
-  setTool('measure');
+  cancelMeasure(); setTool('measure');
 });
 const DRAW_HINT = $('d-hint').textContent;
-const MEASURE_HINT = 'Metro: tocca un punto sul pezzo, poi il secondo · Shift: blocca su X/Y/Z · trascina: ruota la vista · Esc: annulla il primo punto';
+const MODE_HINT = {
+  auto: 'Metro Auto: tocca due cose sul pezzo — vertici, centri dei fori, spigoli, facce (due facce parallele = spessore) · la stessa due volte o Invio = Ø / lunghezza',
+  p2p: 'Metro punto–punto: tocca un punto sul pezzo, poi il secondo',
+  edge: 'Metro spigolo: tocca uno spigolo per la sua lunghezza',
+  hole: 'Metro foro: tocca il bordo di un foro o la sua parete per il Ø',
+  faces: 'Metro faccia–faccia: tocca due facce piane parallele per la distanza fra loro',
+};
+const measureHint = () => MODE_HINT[measureMode] + ' · Shift: blocca su X/Y/Z · trascina: ruota · Esc: annulla'
+  + (matchMedia('(pointer:coarse)').matches ? ' · tieni premuto: lente' : '');
 const dmeasures = [];                          // the draft's dimensions
-let mPending = null, mPendingObj = null, mHover = null, mDown = null, mRaf = 0;
+let mPending = null, mPendingObj = null, mHover = null, mSnapObj = null, mSnapKey = '', mDown = null, mRaf = 0;
 const TAP_PX = e => (e.pointerType === 'touch' ? 12 : 5);
-function endOf(hit) {
-  return { at: [r4(hit.p.x), r4(hit.p.y), r4(hit.p.z)], normal: v3(hit.n), piece: hit.key, snap: 'free' };
+const SNAP_PX = touch => (touch ? { v: 18, e: 16 } : { v: 10, e: 8 });
+
+// features per piece, built on first use and kept with the geometry
+const featCache = new WeakMap();
+const denseWarned = new WeakSet();
+function featuresOf(mesh) {
+  const g = mesh.geometry;
+  let c = featCache.get(mesh);
+  if (c && c.uuid === g.uuid) return c.F;
+  const P = g.attributes.position, I = g.index;
+  const F = MS.buildFeatures(P.array, I ? I.array : null);
+  featCache.set(mesh, { uuid: g.uuid, F });
+  return F;
 }
+const A3 = v => [v.x, v.y, v.z];
+function wpt(mesh, a) { return new THREE.Vector3(...a).applyMatrix4(mesh.matrixWorld); }
+function wdir(mesh, a) { return new THREE.Vector3(...a).transformDirection(mesh.matrixWorld); }
+// What the pointer would take, in WORLD space, plus the piece-local feature
+function snapAt(x, y, touch) {
+  const hit = surfaceHit(x, y);
+  if (!hit) return null;
+  const base = { snap: 'free', p: hit.p.clone(), n: hit.n.clone(), key: hit.key, mesh: hit.mesh };
+  if (measureMode === 'p2p' || !hit.mesh.geometry || !hit.mesh.geometry.attributes.position) return base;
+  let F;
+  try { F = featuresOf(hit.mesh); } catch { return base; }
+  if (F.dense && !denseWarned.has(hit.mesh)) {
+    denseWarned.add(hit.mesh);
+    toast('Metro: superficie fitta (un filetto?) — snap su spigoli e vertici disattivato su questo pezzo; facce e punti liberi sì.', 4500);
+  }
+  hit.mesh.updateMatrixWorld();
+  const s = hit.mesh.matrixWorld.getMaxScaleOnAxis() || 1, k = mmPerPx(hit.p) / s, r = SNAP_PX(touch);
+  const pl = A3(hit.mesh.worldToLocal(hit.p.clone()));
+  const f = MS.pickFeature(F, pl, hit.tri, { rV: r.v * k, rE: r.e * k, mode: measureMode });
+  if (!f) return null;
+  const out = { ...base, snap: f.snap, f, p: wpt(hit.mesh, f.point), approx: !!f.approx };
+  if (f.plane) out.plane = { point: wpt(hit.mesh, f.plane.point), normal: wdir(hit.mesh, f.plane.normal) };
+  if (f.circle) out.circle = { center: wpt(hit.mesh, f.circle.center), axis: wdir(hit.mesh, f.circle.axis), r: f.circle.r * s };
+  return out;
+}
+// the plain-array view of a world pick that measure.js combines
+const msPick = q => ({ point: A3(q.p), approx: q.approx, chain: q.f && q.f.chain, cylinder: q.f && q.f.cylinder,
+  plane: q.plane && { point: A3(q.plane.point), normal: A3(q.plane.normal) } });
+function endOf(q, at = q.p) {
+  const o = { at: [r4(at.x), r4(at.y), r4(at.z)], normal: v3(q.n), piece: q.key, snap: q.snap };
+  if (q.circle) o.circle = { center: v3(q.circle.center), axis: v3(q.circle.axis), r: r4(q.circle.r) };
+  return o;
+}
+const nodesOf = (...qs) => [...new Set(qs.filter(q => q && q.key).map(q => q.key.split('.')[0]))];
 const AXES = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) };
 function dominantAxis(d) {
   const ax = Math.abs(d.x), ay = Math.abs(d.y), az = Math.abs(d.z);
   return ax >= ay && ax >= az ? 'x' : ay >= az ? 'y' : 'z';
 }
-function makeMeasure(a, b, lock) {
-  const M = { kind: 'distance', a: a.p.clone(), b: b.p.clone(), aEnd: endOf(a), bEnd: endOf(b),
-              nodes: [a.key, b.key].filter(Boolean).map(k => k.split('.')[0]) };
-  const d = b.p.clone().sub(a.p);
-  if (lock) { M.axis = dominantAxis(d); M.value = Math.abs(d.dot(AXES[M.axis])); }
-  else M.value = d.length();
+// one feature → Ø / R / an edge's length
+function measureSingle(q) {
+  if (!q || !q.f) return null;
+  const f = { ...q.f };
+  if (!f.circle && f.chain && (f.chain.type === 'circle' || f.chain.type === 'arc')) f.circle = f.chain.circle;
+  const r = MS.measureOne(f);
+  if (!r) return null;
+  const s = q.mesh.matrixWorld.getMaxScaleOnAxis() || 1;
+  const M = { kind: r.kind, value: r.value * (r.kind === 'diameter' || r.kind === 'radius' || r.kind === 'edge' ? s : 1),
+              approx: r.approx, nodes: nodesOf(q) };
+  if (r.circle) {
+    M.circle = { center: wpt(q.mesh, r.circle.center), axis: wdir(q.mesh, r.circle.axis), r: r.circle.r * s };
+    M.a = M.circle.center.clone();
+    M.aEnd = { ...endOf(q, M.a), snap: 'circle_center',
+               circle: { center: v3(M.circle.center), axis: v3(M.circle.axis), r: r4(M.circle.r) } };
+  } else {
+    const V = featuresOf(q.mesh).topo.V;
+    const ends = r.a ? [r.a, r.b] : r.ends.map(v => [V[3 * v], V[3 * v + 1], V[3 * v + 2]]);
+    M.a = wpt(q.mesh, ends[0]); M.b = wpt(q.mesh, ends[1]);
+    M.aEnd = { ...endOf(q, M.a), snap: 'vertex' }; M.bEnd = { ...endOf(q, M.b), snap: 'vertex' };
+    if (r.chain) M.text = 'lungo la curva';
+  }
+  return M;
+}
+function measurePair(a, b, lock) {
+  if (measureMode === 'faces' && !(a.plane && b.plane)) return null;
+  const r = MS.measureTwo(msPick(a), msPick(b));
+  if (measureMode === 'faces' && r.kind !== 'face_gap') { toast('Le due facce non sono parallele.', 3000); return null; }
+  const M = { kind: r.kind, a: new THREE.Vector3(...r.a), b: new THREE.Vector3(...r.b), value: r.value,
+              approx: r.approx, nodes: nodesOf(a, b) };
+  M.aEnd = endOf(a, M.a); M.bEnd = endOf(b, M.b);
+  if (r.kind === 'face_gap') { M.aEnd.snap = 'face'; M.bEnd.snap = 'face'; }
+  if (lock && r.kind === 'distance') {
+    const d = M.b.clone().sub(M.a);
+    M.axis = dominantAxis(d); M.value = Math.abs(d.dot(AXES[M.axis]));
+  }
   return M;
 }
 function drawDraftMeasure(M) {
   if (M.obj) disposeObj(M.obj);
   M.obj = measureObject(M, measureH()); annoGroup.add(M.obj); viewer.invalidate();
 }
-function pendingObject(hit) {
+// ── the highlight of what would be taken ──
+const SNAP_ICON = { vertex: '◆ vertice', circle_center: '○ centro', edge: '— spigolo', face: '▭ faccia', free: '· punto' };
+function snapLabel(q) {
+  if (!q) return '';
+  if (q.snap === 'circle_center' && q.circle) return `○ Ø ${q.approx ? '≈ ' : ''}${fmtNum(2 * q.circle.r)}`;
+  if (q.snap === 'edge' && q.f.chain && q.f.chain.type === 'line') return `— spigolo ${fmtNum(q.f.chain.length)}`;
+  return SNAP_ICON[q.snap] || '';
+}
+function snapKey(q) {
+  if (!q) return '';
+  const f = q.f || {};
+  return [q.mesh && q.mesh.uuid, q.snap, f.vertex, f.chain && f.chain.edges[0], f.tris && f.tris[0],
+          q.snap === 'free' ? q.p.toArray().map(x => x.toFixed(3)).join() : ''].join('|');
+}
+function highlightObject(q) {
+  const g = new THREE.Group(), h = measureH(), r = Math.max(h * 0.035, 0.015);
+  const mat = new THREE.MeshBasicMaterial({ color: MEASURE_INK, toneMapped: false, transparent: true, opacity: 0.95,
+    depthTest: false, depthWrite: false });
+  const dot = new THREE.Mesh(new THREE.SphereGeometry(Math.max(h * (q.snap === 'vertex' ? 0.13 : 0.08), 0.03), 12, 8), mat);
+  dot.position.copy(q.p); g.add(dot);
+  const M = q.mesh.matrixWorld, V = q.f && q.f.chain ? featuresOf(q.mesh).topo.V : null;
+  if (q.circle) {
+    const t = new THREE.TorusGeometry(q.circle.r, r, 6, 96);
+    t.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), q.circle.axis.clone().normalize()));
+    t.translate(q.circle.center.x, q.circle.center.y, q.circle.center.z);
+    g.add(new THREE.Mesh(t, mat));
+  } else if (V && q.snap === 'edge') {
+    const vs = q.f.chain.verts, step = Math.max(1, Math.ceil(vs.length / 200));
+    const pt = i => new THREE.Vector3(V[3 * i], V[3 * i + 1], V[3 * i + 2]).applyMatrix4(M);
+    for (let i = step; i < vs.length + step - 1; i += step) {
+      const a = pt(vs[i - step]), b = pt(vs[Math.min(i, vs.length - 1)]);
+      if (a.distanceTo(b) > 1e-9) g.add(new THREE.Mesh(rodGeo(a, b, r), mat));
+    }
+  }
+  const tris = q.f && (q.snap === 'face' ? q.f.tris : q.f.cylinder ? q.f.tris : null);
+  if (tris && tris.length) {
+    const topo = featuresOf(q.mesh).topo, n = Math.min(tris.length, 40000), arr = new Float32Array(n * 9);
+    const v = new THREE.Vector3();
+    for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) {
+      const w = topo.tris[3 * tris[i] + k];
+      v.set(topo.V[3 * w], topo.V[3 * w + 1], topo.V[3 * w + 2]).applyMatrix4(M);
+      arr.set([v.x, v.y, v.z], 9 * i + 3 * k);
+    }
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+    g.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: MEASURE_INK, toneMapped: false, transparent: true,
+      opacity: 0.4, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 })));
+  }
+  g.renderOrder = 12;
+  g.traverse(o => { o.renderOrder = 12; });
+  return g;
+}
+function showSnap(q, x, y) {
+  const chip = $('m-snap');
+  if (!q) { clearSnap(); return; }
+  const key = snapKey(q);
+  if (key !== mSnapKey) {
+    if (mSnapObj) disposeObj(mSnapObj);
+    mSnapObj = highlightObject(q); annoGroup.add(mSnapObj); mSnapKey = key;
+  }
+  chip.textContent = snapLabel(q);
+  const r = vp.getBoundingClientRect();
+  Object.assign(chip.style, { display: 'block', left: (x - r.left + 16) + 'px', top: (y - r.top + 14) + 'px' });
+  viewer.invalidate();
+}
+function clearSnap() {
+  if (mSnapObj) { disposeObj(mSnapObj); mSnapObj = null; mSnapKey = ''; }
+  $('m-snap').style.display = 'none';
+  viewer.invalidate();
+}
+function pendingObject(q) {
   const h = measureH(), g = new THREE.Group(), geo = new THREE.SphereGeometry(Math.max(h * 0.1, 0.04), 12, 8);
   for (const ghost of [false, true]) {
     const d = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: MEASURE_INK, toneMapped: false,
       transparent: ghost, opacity: ghost ? GHOST : 1, depthTest: !ghost, depthWrite: !ghost }));
-    d.position.copy(hit.p); d.renderOrder = ghost ? 10 : 3; g.add(d);
+    d.position.copy(q.p); d.renderOrder = ghost ? 10 : 3; g.add(d);
   }
+  if (q.snap !== 'free') g.add(highlightObject(q));      // the first feature stays lit
   return g;
 }
 function clearHover() { if (mHover) { disposeObj(mHover); mHover = null; viewer.invalidate(); } }
 function cancelMeasure() {
   if (mPendingObj) disposeObj(mPendingObj);
   mPending = mPendingObj = null; clearHover();
-  if (typeof viewer !== 'undefined') viewer.invalidate();
+  if ($('m-snap')) clearSnap();
+  lensOff();
 }
-function measureTap(x, y, lock) {
-  const hit = surfaceHit(x, y);
-  if (!hit) return;
-  if (clock.playing) setPlaying(false);
-  if (!mPending) {
-    mPending = hit; mPendingObj = pendingObject(hit); annoGroup.add(mPendingObj);
-    viewer.invalidate(); return;
-  }
-  const M = makeMeasure(mPending, hit, lock);
-  cancelMeasure();
-  if (M.value < 1e-6) return;                  // the same point twice
+function addDraftMeasure(M) {
+  if (!M || !(M.value >= 0) || (M.kind !== 'diameter' && M.kind !== 'radius' && M.value < 1e-6)) return;
   M.k = ++seq;
   dmeasures.push(M); drawDraftMeasure(M);
   actions.push({ type: 'measure', M });
   takeView([M]);
   syncDraw();
 }
+function measurePick(q, lock) {
+  if (!q) {
+    if (ONE_TAP.has(measureMode)) toast(measureMode === 'edge' ? 'Nessuno spigolo qui.' : 'Nessun foro o cerchio qui.', 2200);
+    return;
+  }
+  if (clock.playing) setPlaying(false);
+  if (ONE_TAP.has(measureMode)) { addDraftMeasure(measureSingle(q)); clearSnap(); return; }
+  if (!mPending) {
+    if (measureMode === 'faces' && !q.plane) { toast('Tocca una faccia piana.', 2200); return; }
+    mPending = q; mPendingObj = pendingObject(q); annoGroup.add(mPendingObj);
+    viewer.invalidate(); return;
+  }
+  const first = mPending;
+  let M;
+  if (measureMode === 'auto' && MS.sameFeature(msPick(first), msPick(q)) && first.mesh === q.mesh) M = measureSingle(q);
+  else M = measurePair(first, q, lock);
+  if (!M) return;
+  cancelMeasure();
+  addDraftMeasure(M);
+}
+function measureTap(x, y, lock, touch) { measurePick(snapAt(x, y, touch), lock); }
+// Enter: the first pick measured on its own (an edge's length, a circle's Ø)
+function finishSingle() {
+  if (!mPending) return false;
+  const M = measureSingle(mPending);
+  if (!M) { toast('Questo punto da solo non ha una misura: tocca il secondo.', 2500); return true; }
+  cancelMeasure(); addDraftMeasure(M); return true;
+}
 vp.addEventListener('pointerdown', e => {
   if (!drawing || tool !== 'measure' || e.target !== $('c') || e.button !== 0) return;
-  mDown = e.isPrimary ? { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() } : null;
+  if (!e.isPrimary) { if (mDown) clearTimeout(mDown.timer); mDown = null; lensOff(); clearSnap(); return; }
+  mDown = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), touch: e.pointerType !== 'mouse', aim: false };
+  if (mDown.touch) {                            // hold still → aim with the lens
+    const d = mDown;
+    d.timer = setTimeout(() => { if (mDown === d) { d.aim = true; aimAt(d.x, d.y); } }, 300);
+  }
 }, true);
-vp.addEventListener('pointerup', e => {
-  if (!drawing || tool !== 'measure' || !mDown || e.pointerId !== mDown.id) return;
-  const d = mDown; mDown = null;
-  if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > TAP_PX(e) || performance.now() - d.t > 600) return;
-  measureTap(e.clientX, e.clientY, e.shiftKey);
-}, true);
-vp.addEventListener('pointercancel', () => { mDown = null; }, true);
-// the rubber dimension (a mouse has a hover; a finger does not)
 vp.addEventListener('pointermove', e => {
-  if (!drawing || tool !== 'measure' || !mPending || e.pointerType !== 'mouse' || e.buttons) return;
+  if (!drawing || tool !== 'measure') return;
+  if (mDown && e.pointerId === mDown.id && mDown.aim) {      // aiming: the finger moves the pick, not the view
+    e.stopPropagation(); e.preventDefault();
+    mDown.x = e.clientX; mDown.y = e.clientY; aimAt(e.clientX, e.clientY);
+    return;
+  }
+  if (mDown && e.pointerId === mDown.id && Math.hypot(e.clientX - mDown.x, e.clientY - mDown.y) > TAP_PX(e)) {
+    clearTimeout(mDown.timer);                 // it is a drag: orbit
+  }
+  if (e.pointerType !== 'mouse' || e.buttons) return;
   const x = e.clientX, y = e.clientY, lock = e.shiftKey;
   cancelAnimationFrame(mRaf);
-  mRaf = requestAnimationFrame(() => {
-    if (!mPending) return;
-    clearHover();
-    const hit = surfaceHit(x, y);
-    if (!hit) return;
-    const M = makeMeasure(mPending, hit, lock);
-    if (M.value < 1e-6) return;
-    mHover = measureObject(M, measureH()); annoGroup.add(mHover); viewer.invalidate();
-  });
-});
+  mRaf = requestAnimationFrame(() => hoverAt(x, y, lock, false));
+}, true);
+function hoverAt(x, y, lock, touch) {
+  const q = snapAt(x, y, touch);
+  showSnap(q, x, y);
+  clearHover();
+  if (!mPending || !q) return q;
+  const M = ONE_TAP.has(measureMode) ? null
+    : (measureMode === 'auto' && MS.sameFeature(msPick(mPending), msPick(q)) && mPending.mesh === q.mesh) ? measureSingle(q)
+    : measurePair(mPending, q, lock);
+  if (M && (M.value > 1e-6 || M.circle)) { mHover = measureObject(M, measureH()); annoGroup.add(mHover); viewer.invalidate(); }
+  return q;
+}
+vp.addEventListener('pointerup', e => {
+  if (!drawing || tool !== 'measure' || !mDown || e.pointerId !== mDown.id) return;
+  const d = mDown; mDown = null; clearTimeout(d.timer);
+  if (d.aim) {                                 // lift = take what the lens shows
+    const q = d.q; lensOff(); clearSnap();
+    measurePick(q, false);
+    return;
+  }
+  if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > TAP_PX(e) || performance.now() - d.t > 600) return;
+  measureTap(e.clientX, e.clientY, e.shiftKey, d.touch);
+  if (d.touch) clearSnap();
+}, true);
+vp.addEventListener('pointercancel', () => { if (mDown) clearTimeout(mDown.timer); mDown = null; lensOff(); }, true);
+vp.addEventListener('pointerleave', () => { if (tool === 'measure' && !mDown) { clearSnap(); clearHover(); } });
+
+// ── the lens: what is under the finger, magnified, above it ──
+const LENS = { size: 120, zoom: 2, lift: 110 };
+function aimAt(x, y) {
+  const q = hoverAt(x, y, false, true);
+  if (mDown) mDown.q = q;
+  const lens = $('m-lens'), cv = lens.firstElementChild, r = vp.getBoundingClientRect();
+  const S = LENS.size, dpr = Math.min(devicePixelRatio || 1, 2);
+  if (cv.width !== S * dpr) { cv.width = cv.height = S * dpr; }
+  // above the finger; below it when there is no room at the top
+  let top = y - r.top - LENS.lift - S;
+  if (top < 4) top = y - r.top + LENS.lift * 0.5;
+  const left = Math.min(Math.max(x - r.left - S / 2, 4), r.width - S - 4);
+  Object.assign(lens.style, { display: 'block', left: left + 'px', top: top + 'px' });
+  // render now and read back in the same task (no preserveDrawingBuffer)
+  viewer._renderFrame(false);
+  const c = $('c'), cr = c.getBoundingClientRect(), kx = c.width / cr.width, ky = c.height / cr.height;
+  const half = S / LENS.zoom / 2, ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.drawImage(c, (x - cr.left - half) * kx, (y - cr.top - half) * ky, 2 * half * kx, 2 * half * ky, 0, 0, cv.width, cv.height);
+  ctx.strokeStyle = MEASURE_INK; ctx.lineWidth = 1.5 * dpr;
+  const m = cv.width / 2;
+  ctx.beginPath(); ctx.moveTo(m - 10 * dpr, m); ctx.lineTo(m - 3 * dpr, m); ctx.moveTo(m + 3 * dpr, m); ctx.lineTo(m + 10 * dpr, m);
+  ctx.moveTo(m, m - 10 * dpr); ctx.lineTo(m, m - 3 * dpr); ctx.moveTo(m, m + 3 * dpr); ctx.lineTo(m, m + 10 * dpr); ctx.stroke();
+  $('m-lens-t').textContent = q ? snapLabel(q) : 'niente qui';
+}
+function lensOff() { const l = $('m-lens'); if (l) l.style.display = 'none'; }
 
 // ── T: text ON the part — two styles, the user picks (⚑ / ▭ next to T) ──
 // Press on the part and drag a box (a tap gives a default one), type, Enter.
@@ -2059,7 +2305,7 @@ function syncDraw() {
   const any = draft.length || labels.length || dmeasures.length;
   $('d-send').disabled = !any && !$('d-text').value.trim();
   $('d-undo').disabled = !actions.length; $('d-clear').disabled = !any;
-  $('d-hint').textContent = drawing && tool === 'measure' ? MEASURE_HINT : DRAW_HINT;
+  $('d-hint').textContent = drawing && tool === 'measure' ? measureHint() : DRAW_HINT;
   vp.classList.toggle('pen', drawing && tool === 'pen');
   vp.dataset.tool = drawing ? tool : '';
   for (const [id, t] of [['d-pen', 'pen'], ['d-texttool', 'text'], ['d-imgtool', 'image'], ['d-measure', 'measure'], ['d-erase', 'erase'], ['d-hand', 'hand']]) $(id).classList.toggle('on', tool === t);
@@ -2108,6 +2354,7 @@ addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); e.stopImmediatePropagation(); undo(); }
   else if (e.key === 'Escape' && mPending) { e.stopImmediatePropagation(); cancelMeasure(); }
+  else if (e.key === 'Enter' && tool === 'measure' && mPending) { e.stopImmediatePropagation(); finishSingle(); }
   else if (e.key === 'Escape') { e.stopImmediatePropagation(); setDrawing(false); }
   else if (e.ctrlKey || e.metaKey || e.altKey) return;
   else if (k === 'p') { e.stopImmediatePropagation(); setTool('pen'); }
@@ -2165,7 +2412,8 @@ async function sendNote() {
     images: pictures.map(L => ({ data: L.img.data, piece: L.piece, ...placed(L) })),
     // dimensions taken on the part: the browser measured them, the agent reads them
     measures: dmeasures.map(M => ({ kind: M.kind, a: M.aEnd, b: M.bEnd, value: r4(M.value), approx: !!M.approx,
-      ...(M.axis ? { axis: M.axis } : {}), view: M.view == null ? null : remap.get(M.view) })),
+      ...(M.axis ? { axis: M.axis } : {}), ...(M.text ? { text: M.text } : {}),
+      view: M.view == null ? null : remap.get(M.view) })),
     hide: location.hash.replace(/^#/, ''),
   };
   if (anims.length) body.t = clock.t;
@@ -2725,7 +2973,8 @@ function measureFrom(m) {
   const end = e => (e ? V3(e.at || e) : null);
   const M = { ...m, a: end(m.a), b: end(m.b), n: V3(m.n), agent: !!m.agent || !!m.status,
               nodes: [].concat(m.node || [], (m.a && m.a.node) || [], (m.b && m.b.node) || []) };
-  if (m.circle) M.circle = { center: V3(m.circle.center), axis: V3(m.circle.axis) || new THREE.Vector3(0, 0, 1), r: +m.circle.r };
+  const circ = m.circle || (m.a && m.a.circle);
+  if (circ) M.circle = { center: V3(circ.center), axis: V3(circ.axis) || new THREE.Vector3(0, 0, 1), r: +circ.r };
   return M;
 }
 function measureH() {
