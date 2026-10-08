@@ -554,7 +554,8 @@ def test_shapes_are_ruled_in_millimetres_in_their_colour():
     # graph paper in the shape's colour, in the shape's OWN mm (local position
     # × size), 1 / 5 / 10 mm rules, the 1 mm one fading where it gets too dense
     assert "function mmGridMaterial(color, size)" in VIEW
-    assert "vGP = position * uSize;" in VIEW
+    # the REST position/normal: on a bent shape the paper bends with the body
+    assert "vGP = restPos * uSize; vGN = restNrm;" in VIEW
     for rule in ("mmRule(uv, 1.0,", "mmRule(uv, 5.0,", "mmRule(uv, 10.0,"):
         assert rule in VIEW
     assert "smoothstep(0.12, 0.33, dense)" in VIEW
@@ -620,6 +621,75 @@ def test_scale_mode_has_six_face_handles_in_the_axis_colours():
     assert "const center = d.fixed.clone().addScaledVector(d.axis, L / 2);" in br
 
 
+DEFORMED = [[0, 0, 0]] * 7 + [[0.25, -0.1, 0.3]]
+
+
+def test_a_deformed_shape_carries_its_cage(store):
+    # ▣ Deforma: the 8 corner offsets AND the 8 corners in the world, so a
+    # text-only reader sees the bent shape without interpolating
+    corners = [[i, i + 0.5, 2 * i] for i in range(8)]
+    note = api.add_note(store, "demo", "g1", {"shapes": [
+        {**SHAPE, "ffd": DEFORMED, "corners": corners},
+        {**SHAPE, "ffd": [[0, 0, 0]] * 8, "corners": corners},      # all zero = not deformed
+        SHAPE]})
+    bent, flat, plain = note["shapes"]
+    assert bent["ffd"] == DEFORMED and bent["corners"] == corners
+    assert "ffd" not in flat and "corners" not in flat and "ffd" not in plain
+    s = [sh["summary"] for sh in api.list_notes(store)[0]["shapes"]]
+    assert "deformed" in s[0] and "deformed" not in s[1] and "deformed" not in s[2]
+    assert s[0].startswith("cylinder Ø 6,00 × 10,00 mm, deformed by its cage")
+
+
+def test_bad_deformations_are_refused(store):
+    corners = [[0, 0, 0]] * 8
+    bad = [{**SHAPE, "ffd": DEFORMED[:7]}, {**SHAPE, "ffd": [[0, 0]] * 8},
+           {**SHAPE, "ffd": [[0, 0, 0]] * 7 + [[10, 0, 0]]}, {**SHAPE, "ffd": [[0, 0, 0]] * 7 + [[0, -12.5, 0]]},
+           {**SHAPE, "ffd": [[0, 0, 0]] * 7 + [[0, float("nan"), 0]]}, {**SHAPE, "ffd": "bent"},
+           {**SHAPE, "ffd": DEFORMED, "corners": corners[:7]},
+           {**SHAPE, "ffd": DEFORMED, "corners": [[0, 0]] * 8},
+           {**SHAPE, "ffd": DEFORMED, "corners": [[0, 0, float("inf")]] * 8}]
+    for b in bad:
+        with pytest.raises(ValueError):
+            api.add_note(store, "demo", "g1", {"shapes": [b]})
+
+
+def test_the_cage_deforms():
+    # C: Gabbia → Deforma is on, its own branch in refreshCage and pointermove
+    assert "CAGE_MODES.push('deform');" in VIEW
+    assert VIEW.index("CAGE_MODES.push('deform');") < VIEW.index("localStorage.getItem('noodle:view:cageMode')")
+    rc = VIEW[VIEW.index("function refreshCage() {"):]
+    rc = rc[:rc.index("\n}\n")]
+    assert "else if (cageMode === 'deform') { cageDeformCorners(G); }" in rc
+    assert "import * as FFD from '/static/ffd.js';" in VIEW
+    # the pure math lives in webui/ffd.js (tests/ui/ffd.test.cjs) and ships to the static pages
+    assert (ROOT / "webui" / "ffd.js").exists()
+    assert '"ffd.js"' in (ROOT / "scripts" / "build_pages.py").read_text()
+    # amber corners, a COPY of the geometry bent and its normals recomputed
+    fn = VIEW[VIEW.index("function cageDeformCorners("):]
+    fn = fn[:fn.index("\n}\n")]
+    assert "type: 'ffd'" in fn and "handleMat(DEFORM_INK)" in fn and "const DEFORM_INK = '#f59e0b';" in VIEW
+    geo = VIEW[VIEW.index("function shapeGeoOf(S)"):]
+    geo = geo[:geo.index("\n}\n")]
+    for t in ("geo.setAttribute('restPos', pos.clone());", "FFD.deformPositions(pos.array, S.ffd)", "geo.computeVertexNormals();"):
+        assert t in geo
+    assert "const g = new THREE.Group(), geo = shapeGeoOf(S);" in VIEW
+    # the drag: on the view plane, into the shape's normalised frame, constrained
+    br = VIEW[VIEW.index("} else if (d.h.type === 'ffd') {"):]
+    br = br[:br.index("} else if", 1)]
+    assert "onViewPlane(e.clientX, e.clientY, d.grab)" in br
+    assert ".applyQuaternion(d.q0.clone().invert()).divide(S.size)" in br
+    assert "FFD.moveCorner(S.ffd, d.h.i," in br and "shapeMin(S)" in br
+    # the cage lines follow the moved corners
+    assert "FFD.CAGE_EDGES.flatMap" in VIEW[VIEW.index("function cageOutline("):][:600]
+    # undo carries the deformation; the note says it; eraser + leash see the bent box
+    assert "ffd: FFD.copyFfd(S.ffd) }" in VIEW[VIEW.index("function shapeState(S)"):].split("\n")[0]
+    assert "S.ffd = FFD.copyFfd(st.ffd);" in VIEW[VIEW.index("function setShapeState(S, st)"):].split("\n")[0]
+    assert "o.ffd = S.ffd.map(d => d.map(r4)); o.corners = shapeCorners(S, q).map(v3);" in VIEW
+    for f in ("function shapeContains(S, p, r)", "function shapeLeash(S)"):
+        assert "shapeExtent(S)" in VIEW[VIEW.index(f):][:500]
+    assert "`ffd`" in HELP and "`corners`" in HELP and "`ffd`" in MCP and "`corners`" in MCP
+
+
 def test_a_pen_colour_recolours_the_selected_shape():
     # with a shape in hand a colour paints THE SHAPE (and the pen), instead of
     # switching tool; without one it stays the pen's colour as before
@@ -635,7 +705,7 @@ def test_a_pen_colour_recolours_the_selected_shape():
     assert "color: S.color" in st
     assert "if (st.color) S.color = st.color;" in VIEW[VIEW.index("function setShapeState(S, st)"):].split("\n")[0]
     # …and the note says it
-    assert "return { kind: S.kind, color: S.color," in VIEW
+    assert "const o = { kind: S.kind, color: S.color," in VIEW
 
 
 def test_shapes_have_standard_sizes():

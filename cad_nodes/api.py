@@ -2039,7 +2039,11 @@ def _shapes(items, n_views: int, titles: dict) -> list[dict]:
     a sphere, with its size, centre and orientation in model mm — «a Ø 6
     cylinder here» as data. `size` is [x, y, z] in the shape's own frame (a
     cylinder: [Ø, Ø, height], its axis = local z = `axis`); `anchor` is the
-    point of the surface it sits on, `normal` that surface's normal."""
+    point of the surface it sits on, `normal` that surface's normal. A shape
+    bent by the ▣ Deforma cage also carries `ffd` — the 8 cage corners'
+    offsets [dx, dy, dz] in its own frame, 1 = its size, corners ordered
+    sx, sy, sz ∈ {−1, 1} nested — and `corners`, those 8 corners in the world
+    (mm), so a text-only reader sees the bent shape without interpolating."""
     import math
     if not isinstance(items, list) or len(items) > _NOTE_MAX_SHAPES:
         raise ValueError(f"note: shapes must be a list of at most {_NOTE_MAX_SHAPES}")
@@ -2068,6 +2072,22 @@ def _shapes(items, n_views: int, titles: dict) -> list[dict]:
         for k in ("anchor", "normal"):
             if sh.get(k) is not None:
                 o[k] = _vec(sh[k], f"shape {i} {k}")
+        ffd = sh.get("ffd")
+        if ffd is not None:
+            if not isinstance(ffd, (list, tuple)) or len(ffd) != 8:
+                raise ValueError(f"note: shape {i} ffd must be 8 [dx, dy, dz] offsets")
+            ffd = [_vec(d, f"shape {i} ffd") for d in ffd]
+            if not all(abs(v) < 10 for d in ffd for v in d):
+                raise ValueError(f"note: shape {i} ffd offsets must be finite and below 10")
+            if any(v for d in ffd for v in d):
+                o["ffd"] = [[round(v, 4) for v in d] for d in ffd]
+        corners = sh.get("corners")
+        if corners is not None:
+            if not isinstance(corners, (list, tuple)) or len(corners) != 8:
+                raise ValueError(f"note: shape {i} corners must be 8 points")
+            corners = [_vec(c, f"shape {i} corners") for c in corners]
+            if "ffd" in o:
+                o["corners"] = corners
         color = str(sh.get("color") or "").lower()
         if color:
             if not re.fullmatch(r"#[0-9a-f]{6}", color):
@@ -2115,7 +2135,8 @@ def _link_shapes(marks: list[dict], strokes: list[dict], shapes: list[dict]) -> 
         near = [k + 1 for k, ps in enumerate(by_mark) if ps and min(math.dist(sh["center"], p) for p in ps) <= reach]
         c = ", ".join(f"{v:.2f}" for v in sh["center"])
         a = ", ".join(f"{v:.2f}" for v in sh["axis"])
-        sh["summary"] = (f"{shape_phrase(sh)} centred at ({c}), axis ({a})"
+        sh["summary"] = (f"{shape_phrase(sh)}" + (", deformed by its cage (see corners)" if sh.get("ffd") else "")
+                         + f" centred at ({c}), axis ({a})"
                          + (f", on {sh.get('title') or sh['node']}" if sh.get("node") else ""))
         sh["near_marks"] = near
         out.append(sh)

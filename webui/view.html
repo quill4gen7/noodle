@@ -463,6 +463,7 @@ import * as THREE from 'three';
 import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
 import { CadViewer, PALETTE, poseAnim } from '/static/viewer.js';
 import * as MS from '/static/measure.js';
+import * as FFD from '/static/ffd.js';
 
 const $ = id => document.getElementById(id);
 const seg = location.pathname.split('/').filter(Boolean);     // ['view', name, gen?]
@@ -1696,7 +1697,7 @@ function lensOff() { const l = $('m-lens'); if (l) l.style.display = 'none'; }
 // Part of the draft like a stroke: ↶, ⌫, the view pictures, Canc / «Togli».
 const SHAPE_KINDS = ['box', 'cylinder', 'sphere'];
 const SHAPE_NAME = { box: 'cubo', cylinder: 'cilindro', sphere: 'sfera' };
-const SHAPE_HINT = 'Forme: tocca il pezzo per posare la forma · trascinala per farla scorrere SUL pezzo · maniglie a scelta: ✥ Sposta = frecce X/Y/Z (G) · ⟳ Ruota = anelli, Shift 15° (R) · ▣ Gabbia = vertici misura, centro scala (C) · ◌ Nascondi · Canc / «Togli» per toglierla';
+const SHAPE_HINT = 'Forme: tocca il pezzo per posare la forma · trascinala per farla scorrere SUL pezzo · maniglie a scelta: ✥ Sposta = frecce X/Y/Z (G) · ⟳ Ruota = anelli, Shift 15° (R) · ▣ Gabbia = vertici misura, centro scala (C) — di nuovo C / «Scala» = Deforma: i vertici ambra piegano la forma · ◌ Nascondi · Canc / «Togli» per toglierla';
 let shapeKind = 'box';
 try { const v = localStorage.getItem('noodle:view:shapeKind'); if (SHAPE_KINDS.includes(v)) shapeKind = v; } catch {}
 $('d-shapekind').value = shapeKind;
@@ -1715,6 +1716,7 @@ $('d-shapekind').addEventListener('change', e => {
 // the Scala ⇄ Deforma toggle stays disabled — C pushes 'deform' here.
 const GIZMO_MODES = ['move', 'rotate', 'cage', 'none'];
 const CAGE_MODES = ['scale'];                  // C: CAGE_MODES.push('deform')
+CAGE_MODES.push('deform');                     // C: the corners move one by one, the shape bends (webui/ffd.js)
 let gizmoMode = 'cage', cageMode = 'scale';
 try { const v = localStorage.getItem('noodle:view:gizmoMode'); if (GIZMO_MODES.includes(v)) gizmoMode = v; } catch {}
 try { const v = localStorage.getItem('noodle:view:cageMode'); if (CAGE_MODES.includes(v)) cageMode = v; } catch {}
@@ -1729,6 +1731,8 @@ function syncGizmoBar() {
   cm.classList.toggle('on', cageMode === 'deform');
   cm.disabled = CAGE_MODES.length < 2;
   if (cm.disabled) cm.title = 'Gabbia: Scala (Deforma in arrivo)';
+  else cm.title = cageMode === 'deform' ? 'Gabbia → Deforma: ogni vertice (ambra) si sposta da solo e piega la forma · tocca per Scala'
+    : 'Gabbia → Scala: i vertici misurano, il centro scala · tocca per Deforma';
 }
 function setGizmoMode(m) {
   // a second tap on ▣ Gabbia flips Scala ⇄ Deforma
@@ -1774,8 +1778,8 @@ function surfQuat(n) { return new THREE.Quaternion().setFromUnitVectors(Z_UP, n.
 function shapeQuat(S) { return surfQuat(S.n).multiply(S.rot); }
 // the centre sits half a height above the anchor, along the shape's own Z
 function placeShape(S) { S.center = S.anchor.clone().add(new THREE.Vector3(0, 0, S.size.z / 2).applyQuaternion(shapeQuat(S))); }
-function shapeState(S) { return { anchor: S.anchor.clone(), n: S.n.clone(), rot: S.rot.clone(), size: S.size.clone(), piece: S.piece, color: S.color }; }
-function setShapeState(S, st) { S.anchor = st.anchor.clone(); S.n = st.n.clone(); S.rot = st.rot.clone(); S.size = st.size.clone(); S.piece = st.piece; if (st.color) S.color = st.color; placeShape(S); }
+function shapeState(S) { return { anchor: S.anchor.clone(), n: S.n.clone(), rot: S.rot.clone(), size: S.size.clone(), piece: S.piece, color: S.color, ffd: FFD.copyFfd(S.ffd) }; }
+function setShapeState(S, st) { S.anchor = st.anchor.clone(); S.n = st.n.clone(); S.rot = st.rot.clone(); S.size = st.size.clone(); S.piece = st.piece; if (st.color) S.color = st.color; S.ffd = FFD.copyFfd(st.ffd); placeShape(S); }
 function shapeGeo(kind) {
   if (kind === 'cylinder') { const g = new THREE.CylinderGeometry(0.5, 0.5, 1, 48); g.rotateX(Math.PI / 2); return g; }
   if (kind === 'sphere') return new THREE.SphereGeometry(0.5, 40, 20);
@@ -1787,7 +1791,10 @@ function shapeGeo(kind) {
 // squares however it was scaled. Each face is ruled on the plane it mostly
 // faces (triplanar), and the 1 mm rule fades out where it would be denser than
 // a few pixels. Injected into the standard material, so the light stays the same.
-const MM_GRID_VERT = `varying vec3 vGP; varying vec3 vGN; uniform vec3 uSize;`;
+// It reads the REST position and normal (restPos / restNrm, see shapeGeoOf):
+// on a shape the ▣ Deforma cage has bent, the paper bends WITH the body like a
+// texture — which is exactly what shows the deformation.
+const MM_GRID_VERT = `varying vec3 vGP; varying vec3 vGN; uniform vec3 uSize; attribute vec3 restPos; attribute vec3 restNrm;`;
 const MM_GRID_FRAG = `varying vec3 vGP; varying vec3 vGN; uniform vec3 uInk;
 float mmRule(vec2 uv, float step, float w) {
   vec2 q = uv / step, g = abs(fract(q - 0.5) - 0.5) / max(fwidth(q), vec2(1e-6));
@@ -1803,7 +1810,7 @@ function mmGridMaterial(color, size) {
     sh.uniforms.uSize = { value: size.clone() };
     sh.uniforms.uInk = { value: ink };
     sh.vertexShader = MM_GRID_VERT + '\n' + sh.vertexShader.replace('#include <begin_vertex>',
-      '#include <begin_vertex>\n  vGP = position * uSize; vGN = normal;');
+      '#include <begin_vertex>\n  vGP = restPos * uSize; vGN = restNrm;');
     sh.fragmentShader = MM_GRID_FRAG + '\n' + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
   vec3 an = abs(normalize(vGN));
   vec2 uv = (an.z >= an.x && an.z >= an.y) ? vGP.xy : (an.y >= an.x ? vGP.xz : vGP.yz);
@@ -1814,9 +1821,27 @@ function mmGridMaterial(color, size) {
   m.customProgramCacheKey = () => 'mm-grid';
   return m;
 }
-// a shape as drawn: millimetre-ruled body + its edges (a sphere: its equator)
+// The unit geometry as drawn: a fresh copy, bent by the cage's 8 corners
+// (S.ffd, trilinear — webui/ffd.js) with its normals recomputed; the rest
+// position / normal ride along for the millimetre paper.
+function shapeGeoOf(S) {
+  const bent = FFD.isDeformed(S.ffd);
+  // a box face is ONE quad: bent trilinearly it is a curved (bilinear) patch,
+  // so it needs facets to show it — the cylinder and the sphere already have them
+  const geo = bent && S.kind === 'box' ? new THREE.BoxGeometry(1, 1, 1, 8, 8, 8) : shapeGeo(S.kind);
+  const pos = geo.attributes.position;
+  geo.setAttribute('restPos', pos.clone());
+  geo.setAttribute('restNrm', geo.attributes.normal.clone());
+  if (bent) {
+    pos.array.set(FFD.deformPositions(pos.array, S.ffd)); pos.needsUpdate = true;
+    geo.computeVertexNormals(); geo.computeBoundingSphere(); geo.computeBoundingBox();
+  }
+  return geo;
+}
+// a shape as drawn: millimetre-ruled body + its edges (a sphere: its equator),
+// both from the deformed geometry
 function shapeObject(S) {
-  const g = new THREE.Group(), geo = shapeGeo(S.kind);
+  const g = new THREE.Group(), geo = shapeGeoOf(S);
   const body = new THREE.Mesh(geo, mmGridMaterial(S.color, S.size));
   const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 30),
     new THREE.LineBasicMaterial({ color: S.color, toneMapped: false }));
@@ -1834,18 +1859,34 @@ function drawShape(S) {
 // plain JSON (as stored in a note) → what shapeObject draws
 function shapeFrom(sh) {
   return { kind: sh.kind, color: sh.color || MEASURE_INK, center: new THREE.Vector3(...sh.center),
-           size: new THREE.Vector3(...sh.size), quat: new THREE.Quaternion(...sh.quat) };
+           size: new THREE.Vector3(...sh.size), quat: new THREE.Quaternion(...sh.quat),
+           ffd: Array.isArray(sh.ffd) && sh.ffd.length === 8 ? FFD.copyFfd(sh.ffd) : null };
+}
+// the cage's 8 corners in the world (mm), in FFD order — where the deform
+// handles sit and what the note says
+function shapeCorners(S, q = shapeQuat(S)) {
+  return FFD.corners(S.ffd).map(c => new THREE.Vector3(...c).multiply(S.size).applyQuaternion(q).add(S.center));
+}
+// the box (in the shape's own frame, mm, about its centre) that holds the
+// shape: ±size/2, or the corners' box once the cage has bent it
+function shapeExtent(S) {
+  const b = FFD.cornerBox(S.ffd);
+  return { min: new THREE.Vector3(...b.min).multiply(S.size), max: new THREE.Vector3(...b.max).multiply(S.size) };
 }
 function shapeData(S) {
   const q = shapeQuat(S), ax = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
-  return { kind: S.kind, color: S.color, piece: S.piece, center: v3(S.center), size: v3(S.size),
+  const o = { kind: S.kind, color: S.color, piece: S.piece, center: v3(S.center), size: v3(S.size),
            quat: [q.x, q.y, q.z, q.w].map(r4), axis: v3(ax), anchor: v3(S.anchor), normal: v3(S.n) };
+  // bent by ▣ Deforma: the 8 corner offsets (shape frame, 1 = its size) and,
+  // for a text-only reader, where the 8 corners ARE in the world
+  if (FFD.isDeformed(S.ffd)) { o.ffd = S.ffd.map(d => d.map(r4)); o.corners = shapeCorners(S, q).map(v3); }
+  return o;
 }
 // is p (within r) on or in the shape? — the eraser's test, in its own frame
 function shapeContains(S, p, r) {
   const l = p.clone().sub(S.center).applyQuaternion(shapeQuat(S).invert());
-  const h = S.size.clone().multiplyScalar(0.5);
-  return Math.abs(l.x) <= h.x + r && Math.abs(l.y) <= h.y + r && Math.abs(l.z) <= h.z + r;
+  const { min, max } = shapeExtent(S);        // ±size/2, or the bent cage's corners
+  return l.x >= min.x - r && l.x <= max.x + r && l.y >= min.y - r && l.y <= max.y + r && l.z >= min.z - r && l.z <= max.z + r;
 }
 // The smallest a side may get while scaling: the corners must never meet nor
 // pass each other. It follows the PIECE the shape sits on (2% of its size),
@@ -1872,7 +1913,8 @@ function shapeLeash(S) {
   const box = pieceBox(S);
   if (box.isEmpty()) return null;
   const L = box.getSize(new THREE.Vector3()).length();
-  return box.clone().expandByScalar(Math.max(0.25 * L, Math.max(S.size.x, S.size.y, S.size.z)));
+  const { min, max } = shapeExtent(S), ext = max.clone().sub(min);   // the bent cage's box, if bent
+  return box.clone().expandByScalar(Math.max(0.25 * L, Math.max(ext.x, ext.y, ext.z)));
 }
 // the parameter along the line c + u·t closest to the pointer's ray
 function axisParam(x, y, c, u) {
@@ -1910,7 +1952,7 @@ function refreshCage() {
   if (S && !$('s-bar').classList.contains('open')) sBarOpened = performance.now();
   $('s-bar').classList.toggle('open', !!S);
   if (!S) { viewer.invalidate(); return; }
-  $('s-dims').textContent = shapeText(S.kind, S.size);
+  $('s-dims').textContent = shapeText(S.kind, S.size) + (FFD.isDeformed(S.ffd) ? ' · deformato' : '');
   syncSizePresets(S);
   const q = shapeQuat(S), touch = matchMedia('(pointer:coarse)').matches;
   // the marks shrink WITH the shape (never bigger than a slice of its shortest
@@ -1930,15 +1972,21 @@ function refreshCage() {
     case 'rotate': cageRings(G); break;
     case 'cage':
       if (cageMode === 'scale') { cageCorners(G); cageCentre(G); cageFaces(G); }
-      // C: else if (cageMode === 'deform') { cageDeformCorners(G); } — the 8 FFD corners, amber
+      else if (cageMode === 'deform') { cageDeformCorners(G); }   // C: the 8 FFD corners, amber
       break;
     case 'none': break;                        // the bare shape; its body still slides
   }
   viewer.invalidate();
 }
-// the cage's edges
+// the cage's edges — once ▣ Deforma has bent the shape they follow its moved
+// corners (straight lines: an edge of the cage is an edge of the bent body),
+// except in Scala, whose corners still work on the upright box
 function cageOutline({ S, q }) {
-  const box = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
+  const bent = FFD.isDeformed(S.ffd) && !(gizmoMode === 'cage' && cageMode === 'scale');
+  const lines = bent ? new THREE.BufferGeometry().setFromPoints(FFD.CAGE_EDGES.flatMap(([a, b]) =>
+    [new THREE.Vector3(...FFD.cornerAt(S.ffd, a)), new THREE.Vector3(...FFD.cornerAt(S.ffd, b))]))
+    : new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1));
+  const box = new THREE.LineSegments(lines,
     new THREE.LineBasicMaterial({ color: '#e9e3ff', toneMapped: false, depthTest: false, transparent: true, opacity: 0.9 }));
   box.position.copy(S.center); box.quaternion.copy(q); box.scale.copy(S.size); box.renderOrder = 20;
   cageGroup.add(box);
@@ -1975,6 +2023,19 @@ function cageFaces({ S, q, grab, hs, half }) {
       cageGroup.add(f, pk);
     }
   }
+}
+// ▣ deform: the same 8 corners, AMBER, each one moved on its own — the shape
+// bends with it (trilinear, webui/ffd.js); same index order as cageCorners
+const DEFORM_INK = '#f59e0b';
+function cageDeformCorners({ S, q, grab, hs }) {
+  const cube = new THREE.BoxGeometry(2 * hs, 2 * hs, 2 * hs), pickCube = new THREE.BoxGeometry(2 * grab, 2 * grab, 2 * grab);
+  shapeCorners(S, q).forEach((at, i) => {
+    const handle = { type: 'ffd', i, s: new THREE.Vector3(...FFD.SIGNS[i]) };
+    const c = new THREE.Mesh(cube, handleMat(DEFORM_INK)), pk = new THREE.Mesh(pickCube, handleMat(DEFORM_INK, 0));
+    pk.visible = false;
+    for (const m of [c, pk]) { m.position.copy(at); m.quaternion.copy(q); m.renderOrder = 22; m.userData.handle = handle; }
+    cageGroup.add(c, pk);
+  });
 }
 // ▣ scale: the dot at the centre scales the whole about its base
 function cageCentre({ S, grab, side }) {
@@ -2084,6 +2145,12 @@ vp.addEventListener('pointerdown', e => {
       sDrag.t0 = axisParam(e.clientX, e.clientY, sDrag.fixed, sDrag.axis);
       if (sDrag.t0 == null) { sDrag = null; return; }   // the axis points at the camera
     }
+    if (h && h.type === 'ffd') {               // ▣ deform: this corner, from where it is now
+      sDrag.grab = shapeCorners(S, sDrag.q0)[h.i];
+      sDrag.w0 = onViewPlane(e.clientX, e.clientY, sDrag.grab);
+      sDrag.c0 = FFD.cornerAt(S.ffd, h.i);
+      if (!sDrag.w0) { sDrag = null; return; }
+    }
     if (h && h.type === 'arrow') {
       sDrag.axis = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), Z_UP][h.axis].clone().applyQuaternion(sDrag.q0);
       sDrag.t0 = axisParam(e.clientX, e.clientY, sDrag.center0, sDrag.axis);
@@ -2154,6 +2221,14 @@ vp.addEventListener('pointermove', e => {
     }
     const center = d.center0.clone().addScaledVector(d.axis, k);
     S.anchor = center.sub(new THREE.Vector3(0, 0, S.size.z / 2).applyQuaternion(d.q0));
+  } else if (d.h.type === 'ffd') {             // ▣ deform: one corner, the shape bends
+    const W = onViewPlane(e.clientX, e.clientY, d.grab);
+    if (!W) return;
+    // the hand's move on the view plane, in the shape's own normalised frame
+    const l = W.sub(d.w0).applyQuaternion(d.q0.clone().invert()).divide(S.size);
+    // it stays in its own octant, never closer than the minimum to the others
+    const m = shapeMin(S), minN = [m / S.size.x, m / S.size.y, m / S.size.z];
+    S.ffd = FFD.moveCorner(S.ffd, d.h.i, [d.c0[0] + l.x, d.c0[1] + l.y, d.c0[2] + l.z], minN);
   } else if (d.h.type === 'center') {          // the whole, about its base
     // never below the piece's minimum on its smallest side
     const f = Math.max(Math.exp((d.y - e.clientY) / 120), shapeMin(S) / Math.min(d.size0.x, d.size0.y, d.size0.z));
@@ -3229,7 +3304,7 @@ function renderNotes() {
     const cols = [...new Set([...(n.strokes || []), ...(n.labels || [])].map(s => s.color))].slice(0, 5);
     const said = [...(n.labels || []).map(l => `«${esc(l.text)}»`),
       ...(n.measures || []).map(m => `↔ ${esc(measureText(m))}`),
-      ...(n.shapes || []).map(sh => `▣ ${esc(shapeText(sh.kind, sh.size))}`),
+      ...(n.shapes || []).map(sh => `▣ ${esc(shapeText(sh.kind, sh.size))}${sh.ffd ? " · deformato" : ""}`),
       ...((n.images || []).length ? [`▣ ${n.images.length} immagin${n.images.length > 1 ? 'i' : 'e'}`] : [])].join(' ');
     row.innerHTML = `<span class="dots">${cols.map(c => `<i style="background:${esc(c)}"></i>`).join('')}</span>
       <span class="tx"><span class="id">${esc(n.id)}${n.done ? ' ✓' : ''}</span>${esc(n.text) || said || '<i>(solo disegno)</i>'}${n.text && said ? ` <span class="id">${said}</span>` : ''}

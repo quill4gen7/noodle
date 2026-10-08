@@ -306,7 +306,9 @@ def cad_notes(graph_id: str = "", gen: str = "", limit: int = 10,
     placed on the part (▣ Forme: a cube, a cylinder, a sphere — «a Ø 6 pin here»,
     «a block this big there») come as `shapes`: `kind`, `size` [x,y,z] mm in its
     own frame (a cylinder [Ø, Ø, height] along `axis`), `center`, `quat`, the
-    surface `anchor`/`normal` it sits on, the node, a `summary` and `near_marks`.
+    surface `anchor`/`normal` it sits on, the node, a `summary` and `near_marks`;
+    one bent with the cage (▣ Deforma) adds `ffd` (8 corner offsets, own frame,
+    1 = its size) and `corners` (its 8 cage corners in world mm), «deformed».
     `points=True` adds the raw
     `strokes` (surface points + normals, split where the pen left the surface).
     Once handled, close it with `cad_note_done` so the user sees your answer."""

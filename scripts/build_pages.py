@@ -172,6 +172,8 @@ def build(projects: Path, out: Path, gens: list[str], base_site: Path | None = N
     (out / "static" / "viewer.js").write_text(viewer)
     # the ↔ Metro's snaps: measuring is computation in the browser, so it works here too
     shutil.copy(WEBUI / "measure.js", out / "static" / "measure.js")
+    # the ▣ Deforma cage's trilinear math (pure, like measure.js)
+    shutil.copy(WEBUI / "ffd.js", out / "static" / "ffd.js")
     shutil.copy(WEBUI / "icon.svg", out / "static" / "icon.svg")
     shutil.copytree(WEBUI / "vendor" / "three-0.170.0", out / "static" / "vendor" / "three-0.170.0")
     # landing page + media
