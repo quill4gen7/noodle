@@ -513,7 +513,8 @@ def test_the_shape_tool_stays_on_the_parts():
     assert "stickAt(e.clientX, e.clientY)" in move and "if (!hit) return;" in move
     # a corner never passes the opposite one, and the minimum follows the PIECE
     assert "Math.max(l.x * s0.x, min)" in VIEW and "function shapeMin(S)" in VIEW
-    assert "leafIndex.get(S.piece)" in VIEW[VIEW.index("function shapeMin(S)"):][:400]
+    assert "const box = pieceBox(S);" in VIEW[VIEW.index("function shapeMin(S)"):][:200]
+    assert "leafIndex.get(S.piece)" in VIEW[VIEW.index("function pieceBox(S)"):][:200]
     # the marks shrink with the shape; the grab volume does not
     assert "hs = Math.min(grab, 0.1 * side)" in VIEW
     # a shape rides the draft like a stroke
@@ -527,3 +528,23 @@ def test_the_draw_tools_wrap_on_a_phone():
     # 604px of tools in a 390px screen scrolled the whole viewer sideways
     assert "#dbar .grp{flex-wrap:wrap;}" in VIEW
     assert "#vp[data-tool=shape] #d-shapekind{display:inline-block;}" in VIEW
+
+
+def test_shapes_have_move_arrows_on_a_leash():
+    # the classic X/Y/Z arrows — but the shape may not wander off the part:
+    # its centre stays in the piece's box grown by a quarter of the piece
+    assert "type: 'arrow'" in VIEW and "function shapeLeash(S)" in VIEW
+    assert "expandByScalar(Math.max(0.25 * L" in VIEW
+    arrow = VIEW[VIEW.index("} else if (d.h.type === 'arrow') {"):]
+    arrow = arrow[:arrow.index("} else if (d.h.type === 'center')")]
+    assert "k = Math.min(Math.max(k, lo), hi);" in arrow
+
+
+def test_two_edges_are_measured_side_to_side():
+    # lato–lato: Auto on two edges, and a mode of its own
+    assert '<option value="edges">' in VIEW and "'edges'" in VIEW
+    assert "o.polyline = q.polyline;" in VIEW
+    # a silhouette edge is taken even when the pointer grazes just off the part
+    assert "offPart && !['vertex', 'edge', 'circle_center'].includes(f.snap)" in VIEW
+    M = (ROOT / "cad_nodes" / "measure.py").read_text()
+    assert 'if "edge" in A and "edge" in B:' in M      # exact: the two edges' closest points

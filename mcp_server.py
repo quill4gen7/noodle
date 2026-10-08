@@ -299,7 +299,8 @@ def cad_notes(graph_id: str = "", gen: str = "", limit: int = 10,
     of the picture itself — open it). DIMENSIONS the user took with ↔ Metro
     come as `measures`: `kind`, `value` (mm; `approx` when it came from a
     tessellated curve), ends `a`/`b` with `at` and `snap` (vertex /
-    circle_center / edge / face / free) and the piece, a one-line `summary`,
+    circle_center / edge / face / free — two `edge` ends are the CLOSEST points
+    of two edges, «lato–lato») and the piece, a one-line `summary`,
     and `near_marks` (each such mark lists them under `measures`): «Ø ≈ 8,00»
     next to a circled hole is what the user measured there. Basic SHAPES the user
     placed on the part (▣ Forme: a cube, a cylinder, a sphere — «a Ø 6 pin here»,

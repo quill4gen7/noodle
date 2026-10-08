@@ -191,3 +191,22 @@ test('a point lying ON the tapped face: the distance to the tapped spot, not 0',
   const m = M.measureTwo(top, { snap: 'circle_center', point: [15, 4, 6], approx: true });
   assert.equal(m.kind, 'distance'); assert.ok(!m.toPlane); near(m.value, 12); assert.ok(m.approx);
 });
+
+test('lato–lato: two edges are measured at their closest points', async () => {
+  const M = await load();
+  // two skew segments: x-axis at z=0, and a y-parallel one at x=5, z=3
+  const g = M.closestSegSeg([0, 0, 0], [10, 0, 0], [5, -4, 3], [5, 4, 3]);
+  near(g.d, 3); assert.deepEqual(g.a.map(v => +v.toFixed(9)), [5, 0, 0]); assert.deepEqual(g.b.map(v => +v.toFixed(9)), [5, 0, 3]);
+  // parallel, offset along their length: the overlap's perpendicular gap
+  near(M.closestSegSeg([0, 0, 0], [10, 0, 0], [6, 2, 0], [16, 2, 0]).d, 2);
+  // two edges of a box picked far apart along their length: the 6 mm height, not the diagonal
+  const F = M.buildFeatures(...box(0, 0, 0, 20, 10, 6));
+  const top = M.pickFeature(F, [2, 0.1, 6], 3, { rV: 0.05, rE: 0.3 });
+  const bot = M.pickFeature(F, [18, 0.1, 0], 0, { rV: 0.05, rE: 0.3 });
+  assert.equal(top.snap, 'edge'); assert.equal(bot.snap, 'edge');
+  const P = c => c.verts.map(v => F.topo.point(v));
+  const m = M.measureTwo({ ...top, polyline: P(top.chain) }, { ...bot, polyline: P(bot.chain) });
+  assert.ok(m.edgeToEdge); near(m.value, 6);
+  // the edges mode never snaps a face
+  assert.equal(M.pickFeature(F, [10, 5, 6], 3, { rV: 0.05, rE: 0.3, mode: 'edges' }), null);
+});

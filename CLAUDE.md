@@ -1836,7 +1836,12 @@ result while the workflow moves on.
     piece (~170 ms on the 19k-tri nut). Priority: vertex > circle centre >
     edge > face > free. A thread is the trap: thousands of crests, each a
     "vertex" — a spot with >10 sharp edges within 2·rE snaps circles only, a
-    piece over 20k sharp edges snaps faces only. Two traps paid for: a point
+    piece over 20k sharp edges snaps faces only. Two EDGES are measured
+    lato–lato — at their closest points (`polylineGap`, segment–segment), in
+    Auto and in the Spigolo–spigolo mode; `exact` does the same on the B-Rep.
+    A silhouette edge is where a ray GRAZES past the part, so a miss looks
+    around within the snap radius and accepts only an edge/vertex/circle
+    there (never a free point in the air). Two traps paid for: a point
     lying ON the tapped plane measured 0 (now: the distance to the tapped
     spot), and `e.at || e` on an end given as `[x,y,z]` — an Array HAS `.at`
     (Array.prototype.at), so every agent dimension vanished silently.
@@ -1861,7 +1866,9 @@ result while the workflow moves on.
   on the surface (local Z = the normal). Selected, it wears a cage: 8 corners
   resize with the opposite corner fixed (signed along the corner's direction —
   dragged past the opposite one it STOPS, never flips), the centre dot scales
-  about the base, three rings rotate about the centre (Shift 15°). MOVING IS
+  about the base, three rings rotate about the centre (Shift 15°), three
+  arrows translate along its own X/Y/Z — on a LEASH: the centre stays in the
+  piece's box grown by max(¼ of the piece, the shape's size). MOVING IS
   NOT FREE: dragging the body re-anchors it on the surface hit under the
   pointer (`stickAt`) or does nothing — quill: «si clicca e appiccica sui
   pezzi». The minimum side follows the PIECE it sits on (2% of its size), so

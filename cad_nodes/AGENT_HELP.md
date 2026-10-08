@@ -134,7 +134,8 @@ More detail on demand — `cad_help(topic=...)` / `GET /api/agent/help?topic=...
    `kind` (distance, edge, face_gap, diameter, radius), `value` in mm
    (`approx` = measured on a tessellated curve: confirm with `cad_measure`
    before acting on a hundredth), the ends `a`/`b` with `at`, the `snap`
-   (vertex / circle_center / edge / face / free) and the node, a one-line
+   (vertex / circle_center / edge / face / free; two `edge` ends = the closest
+   points of two edges) and the node, a one-line
    `summary`, and `near_marks` («Ø ≈ 8,00» on a circled hole is what the
    user measured there; the mark lists it under `measures`). SHAPES the user
    placed on the part (▣ Forme) arrive as `shapes`: `kind` box / cylinder /

@@ -363,6 +363,42 @@ function gridQuery(g, p, r) {
       }
   return out;
 }
+// The closest points of two segments [p1,q1] and [p2,q2] (Ericson, Real-Time
+// Collision Detection §5.1.9): parallel or not, overlapping or not.
+export function closestSegSeg(p1, q1, p2, q2) {
+  const d1 = sub(q1, p1), d2 = sub(q2, p2), r = sub(p1, p2);
+  const a = dot(d1, d1), e = dot(d2, d2), f = dot(d2, r), EPS = 1e-18;
+  let s, t;
+  if (a <= EPS && e <= EPS) { s = t = 0; }
+  else if (a <= EPS) { s = 0; t = Math.min(1, Math.max(0, f / e)); }
+  else {
+    const c = dot(d1, r);
+    if (e <= EPS) { t = 0; s = Math.min(1, Math.max(0, -c / a)); }
+    else {
+      const b = dot(d1, d2), den = a * e - b * b;
+      s = den > EPS ? Math.min(1, Math.max(0, (b * f - c * e) / den)) : 0;
+      t = (b * s + f) / e;
+      if (t < 0) { t = 0; s = Math.min(1, Math.max(0, -c / a)); }
+      else if (t > 1) { t = 1; s = Math.min(1, Math.max(0, (b - c) / a)); }
+    }
+  }
+  const A = add(p1, mul(d1, s)), B = add(p2, mul(d2, t));
+  return { d: dist(A, B), a: A, b: B };
+}
+// The closest points of two polylines (two edges of the part, as chains):
+// every pair of segments, decimated past ~250k pairs.
+export function polylineGap(P, Q) {
+  const step = (n, m) => Math.max(1, Math.ceil(Math.sqrt(n * m / 250000)));
+  const k = step(P.length, Q.length);
+  const pp = P.filter((_, i) => i % k === 0 || i === P.length - 1), qq = Q.filter((_, i) => i % k === 0 || i === Q.length - 1);
+  let best = null;
+  const segs = L => (L.length === 1 ? [[L[0], L[0]]] : L.slice(1).map((x, i) => [L[i], x]));
+  for (const [p1, q1] of segs(pp)) for (const [p2, q2] of segs(qq)) {
+    const c = closestSegSeg(p1, q1, p2, q2);
+    if (!best || c.d < best.d) best = c;
+  }
+  return best;
+}
 export function closestOnSegment(p, a, b) {
   const ab = sub(b, a), l2 = dot(ab, ab);
   const t = l2 > 0 ? Math.min(1, Math.max(0, dot(sub(p, a), ab) / l2)) : 0;
@@ -449,6 +485,7 @@ export function pickFeature(F, p, tri, { rV, rE, mode = 'auto' }) {
                  cylinder: c, tris: ts, approx: true } : null;
   };
   if (mode === 'faces') return face();
+  if (mode === 'edges') mode = 'edge';           // lato–lato: edges only, two of them
   if (!F.dense) {
     // on a ridged spot (a thread) every crest is a "vertex" and an "edge":
     // snapping there would jump between them at random, so only circles count
@@ -504,6 +541,12 @@ export function measureOne(f) {
 // points (vertex–vertex, centre–centre = the interaxis…).
 export function measureTwo(a, b, { parallelDeg = FACE_DEG } = {}) {
   const approx = !!(a.approx || b.approx);
+  // two EDGES: the gap between them, at their closest points — not between
+  // the two spots that happened to be tapped (lato–lato)
+  if (a.polyline && b.polyline) {
+    const g = polylineGap(a.polyline, b.polyline);
+    if (g) return { kind: 'distance', a: g.a, b: g.b, value: g.d, approx, edgeToEdge: true };
+  }
   if (a.plane && b.plane) {
     const c = Math.abs(dot(a.plane.normal, b.plane.normal));
     if (c > Math.cos(parallelDeg * Math.PI / 180)) {

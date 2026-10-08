@@ -372,6 +372,7 @@
             <option value="auto">Auto</option>
             <option value="p2p">Punto–punto</option>
             <option value="edge">Spigolo</option>
+            <option value="edges">Spigolo–spigolo</option>
             <option value="hole">Foro / cerchio</option>
             <option value="faces">Faccia–faccia</option>
           </select>
@@ -1311,7 +1312,7 @@ function moveRing(e) {
 // On a phone, press and HOLD to aim: a lens above the finger shows what is
 // under it (the finger covers it), and lifting takes it. Esc drops the first
 // point. A dimension is part of the draft like a stroke: ↶, ⌫, view pictures.
-const MEASURE_MODES = ['auto', 'p2p', 'edge', 'hole', 'faces'];
+const MEASURE_MODES = ['auto', 'p2p', 'edge', 'edges', 'hole', 'faces'];
 const ONE_TAP = new Set(['edge', 'hole']);
 let measureMode = 'auto';
 try { const v = localStorage.getItem('noodle:view:measureMode'); if (MEASURE_MODES.includes(v)) measureMode = v; } catch {}
@@ -1323,7 +1324,8 @@ $('d-mmode').addEventListener('change', e => {
 });
 const DRAW_HINT = $('d-hint').textContent;
 const MODE_HINT = {
-  auto: 'Metro Auto: tocca due cose sul pezzo — vertici, centri dei fori, spigoli, facce (due facce parallele = spessore) · la stessa due volte o Invio = Ø / lunghezza',
+  auto: 'Metro Auto: tocca due cose sul pezzo — vertici, centri dei fori, spigoli (due spigoli = distanza fra i punti più vicini), facce (due facce parallele = spessore) · la stessa due volte o Invio = Ø / lunghezza',
+  edges: 'Metro spigolo–spigolo: tocca due spigoli — la distanza fra i loro punti più vicini',
   p2p: 'Metro punto–punto: tocca un punto sul pezzo, poi il secondo',
   edge: 'Metro spigolo: tocca uno spigolo per la sua lunghezza',
   hole: 'Metro foro: tocca il bordo di un foro o la sua parete per il Ø',
@@ -1353,7 +1355,18 @@ function wpt(mesh, a) { return new THREE.Vector3(...a).applyMatrix4(mesh.matrixW
 function wdir(mesh, a) { return new THREE.Vector3(...a).transformDirection(mesh.matrixWorld); }
 // What the pointer would take, in WORLD space, plus the piece-local feature
 function snapAt(x, y, touch) {
-  const hit = surfaceHit(x, y);
+  let hit = surfaceHit(x, y), offPart = false;
+  if (!hit && measureMode !== 'p2p') {
+    // just OFF the silhouette: an outline edge of the part is exactly where a
+    // ray grazes past it. Look for the part in the snap radius around the
+    // pointer; what is found there counts only as an edge / vertex / circle
+    const R = SNAP_PX(touch).e;
+    outer: for (const r of [R / 3, (2 * R) / 3, R]) for (let k = 0; k < 12; k++) {
+      const a = (k / 12) * 2 * Math.PI;
+      hit = surfaceHit(x + r * Math.cos(a), y + r * Math.sin(a));
+      if (hit) { offPart = true; break outer; }
+    }
+  }
   if (!hit) return null;
   const base = { snap: 'free', p: hit.p.clone(), n: hit.n.clone(), key: hit.key, mesh: hit.mesh };
   if (measureMode === 'p2p' || !hit.mesh.geometry || !hit.mesh.geometry.attributes.position) return base;
@@ -1367,15 +1380,27 @@ function snapAt(x, y, touch) {
   const s = hit.mesh.matrixWorld.getMaxScaleOnAxis() || 1, k = mmPerPx(hit.p) / s, r = SNAP_PX(touch);
   const pl = A3(hit.mesh.worldToLocal(hit.p.clone()));
   const f = MS.pickFeature(F, pl, hit.tri, { rV: r.v * k, rE: r.e * k, mode: measureMode });
-  if (!f) return null;
+  if (!f || (offPart && !['vertex', 'edge', 'circle_center'].includes(f.snap))) return null;
   const out = { ...base, snap: f.snap, f, p: wpt(hit.mesh, f.point), approx: !!f.approx };
   if (f.plane) out.plane = { point: wpt(hit.mesh, f.plane.point), normal: wdir(hit.mesh, f.plane.normal) };
   if (f.circle) out.circle = { center: wpt(hit.mesh, f.circle.center), axis: wdir(hit.mesh, f.circle.axis), r: f.circle.r * s };
   return out;
 }
-// the plain-array view of a world pick that measure.js combines
-const msPick = q => ({ point: A3(q.p), approx: q.approx, chain: q.f && q.f.chain, cylinder: q.f && q.f.cylinder,
-  plane: q.plane && { point: A3(q.plane.point), normal: A3(q.plane.normal) } });
+// the plain-array view of a world pick that measure.js combines; an EDGE
+// brings its whole chain in world mm, so two edges are measured lato–lato
+function msPick(q) {
+  const o = { point: A3(q.p), approx: q.approx, chain: q.f && q.f.chain, cylinder: q.f && q.f.cylinder,
+              plane: q.plane && { point: A3(q.plane.point), normal: A3(q.plane.normal) } };
+  if (q.snap === 'edge' && q.f && q.f.chain) {
+    if (!q.polyline) {
+      const V = featuresOf(q.mesh).topo.V, vs = q.f.chain.verts, step = Math.max(1, Math.ceil(vs.length / 2000));
+      q.polyline = vs.filter((_, i) => i % step === 0 || i === vs.length - 1)
+        .map(v => A3(new THREE.Vector3(V[3 * v], V[3 * v + 1], V[3 * v + 2]).applyMatrix4(q.mesh.matrixWorld)));
+    }
+    o.polyline = q.polyline;
+  }
+  return o;
+}
 function endOf(q, at = q.p) {
   const o = { at: [r4(at.x), r4(at.y), r4(at.z)], normal: v3(q.n), piece: q.key, snap: q.snap };
   if (q.circle) o.circle = { center: v3(q.circle.center), axis: v3(q.circle.axis), r: r4(q.circle.r) };
@@ -1413,6 +1438,7 @@ function measureSingle(q) {
 }
 function measurePair(a, b, lock) {
   if (measureMode === 'faces' && !(a.plane && b.plane)) return null;
+  if (measureMode === 'edges' && !(a.snap === 'edge' && b.snap === 'edge')) return null;
   const r = MS.measureTwo(msPick(a), msPick(b));
   if (measureMode === 'faces' && r.kind !== 'face_gap') { toast('Le due facce non sono parallele.', 3000); return null; }
   const M = { kind: r.kind, a: new THREE.Vector3(...r.a), b: new THREE.Vector3(...r.b), value: r.value,
@@ -1495,7 +1521,7 @@ function showSnap(q, x, y) {
 }
 function clearSnap() {
   if (mSnapObj) { disposeObj(mSnapObj); mSnapObj = null; mSnapKey = ''; }
-  $('m-snap').style.display = 'none';
+  $('m-snap').style.display = 'none'; $('m-snap').textContent = '';
   viewer.invalidate();
 }
 function pendingObject(q) {
@@ -1525,7 +1551,8 @@ function addDraftMeasure(M) {
 }
 function measurePick(q, lock) {
   if (!q) {
-    if (ONE_TAP.has(measureMode)) toast(measureMode === 'edge' ? 'Nessuno spigolo qui.' : 'Nessun foro o cerchio qui.', 2200);
+    if (ONE_TAP.has(measureMode) || measureMode === 'edges')
+      toast(measureMode === 'hole' ? 'Nessun foro o cerchio qui.' : 'Nessuno spigolo qui.', 2200);
     return;
   }
   if (clock.playing) setPlaying(false);
@@ -1642,7 +1669,7 @@ function lensOff() { const l = $('m-lens'); if (l) l.style.display = 'none'; }
 // Part of the draft like a stroke: ↶, ⌫, the view pictures, Canc / «Togli».
 const SHAPE_KINDS = ['box', 'cylinder', 'sphere'];
 const SHAPE_NAME = { box: 'cubo', cylinder: 'cilindro', sphere: 'sfera' };
-const SHAPE_HINT = 'Forme: tocca il pezzo per posare la forma · trascinala per farla scorrere SUL pezzo · vertici = misura, centro = scala, anelli = ruota (Shift 15°) · Canc / «Togli» per toglierla';
+const SHAPE_HINT = 'Forme: tocca il pezzo per posare la forma · trascinala per farla scorrere SUL pezzo · frecce = sposta lungo X/Y/Z (resta vicino al pezzo) · vertici = misura, centro = scala, anelli = ruota (Shift 15°) · Canc / «Togli» per toglierla';
 let shapeKind = 'box';
 try { const v = localStorage.getItem('noodle:view:shapeKind'); if (SHAPE_KINDS.includes(v)) shapeKind = v; } catch {}
 $('d-shapekind').value = shapeKind;
@@ -1713,12 +1740,31 @@ function shapeContains(S, p, r) {
 // pass each other. It follows the PIECE the shape sits on (2% of its size),
 // not the zoom — the handles are drawn in px, so zooming in always pulls them
 // apart again.
-function shapeMin(S) {
+function pieceBox(S) {
   const li = S.piece && leafIndex.get(S.piece);
   const obj = li ? li.node.obj : null;
-  const box = obj ? new THREE.Box3().setFromObject(obj) : visibleBox();
+  return obj ? new THREE.Box3().setFromObject(obj) : visibleBox();
+}
+function shapeMin(S) {
+  const box = pieceBox(S);
   const L = box.isEmpty() ? 0 : box.getSize(new THREE.Vector3()).length();
   return Math.max(0.02 * L, 1e-3);
+}
+// How far the arrows may take a shape: its centre stays inside the box of the
+// piece it sits on, grown by a quarter of that piece (or the shape's own size,
+// if bigger) — near the part, never wandering off into the scene.
+function shapeLeash(S) {
+  const box = pieceBox(S);
+  if (box.isEmpty()) return null;
+  const L = box.getSize(new THREE.Vector3()).length();
+  return box.clone().expandByScalar(Math.max(0.25 * L, Math.max(S.size.x, S.size.y, S.size.z)));
+}
+// the parameter along the line c + u·t closest to the pointer's ray
+function axisParam(x, y, c, u) {
+  const r = rayAt(x, y).ray, d = r.direction, w0 = c.clone().sub(r.origin);
+  const b = u.dot(d), den = 1 - b * b;
+  if (den < 1e-6) return null;                 // the axis points at the camera
+  return (b * d.dot(w0) - u.dot(w0)) / den;
 }
 function addShape(hit) {
   const s = 40 * mmPerPx(hit.p);
@@ -1778,6 +1824,20 @@ function refreshCage() {
   cageGroup.add(ctr, ctrPick);
   // rings: around the centre, a little outside the cage, in the shape's own axes
   const R = Math.max(half.length() * 1.15, 22 * px);
+  // move arrows, the classic X/Y/Z, past the rings: drag one to slide the
+  // shape along that axis of its own (Z = off the surface)
+  const AL = R * 1.45, ar = Math.max(px * 1.4, 0.01), cone = Math.max(10 * px, 0.04);
+  for (let a = 0; a < 3; a++) {
+    const u = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), Z_UP][a].clone().applyQuaternion(q);
+    const from = S.center.clone().addScaledVector(u, R * 0.35), tip = S.center.clone().addScaledVector(u, AL);
+    const handle = { type: 'arrow', axis: a };
+    const shaft = new THREE.Mesh(rodGeo(from, tip.clone().addScaledVector(u, -cone), ar), handleMat(RING_INK[a]));
+    const head = new THREE.Mesh(arrowGeo(tip, u, cone, cone * 0.42), handleMat(RING_INK[a]));
+    const pick = new THREE.Mesh(rodGeo(from, tip, (touch ? 10 : 6) * px), handleMat(RING_INK[a], 0));
+    pick.visible = false;
+    for (const m of [shaft, head, pick]) { m.renderOrder = 22; m.userData.handle = handle; }
+    cageGroup.add(shaft, head, pick);
+  }
   for (let a = 0; a < 3; a++) {
     const t = new THREE.TorusGeometry(R, Math.max(px * 1.2, 0.01), 6, 96);
     const fat = new THREE.TorusGeometry(R, (touch ? 10 : 6) * px, 6, 48);   // what is picked: thicker than what is drawn
@@ -1811,10 +1871,13 @@ function handleAt(x, y) {
     const v = o.position.clone().project(viewer.camera);
     return (r.left + (v.x + 1) / 2 * r.width - x) ** 2 + (r.top + (1 - v.y) / 2 * r.height - y) ** 2;
   };
-  const pts = hs.filter(h => h.object.userData.handle.type !== 'ring').sort((a, b) => dist2(a.object) - dist2(b.object));
+  const pts = hs.filter(h => !['ring', 'arrow'].includes(h.object.userData.handle.type)).sort((a, b) => dist2(a.object) - dist2(b.object));
+  const arrow = hs.find(h => h.object.userData.handle.type === 'arrow');
+  if (!pts.length && arrow) return { ...arrow.object.userData.handle, px: 0 };
   const pick = pts[0] || hs[0];
   if (!pick) return null;
-  return { ...pick.object.userData.handle, px: pick.object.userData.handle.type === 'ring' ? 0 : Math.sqrt(dist2(pick.object)) };
+  const t = pick.object.userData.handle.type;
+  return { ...pick.object.userData.handle, px: t === 'ring' || t === 'arrow' ? 0 : Math.sqrt(dist2(pick.object)) };
 }
 function shapeAt(x, y) {
   const objs = shapes.filter(S => S.obj).map(S => S.obj);
@@ -1838,7 +1901,7 @@ vp.addEventListener('pointerdown', e => {
   // pointer is right on it — on a small shape (or under a finger) the grab
   // volumes cover the body, and grabbing the shape must still MOVE it
   const grabPx = e.pointerType === 'mouse' ? 6 : 9;
-  if (h && onBody === selShape && h.type !== 'ring' && h.px > 0.5 * grabPx) h = null;
+  if (h && onBody === selShape && !['ring', 'arrow'].includes(h.type) && h.px > 0.5 * grabPx) h = null;
   const body = !h && onBody;
   if (h || body) {
     e.stopPropagation(); e.preventDefault();
@@ -1850,6 +1913,12 @@ vp.addEventListener('pointerdown', e => {
     if (h && h.type === 'corner') {
       sDrag.fixed = h.s.clone().negate().multiply(S.size).multiplyScalar(0.5).applyQuaternion(sDrag.q0).add(S.center);
       sDrag.grab = h.s.clone().multiply(S.size).multiplyScalar(0.5).applyQuaternion(sDrag.q0).add(S.center);
+    }
+    if (h && h.type === 'arrow') {
+      sDrag.axis = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), Z_UP][h.axis].clone().applyQuaternion(sDrag.q0);
+      sDrag.t0 = axisParam(e.clientX, e.clientY, sDrag.center0, sDrag.axis);
+      sDrag.leash = shapeLeash(S);
+      if (sDrag.t0 == null) { sDrag = null; return; }
     }
     if (h && h.type === 'ring') {
       const c = S.center.clone().project(viewer.camera), r = $('c').getBoundingClientRect();
@@ -1885,6 +1954,22 @@ vp.addEventListener('pointermove', e => {
     const s = d.h.s;
     const center = s.clone().multiply(sz).multiplyScalar(0.5).applyQuaternion(d.q0).add(d.fixed);
     S.anchor = center.clone().sub(new THREE.Vector3(0, 0, sz.z / 2).applyQuaternion(d.q0));
+  } else if (d.h.type === 'arrow') {           // along one axis, on a leash
+    const t = axisParam(e.clientX, e.clientY, d.center0, d.axis);
+    if (t == null) return;
+    let k = t - d.t0;
+    if (d.leash) {                             // the range of k that keeps the centre in the box
+      let lo = -Infinity, hi = Infinity;
+      for (const c of ['x', 'y', 'z']) {
+        const u = d.axis[c], c0 = d.center0[c], mn = d.leash.min[c], mx = d.leash.max[c];
+        if (Math.abs(u) < 1e-9) continue;
+        const a1 = (mn - c0) / u, a2 = (mx - c0) / u;
+        lo = Math.max(lo, Math.min(a1, a2)); hi = Math.min(hi, Math.max(a1, a2));
+      }
+      k = Math.min(Math.max(k, lo), hi);
+    }
+    const center = d.center0.clone().addScaledVector(d.axis, k);
+    S.anchor = center.sub(new THREE.Vector3(0, 0, S.size.z / 2).applyQuaternion(d.q0));
   } else if (d.h.type === 'center') {          // the whole, about its base
     // never below the piece's minimum on its smallest side
     const f = Math.max(Math.exp((d.y - e.clientY) / 120), shapeMin(S) / Math.min(d.size0.x, d.size0.y, d.size0.z));
@@ -3430,6 +3515,8 @@ $('b-measures').onclick = () => { measuresOn = !measuresOn; syncMeasures(); writ
 // For tests and for drawing from data before any store exists:
 // window.__noodleMeasures.draw([{kind, a:{at}, b:{at}, value, …}])
 window.__noodleMeasures = { draw: drawMeasures, list: () => measures, text: measureText, viewer,
+  probe: (x1, y1, x2, y2) => { const a = snapAt(x1, y1), b = snapAt(x2, y2); try { const M = measurePair(a, b, false); return M ? [M.kind, M.value, a.snap, b.snap, MS.sameFeature(msPick(a), msPick(b))] : ['null', a && a.snap, b && b.snap]; } catch (e) { return String(e.stack).slice(0, 600); } },
+  pending: () => mPending && mPending.snap, draft: () => dmeasures.map(M => [M.kind, +M.value.toFixed(3)]),
   handleAt: (x, y) => handleAt(x, y), shapeAt: (x, y) => { const S = shapeAt(x, y); return S ? { selected: S === selShape } : null; } };
 
 // ── load ─────────────────────────────────────────────────────────────────

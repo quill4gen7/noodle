@@ -390,6 +390,9 @@ def exact(shapes: list, m: dict) -> dict:
             raise ValueError("exact: no edge of the part is there")
         return {"kind": "edge", "value": e["edge"].length, "found": ["edge"]}
     B = _locate(sb, m["b"], tol)
+    if "edge" in A and "edge" in B:          # lato–lato: the two edges' closest points
+        d, qa, qb = A["edge"].distance_to_with_closest_points(B["edge"])
+        return {"kind": "distance", "value": d, "a": _vec(qa), "b": _vec(qb), "found": ["edge", "edge"]}
     pa, pb = _pt(A["point"]), _pt(B["point"])
     if A["snap"] == "face" and B["snap"] == "face":
         na, nb = _pt(A["normal"]), _pt(B["normal"])
