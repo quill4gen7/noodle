@@ -246,6 +246,7 @@
     background:var(--bg-2);border:1px solid #a78bfa;border-radius:12px;padding:5px 6px 5px 12px;box-shadow:0 8px 24px rgba(0,0,0,.5);}
   #s-bar.open{display:flex;}
   #s-dims{font-variant-numeric:tabular-nums;white-space:nowrap;}
+  #s-dims .s-def{color:#f59e0b;}
   /* which handles the selected shape wears: one row of its own under the size */
   #s-bar{flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 16px);box-sizing:border-box;}
   #s-modes{display:flex;gap:4px;flex-basis:100%;justify-content:center;flex-wrap:nowrap;}
@@ -325,8 +326,14 @@
     #s-modes .btn{min-height:36px;padding:3px 6px;font-size:12px;gap:3px;}
     /* the size row stays ONE row in 390px with the three presets in it */
     #s-bar{gap:4px;padding:5px 4px 5px 8px;}
+    /* an absolute box at left:50% shrinks to its widest UNBREAKABLE row (the
+       modes), so a size row a few px wider wrapped Togli / ✓ onto a row of
+       their own (cubo 10,00 × 10,00 × 10,00): take the whole width it may */
+    #s-bar{width:max-content;}
     #s-presets{gap:2px;}
     #s-dims{font-size:11px;}
+    #s-dims .s-def{font-size:0;margin-left:3px;}
+    #s-dims .s-def::after{content:'≈';font-size:13px;font-weight:700;}
     #s-presets .btn{min-height:36px;padding:2px 4px;min-width:0;}
     #s-del,#s-done{padding:4px 8px;min-width:0;}
     #d-lstyle{min-height:36px;max-width:104px;}
@@ -1779,6 +1786,12 @@ function shapeQuat(S) { return surfQuat(S.n).multiply(S.rot); }
 // the centre sits half a height above the anchor, along the shape's own Z
 function placeShape(S) { S.center = S.anchor.clone().add(new THREE.Vector3(0, 0, S.size.z / 2).applyQuaternion(shapeQuat(S))); }
 function shapeState(S) { return { anchor: S.anchor.clone(), n: S.n.clone(), rot: S.rot.clone(), size: S.size.clone(), piece: S.piece, color: S.color, ffd: FFD.copyFfd(S.ffd) }; }
+// did a drag change anything? (a drag that ends where it began — a body slid
+// off the parts, a handle pinned at its minimum — is not an undo step)
+function sameShapeState(a, b) {
+  return a.anchor.equals(b.anchor) && a.n.equals(b.n) && a.rot.equals(b.rot) && a.size.equals(b.size)
+    && a.piece === b.piece && a.color === b.color && JSON.stringify(a.ffd) === JSON.stringify(b.ffd);
+}
 function setShapeState(S, st) { S.anchor = st.anchor.clone(); S.n = st.n.clone(); S.rot = st.rot.clone(); S.size = st.size.clone(); S.piece = st.piece; if (st.color) S.color = st.color; S.ffd = FFD.copyFfd(st.ffd); placeShape(S); }
 function shapeGeo(kind) {
   if (kind === 'cylinder') { const g = new THREE.CylinderGeometry(0.5, 0.5, 1, 48); g.rotateX(Math.PI / 2); return g; }
@@ -1952,7 +1965,12 @@ function refreshCage() {
   if (S && !$('s-bar').classList.contains('open')) sBarOpened = performance.now();
   $('s-bar').classList.toggle('open', !!S);
   if (!S) { viewer.invalidate(); return; }
-  $('s-dims').textContent = shapeText(S.kind, S.size) + (FFD.isDeformed(S.ffd) ? ' · deformato' : '');
+  // bent by ▣ Deforma: the size is the cage's REST box, say so — in words on a
+  // desktop, an amber ≈ on a phone (« · deformato» pushed Togli / ✓ onto a
+  // row of their own at 390 px)
+  $('s-dims').textContent = shapeText(S.kind, S.size);
+  if (FFD.isDeformed(S.ffd)) $('s-dims').append(Object.assign(document.createElement('span'),
+    { className: 's-def', textContent: ' · deformato', title: 'deformato dalla gabbia (▣ Deforma): le misure sono quelle della gabbia a riposo' }));
   syncSizePresets(S);
   const q = shapeQuat(S), touch = matchMedia('(pointer:coarse)').matches;
   // the marks shrink WITH the shape (never bigger than a slice of its shortest
@@ -2249,7 +2267,7 @@ const endShapeDrag = e => {
   if (sDrag && e.pointerId === sDrag.id) {
     e.stopPropagation();
     const d = sDrag; sDrag = null;
-    if (d.moved) {
+    if (d.moved && !sameShapeState(d.before, shapeState(d.S))) {
       actions.push({ type: 'shape', S: d.S, before: d.before });
       refreshViews(viewsOf([d.S])); takeView([d.S]);
       syncDraw();

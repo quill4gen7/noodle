@@ -2135,7 +2135,7 @@ def _link_shapes(marks: list[dict], strokes: list[dict], shapes: list[dict]) -> 
         near = [k + 1 for k, ps in enumerate(by_mark) if ps and min(math.dist(sh["center"], p) for p in ps) <= reach]
         c = ", ".join(f"{v:.2f}" for v in sh["center"])
         a = ", ".join(f"{v:.2f}" for v in sh["axis"])
-        sh["summary"] = (f"{shape_phrase(sh)}" + (", deformed by its cage (see corners)" if sh.get("ffd") else "")
+        sh["summary"] = (f"{shape_phrase(sh)}" + (", deformed by its cage (see corners)," if sh.get("ffd") else "")
                          + f" centred at ({c}), axis ({a})"
                          + (f", on {sh.get('title') or sh['node']}" if sh.get("node") else ""))
         sh["near_marks"] = near

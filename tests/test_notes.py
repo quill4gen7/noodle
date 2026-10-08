@@ -737,3 +737,24 @@ def test_shapes_have_standard_sizes():
     # a drag never snaps the 1 mm preset back up: the minimum is capped at 1 mm
     assert "return Math.min(Math.max(0.02 * L, 1e-3), SHAPE_MM_FLOOR);" in VIEW
     assert "const SHAPE_MM_FLOOR = 1;" in VIEW
+
+
+def test_the_shape_features_work_together():
+    # E (integration, found in the browser): a drag that ends where it began —
+    # a body slid off the parts, a handle held at its minimum — is NOT an undo
+    # step (↶ used to spend one press on nothing)
+    end = VIEW[VIEW.index("const endShapeDrag = e => {"):]
+    end = end[:end.index("\n};\n")]
+    assert "if (d.moved && !sameShapeState(d.before, shapeState(d.S))) {" in end
+    fn = VIEW[VIEW.index("function sameShapeState(a, b)"):]
+    fn = fn[:fn.index("\n}\n")]
+    for f in ("a.anchor.equals(b.anchor)", "a.rot.equals(b.rot)", "a.size.equals(b.size)", "a.color === b.color",
+              "JSON.stringify(a.ffd) === JSON.stringify(b.ffd)"):
+        assert f in fn
+    # «· deformato» is a span of its own: words on a desktop, an amber ≈ on a
+    # phone, and the phone bar takes its whole width — at 390 px the size row
+    # (cubo 10,00 × 10,00 × 10,00 + presets + Togli + ✓) used to wrap
+    assert "className: 's-def', textContent: ' · deformato'" in VIEW
+    phone = VIEW[VIEW.index("#s-dims{font-size:11px;}"):][:400]
+    assert "#s-dims .s-def{font-size:0;" in phone and "content:'≈'" in phone
+    assert "#s-bar{width:max-content;}" in VIEW
