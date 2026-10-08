@@ -168,3 +168,52 @@ def test_an_end_given_as_a_bare_point_is_read_as_one():
     # measures.json stores ends as [x,y,z]; Array.prototype.at made `e.at || e`
     # hand a FUNCTION to the vector maker, and every agent dimension vanished
     assert "V3(e.at || e)" not in VIEW and "Array.isArray(e) ? e : e.at" in VIEW
+
+
+# --- phase 5: ✓ esatto — the browser's dimension redone on the frozen B-Rep ----
+
+def test_a_piece_key_becomes_a_measure_reference():
+    assert api._piece_ref("n8") == "n8"
+    assert api._piece_ref("n8.2") == "n8[2]", "n8.2 would read as an output named 2"
+
+
+def test_exact_asks_the_frozen_graph_for_the_same_features(store, monkeypatch):
+    from cad_nodes import executor
+    seen = {}
+
+    def fake(graph, workdir, queries, timeout=120):
+        seen["nodes"], seen["q"] = [n.id for n in graph.nodes], queries
+        return {"success": True, "results": [{"op": "exact", "kind": "diameter", "value": 8.0,
+                                              "a": [5, 5, 10], "found": ["circle"]}]}
+    monkeypatch.setattr(executor, "measure_graph", fake)
+    out = api.exact_measure(store, "demo", "g1", {"kind": "diameter", "value": 7.98,
+        "a": {"at": [5, 5, 10], "snap": "circle_center", "piece": "n1.0",
+              "circle": {"center": [5, 5, 10], "axis": [0, 0, 1], "r": 3.99}}})
+    assert seen["nodes"] == ["n1"] and seen["q"][0]["op"] == "exact" and seen["q"][0]["nodes"] == ["n1[0]"]
+    assert out == {"kind": "diameter", "value": 8.0, "a": [5, 5, 10], "found": ["circle"],
+                   "exact": True, "delta": 0.02}
+
+
+def test_exact_on_a_mesh_says_why(store, monkeypatch):
+    from cad_nodes import executor
+    monkeypatch.setattr(executor, "measure_graph", lambda *a, **k: {"success": True, "results": [
+        {"op": "exact", "error": "ValueError: n1: no geometry (value is Mesh)"}]})
+    with pytest.raises(ValueError, match="mesh"):
+        api.exact_measure(store, "demo", "g1", {"kind": "distance",
+            "a": {"at": [0, 0, 0], "piece": "n1"}, "b": {"at": [1, 0, 0], "piece": "n1"}})
+
+
+def test_exact_query_is_validated_without_build123d():
+    from cad_nodes.measure import refs_of
+    assert refs_of({"op": "exact", "nodes": ["n1", "n2"], "measure": {}}) == ["n1", "n2"]
+    with pytest.raises(ValueError):
+        refs_of({"op": "exact", "nodes": [], "measure": {}})
+    with pytest.raises(ValueError):
+        refs_of({"op": "exact", "nodes": ["n1"]})
+
+
+def test_the_viewer_offers_exact_and_the_server_answers_off_the_loop():
+    assert '@app.post("/api/graph/{name}/gens/{gen}/measures/exact")' in SERVER
+    assert "off_loop(api.exact_measure" in SERVER
+    assert "async function verifyExact(M)" in VIEW and 'id="m-exact"' in VIEW
+    assert "...(M.exact ? { exact: true } : {})" in VIEW, "a verified draft dimension says so in the note"

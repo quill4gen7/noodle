@@ -2414,7 +2414,7 @@ async function sendNote() {
     images: pictures.map(L => ({ data: L.img.data, piece: L.piece, ...placed(L) })),
     // dimensions taken on the part: the browser measured them, the agent reads them
     measures: dmeasures.map(M => ({ kind: M.kind, a: M.aEnd, b: M.bEnd, value: r4(M.value), approx: !!M.approx,
-      ...(M.axis ? { axis: M.axis } : {}), ...(M.text ? { text: M.text } : {}),
+      ...(M.axis ? { axis: M.axis } : {}), ...(M.text ? { text: M.text } : {}), ...(M.exact ? { exact: true } : {}),
       view: M.view == null ? null : remap.get(M.view) })),
     hide: location.hash.replace(/^#/, ''),
   };
@@ -2975,7 +2975,7 @@ function measureFrom(m) {
   // an end is [x,y,z] (the agent's file) or {at: [x,y,z], …} (a note) — and an
   // array HAS an .at: it is Array.prototype.at, so test for the array first
   const end = e => (!e ? null : V3(Array.isArray(e) ? e : e.at));
-  const M = { ...m, a: end(m.a), b: end(m.b), n: V3(m.n), agent: !!m.agent || !!m.status,
+  const M = { ...m, raw: m, a: end(m.a), b: end(m.b), n: V3(m.n), agent: !!m.agent || !!m.status,
               nodes: [].concat(m.node || [], (m.a && m.a.node) || [], (m.b && m.b.node) || []) };
   const circ = m.circle || (m.a && m.a.circle);
   if (circ) M.circle = { center: V3(circ.center), axis: V3(circ.axis) || new THREE.Vector3(0, 0, 1), r: +circ.r };
@@ -3012,14 +3012,48 @@ async function loadMeasures(base) {
 // agent's note and how it was measured — the plate has room for the value only.
 const STATUS_WORD = { ok: '✓ ok', check: '● da controllare', fail: '✕ fuori tolleranza' };
 function measureAt(x, y) {
-  if (!measuresOn || !measures.length) return null;
   const r = $('c').getBoundingClientRect();
   ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
   ray.setFromCamera(ndc, viewer.camera);
-  const h = ray.intersectObjects(measures.filter(M => M.obj.visible).map(M => M.obj), true)[0];
-  if (!h) return null;
-  let o = h.object; while (o && !o.userData.measure) o = o.parent;
-  return o ? o.userData.measure : null;
+  // the agent's (if shown), the draft's and the saved notes' dimensions
+  const roots = [...(measuresOn ? measures.filter(M => M.obj.visible).map(M => M.obj) : []),
+                 ...dmeasures.filter(M => M.obj).map(M => M.obj),
+                 ...[...noteObjs.values()].filter(o => o.visible)];
+  for (const h of ray.intersectObjects(roots, true)) {
+    let o = h.object, shown = true;
+    for (let p = o; p; p = p.parent) if (!p.visible) shown = false;
+    if (!shown) continue;
+    while (o && !o.userData.measure) o = o.parent;
+    if (o) return o.userData.measure;
+  }
+  return null;
+}
+// ✓ esatto: the dimension redone on the gen's frozen B-Rep, on request (it
+// costs a run of the graph). A draft one takes the exact value and sends it.
+function measureBody(M) {
+  if (M.raw) return M.raw;                     // a saved note's, as stored
+  return { kind: M.kind, a: M.aEnd, b: M.bEnd, axis: M.axis, value: M.value };
+}
+async function verifyExact(M) {
+  toast(`↔ ${esc(measureText(M))} — verifica sul B-Rep…`, 30000);
+  try {
+    const r = await fetch(`/api/graph/${encodeURIComponent(NAME)}/gens/${GEN}/measures/exact`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ measure: measureBody(M) }) });
+    const d = await r.json().catch(() => ({}));
+    if (d.static) { toast('Nell\'anteprima statica non c\'è un server: il valore esatto si chiede a noodle installato.', 5000); return; }
+    if (!r.ok) throw new Error(d.detail || r.statusText);
+    const before = measureText(M), dl = typeof d.delta === 'number' ? d.delta : null;
+    if (dmeasures.includes(M)) {
+      M.value = d.value; M.approx = false; M.exact = true;
+      if (d.kind && d.kind !== M.kind && ['distance', 'face_gap'].includes(d.kind)) M.kind = d.kind;
+      drawDraftMeasure(M);
+    }
+    toast(`✓ esatto: <b>${esc(measureText({ ...M, value: d.value, approx: false, kind: d.kind || M.kind }))}</b>`
+      + (dl != null ? ` <small>(nel browser ${esc(before)}, Δ ${fmtNum(dl, 3)})</small>` : '')
+      + (dmeasures.includes(M) ? '<br><small>la bozza ora ha il valore esatto</small>' : ''), 8000);
+  } catch (err) {
+    toast(`⚠ Esatto non disponibile: ${esc(err.message)}`, 6000);
+  }
 }
 function showMeasure(M) {
   const lines = [`<b>${esc(measureText(M))}</b>${M.text ? ' · ' + esc(M.text) : ''}`];
@@ -3029,7 +3063,11 @@ function showMeasure(M) {
   if (M.note) lines.push(esc(M.note));
   if (M.between) lines.push(`<small>misurata sul B-Rep fra ${M.between.map(esc).join(' e ')}</small>`);
   else if (M.approx) lines.push('<small>≈ da una superficie curva tassellata</small>');
-  toast((M.agent ? '◆ ' : '↔ ') + lines.join('<br>'), 7000);
+  if (M.exact) lines.push('<small>✓ verificata sul B-Rep</small>');
+  const can = !M.agent && !M.exact && (M.aEnd || M.raw);
+  if (can) lines.push('<button class="btn" id="m-exact" style="margin-top:6px">✓ Verifica esatto</button>');
+  toast((M.agent ? '◆ ' : '↔ ') + lines.join('<br>'), can ? 12000 : 7000);
+  if (can) $('m-exact').onclick = () => verifyExact(M);
 }
 function syncMeasures() {
   measureGroup.visible = measuresOn;

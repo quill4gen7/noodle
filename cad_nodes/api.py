@@ -1542,6 +1542,47 @@ def _between_points(store: GraphStore, graph_id: str, gen: str, pairs: dict) -> 
     return out
 
 
+def _piece_ref(piece: str) -> str:
+    """A viewer piece key → a measure reference: "n8" stays, "n8.2" (the third
+    item of a fanned-out node) is "n8[2]" — "n8.2" would read as an OUTPUT."""
+    node, _, k = str(piece).partition(".")
+    return f"{node}[{k}]" if k.isdigit() else node
+
+
+def exact_measure(store: GraphStore, graph_id: str, gen: str, measure: dict) -> dict:
+    """A dimension the browser took on the TESSELLATION, redone on the gen's
+    frozen B-Rep (measure.py `exact`): the same vertex / circle / edge / planar
+    face, found again on the real shape. Costs a run of the frozen graph (memo
+    makes it cheap); a mesh-lane piece has no B-Rep and says so."""
+    from .executor import measure_graph
+    if not isinstance(measure, dict) or not isinstance(measure.get("a"), dict):
+        raise ValueError("exact: give the measure as the viewer sends it ({kind, a, b?, …})")
+    m = {"kind": measure.get("kind"), "a": measure["a"], "axis": measure.get("axis")}
+    if isinstance(measure.get("b"), dict):
+        m["b"] = measure["b"]
+    for k, e in (("a", m["a"]), ("b", m.get("b"))):
+        if e is not None:
+            _point(e.get("at"), f"exact {k}")
+            if not e.get("piece"):
+                raise ValueError(f"exact: end {k} names no piece")
+    refs = [_piece_ref(m["a"]["piece"])] + ([_piece_ref(m["b"]["piece"])] if "b" in m else [])
+    graph = Graph.from_dict(store.load_gen(graph_id, gen, "graph"))
+    data = measure_graph(graph, store.dir(graph_id), [{"op": "exact", "nodes": refs, "measure": m}])
+    if not data.get("success"):
+        raise ValueError(f"exact: the gen's graph did not run: {data.get('error') or data.get('errors')}")
+    r = (data.get("results") or [{}])[0]
+    if r.get("error"):
+        err = r["error"]
+        if "no geometry" in err and "Mesh" in err:
+            err = "this piece is a mesh (no B-Rep to measure exactly): the ≈ value is all there is"
+        raise ValueError(err)
+    out = {k: r[k] for k in ("kind", "value", "a", "b", "found") if k in r}
+    out["exact"] = True
+    if isinstance(measure.get("value"), (int, float)):
+        out["delta"] = round(r["value"] - float(measure["value"]), 4)
+    return out
+
+
 def measure_gen(store: GraphStore, graph_id: str, gen: str, measures: list,
                 replace: bool = True, base_url: str = "") -> dict:
     """Pin DIMENSIONS on generation `gen`: `measures` = [{kind?, a, b, value?,
@@ -1922,6 +1963,8 @@ def _measures(items, n_views: int, titles: dict) -> list[dict]:
         o["value"] = round(v, 4)
         o["unit"] = "deg" if kind == "angle" else "mm"
         o["approx"] = bool(m.get("approx"))
+        if m.get("exact"):                   # verified on the B-Rep before sending
+            o["exact"] = True
         if m.get("axis") is not None:
             if m["axis"] not in ("x", "y", "z"):
                 raise ValueError(f"note: measure {i} axis must be x, y or z")

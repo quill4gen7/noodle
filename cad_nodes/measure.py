@@ -26,7 +26,7 @@ import math
 import re
 
 _REF = re.compile(r"^(?P<node>[^.\[\]\s]+)(?:\.(?P<out>\w+))?(?:\[(?P<idx>-?\d+)\])?$")
-OPS = ("props", "interference", "distance", "section", "probe", "summary")
+OPS = ("props", "interference", "distance", "section", "probe", "summary", "exact")
 _PAIR_MAX = 40          # items in a pairwise interference sweep (780 booleans)
 
 
@@ -46,7 +46,11 @@ def refs_of(query: dict) -> list[str]:
     op = query.get("op")
     if op not in OPS:
         raise ValueError(f"unknown op {op!r}; choose from {', '.join(OPS)}")
-    if op in ("interference", "distance") and query.get("nodes"):
+    if op == "exact":
+        refs = list(query.get("nodes") or [])
+        if not 1 <= len(refs) <= 2 or not isinstance(query.get("measure"), dict):
+            raise ValueError("exact: give 'nodes': [ref] or [refA, refB] and the browser's 'measure'")
+    elif op in ("interference", "distance") and query.get("nodes"):
         refs = list(query["nodes"])
     elif op in ("interference", "distance") and query.get("a") and query.get("b"):
         refs = [query["a"], query["b"]]
@@ -314,9 +318,106 @@ def _pairwise(vals, refs, errors, fn, keep) -> dict:
             len(parts) * (len(parts) - 1) // 2, "pairs": pairs}
 
 
+# --- exact: a dimension taken on the TESSELLATION, redone on the B-Rep -------
+# The /view ↔ Metro measures triangles: vertices and planar faces are exact
+# there, a circle is an inscribed polygon. This finds the same features on the
+# real shape — the vertex, the circle edge, the edge, the planar face nearest
+# to what the browser picked — and measures them again.
+def _pt(v):
+    from build123d import Vector
+    return Vector(*v)
+
+
+def _locate(shape, end: dict, tol: float) -> dict:
+    """The B-Rep feature behind one end of a browser dimension."""
+    from build123d import GeomType, Vertex
+    P = _pt(end["at"])
+    snap = end.get("snap") or "free"
+    if snap == "vertex":
+        vs = sorted(shape.vertices(), key=lambda v: (_pt(_vec(v)) - P).length)
+        if vs and (_pt(_vec(vs[0])) - P).length <= tol:
+            return {"snap": "vertex", "point": _vec(vs[0])}
+    if snap == "circle_center":
+        c = end.get("circle") or {}
+        C, r0 = _pt(c.get("center") or end["at"]), float(c.get("r") or 0)
+        best = None
+        for e in shape.edges():
+            if e.geom_type != GeomType.CIRCLE:
+                continue
+            ce, r = _safe(lambda: e.arc_center), _safe(lambda: e.radius)
+            if ce is None or r is None:
+                continue
+            score = (ce - C).length + (abs(r - r0) if r0 else 0)
+            if best is None or score < best[0]:
+                best = (score, ce, r, e)
+        if best and best[0] <= max(tol, 0.1 * (r0 or 1)):
+            ax = _safe(lambda: _vec(best[3].normal()))
+            return {"snap": "circle_center", "point": _vec(best[1]), "r": best[2], "axis": ax}
+    if snap == "face":
+        fs = sorted(shape.faces(), key=lambda f: Vertex(*end["at"]).distance_to(f))
+        if fs and fs[0].geom_type == GeomType.PLANE and Vertex(*end["at"]).distance_to(fs[0]) <= tol:
+            f = fs[0]
+            n = f.normal_at(f.center())
+            foot = P - n * (P - f.center()).dot(n)
+            return {"snap": "face", "point": _vec(foot), "normal": _vec(n), "origin": _vec(f.center())}
+    if snap == "edge":
+        es = sorted(shape.edges(), key=lambda e: Vertex(*end["at"]).distance_to(e))
+        if es and Vertex(*end["at"]).distance_to(es[0]) <= tol:
+            _, _, q = Vertex(*end["at"]).distance_to_with_closest_points(es[0])
+            return {"snap": "edge", "point": _vec(q), "edge": es[0]}
+    # free (or a feature not found): the nearest point of the real surface
+    _, _, q = Vertex(*end["at"]).distance_to_with_closest_points(shape)
+    return {"snap": "free", "point": _vec(q), "moved": (q - P).length}
+
+
+def exact(shapes: list, m: dict) -> dict:
+    """{kind, value, a, b} of the browser's dimension `m`, measured on `shapes`
+    ([shape of a] or [shape of a, shape of b])."""
+    sa, sb = shapes[0], shapes[-1]
+    bb = sa.bounding_box()
+    tol = max(1e-3, 2e-3 * (bb.max - bb.min).length)      # the tessellation's chordal slack
+    kind = m.get("kind")
+    A = _locate(sa, m["a"], tol)
+    if kind in ("diameter", "radius"):
+        if "r" not in A:
+            raise ValueError("exact: no circular edge of the part is there")
+        return {"kind": kind, "value": 2 * A["r"] if kind == "diameter" else A["r"], "a": A["point"],
+                "found": ["circle"]}
+    if kind == "edge":
+        mid = [(x + y) / 2 for x, y in zip(m["a"]["at"], m["b"]["at"])]
+        e = _locate(sa, {"at": mid, "snap": "edge"}, tol)
+        if "edge" not in e:
+            raise ValueError("exact: no edge of the part is there")
+        return {"kind": "edge", "value": e["edge"].length, "found": ["edge"]}
+    B = _locate(sb, m["b"], tol)
+    pa, pb = _pt(A["point"]), _pt(B["point"])
+    if A["snap"] == "face" and B["snap"] == "face":
+        na, nb = _pt(A["normal"]), _pt(B["normal"])
+        if abs(na.dot(nb)) > math.cos(math.radians(1)):
+            gap = abs((_pt(B["origin"]) - pa).dot(nb))
+            return {"kind": "face_gap", "value": gap, "a": A["point"],
+                    "b": _vec(pa - nb * (pa - _pt(B["origin"])).dot(nb)), "found": ["face", "face"]}
+    f, o = (A, B) if A["snap"] == "face" else (B, A) if B["snap"] == "face" else (None, None)
+    if f is not None:
+        n, P = _pt(f["normal"]), _pt(o["point"])
+        d = abs((P - _pt(f["origin"])).dot(n))
+        if d > 1e-6:
+            return {"kind": "distance", "value": d, "a": o["point"], "b": _vec(P - n * (P - _pt(f["origin"])).dot(n)),
+                    "found": [A["snap"], B["snap"]]}
+    d = pb - pa
+    if m.get("axis") in ("x", "y", "z"):
+        value = abs(getattr(d, m["axis"].upper()))
+    else:
+        value = d.length
+    return {"kind": "distance", "value": value, "a": A["point"], "b": B["point"], "found": [A["snap"], B["snap"]]}
+
+
 def _one_query(vals: dict, q: dict, errors: dict):
     op = q.get("op")
     refs = refs_of(q)
+    if op == "exact":
+        shapes = [_one(_resolve(vals, r, errors), r) for r in refs]
+        return exact(shapes, q["measure"])
     if op == "props":
         v = _resolve(vals, refs[0], errors)
         d = props(_one(v, refs[0]))

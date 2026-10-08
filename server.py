@@ -739,6 +739,26 @@ async def measure_generation(request: Request, name: str, gen: str):
         raise HTTPException(400, str(e)) from e
 
 
+@app.post("/api/graph/{name}/gens/{gen}/measures/exact")
+async def exact_generation_measure(request: Request, name: str, gen: str):
+    """Body {measure} = one dimension as the /view ↔ Metro took it on the
+    tessellation; answers {value, exact: true, delta, …} measured on the gen's
+    frozen B-Rep. Runs the graph: off the loop."""
+    require_project(name)
+    try:
+        body = await request.json()
+    except ValueError as e:
+        raise HTTPException(400, f"Invalid JSON: {e}") from e
+    if not isinstance(body, dict):
+        raise HTTPException(400, "Expected a JSON object")
+    try:
+        return await off_loop(api.exact_measure, GraphStore(PROJECTS_DIR), name, gen, body.get("measure"))
+    except KeyError as e:
+        raise HTTPException(404, str(e.args[0] if e.args else e)) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
 @app.post("/api/graph/{name}/gens/{gen}/tags")
 async def tag_generation(request: Request, name: str, gen: str):
     """Body {tags: [{text, node, at?, color?}], replace?: true}."""
