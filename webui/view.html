@@ -1929,7 +1929,7 @@ function refreshCage() {
     case 'move': cageArrows(G); break;
     case 'rotate': cageRings(G); break;
     case 'cage':
-      if (cageMode === 'scale') { cageCorners(G); cageCentre(G); /* D: cageFaces(G) — ±X/±Y/±Z face handles, RING_INK */ }
+      if (cageMode === 'scale') { cageCorners(G); cageCentre(G); cageFaces(G); }
       // C: else if (cageMode === 'deform') { cageDeformCorners(G); } — the 8 FFD corners, amber
       break;
     case 'none': break;                        // the bare shape; its body still slides
@@ -1955,6 +1955,25 @@ function cageCorners({ S, q, grab, hs, half }) {
     pk.visible = false;
     for (const m of [c, pk]) { m.position.copy(at); m.quaternion.copy(q); m.renderOrder = 22; m.userData.handle = handle; }
     cageGroup.add(c, pk);
+  }
+}
+// ▣ scale: the six FACE handles, in the classic axis colours (±X red, ±Y green,
+// ±Z blue — RING_INK): each stretches ONE axis, the opposite face fixed. A flat
+// tile lying on its face; what is grabbed is a ball of the grab size.
+function cageFaces({ S, q, grab, hs, half }) {
+  const pick = new THREE.SphereGeometry(grab, 12, 8);
+  for (let a = 0; a < 3; a++) {
+    const dims = [2 * hs, 2 * hs, 2 * hs]; dims[a] = 0.7 * hs;   // squat, so it still reads seen edge-on
+    const tile = new THREE.BoxGeometry(...dims);
+    for (const sg of [-1, 1]) {
+      const s = new THREE.Vector3(); s.setComponent(a, sg);
+      const handle = { type: 'face', axis: a, s };
+      const at = s.clone().multiply(half).applyQuaternion(q).add(S.center);
+      const f = new THREE.Mesh(tile, handleMat(RING_INK[a])), pk = new THREE.Mesh(pick, handleMat(RING_INK[a], 0));
+      pk.visible = false;
+      for (const m of [f, pk]) { m.position.copy(at); m.quaternion.copy(q); m.renderOrder = 22; m.userData.handle = handle; }
+      cageGroup.add(f, pk);
+    }
   }
 }
 // ▣ scale: the dot at the centre scales the whole about its base
@@ -2045,7 +2064,8 @@ vp.addEventListener('pointerdown', e => {
   // pointer is right on it — on a small shape (or under a finger) the grab
   // volumes cover the body, and grabbing the shape must still MOVE it
   const grabPx = e.pointerType === 'mouse' ? 6 : 9;
-  if (h && onBody === selShape && !['ring', 'arrow'].includes(h.type) && h.px > 0.5 * grabPx) h = null;
+  // (a FACE handle sits ON the body by construction: it gets its whole grab radius)
+  if (h && onBody === selShape && !['ring', 'arrow'].includes(h.type) && h.px > (h.type === 'face' ? 1 : 0.5) * grabPx) h = null;
   const body = !h && onBody;
   if (h || body) {
     e.stopPropagation(); e.preventDefault();
@@ -2057,6 +2077,12 @@ vp.addEventListener('pointerdown', e => {
     if (h && h.type === 'corner') {
       sDrag.fixed = h.s.clone().negate().multiply(S.size).multiplyScalar(0.5).applyQuaternion(sDrag.q0).add(S.center);
       sDrag.grab = h.s.clone().multiply(S.size).multiplyScalar(0.5).applyQuaternion(sDrag.q0).add(S.center);
+    }
+    if (h && h.type === 'face') {              // along the face's own outward axis
+      sDrag.axis = h.s.clone().applyQuaternion(sDrag.q0);
+      sDrag.fixed = h.s.clone().negate().multiply(S.size).multiplyScalar(0.5).applyQuaternion(sDrag.q0).add(S.center);
+      sDrag.t0 = axisParam(e.clientX, e.clientY, sDrag.fixed, sDrag.axis);
+      if (sDrag.t0 == null) { sDrag = null; return; }   // the axis points at the camera
     }
     if (h && h.type === 'arrow') {
       sDrag.axis = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), Z_UP][h.axis].clone().applyQuaternion(sDrag.q0);
@@ -2098,6 +2124,20 @@ vp.addEventListener('pointermove', e => {
     const s = d.h.s;
     const center = s.clone().multiply(sz).multiplyScalar(0.5).applyQuaternion(d.q0).add(d.fixed);
     S.anchor = center.clone().sub(new THREE.Vector3(0, 0, sz.z / 2).applyQuaternion(d.q0));
+  } else if (d.h.type === 'face') {            // ONE axis, the opposite face fixed
+    const t = axisParam(e.clientX, e.clientY, d.fixed, d.axis);
+    if (t == null) return;
+    const a = d.h.axis, c = 'xyz'[a], min = shapeMin(S);
+    // SIGNED along the outward axis (t0 = the face's own distance from the
+    // fixed one): dragged past the opposite face it stops at the minimum
+    const L = Math.max(d.size0[c] + (t - d.t0), min);
+    const sz = d.size0.clone(); sz[c] = L;
+    if (S.kind === 'sphere') sz.set(L, L, L);                       // stays a sphere
+    if (S.kind === 'cylinder' && a < 2) sz.x = sz.y = L;           // stays round
+    S.size = sz;
+    // the centre slides along the dragged axis only; the other axes stay centred
+    const center = d.fixed.clone().addScaledVector(d.axis, L / 2);
+    S.anchor = center.sub(new THREE.Vector3(0, 0, sz.z / 2).applyQuaternion(d.q0));
   } else if (d.h.type === 'arrow') {           // along one axis, on a leash
     const t = axisParam(e.clientX, e.clientY, d.center0, d.axis);
     if (t == null) return;
