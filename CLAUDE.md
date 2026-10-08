@@ -1863,25 +1863,56 @@ result while the workflow moves on.
   (`kind`, `size` in its own frame — a cylinder is [Ø, Ø, h] along `axis` —
   `center`, `quat`, `anchor`/`normal` of the surface, the piece; `cad_notes`
   adds a `summary` and `near_marks`). A tap on the part sets one down SITTING
-  on the surface (local Z = the normal). Selected, it wears a cage: 8 corners
-  resize with the opposite corner fixed (signed along the corner's direction —
-  dragged past the opposite one it STOPS, never flips), the centre dot scales
-  about the base, three rings rotate about the centre (Shift 15°), three
-  arrows translate along its own X/Y/Z — on a LEASH: the centre stays in the
-  piece's box grown by max(¼ of the piece, the shape's size). MOVING IS
+  on the surface (local Z = the normal). Selected, it wears ONE set of handles
+  at a time, picked in a modes row of `#s-bar` (`gizmoMode`, `cageMode`,
+  remembered in localStorage `noodle:view:gizmoMode|cageMode`; `refreshCage`
+  builds only the active set, one function per set, and `handleAt` finds what
+  is there): **✥ Sposta** = three arrows along its own X/Y/Z, on a LEASH (the
+  centre stays in the piece's box grown by max(¼ of the piece, the shape's
+  size)); **⟳ Ruota** = three rings about the centre (Shift 15°); **▣ Gabbia**,
+  whose second tap (or the Scala/Deforma chip) flips between **Scala** — 8
+  white corners resize with the opposite corner fixed (signed along the
+  corner's direction: dragged past the opposite one it STOPS, never flips),
+  the centre dot scales about the base, and six FACE handles in the classic
+  axis colours (±X red, ±Y green, ±Z blue) stretch ONE axis with the opposite
+  face fixed (a cylinder keeps round, a sphere scales whole) — and
+  **Deforma**: the 8 corners turn amber and each moves ON ITS OWN
+  (`webui/ffd.js`, pure, `tests/ui/ffd.test.cjs`). It is a trilinear FFD: a
+  corner's motion fades over the whole body, the other 7 corners and the
+  three faces that do not touch it stay exactly put, so the cage's edges stay
+  straight and the millimetre paper bends with the body (it reads the REST
+  position, `restPos`); corners keep their octant and the minimum apart. The
+  note carries `ffd` (8 offsets in the shape's frame, 1 = its size) AND
+  `corners` (the 8 in world mm, for a text-only reader); `cad_notes` says
+  «deformed». **◌ Nascondi** = no handles; the body still slides. A pen
+  colour clicked with a shape selected RECOLOURS it (one undo step; the pen
+  takes it too). Standard sizes next to the label: **1mm** / **10mm** (every
+  side, Ø and height) and **½ vol** (same shape, scaled until it is half the
+  volume of the piece it sits on — the gen's `previews[id].volume`, a
+  body's, or a fanned part's triangles; disabled with the reason when none is
+  known); the base stays on the surface. On a deformed shape they rescale
+  the cage and KEEP the deformation (`ffd` is normalised, so the bend scales
+  with it); ½ vol counts the nominal box, not the bend. A drag that changes
+  nothing is not an undo step. MOVING IS
   NOT FREE: dragging the body re-anchors it on the surface hit under the
   pointer (`stickAt`) or does nothing — quill: «si clicca e appiccica sui
   pezzi». The body is GRAPH PAPER in the shape's colour (`mmGridMaterial`, a
   shader injected into the standard material): 1 / 5 / 10 mm rules in the
   shape's own millimetres (local position × size, triplanar per face), the
   1 mm rule fading where it would be denser than a few px. The minimum side
-  follows the PIECE it sits on (2% of its size), so
+  follows the PIECE it sits on (2% of its size, capped at 1 mm — or the next
+  drag would snap a 1mm preset back up), so
   corners never meet; the handle MARKS shrink with the shape (≤ 10% of its
   shortest side) while the GRAB volumes stay ~6/9 px, nearest one wins, and
   on the body of the selected shape a handle wins only within half a grab
   radius (else a small shape could never be moved). Phone: the tool row
   wraps and each tool's menu shows only while it is in hand — 604px of tools
-  in a 390px screen had been scrolling the whole viewer sideways.
+  in a 390px screen had been scrolling the whole viewer sideways; `#s-bar`
+  moves to the top, takes the full width (`width:max-content` — at left:50%
+  it shrank to the modes row and wrapped Togli/✓ off the size row) and
+  «· deformato» becomes an amber ≈. A click in the bar's first 400ms is the
+  placing tap's ghost and is ignored (`sBarGhost`).
+  Screens: `docs/asset/view-shapes-*.png`.
 - **The viewer draws on demand** (`CadViewer.invalidate()`, no continuous loop):
   anything that changes the scene from outside the viewer must ask for a frame.
   `/view` does it in `poseTrack()` (every timeline pose) and `apply()` (hidden
