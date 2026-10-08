@@ -143,7 +143,11 @@ More detail on demand — `cad_help(topic=...)` / `GET /api/agent/help?topic=...
    along `axis`), `center`, `quat`, the surface `anchor`/`normal` it sits on,
    the node, a `summary` and `near_marks` — read a Ø 6 × 10 cylinder on a face
    as «put a pin / boss / hole of this size HERE», then ask if unsure whether
-   it adds or cuts. A label's `style` says how it was drawn: `paint` (the letters are
+   it adds or cuts. A shape the user BENT with the cage (▣ Gabbia →
+   Deforma) also has `ffd` (8 corner offsets in its own frame, 1 = its size)
+   and `corners` — its 8 cage corners in world mm — and its `summary` says
+   «deformed»: read the corners as the shape (a tapered block, a wedge, a
+   leaning post), the trilinear blend between them is the body. A label's `style` says how it was drawn: `paint` (the letters are
    pen strokes on the surface — they are NOT in `marks`; with `points=True`
    they show up as strokes with `kind: "text"`), `tag` (a plate on a stem) or
    `decal`. Pictures the user PLACED on the part (a PNG/JPEG — a sketch, a
