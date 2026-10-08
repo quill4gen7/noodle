@@ -1764,8 +1764,16 @@ result while the workflow moves on.
     unsent saves AND asks. «Fatto ✓» (or Enter in the text) closes the note:
     the next mark starts a new one. The live note is drawn by the draft, not
     by `noteObject` (it would show twice), and is «✎ in corso» in the list.
-    Not yet: a note is not loaded BACK into the draft — after a reload, more
-    marks make a new note, the saved one stays as it was.
+    **…and it comes BACK into the draft** (`resumeNote`): strokes (painted
+    letters re-linked to their words), labels, placed pictures (fetched and
+    turned back into data URLs, since every PUT re-sends them), measures,
+    shapes (`rot` = surfQuat(normal)⁻¹ · quat, `ffd` kept) and the view
+    pictures, with `save.id` on the note — so it stays ONE note across a
+    reload. The page remembers the note it was drawing per gen in
+    localStorage (`noodle:view:live:<graph>/<gen>`, a convenience: the server
+    holds the note) and resumes it on load unless it is done; any note has a
+    ✎ in the list to continue it. The undo history is not rebuilt: ↶ starts
+    from the note as saved (⌫ still rubs anything out).
   - **⌫ eraser**: whole strokes (the pen already splits them where it leaves
     the surface), hit-tested in 3D — the point on the PART vs each stroke's
     polyline, radius from the size buttons in px → mm (`ERASE_PX`). Picking

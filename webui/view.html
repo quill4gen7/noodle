@@ -3279,7 +3279,7 @@ async function flushSave() {
           const r = await fetch(`${base}/${save.id}`, { method: 'DELETE' });
           if (!r.ok && r.status !== 404) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
           notesData = notesData.filter(n => n.id !== save.id);
-          save.id = null; save.note = null; renderNotes();
+          save.id = null; save.note = null; rememberLive(null); renderNotes();
         }
       } else {
         const body = noteBody(true); delete body.sig;
@@ -3289,7 +3289,7 @@ async function flushSave() {
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
         const note = await r.json();
         const first = !save.id;
-        save.id = note.id; save.note = note;
+        save.id = note.id; save.note = note; rememberLive(note.id);
         const i = notesData.findIndex(n => n.id === note.id);
         if (i >= 0) notesData[i] = note; else notesData.push(note);
         renderNotes();
@@ -3337,7 +3337,7 @@ async function finishNote() {
     if (save.state === 'static') throw new Error('STATIC_PREVIEW');
     if (save.state === 'error') throw new Error(save.err);
     const id = save.id;
-    save.id = null; save.sig = ''; save.note = null;
+    save.id = null; save.sig = ''; save.note = null; rememberLive(null);
     clearDraft(); $('d-text').value = '';
     if (id) {
       shownNotes.add(id);
@@ -3352,6 +3352,105 @@ async function finishNote() {
   } finally { syncDraw(); }
 }
 $('d-send').onclick = finishNote;
+// ── a saved note goes BACK into the draft ─────────────────────────────────
+// So a note keeps being one note across a reload (or a day): its strokes,
+// painted text, targhette, decals, placed pictures, measures and shapes are
+// rebuilt as draft items and `save.id` points at it, so the next change PUTs
+// the same id. The page that last drew a note remembers it per gen in
+// localStorage (a per-viewer convenience — the server holds the note) and
+// picks it up on load; any note can be resumed with its ✎ in the list.
+// What it cannot rebuild is the undo history: ↶ starts from the note as it
+// was saved, ⌫ still rubs out anything in it.
+const LIVE_KEY = `noodle:view:live:${NAME}/${GEN}`;
+function rememberLive(id) {
+  try { id ? localStorage.setItem(LIVE_KEY, id) : localStorage.removeItem(LIVE_KEY); } catch {}
+}
+function liveRemembered() { try { return localStorage.getItem(LIVE_KEY); } catch { return null; } }
+async function dataUrlOf(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(r.statusText);
+  const b = await r.blob();
+  return await new Promise((ok, ko) => { const f = new FileReader(); f.onload = () => ok(f.result); f.onerror = ko; f.readAsDataURL(b); });
+}
+async function resumeNote(n) {
+  if (save.id === n.id) return;
+  if (save.id || draft.length || labels.length || dmeasures.length || shapes.length || $('d-text').value.trim()) {
+    await flushSave(); if (save.busy) await save.busy;
+    if (save.state === 'error') { toast(`⚠ La nota in corso non è salvata: riprova tra poco.`); return; }
+    save.id = null; save.sig = ''; save.note = null; clearDraft(); $('d-text').value = '';
+  }
+  const base = `/api/graph/${encodeURIComponent(NAME)}/gens/${GEN}/notes/${n.id}`;
+  const pic = async url => { try { return await dataUrlOf(url); } catch { return null; } };
+  // views: k ≥ 1 = the note's own other views, the main picture is its camera
+  const vmap = new Map();
+  (n.views || []).forEach((v, i) => { if (v && v.camera) { views.push({ image: null, cam: v.camera }); vmap.set(i + 1, views.length - 1); } });
+  if (n.camera) { views.push({ image: null, cam: n.camera }); vmap.set(0, views.length - 1); }
+  await Promise.all([...vmap].map(async ([k, i]) => { views[i].image = await pic(k ? `${base}.jpg?view=${k}` : `${base}.jpg`); }));
+  const viewOf = v => vmap.has(v || 0) ? vmap.get(v || 0) : null;
+  const V = a => new THREE.Vector3(...a);
+  let g0 = 0;
+  // labels first: painted strokes point at their words
+  const words = [];
+  for (const l of n.labels || []) {
+    const L = { text: l.text, color: l.color, style: l.style || 'tag', at: V(l.at), n: V(l.normal), up: V(l.up),
+      w: l.size_mm[0], h: l.size_mm[1], surface: l.surface, fit: fitIn(l.fit), k: ++seq, piece: l.piece || null,
+      mesh: null, view: viewOf(l.view), obj: null };
+    words.push(L); labels.push(L);
+    try { drawLabel(L); } catch {}
+  }
+  for (const s of n.strokes || []) {
+    const pts = (s.points || []).map(V);
+    if (!pts.length) continue;
+    const nrm = (s.normals || []).length === pts.length ? s.normals.map(V) : pts.map(() => new THREE.Vector3());
+    const d = { color: s.color, width: s.width_mm || 1, g: s.g ?? 0, k: ++seq, piece: s.piece || null, pts, nrm,
+      lift: s.lifts && s.lifts.length === pts.length ? s.lifts.slice() : pts.map(() => 0),
+      view: viewOf(s.view), obj: null };
+    if (s.kind === 'text' && words[s.label - 1]) d.label = words[s.label - 1];
+    g0 = Math.max(g0, d.g);
+    draft.push(d); redrawStroke(d);
+  }
+  gesture = Math.max(gesture, g0 + 1);
+  await Promise.all((n.images || []).map(async im => {
+    const data = await pic(`${base}/img/${im.image}`);
+    if (!data) return;
+    const el = new Image();
+    await new Promise((ok, ko) => { el.onload = ok; el.onerror = ko; el.src = data; }).catch(() => null);
+    const cv = document.createElement('canvas');
+    cv.width = el.naturalWidth || 1; cv.height = el.naturalHeight || 1;
+    cv.getContext('2d').drawImage(el, 0, 0);
+    const L = { text: '', color: '#ffffff', style: 'decal', at: V(im.at), n: V(im.normal), up: V(im.up),
+      w: im.size_mm[0], h: im.size_mm[1], surface: im.surface, fit: fitIn(im.fit), k: ++seq, piece: im.piece || null,
+      mesh: null, view: viewOf(im.view), obj: null, img: { canvas: cv, data, aspect: cv.width / cv.height } };
+    labels.push(L);
+    try { drawLabel(L); } catch {}
+  }));
+  for (const m of n.measures || []) {
+    const M = measureFrom(m);
+    M.aEnd = m.a; M.bEnd = m.b; M.k = ++seq; M.view = viewOf(m.view);
+    dmeasures.push(M);
+    try { drawDraftMeasure(M); } catch {}
+  }
+  for (const sh of n.shapes || []) {
+    const q = new THREE.Quaternion(...sh.quat), axis = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
+    const size = V(sh.size);
+    const nn = sh.normal ? V(sh.normal).normalize() : axis.clone();
+    const S = { kind: sh.kind, color: sh.color || MEASURE_INK, size, piece: sh.piece || null, k: ++seq,
+      anchor: sh.anchor ? V(sh.anchor) : V(sh.center).addScaledVector(axis, -size.z / 2), n: nn,
+      rot: surfQuat(nn).invert().multiply(q), ffd: Array.isArray(sh.ffd) && sh.ffd.length === 8 ? FFD.copyFfd(sh.ffd) : null,
+      view: viewOf(sh.view), obj: null };
+    shapes.push(S); drawShape(S);
+  }
+  $('d-text').value = n.text || '';
+  // the note is now the draft: drawn once (not also as a saved note), saved under its id
+  save.id = n.id; save.note = n; save.err = '';
+  const o = noteObjs.get(n.id);
+  if (o) { disposeObj(o); noteObjs.delete(n.id); }
+  const light = noteBody(false);
+  save.sig = light ? light.sig : '';
+  rememberLive(n.id);
+  setSaveState('saved'); renderNotes(); viewer.invalidate();
+  return true;
+}
 // leaving the page: a phone backgrounds it without warning, so save at once;
 // a desktop tab closing with a change still unsent asks first
 addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSave(); });
@@ -3463,16 +3562,21 @@ function renderNotes() {
     row.innerHTML = `<span class="dots">${cols.map(c => `<i style="background:${esc(c)}"></i>`).join('')}</span>
       <span class="tx"><span class="id">${esc(n.id)}${n.done ? ' ✓' : ''}${live ? ' ✎ in corso' : ''}</span>${esc(n.text) || said || '<i>(solo disegno)</i>'}${n.text && said ? ` <span class="id">${said}</span>` : ''}
         ${n.done && n.done.reply ? `<div class="rp">↳ ${esc(n.done.reply)}</div>` : ''}</span>
+      <span class="ib" role="button" title="Continua questa nota: torna nella bozza e le modifiche la aggiornano (stesso id)"${live ? ' style="visibility:hidden"' : ''}>✎</span>
       <span class="ib" role="button" title="Mostra/nascondi i tratti"${live ? ' style="visibility:hidden"' : ''}>${on ? '●' : '○'}</span>
       <span class="ib" role="button" title="Elimina la nota">✕</span>`;
-    const [eye, del] = row.querySelectorAll('.ib');
+    const [edit, eye, del] = row.querySelectorAll('.ib');
+    edit.onclick = async e => {
+      e.stopPropagation();
+      if (await resumeNote(n)) { setDrawing(true); toast(`✎ Continui la nota <code>${esc(n.id)}</code>: le modifiche la aggiornano.`, 3500); }
+    };
     eye.onclick = e => { e.stopPropagation(); showNote(n.id, !on); };
     del.onclick = async e => {
       e.stopPropagation();
       if (!confirm(`Eliminare la nota ${n.id}?`)) return;
       if (live) {                              // the note being drawn: its draft goes too
         clearTimeout(save.timer); if (save.busy) await save.busy;
-        save.id = null; save.sig = ''; save.note = null;
+        save.id = null; save.sig = ''; save.note = null; rememberLive(null);
         clearDraft(); $('d-text').value = ''; setSaveState('idle');
       }
       await fetch(`/api/graph/${encodeURIComponent(NAME)}/gens/${GEN}/notes/${n.id}`, { method: 'DELETE' });
@@ -4126,6 +4230,10 @@ async function boot() {
   for (const n of notesData) if (!n.done) shownNotes.add(n.id);
   for (const [id, o] of noteObjs) o.visible = shownNotes.has(id);
   renderNotes(); viewer.invalidate();
+  // the note this browser was drawing before a reload comes back as the draft
+  const liveN = notesData.find(n => n.id === liveRemembered() && !n.done);
+  if (liveN) { try { await resumeNote(liveN); toast(`✎ Ripresa la nota <code>${esc(liveN.id)}</code> che stavi disegnando.`, 3500); } catch (e) { console.warn('resume', e); } }
+  else rememberLive(null);
   await loadTags(base);
   await loadMeasures(base);
   renderList();

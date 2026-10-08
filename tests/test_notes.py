@@ -849,3 +849,17 @@ def test_the_viewer_saves_as_you_draw_and_has_no_send_button():
     assert "visibilitychange" in VIEW and "beforeunload" in VIEW
     assert "Invia all'agente ➤" not in VIEW and "async function sendNote" not in VIEW
     assert "updated" in HELP and "reopened" in HELP
+
+
+def test_a_saved_note_comes_back_into_the_draft():
+    """…so it stays ONE note across a reload: rebuilt as draft items with
+    save.id on it, remembered per gen, and resumable from the list."""
+    body = VIEW[VIEW.index("async function resumeNote(n)"):]
+    body = body[:body.index("\n}\n")]
+    for kind in ("draft.push(", "labels.push(", "dmeasures.push(", "shapes.push(", "views.push("):
+        assert kind in body, kind
+    assert "save.id = n.id" in body and "rememberLive(n.id)" in body
+    assert "/img/${im.image}" in body                 # pictures are re-sent on every PUT
+    assert "noodle:view:live:${NAME}/${GEN}" in VIEW
+    assert "await resumeNote(liveN)" in VIEW            # picked up again on load
+    assert "Continua questa nota" in VIEW               # ✎ in the list
