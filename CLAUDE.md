@@ -128,6 +128,7 @@ server.py            FastAPI HTTP API (port 8090). Routes under /api/* :
                        /api/nodes?query=|compact=1 and /api/nodes/{type},
                        /api/agent/tags (ToAgent provenance index, §7b),
                        /api/graph/{name}/slice_summary|section_outline (§7b),
+                       /api/graph/{name}/gens/{gen}/measures[/exact] (↔ Metro, §9c),
                        /api/graph/{name}/screenshot (PNG of the viewport, §9 —
                        the agent's eyes; also MCP cad_screenshot),
                        POST /api/graph/{name}/anticipate (baked meshes of the
@@ -1809,6 +1810,49 @@ result while the workflow moves on.
     then until every stroke projects inside. `cam.lookAt` inside that loop is
     load-bearing — the controls orient the camera only on `update()`, and
     without it every stroke tested off-screen and the part shrank to a dot.
+- **↔ Metro — dimensions ON the part, both ways** (`PLAN_VIEW_MEASURE.md`).
+  `measureObject` in view.html is the third kind of targhetta: two anchors, a
+  line with arrowheads (outside, pointing in, when there is no room), extension
+  lines when `n`+`off` lift it, a ring for Ø/R, the plate BESIDE the line on
+  screen (re-decided each frame in `onBeforeRender`), every piece twice like
+  `tagObject` (depth-tested + 0.35 ghost). mm, 2 decimals, decimal comma; `≈`
+  when the value came from a tessellated curve. Violet = the user's, cyan ◆ =
+  the agent's, or green/amber/red by `status`. «↔ Quote» / `#measures=0`.
+  - **The user's** (✎ Disegna → ↔, `M`): a TAP takes a point — the tool never
+    captures the pointer, so a drag still orbits; with a mouse a rubber
+    dimension follows; Shift locks to the dominant axis; Esc drops the first
+    point; Enter / the same feature twice = its Ø or length. Modes (remembered,
+    `noodle:view:measureMode`): Auto, Punto–punto, Spigolo, Foro / cerchio,
+    Faccia–faccia. Part of the draft like a stroke (↶, ⌫ along its line, view
+    pictures); sent as the note's `measures` (`api._measures`), read by the
+    agent through `cad_notes` with a one-line `summary` and `near_marks` (a Ø
+    reaches 1.5·r: the pen circles the RIM, the Ø sits at the centre). On a
+    phone, press and HOLD: a lens above the finger, lifting takes the point.
+  - **Snaps without a B-Rep** — `webui/measure.js`, pure, tested in node
+    (`tests/ui/measure.test.cjs`): weld → sharp edges (>28°) → chains between
+    corners classified line / circle / arc / curve (PCA plane + Kåsa +
+    Gauss–Newton), planar faces by flood fill (same normal AND same plane),
+    cylinders from a smooth patch's normals, a spatial grid. Built lazily per
+    piece (~170 ms on the 19k-tri nut). Priority: vertex > circle centre >
+    edge > face > free. A thread is the trap: thousands of crests, each a
+    "vertex" — a spot with >10 sharp edges within 2·rE snaps circles only, a
+    piece over 20k sharp edges snaps faces only. Two traps paid for: a point
+    lying ON the tapped plane measured 0 (now: the distance to the tapped
+    spot), and `e.at || e` on an end given as `[x,y,z]` — an Array HAS `.at`
+    (Array.prototype.at), so every agent dimension vanished silently.
+  - **The agent's**: `api.measure_gen` / `POST|GET …/gens/{gen}/measures` /
+    MCP `cad_measure_gen` / `measures=` on `cad_snapshot`, stored in
+    `gens/gN/measures.json` (beside tags.json, not in it). `between: [refA,
+    refB]` measures the gen's FROZEN graph on the B-Rep (`measure.py
+    distance`) so the agent never guesses points; `expected` ± `tolerance`
+    judges `status`. A tap on any dimension explains it (toast).
+  - **✓ Verifica esatto**: a user's dimension, tapped, can be redone on the
+    gen's frozen B-Rep — `measure.py` op `exact` finds the same vertex /
+    circle edge / edge / planar face again and re-measures; `POST
+    …/measures/exact` (off_loop, writes nothing). A draft takes the exact
+    value. Mesh-lane pieces have no B-Rep and say so. Static preview: the
+    snaps work (computation in the browser), exact does not.
+  Tests: `tests/test_measures.py`, `tests/test_notes.py`, `tests/ui/measure.test.cjs`.
 - **The viewer draws on demand** (`CadViewer.invalidate()`, no continuous loop):
   anything that changes the scene from outside the viewer must ask for a frame.
   `/view` does it in `poseTrack()` (every timeline pose) and `apply()` (hidden

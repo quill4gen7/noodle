@@ -1,8 +1,8 @@
 # 📏 Metro — misurare nella preview, e far quotare all'agente
 
-> Piano per una sessione nuova (scritto il 2026-10-08, a fine di quella che ha
-> fatto ✎ Disegna). Non è implementato niente: qui ci sono il problema, il
-> progetto proposto, le decisioni ancora da prendere e dove mettere le mani.
+> Piano scritto il 2026-10-08 a fine della sessione di ✎ Disegna; **fasi 1–5
+> fatte lo stesso giorno** sul branch `feat/view-measure` (resta l'angolo, v2).
+> Lo stato vero è in CLAUDE.md §9c («↔ Metro»); qui il ragionamento.
 
 ## Il problema
 
@@ -165,20 +165,20 @@ come «◆ Tag». Tocco su una quota → dettaglio (nota dell'agente, atteso, st
      ancore, linea con tacche, targa a metà, la stessa doppia copia
      depthTest/attenuata.
    - Disegno da dati finti; verifica davanti/dietro/telefono.
-2. **Punto–punto + menu**
+2. **Punto–punto + menu** — FATTA
    - Lo strumento 📏, il menu dei modi (solo Punto–punto attivo), quota nella
      bozza, gomma e undo (la pila di azioni c'è già), foto della vista.
-3. **Snap**
+3. **Snap** — FATTA (`webui/measure.js`)
    - Spigoli vivi, vertici, facce piane, cerchi; evidenziazione al passaggio;
      modo Auto con priorità; Spigolo / Foro / Faccia–faccia; lente sul telefono.
    - Test pure-JS delle funzioni di fit (estrarle come `anticipate.js`, testate in
      `tests/ui/*.test.cjs`).
-4. **Dati**
+4. **Dati** — FATTA (`measure_gen`, `between`, `cad_measure_gen`)
    - `measures` nella nota (backend + `cad_notes`); `measures.json` dell'agente
      (store / api / server / MCP / `cad_snapshot`), stato e colori.
    - AGENT_HELP: il giro «cad_measure → quota».
    - Anteprima statica: `build_pages.py` pubblica `measures.json` come `tags.json`.
-5. **Esatto dal server** (facoltativo)
+5. **Esatto dal server** — FATTA (op `exact`, «✓ Verifica esatto»)
    - Nel `/view` servito da noodle, un «verifica esatto» che manda le due feature
      al server.
    - Il server esegue il grafo congelato della generazione e misura sul B-Rep vero
@@ -257,3 +257,13 @@ come «◆ Tag». Tocco su una quota → dettaglio (nota dell'agente, atteso, st
 - **Anteprima statica:** `scripts/build_pages.py --base-site <checkout
   gh-pages>`, perché le demo vecchie esistono solo lì. Si pubblica sul ramo
   `gh-pages` del fork.
+
+## Cosa resta (dopo le fasi 1–5)
+
+- **Angolo** (v2): le feature ci sono già (direzioni delle catene `line`,
+  normali delle facce piane) — serve il disegno di un arco di quota.
+- **Le quote seguono i pezzi animati?** Oggi: coordinate mondo + `t` (deciso).
+- **Dimensione della targa costante a schermo**: oggi è in mm come i tag, e da
+  lontano / sul telefono diventa piccola. Da decidere insieme ai tag.
+- **`between` sulla corsia mesh**: `measure.py distance` lavora sul B-Rep; due
+  pezzi mesh (un filetto) rispondono «no geometry (value is Mesh)».
