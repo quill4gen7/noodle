@@ -962,6 +962,14 @@ nota unica lontana dal disegno.
 - **Modifica e gomma.** Un riquadro si tocca per correggere il testo; la gomma
   lo cancella intero, come un tratto. Stessa pila di azioni dell'undo.
 
+### 4. ✂ Sezione e 🔍 Aspetto in /view — vedere dentro il pezzo (piano, 2026-10-08)
+
+Un piano di taglio con la faccia di taglio campita a righe oblique, per pezzo,
+e un aspetto solo-di-vista (vetro / emissivo / fantasma) per vedere un pezzo
+dentro l'altro. Misurato prima di scrivere: il vetro fa vedere i pezzi
+normali e gli emissivi, **un altro vetro solo come fantasma senza colore**, e
+nulla di ciò che è `transparent`. Piano completo in **`PLAN_VIEW_SECTION.md`**.
+
 ## Roadmap / Suggerimenti (post-Fase 4)
 
 > Visione: rimanere **semplici** e **integrati con l'AI fin da subito**, con la
