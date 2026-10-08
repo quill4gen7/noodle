@@ -594,6 +594,32 @@ def test_shapes_wear_one_set_of_handles_at_a_time():
     assert "if (selShape && !sBarGhost()) deleteShape(selShape);" in VIEW
 
 
+def test_scale_mode_has_six_face_handles_in_the_axis_colours():
+    # task D: in Gabbia → Scala the six face centres stretch ONE axis each,
+    # ±X red / ±Y green / ±Z blue; corners stay white, the centre uniform
+    rc = VIEW[VIEW.index("function refreshCage() {"):]
+    rc = rc[:rc.index("\n}\n")]
+    assert "if (cageMode === 'scale') { cageCorners(G); cageCentre(G); cageFaces(G); }" in rc
+    assert "const RING_INK = ['#ef4444', '#22c55e', '#3b82f6'];" in VIEW
+    fc = VIEW[VIEW.index("function cageFaces({ S, q, grab, hs, half }) {"):]
+    fc = fc[:fc.index("\n}\n")]
+    assert "for (let a = 0; a < 3; a++) {" in fc and "for (const sg of [-1, 1]) {" in fc
+    assert "const handle = { type: 'face', axis: a, s };" in fc
+    assert "handleMat(RING_INK[a])" in fc
+    assert "handleMat('#ffffff')" in VIEW[VIEW.index("function cageCorners("):]  # corners stay white
+    # a face sits ON the body: it is grabbed in its whole radius there
+    assert "h.px > (h.type === 'face' ? 1 : 0.5) * grabPx" in VIEW
+    # the drag: along the face's outward axis, opposite face fixed, signed min
+    assert "if (h && h.type === 'face') {" in VIEW
+    br = VIEW[VIEW.index("} else if (d.h.type === 'face') {"):]
+    br = br[:br.index("} else if (d.h.type === 'arrow') {")]
+    assert "const L = Math.max(d.size0[c] + (t - d.t0), min);" in br
+    assert "min = shapeMin(S)" in br
+    assert "if (S.kind === 'sphere') sz.set(L, L, L);" in br
+    assert "if (S.kind === 'cylinder' && a < 2) sz.x = sz.y = L;" in br
+    assert "const center = d.fixed.clone().addScaledVector(d.axis, L / 2);" in br
+
+
 def test_a_pen_colour_recolours_the_selected_shape():
     # with a shape in hand a colour paints THE SHAPE (and the pen), instead of
     # switching tool; without one it stays the pen's colour as before
