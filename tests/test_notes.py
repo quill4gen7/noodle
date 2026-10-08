@@ -265,7 +265,7 @@ def test_the_text_tool_projects_a_decal_and_sends_labels():
     # labels are data in the note, and part of the undo / eraser / views machinery
     assert "labels: words.map(L => ({ text: L.text" in VIEW
     for t in ("else if (a.type === 'label')", "else if (a.type === 'edit')", "er.labels.push(L)",
-              "[...draft, ...labels].filter(x => x.view === i)"):
+              "[...draft, ...labels, ...dmeasures].filter(x => x.view === i)"):
         assert t in VIEW
     # saved notes draw their labels too
     assert "for (const l of n.labels || [])" in VIEW
@@ -423,3 +423,52 @@ def test_the_image_tool_and_its_route():
     assert "images: pictures.map(L => ({ data: L.img.data" in VIEW
     assert '@app.get("/api/graph/{name}/gens/{gen}/notes/{note_id}/img/{k}")' in SERVER
     assert "images" in HELP[HELP.index("cad_notes"):] and "image_path" in MCP
+
+
+MEASURE = {"kind": "distance", "value": 12.4, "approx": False,
+           "a": {"at": [0, 0, 10], "normal": [0, 0, 1], "piece": "n1"},
+           "b": {"at": [12.4, 0, 10], "piece": "n1", "snap": "vertex"}}
+
+
+def test_a_dimension_is_data_in_the_note(store):
+    # 📏 the browser measures; the note keeps what and where, named by piece
+    note = api.add_note(store, "demo", "g1", {"measures": [MEASURE, {
+        "kind": "diameter", "value": 8.0, "approx": True,
+        "a": {"at": [5, 5, 10], "snap": "circle_center",
+              "circle": {"center": [5, 5, 10], "axis": [0, 0, 1], "r": 4}}}]})
+    d, o = note["measures"]
+    assert d["value"] == 12.4 and d["unit"] == "mm" and d["approx"] is False
+    assert d["a"]["snap"] == "free" and d["b"]["snap"] == "vertex"
+    assert d["a"]["node"] == "n1" and d["a"]["title"] == "Body"
+    assert o["kind"] == "diameter" and "b" not in o and o["a"]["circle"]["r"] == 4
+    # a note of dimensions alone is a note
+    assert api.gen_notes_raw(store, "demo", "g1")[0]["measures"][0]["value"] == 12.4
+
+
+def test_an_axis_locked_dimension_says_which_axis(store):
+    note = api.add_note(store, "demo", "g1", {"measures": [{**MEASURE, "axis": "z"}]})
+    assert note["measures"][0]["axis"] == "z"
+
+
+def test_bad_dimensions_are_refused(store):
+    bad = [{**MEASURE, "kind": "volume"}, {**MEASURE, "value": -1}, {**MEASURE, "value": float("nan")},
+           {**MEASURE, "b": None}, {**MEASURE, "a": {"at": [0, 0]}}, {**MEASURE, "axis": "w"},
+           {**MEASURE, "a": {**MEASURE["a"], "snap": "magnet"}}, {**MEASURE, "view": 0},
+           {**MEASURE, "text": "x" * 201}, "12 mm"]
+    for b in bad:
+        with pytest.raises(ValueError):
+            api.add_note(store, "demo", "g1", {"measures": [b]})
+    with pytest.raises(ValueError):
+        api.add_note(store, "demo", "g1", {"measures": [MEASURE] * 51})
+
+
+def test_the_measure_tool_is_part_of_the_draft():
+    assert 'id="d-measure"' in VIEW and 'id="d-mmode"' in VIEW
+    # a dimension rides the undo / eraser / views machinery like a stroke
+    for t in ("actions.push({ type: 'measure', M })", "else if (a.type === 'measure')",
+              "er.measures.push(M)", "measures: dmeasures.map(M =>"):
+        assert t in VIEW
+    # the tool never captures the pointer: a drag on the part still orbits
+    assert "if (tool === 'hand' || tool === 'measure' || e.button !== 0" in VIEW
+    # saved notes draw their dimensions
+    assert "for (const m of n.measures || [])" in VIEW

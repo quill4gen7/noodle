@@ -1724,6 +1724,81 @@ def _labels(labels_in, n_views: int, titles: dict) -> list[dict]:
     return out
 
 
+_MEASURE_KINDS = ("distance", "edge", "diameter", "radius", "face_gap", "angle")
+_MEASURE_SNAPS = ("vertex", "circle_center", "edge", "face", "free")
+_NOTE_MAX_MEASURES = 50
+
+
+def _measure_end(e, what: str, titles: dict) -> dict:
+    """One end of a dimension: a point ON the part and what it was snapped to."""
+    if not isinstance(e, dict):
+        raise ValueError(f"note: {what} must be an object")
+    o = {"at": _vec(e.get("at"), f"{what} at")}
+    snap = e.get("snap") or "free"
+    if snap not in _MEASURE_SNAPS:
+        raise ValueError(f"note: {what} snap must be one of {', '.join(_MEASURE_SNAPS)}")
+    o["snap"] = snap
+    if e.get("normal") is not None:
+        o["normal"] = _vec(e["normal"], f"{what} normal")
+    piece = str(e["piece"])[:40] if e.get("piece") else None
+    if piece:
+        node = piece.split(".")[0]
+        o.update(piece=piece, node=node)
+        if node in titles:
+            o["title"] = titles[node].get("title")
+    if isinstance(e.get("circle"), dict):
+        c = e["circle"]
+        o["circle"] = {"center": _vec(c.get("center"), f"{what} circle center"),
+                       "axis": _vec(c.get("axis"), f"{what} circle axis"),
+                       "r": round(_num(c.get("r"), f"{what} circle r"), 4)}
+    return o
+
+
+def _measures(items, n_views: int, titles: dict) -> list[dict]:
+    """Dimensions the user took ON the part (📏): two ends — one for an edge or
+    a circle — the value the browser measured and whether it is approximate
+    (a tessellated curve). The browser measures; the server only checks the
+    shape and keeps it, so a reader gets «12,40 mm between here and there»."""
+    if not isinstance(items, list) or len(items) > _NOTE_MAX_MEASURES:
+        raise ValueError(f"note: measures must be a list of at most {_NOTE_MAX_MEASURES}")
+    out = []
+    for i, m in enumerate(items):
+        if not isinstance(m, dict):
+            raise ValueError(f"note: measure {i} must be an object")
+        kind = m.get("kind")
+        if kind not in _MEASURE_KINDS:
+            raise ValueError(f"note: measure {i} kind must be one of {', '.join(_MEASURE_KINDS)}")
+        o = {"kind": kind, "a": _measure_end(m.get("a"), f"measure {i} a", titles)}
+        if m.get("b") is not None:
+            o["b"] = _measure_end(m["b"], f"measure {i} b", titles)
+        elif kind in ("distance", "face_gap", "angle"):
+            raise ValueError(f"note: measure {i} ({kind}) needs two ends, a and b")
+        v = _num(m.get("value"), f"measure {i} value")
+        if v < 0:
+            raise ValueError(f"note: measure {i} value must not be negative")
+        o["value"] = round(v, 4)
+        o["unit"] = "deg" if kind == "angle" else "mm"
+        o["approx"] = bool(m.get("approx"))
+        if m.get("axis") is not None:
+            if m["axis"] not in ("x", "y", "z"):
+                raise ValueError(f"note: measure {i} axis must be x, y or z")
+            o["axis"] = m["axis"]
+        t = m.get("text")
+        if t is not None:
+            if not isinstance(t, str) or len(t) > 200:
+                raise ValueError(f"note: measure {i} text must be at most 200 chars")
+            if t.strip():
+                o["text"] = t.strip()
+        vw = m.get("view")
+        if vw is not None:
+            vw = int(_num(vw, f"measure {i} view"))
+            if not 0 <= vw < n_views:
+                raise ValueError(f"note: measure {i} view {vw} out of range")
+            o["view"] = vw + 1
+        out.append(o)
+    return out
+
+
 def _link_labels(marks: list[dict], strokes: list[dict], labels: list[dict]) -> list[dict]:
     """Which marks each label is written next to — «qui 8 mm» beside a red
     circle is a fact about THAT circle. Distance from the label's centre to the
@@ -1805,7 +1880,8 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
         if len(b) > _NOTE_IMAGE_BYTES:
             raise ValueError(f"note: a placed image is over {_NOTE_IMAGE_BYTES // (1024 * 1024)} MB")
     kinds = [_image_kind(b) for b in image_blobs]
-    if not strokes_in and not labels_in and not images_in and not text.strip():
+    measures_in = payload.get("measures") or []
+    if not strokes_in and not labels_in and not images_in and not measures_in and not text.strip():
         raise ValueError("note: nothing drawn and nothing written")
     views_in = payload.get("views") or []
     if not isinstance(views_in, list) or len(views_in) > _NOTE_MAX_VIEWS:
@@ -1865,6 +1941,7 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
         o = {"image": i + 1, **{k: v for k, v in o.items()
                                 if k not in ("label", "text", "style", "color", "color_name")}}
         images.append(o)
+    measures = _measures(measures_in, len(views), titles)
     marks = _marks(strokes)
     note = {"text": text.strip(),
             "created": datetime.datetime.now().isoformat(timespec="seconds"),
@@ -1873,6 +1950,8 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
         note["labels"] = _link_labels(marks, strokes, labels)
     if images:
         note["images"] = _link_labels(marks, strokes, images)
+    if measures:
+        note["measures"] = measures
     cam = _camera(payload.get("camera"))
     if cam:
         note["camera"] = cam

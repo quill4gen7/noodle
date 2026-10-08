@@ -238,6 +238,7 @@
   #vp:not([data-tool=erase]) #d-ring{display:none !important;}
   #vp.drawing[data-tool=text] canvas{cursor:text;}
   #vp.drawing[data-tool=image] canvas{cursor:copy;}
+  #vp.drawing[data-tool=measure] canvas{cursor:crosshair;}
   #d-texttool{font:700 15px Georgia,serif;}
   #d-lstyle{min-height:var(--tap);padding:4px 4px;max-width:112px;}
   #d-box{position:absolute;display:none;pointer-events:none;z-index:6;border:2px dashed #fff;border-radius:4px;
@@ -347,6 +348,10 @@
             <option value="paint">✎ Vernice</option><option value="tag">⚑ Targhetta</option><option value="decal">▭ Decal</option></select>
           <button class="btn tool" id="d-imgtool" title="Immagine: scegli un PNG/JPEG (o una foto), poi trascina un riquadro sul pezzo">Img</button>
           <input type="file" id="d-imgfile" accept="image/*" hidden>
+          <button class="btn tool" id="d-measure" title="Metro: tocca due punti sul pezzo per misurarne la distanza (M) — Shift blocca la quota su X/Y/Z, Esc annulla il primo punto">↔</button>
+          <select id="d-mmode" title="Cosa misurare col metro">
+            <option value="p2p">Punto–punto</option>
+          </select>
           <button class="btn tool" id="d-erase" title="Gomma: passa sopra un tratto per toglierlo intero (E) — la misura sceglie il raggio">⌫</button>
           <button class="btn tool" id="d-hand" title="Muovi: ruota/zoom senza disegnare (anche: trascina fuori dal pezzo, tasto destro, rotella)">Muovi</button>
         </div>
@@ -849,6 +854,9 @@ $('c').addEventListener('pointerup', e => {
   const long = performance.now() - down[2] > 500;
   down = null;
   if (moved > tol || long) return;
+  // the measure tool's taps are its points: no select, and two quick taps on a
+  // phone are a dimension, not a double tap that frames the view
+  if (drawing && tool === 'measure') return;
   if (e.pointerType !== 'mouse') {
     const now = performance.now();
     if (now - lastTap < 320) { lastTap = 0; frameVisible(); return; }
@@ -1093,7 +1101,7 @@ vp.addEventListener('pointerdown', e => {
     }
     return;
   }
-  if (tool === 'hand' || e.button !== 0 || !e.isPrimary) return;
+  if (tool === 'hand' || tool === 'measure' || e.button !== 0 || !e.isPrimary) return;
   const hit = surfaceHit(e.clientX, e.clientY);
   let onLabel = tool === 'text' || tool === 'erase' ? labelAt(e.clientX, e.clientY) : null;
   if (onLabel && onLabel.img && tool === 'text') onLabel = null;   // T edits words, not pictures
@@ -1104,7 +1112,7 @@ vp.addEventListener('pointerdown', e => {
   const down = { pointerId: e.pointerId, pointerType: e.pointerType, isPrimary: true, button: 0, buttons: 1,
                  clientX: e.clientX, clientY: e.clientY, bubbles: true, cancelable: true };
   painting = { id: e.pointerId, mode: tool, x: e.clientX, y: e.clientY, down, hit };
-  if (tool === 'erase') { painting.erased = { strokes: [], labels: [] }; eraseAt(hit, e.clientX, e.clientY); return; }
+  if (tool === 'erase') { painting.erased = { strokes: [], labels: [], measures: [] }; eraseAt(hit, e.clientX, e.clientY); return; }
   if (tool === 'image') { painting.x0 = e.clientX; painting.y0 = e.clientY; return; }
   if (tool === 'text') {
     painting.x0 = e.clientX; painting.y0 = e.clientY;
@@ -1146,9 +1154,9 @@ const endPaint = e => {
   if (p.mode === 'pen') {
     const mine = draft.filter(s => s.g === p.g);
     if (mine.length) { actions.push({ type: 'pen', g: p.g }); takeView(mine); }
-  } else if (p.mode === 'erase' && (p.erased.strokes.length || p.erased.labels.length)) {
+  } else if (p.mode === 'erase' && (p.erased.strokes.length || p.erased.labels.length || p.erased.measures.length)) {
     actions.push({ type: 'erase', ...p.erased });
-    refreshViews(viewsOf([...p.erased.strokes, ...p.erased.labels]));
+    refreshViews(viewsOf([...p.erased.strokes, ...p.erased.labels, ...p.erased.measures]));
   } else if (p.mode === 'image') {
     hideBox();
     if (e.type === 'pointerup' && p.hit) newImage(p, boxRect(p, e.clientX, e.clientY));
@@ -1210,6 +1218,11 @@ function eraseAt(hit, x, y) {
     if (L.obj && L.obj.userData.tag ? L.at.distanceTo(hit.p) > r : !inLabel(L, hit.p, r)) continue;
     labels.splice(i, 1); disposeObj(L.obj); L.obj = null; er.labels.push(L);
   }
+  for (let i = dmeasures.length - 1; i >= 0; i--) {   // a dimension: rubbed out along its line
+    const M = dmeasures[i], { A, B } = measureEnds(M);
+    if (segDist(hit.p, A, B) > r) continue;
+    dmeasures.splice(i, 1); disposeObj(M.obj); M.obj = null; er.measures.push(M);
+  }
   viewer.invalidate(); syncDraw();
 }
 // inside a label's box, measured in its own frame (right, up, normal)
@@ -1225,6 +1238,8 @@ function restore(er) {
   draft.sort((a, b) => a.k - b.k);
   for (const L of er.labels || []) { labels.push(L); drawLabel(L); }
   labels.sort((a, b) => a.k - b.k);
+  for (const M of er.measures || []) { dmeasures.push(M); drawDraftMeasure(M); }
+  dmeasures.sort((a, b) => a.k - b.k);
 }
 const viewsOf = items => items.map(x => x.view).filter(v => v != null);
 function moveRing(e) {
@@ -1232,6 +1247,110 @@ function moveRing(e) {
   Object.assign(ring.style, { display: 'block', width: d + 'px', height: d + 'px',
     left: (e.clientX - r.left - d / 2) + 'px', top: (e.clientY - r.top - d / 2) + 'px' });
 }
+
+// ── ↔ Metro: the user measures on the part ──
+// Tap (or click) a point ON the part, then a second one: a dimension between
+// them, drawn as the agent's would be (measureObject) in the user's violet. A
+// tap, not a press: the tool never captures the pointer, so a drag still
+// orbits and the user can turn the part between the two points. With a mouse,
+// after the first point a rubber dimension follows the pointer with its value
+// live. Shift locks it to the dominant world axis (X/Y/Z), as a CAD does —
+// the second point stays where it was picked and an extension line joins it.
+// The menu says WHAT to measure; this phase has point–point only, the snaps
+// (edges, vertices, circles, faces) come with Auto. Esc drops the first point.
+// A dimension is part of the draft like a stroke: ↶, ⌫, the view pictures.
+const MEASURE_MODES = ['p2p'];
+let measureMode = 'p2p';
+try { const v = localStorage.getItem('noodle:view:measureMode'); if (MEASURE_MODES.includes(v)) measureMode = v; } catch {}
+$('d-mmode').value = measureMode;
+$('d-mmode').addEventListener('change', e => {
+  measureMode = MEASURE_MODES.includes(e.target.value) ? e.target.value : MEASURE_MODES[0];
+  try { localStorage.setItem('noodle:view:measureMode', measureMode); } catch {}
+  setTool('measure');
+});
+const DRAW_HINT = $('d-hint').textContent;
+const MEASURE_HINT = 'Metro: tocca un punto sul pezzo, poi il secondo · Shift: blocca su X/Y/Z · trascina: ruota la vista · Esc: annulla il primo punto';
+const dmeasures = [];                          // the draft's dimensions
+let mPending = null, mPendingObj = null, mHover = null, mDown = null, mRaf = 0;
+const TAP_PX = e => (e.pointerType === 'touch' ? 12 : 5);
+function endOf(hit) {
+  return { at: [r4(hit.p.x), r4(hit.p.y), r4(hit.p.z)], normal: v3(hit.n), piece: hit.key, snap: 'free' };
+}
+const AXES = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) };
+function dominantAxis(d) {
+  const ax = Math.abs(d.x), ay = Math.abs(d.y), az = Math.abs(d.z);
+  return ax >= ay && ax >= az ? 'x' : ay >= az ? 'y' : 'z';
+}
+function makeMeasure(a, b, lock) {
+  const M = { kind: 'distance', a: a.p.clone(), b: b.p.clone(), aEnd: endOf(a), bEnd: endOf(b),
+              nodes: [a.key, b.key].filter(Boolean).map(k => k.split('.')[0]) };
+  const d = b.p.clone().sub(a.p);
+  if (lock) { M.axis = dominantAxis(d); M.value = Math.abs(d.dot(AXES[M.axis])); }
+  else M.value = d.length();
+  return M;
+}
+function drawDraftMeasure(M) {
+  if (M.obj) disposeObj(M.obj);
+  M.obj = measureObject(M, measureH()); annoGroup.add(M.obj); viewer.invalidate();
+}
+function pendingObject(hit) {
+  const h = measureH(), g = new THREE.Group(), geo = new THREE.SphereGeometry(Math.max(h * 0.1, 0.04), 12, 8);
+  for (const ghost of [false, true]) {
+    const d = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: MEASURE_INK, toneMapped: false,
+      transparent: ghost, opacity: ghost ? GHOST : 1, depthTest: !ghost, depthWrite: !ghost }));
+    d.position.copy(hit.p); d.renderOrder = ghost ? 10 : 3; g.add(d);
+  }
+  return g;
+}
+function clearHover() { if (mHover) { disposeObj(mHover); mHover = null; viewer.invalidate(); } }
+function cancelMeasure() {
+  if (mPendingObj) disposeObj(mPendingObj);
+  mPending = mPendingObj = null; clearHover();
+  if (typeof viewer !== 'undefined') viewer.invalidate();
+}
+function measureTap(x, y, lock) {
+  const hit = surfaceHit(x, y);
+  if (!hit) return;
+  if (clock.playing) setPlaying(false);
+  if (!mPending) {
+    mPending = hit; mPendingObj = pendingObject(hit); annoGroup.add(mPendingObj);
+    viewer.invalidate(); return;
+  }
+  const M = makeMeasure(mPending, hit, lock);
+  cancelMeasure();
+  if (M.value < 1e-6) return;                  // the same point twice
+  M.k = ++seq;
+  dmeasures.push(M); drawDraftMeasure(M);
+  actions.push({ type: 'measure', M });
+  takeView([M]);
+  syncDraw();
+}
+vp.addEventListener('pointerdown', e => {
+  if (!drawing || tool !== 'measure' || e.target !== $('c') || e.button !== 0) return;
+  mDown = e.isPrimary ? { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() } : null;
+}, true);
+vp.addEventListener('pointerup', e => {
+  if (!drawing || tool !== 'measure' || !mDown || e.pointerId !== mDown.id) return;
+  const d = mDown; mDown = null;
+  if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > TAP_PX(e) || performance.now() - d.t > 600) return;
+  measureTap(e.clientX, e.clientY, e.shiftKey);
+}, true);
+vp.addEventListener('pointercancel', () => { mDown = null; }, true);
+// the rubber dimension (a mouse has a hover; a finger does not)
+vp.addEventListener('pointermove', e => {
+  if (!drawing || tool !== 'measure' || !mPending || e.pointerType !== 'mouse' || e.buttons) return;
+  const x = e.clientX, y = e.clientY, lock = e.shiftKey;
+  cancelAnimationFrame(mRaf);
+  mRaf = requestAnimationFrame(() => {
+    if (!mPending) return;
+    clearHover();
+    const hit = surfaceHit(x, y);
+    if (!hit) return;
+    const M = makeMeasure(mPending, hit, lock);
+    if (M.value < 1e-6) return;
+    mHover = measureObject(M, measureH()); annoGroup.add(mHover); viewer.invalidate();
+  });
+});
 
 // ── T: text ON the part — two styles, the user picks (⚑ / ▭ next to T) ──
 // Press on the part and drag a box (a tap gives a default one), type, Enter.
@@ -1863,7 +1982,7 @@ function takeView(items) {
 function refreshViews(idxs) {
   for (const i of new Set(idxs)) {
     const v = views[i]; if (!v) continue;
-    const left = [...draft, ...labels].filter(x => x.view === i);
+    const left = [...draft, ...labels, ...dmeasures].filter(x => x.view === i);
     if (!left.length) { v.image = null; continue; }      // nothing left to show
     if (sameCam(v.cam, camState())) { v.image = viewer.snapshot(VIEW_SHOT); continue; }
     if (!!v.cam.ortho !== viewer.isOrtho) {
@@ -1918,6 +2037,11 @@ function undo() {
     touched = viewsOf([a.L, ...takeLabelStrokes(a.L)]);
     a.L.text = a.before; restore({ strokes: a.oldStrokes }); touched.push(...viewsOf(a.oldStrokes));
   } else if (a.type === 'edit') { a.L.text = a.before; drawLabel(a.L); touched = viewsOf([a.L]); }
+  else if (a.type === 'measure') {
+    const i = dmeasures.indexOf(a.M);
+    if (i >= 0) { dmeasures.splice(i, 1); disposeObj(a.M.obj); a.M.obj = null; }
+    touched = viewsOf([a.M]);
+  }
   refreshViews(touched);
   viewer.invalidate(); syncDraw();
 }
@@ -1925,16 +2049,20 @@ function clearDraft() {
   closeEditor(false);
   while (draft.length) disposeObj(draft.pop().obj);
   while (labels.length) disposeObj(labels.pop().obj);
+  while (dmeasures.length) disposeObj(dmeasures.pop().obj);
+  cancelMeasure();
   views.length = 0; actions.length = 0;
   viewer.invalidate(); syncDraw();
 }
-function setTool(t) { tool = t; if (t !== 'erase') $('d-ring').style.display = 'none'; if (t !== 'text') closeEditor(true); syncDraw(); }
+function setTool(t) { tool = t; if (t !== 'measure') cancelMeasure(); if (t !== 'erase') $('d-ring').style.display = 'none'; if (t !== 'text') closeEditor(true); syncDraw(); }
 function syncDraw() {
-  $('d-send').disabled = !draft.length && !labels.length && !$('d-text').value.trim();
-  $('d-undo').disabled = !actions.length; $('d-clear').disabled = !draft.length && !labels.length;
+  const any = draft.length || labels.length || dmeasures.length;
+  $('d-send').disabled = !any && !$('d-text').value.trim();
+  $('d-undo').disabled = !actions.length; $('d-clear').disabled = !any;
+  $('d-hint').textContent = drawing && tool === 'measure' ? MEASURE_HINT : DRAW_HINT;
   vp.classList.toggle('pen', drawing && tool === 'pen');
   vp.dataset.tool = drawing ? tool : '';
-  for (const [id, t] of [['d-pen', 'pen'], ['d-texttool', 'text'], ['d-imgtool', 'image'], ['d-erase', 'erase'], ['d-hand', 'hand']]) $(id).classList.toggle('on', tool === t);
+  for (const [id, t] of [['d-pen', 'pen'], ['d-texttool', 'text'], ['d-imgtool', 'image'], ['d-measure', 'measure'], ['d-erase', 'erase'], ['d-hand', 'hand']]) $(id).classList.toggle('on', tool === t);
   for (const b of $('d-colors').children) b.classList.toggle('on', b.dataset.c === pen.color);
   for (const b of $('d-sizes').children) b.classList.toggle('on', +b.dataset.s === pen.size);
 }
@@ -1942,7 +2070,7 @@ function setDrawing(on) {
   drawing = on;
   vp.classList.toggle('drawing', on);
   if (on && clock.playing) setPlaying(false);
-  if (!on) { cancelGesture(); closeEditor(true); $('d-text').blur(); $('d-ring').style.display = 'none'; }
+  if (!on) { cancelGesture(); cancelMeasure(); closeEditor(true); $('d-text').blur(); $('d-ring').style.display = 'none'; }
   syncDraw();
 }
 for (const c of PEN_COLORS) {
@@ -1966,6 +2094,7 @@ $('d-pen').onclick = () => setTool('pen');
 $('d-erase').onclick = () => setTool('erase');
 $('d-texttool').onclick = () => setTool('text');
 $('d-hand').onclick = () => setTool('hand');
+$('d-measure').onclick = () => setTool('measure');
 $('d-undo').onclick = undo;
 $('d-clear').onclick = () => { if (draft.length < 4 || confirm('Cancellare tutti i tratti non inviati?')) clearDraft(); };
 $('d-text').addEventListener('input', syncDraw);
@@ -1978,11 +2107,13 @@ addEventListener('keydown', e => {
   if (!drawing || e.target.tagName === 'INPUT') return;
   const k = e.key.toLowerCase();
   if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); e.stopImmediatePropagation(); undo(); }
+  else if (e.key === 'Escape' && mPending) { e.stopImmediatePropagation(); cancelMeasure(); }
   else if (e.key === 'Escape') { e.stopImmediatePropagation(); setDrawing(false); }
   else if (e.ctrlKey || e.metaKey || e.altKey) return;
   else if (k === 'p') { e.stopImmediatePropagation(); setTool('pen'); }
   else if (k === 'e') { e.stopImmediatePropagation(); setTool('erase'); }
   else if (k === 't') { e.stopImmediatePropagation(); setTool('text'); }
+  else if (k === 'm') { e.stopImmediatePropagation(); setTool('measure'); }
 }, true);
 
 function toast(html, ms = 6000) {
@@ -1998,8 +2129,9 @@ const fitIn = f => f ? { centre: new THREE.Vector3(...f.centre), radius: f.radiu
 async function sendNote() {
   const text = $('d-text').value.trim();
   closeEditor(true);
-  if (!draft.length && !labels.length && !text) return;
+  if (!draft.length && !labels.length && !dmeasures.length && !text) return;
   $('d-send').disabled = true;
+  cancelMeasure();
   // the picture is the user's own view, strokes and all: the agent sees what
   // they saw, at their zoom (frame:false keeps the camera where it is)
   const image = viewer.snapshot({ frame: false, maxSize: 1400, quality: 0.85 });
@@ -2007,7 +2139,7 @@ async function sendNote() {
   // the views strokes were drawn from, minus the final one (that IS `image`)
   // and minus any whose strokes were all undone
   const keep = [], remap = new Map();
-  for (const s of [...draft, ...labels]) {
+  for (const s of [...draft, ...labels, ...dmeasures]) {
     if (s.view == null || remap.has(s.view)) continue;
     const v = views[s.view];
     if (!v || !v.image || sameCam(v.cam, camera)) { remap.set(s.view, null); continue; }
@@ -2031,6 +2163,9 @@ async function sendNote() {
       ...placed(L) })),
     // pictures placed on the part: the picture travels as an asset of the note
     images: pictures.map(L => ({ data: L.img.data, piece: L.piece, ...placed(L) })),
+    // dimensions taken on the part: the browser measured them, the agent reads them
+    measures: dmeasures.map(M => ({ kind: M.kind, a: M.aEnd, b: M.bEnd, value: r4(M.value), approx: !!M.approx,
+      ...(M.axis ? { axis: M.axis } : {}), view: M.view == null ? null : remap.get(M.view) })),
     hide: location.hash.replace(/^#/, ''),
   };
   if (anims.length) body.t = clock.t;
@@ -2065,6 +2200,9 @@ function noteObject(n) {
         n: new THREE.Vector3(...l.normal), up: new THREE.Vector3(...l.up), w: l.size_mm[0], h: l.size_mm[1],
         surface: l.surface, fit: fitIn(l.fit) }));
     } catch {}
+  }
+  for (const m of n.measures || []) {
+    try { g.add(measureObject(measureFrom(m), measureH())); } catch {}
   }
   for (const im of n.images || []) {
     new THREE.TextureLoader().load(`/api/graph/${encodeURIComponent(NAME)}/gens/${GEN}/notes/${n.id}/img/${im.image}`, tex => {
@@ -2108,7 +2246,7 @@ function goToNote(n) {
   };
   apply(back);
   const pts = [...(n.strokes || []).flatMap(s => s.points || []), ...(n.labels || []).map(l => l.at),
-    ...(n.images || []).map(l => l.at)]
+    ...(n.images || []).map(l => l.at), ...(n.measures || []).flatMap(m => [m.a && m.a.at, m.b && m.b.at].filter(Boolean))]
     .map(p => new THREE.Vector3(...p));
   const inside = () => pts.every(p => { const q = p.clone().project(cam);
     return Math.abs(q.x) <= 0.92 && Math.abs(q.y) <= 0.92 && q.z < 1; });
@@ -2137,6 +2275,7 @@ function renderNotes() {
     row.className = 'note' + (n.done ? ' done' : '') + (on ? '' : ' off');
     const cols = [...new Set([...(n.strokes || []), ...(n.labels || [])].map(s => s.color))].slice(0, 5);
     const said = [...(n.labels || []).map(l => `«${esc(l.text)}»`),
+      ...(n.measures || []).map(m => `↔ ${esc(measureText(m))}`),
       ...((n.images || []).length ? [`▣ ${n.images.length} immagin${n.images.length > 1 ? 'i' : 'e'}`] : [])].join(' ');
     row.innerHTML = `<span class="dots">${cols.map(c => `<i style="background:${esc(c)}"></i>`).join('')}</span>
       <span class="tx"><span class="id">${esc(n.id)}${n.done ? ' ✓' : ''}</span>${esc(n.text) || said || '<i>(solo disegno)</i>'}${n.text && said ? ` <span class="id">${said}</span>` : ''}
@@ -2499,13 +2638,22 @@ function measureEnds(M) {
     if (M.kind === 'diameter') { a = C.clone().addScaledVector(u, -M.circle.r); b = C.clone().addScaledVector(u, M.circle.r); }
     else { a = C.clone(); b = C.clone().addScaledVector(u, M.circle.r); }
   }
+  // locked to an axis (Shift): the far end slides onto the axis through `a`;
+  // the point actually picked stays, joined by an extension line
+  let picked = null;
+  const e = M.axis && { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] }[M.axis];
+  if (e && a && b) {
+    const u = new THREE.Vector3(...e);
+    picked = b; b = a.clone().addScaledVector(u, b.clone().sub(a).dot(u));
+    if (picked.distanceTo(b) < 1e-6) picked = null;
+  }
   const lift = M.n && M.off ? M.n.clone().normalize().multiplyScalar(M.off) : new THREE.Vector3();
-  return { a, b, A: a.clone().add(lift), B: b.clone().add(lift), lifted: lift.lengthSq() > 0, ring };
+  return { a, b, A: a.clone().add(lift), B: b.clone().add(lift), lifted: lift.lengthSq() > 0, ring, picked };
 }
 function measureObject(M, h) {
   const g = new THREE.Group();
   const ink = M.ink || (M.status ? STATUS_INK[M.status] : null) || MEASURE_INK;
-  const { a, b, A, B, lifted, ring } = measureEnds(M);
+  const { a, b, A, B, lifted, ring, picked } = measureEnds(M);
   const L = A.distanceTo(B), dir = B.clone().sub(A).normalize();
   const r = Math.max(h * 0.028, 0.012), dotR = Math.max(h * 0.08, 0.03);
   const al = Math.min(h * 0.42, Math.max(L * 0.3, h * 0.2)), ar = al * 0.33;
@@ -2531,7 +2679,9 @@ function measureObject(M, h) {
     const over = M.n.clone().normalize().multiplyScalar(al * 0.5);
     geos.push(rodGeo(a, A.clone().add(over), r * 0.7), rodGeo(b, B.clone().add(over), r * 0.7));
   }
+  if (picked) geos.push(rodGeo(picked, b, r * 0.7));
   const dots = [];
+  if (picked) dots.push(picked);
   if (!ring) dots.push(a, b);
   else dots.push(ring.C);
   let ringGeo = null;
