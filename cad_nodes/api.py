@@ -1492,6 +1492,10 @@ def gen_tags(store: GraphStore, graph_id: str, gen: str) -> list:
     return store.load_gen_tags(graph_id, gen)
 
 
+def gen_measures(store: GraphStore, graph_id: str, gen: str) -> list:
+    return store.load_gen_measures(graph_id, gen)
+
+
 def list_gens(store: GraphStore, graph_id: str, base_url: str = "") -> list[dict]:
     store.load(graph_id)                 # unknown project → KeyError
     return [{k: m.get(k) for k in ("gen", "label", "created", "version")}

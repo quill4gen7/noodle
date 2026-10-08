@@ -483,6 +483,19 @@ class GraphStore:
         except (OSError, ValueError):
             return []
 
+    # `measures.json`: the agent's dimensions on a gen (📏, PLAN_VIEW_MEASURE.md)
+    # — a file of its own beside tags.json: separate validation, separate toggle.
+    GEN_MEASURES = "measures.json"
+
+    def load_gen_measures(self, graph_id: str, gen: str) -> list:
+        d = self.gen_dir(graph_id, gen)
+        if not (d / "meta.json").exists():
+            raise KeyError(f"No generation {gen!r} in {graph_id!r}")
+        try:
+            return json.loads((d / self.GEN_MEASURES).read_text()).get("measures") or []
+        except (OSError, ValueError):
+            return []
+
     def mark_gen_seen(self, graph_id: str, gen: str, when: str) -> None:
         d = self.gen_dir(graph_id, gen)
         if not (d / "meta.json").exists():

@@ -709,6 +709,13 @@ async def get_generation_tags(name: str, gen: str):
     return {"tags": _gen_http(api.gen_tags, GraphStore(PROJECTS_DIR), name, gen)}
 
 
+@app.get("/api/graph/{name}/gens/{gen}/measures")
+async def get_generation_measures(name: str, gen: str):
+    """The agent's dimensions on this gen (measures.json beside the gen)."""
+    require_project(name)
+    return {"measures": _gen_http(api.gen_measures, GraphStore(PROJECTS_DIR), name, gen)}
+
+
 @app.post("/api/graph/{name}/gens/{gen}/tags")
 async def tag_generation(request: Request, name: str, gen: str):
     """Body {tags: [{text, node, at?, color?}], replace?: true}."""

@@ -2600,6 +2600,11 @@ function drawMeasures(list, { replace = true } = {}) {
   syncMeasures();
   return measures.length;
 }
+async function loadMeasures(base) {
+  let raw = [];
+  try { raw = (await getJSON(`${base}/measures`)).measures || []; } catch { raw = []; }
+  if (raw.length) drawMeasures(raw);
+}
 function syncMeasures() {
   measureGroup.visible = measuresOn;
   for (const M of measures) {
@@ -2715,6 +2720,7 @@ async function boot() {
   for (const [id, o] of noteObjs) o.visible = shownNotes.has(id);
   renderNotes(); viewer.invalidate();
   await loadTags(base);
+  await loadMeasures(base);
   renderList();
   const fn = focus && notesData.find(n => n.id === focus);
   if (fn) goToNote(fn);
