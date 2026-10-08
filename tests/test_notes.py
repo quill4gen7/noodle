@@ -559,3 +559,36 @@ def test_shapes_are_ruled_in_millimetres_in_their_colour():
         assert rule in VIEW
     assert "smoothstep(0.12, 0.33, dense)" in VIEW
     assert "const body = new THREE.Mesh(geo, mmGridMaterial(S.color, S.size));" in VIEW
+
+
+def test_shapes_wear_one_set_of_handles_at_a_time():
+    # quill: buttons to pick move / rotate / the cage / no gizmo, instead of
+    # the arrows and the rings being there always, together
+    for m in ("move", "rotate", "cage", "none"):
+        assert f'data-gm="{m}"' in VIEW
+    assert "const GIZMO_MODES = ['move', 'rotate', 'cage', 'none'];" in VIEW
+    assert "let gizmoMode = 'cage', cageMode = 'scale';" in VIEW
+    for key in ("noodle:view:gizmoMode", "noodle:view:cageMode"):
+        assert f"localStorage.getItem('{key}')" in VIEW and f"localStorage.setItem('{key}'" in VIEW
+    # refreshCage builds ONLY the active mode's handles, one branch per mode
+    rc = VIEW[VIEW.index("function refreshCage() {"):]
+    rc = rc[:rc.index("\n}\n")]
+    assert "switch (gizmoMode) {" in rc
+    assert "case 'move': cageArrows(G); break;" in rc
+    assert "case 'rotate': cageRings(G); break;" in rc
+    assert "if (cageMode === 'scale') { cageCorners(G); cageCentre(G);" in rc
+    assert "case 'none': break;" in rc
+    # 'deform' is task C's: until it lands the toggle is there and disabled
+    assert "const CAGE_MODES = ['scale'];" in VIEW and "cm.disabled = CAGE_MODES.length < 2;" in VIEW
+    # a second tap on Gabbia flips Scala ⇄ Deforma
+    assert "if (m === 'cage' && gizmoMode === 'cage') return toggleCageMode();" in VIEW
+    # G / R / C, only with the shape tool; no H (it already hides the piece)
+    assert "setGizmoMode({ g: 'move', r: 'rotate', c: 'cage' }[k])" in VIEW
+    # on a phone the modes are one row that never widens the page
+    assert "#s-modes{display:flex;gap:4px;flex-basis:100%;justify-content:center;flex-wrap:nowrap;}" in VIEW
+    assert "max-width:calc(100vw - 16px)" in VIEW
+    # the tap that sets a shape down opens the bar under the finger on a phone:
+    # its compatibility click must not press the button that just appeared
+    assert "const sBarGhost = () => performance.now() - sBarOpened < 400;" in VIEW
+    assert "if (!sBarGhost()) setGizmoMode(b.dataset.gm);" in VIEW
+    assert "if (selShape && !sBarGhost()) deleteShape(selShape);" in VIEW

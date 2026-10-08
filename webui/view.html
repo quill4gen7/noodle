@@ -246,6 +246,14 @@
     background:var(--bg-2);border:1px solid #a78bfa;border-radius:12px;padding:5px 6px 5px 12px;box-shadow:0 8px 24px rgba(0,0,0,.5);}
   #s-bar.open{display:flex;}
   #s-dims{font-variant-numeric:tabular-nums;white-space:nowrap;}
+  /* which handles the selected shape wears: one row of its own under the size */
+  #s-bar{flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 16px);box-sizing:border-box;}
+  #s-modes{display:flex;gap:4px;flex-basis:100%;justify-content:center;flex-wrap:nowrap;}
+  #s-modes .btn{padding:4px 8px;gap:4px;white-space:nowrap;}
+  #s-modes .gm.on,#s-cagemode.on{border-color:#a78bfa;background:var(--bg-2);color:#e9e3ff;}
+  #s-cagemode{display:none;font-size:11px;}
+  #s-bar[data-gm=cage] #s-cagemode{display:inline-flex;}
+  #s-cagemode:disabled{opacity:.45;cursor:default;}
   #m-lens{position:absolute;display:none;pointer-events:none;z-index:7;width:120px;}
   #m-lens canvas{width:120px;height:120px;border-radius:50%;border:2px solid #a78bfa;background:#000;
     box-shadow:0 4px 18px rgba(0,0,0,.6);display:block;}
@@ -309,6 +317,8 @@
     #dbar select{display:none;}
     #vp[data-tool=text] #d-lstyle,#vp[data-tool=measure] #d-mmode,#vp[data-tool=shape] #d-shapekind{display:inline-block;}
     #s-bar{top:8px;bottom:auto;}          /* the draw bar owns the bottom on a phone */
+    /* the modes row stays ONE row in 390px: short labels, tight padding */
+    #s-modes .btn{min-height:36px;padding:3px 6px;font-size:12px;gap:3px;}
     #d-lstyle{min-height:36px;max-width:104px;}
     #d-text{flex:1 1 140px;min-height:36px;min-width:0;}
     #toast{top:8px;}
@@ -400,7 +410,14 @@
       </div>
       <div id="d-ring"></div><div id="d-box"></div>
       <div id="m-snap"></div>
-      <div id="s-bar"><span id="s-dims"></span><button class="btn" id="s-del" title="Togli questa forma (Canc)">Togli</button><button class="btn" id="s-done" title="Fatto (Esc)">✓</button></div>
+      <div id="s-bar"><span id="s-dims"></span><button class="btn" id="s-del" title="Togli questa forma (Canc)">Togli</button><button class="btn" id="s-done" title="Fatto (Esc)">✓</button>
+        <div id="s-modes" role="radiogroup" aria-label="Maniglie della forma">
+          <button class="btn gm" id="s-gm-move" data-gm="move" role="radio" title="Sposta: solo le frecce X/Y/Z (G)">✥<span>Sposta</span></button>
+          <button class="btn gm" id="s-gm-rotate" data-gm="rotate" role="radio" title="Ruota: solo gli anelli, Shift a 15° (R)">⟳<span>Ruota</span></button>
+          <button class="btn gm" id="s-gm-cage" data-gm="cage" role="radio" title="Gabbia: vertici = misura, centro = scala (C)">▣<span>Gabbia</span></button>
+          <button class="btn" id="s-cagemode" title="Gabbia: Scala ⇄ Deforma (un secondo tocco su Gabbia o C)">Scala</button>
+          <button class="btn gm" id="s-gm-none" data-gm="none" role="radio" title="Nascondi le maniglie: resta la forma, che si sposta ancora trascinandola sul pezzo">◌<span>Nascondi</span></button>
+        </div></div>
       <div id="m-lens"><canvas></canvas><div id="m-lens-t"></div></div>
       <input id="d-label" maxlength="200" autocomplete="off" placeholder="scrivi… (Invio)">
       <div id="toast"></div>
@@ -1669,7 +1686,7 @@ function lensOff() { const l = $('m-lens'); if (l) l.style.display = 'none'; }
 // Part of the draft like a stroke: ↶, ⌫, the view pictures, Canc / «Togli».
 const SHAPE_KINDS = ['box', 'cylinder', 'sphere'];
 const SHAPE_NAME = { box: 'cubo', cylinder: 'cilindro', sphere: 'sfera' };
-const SHAPE_HINT = 'Forme: tocca il pezzo per posare la forma · trascinala per farla scorrere SUL pezzo · frecce = sposta lungo X/Y/Z (resta vicino al pezzo) · vertici = misura, centro = scala, anelli = ruota (Shift 15°) · Canc / «Togli» per toglierla';
+const SHAPE_HINT = 'Forme: tocca il pezzo per posare la forma · trascinala per farla scorrere SUL pezzo · maniglie a scelta: ✥ Sposta = frecce X/Y/Z (G) · ⟳ Ruota = anelli, Shift 15° (R) · ▣ Gabbia = vertici misura, centro scala (C) · ◌ Nascondi · Canc / «Togli» per toglierla';
 let shapeKind = 'box';
 try { const v = localStorage.getItem('noodle:view:shapeKind'); if (SHAPE_KINDS.includes(v)) shapeKind = v; } catch {}
 $('d-shapekind').value = shapeKind;
@@ -1678,6 +1695,58 @@ $('d-shapekind').addEventListener('change', e => {
   try { localStorage.setItem('noodle:view:shapeKind', shapeKind); } catch {}
   setTool('shape');
 });
+// Which handles the selected shape wears — ONE set at a time, the user picks
+// (quill: «metti i bottoni … invece di averli sempre entrambi»): ✥ move = the
+// X/Y/Z arrows, ⟳ rotate = the rings, ▣ cage = corners + centre, ◌ none = the
+// bare shape (dragging its body still slides it on the parts — that is not a
+// handle). refreshCage() builds only the active set; handleAt finds what is there.
+// Inside the cage, cageMode picks what the corners DO: 'scale' (today) or
+// 'deform' (task C, the FFD). Until C lands CAGE_MODES holds 'scale' alone and
+// the Scala ⇄ Deforma toggle stays disabled — C pushes 'deform' here.
+const GIZMO_MODES = ['move', 'rotate', 'cage', 'none'];
+const CAGE_MODES = ['scale'];                  // C: CAGE_MODES.push('deform')
+let gizmoMode = 'cage', cageMode = 'scale';
+try { const v = localStorage.getItem('noodle:view:gizmoMode'); if (GIZMO_MODES.includes(v)) gizmoMode = v; } catch {}
+try { const v = localStorage.getItem('noodle:view:cageMode'); if (CAGE_MODES.includes(v)) cageMode = v; } catch {}
+function syncGizmoBar() {
+  $('s-bar').dataset.gm = gizmoMode;
+  for (const b of $('s-modes').querySelectorAll('.gm')) {
+    const on = b.dataset.gm === gizmoMode;
+    b.classList.toggle('on', on); b.setAttribute('aria-checked', on);
+  }
+  const cm = $('s-cagemode');
+  cm.textContent = cageMode === 'deform' ? 'Deforma' : 'Scala';
+  cm.classList.toggle('on', cageMode === 'deform');
+  cm.disabled = CAGE_MODES.length < 2;
+  if (cm.disabled) cm.title = 'Gabbia: Scala (Deforma in arrivo)';
+}
+function setGizmoMode(m) {
+  // a second tap on ▣ Gabbia flips Scala ⇄ Deforma
+  if (m === 'cage' && gizmoMode === 'cage') return toggleCageMode();
+  if (!GIZMO_MODES.includes(m)) return;
+  gizmoMode = m;
+  try { localStorage.setItem('noodle:view:gizmoMode', m); } catch {}
+  syncGizmoBar();
+  if (typeof viewer !== 'undefined') refreshCage();
+}
+function toggleCageMode() {
+  const i = CAGE_MODES.indexOf(cageMode), next = CAGE_MODES[(i + 1) % CAGE_MODES.length];
+  if (next === cageMode) return;              // only 'scale' until C lands
+  cageMode = next;
+  try { localStorage.setItem('noodle:view:cageMode', cageMode); } catch {}
+  syncGizmoBar();
+  if (typeof viewer !== 'undefined') refreshCage();
+}
+// The tap that sets a shape down opens this bar — on a phone at the TOP of the
+// viewport, under the finger — and the touch's compatibility click then lands
+// on whatever button just appeared there (measured: a tap at y=155 put the
+// shape down AND switched to ▣ Gabbia). A click in the first moments of the
+// bar is that ghost, not the user.
+let sBarOpened = 0;
+const sBarGhost = () => performance.now() - sBarOpened < 400;
+for (const b of $('s-modes').querySelectorAll('.gm')) b.onclick = () => { if (!sBarGhost()) setGizmoMode(b.dataset.gm); };
+$('s-cagemode').onclick = () => { if (!sBarGhost()) toggleCageMode(); };
+syncGizmoBar();
 const shapes = [];                             // the draft's shapes
 let selShape = null, sDrag = null, sDown = null;
 const cageGroup = new THREE.Group(); cageGroup.name = 'shape-cage';
@@ -1824,6 +1893,7 @@ const RING_INK = ['#ef4444', '#22c55e', '#3b82f6'];
 function refreshCage() {
   while (cageGroup.children.length) disposeObj(cageGroup.children[0]);
   const S = selShape;
+  if (S && !$('s-bar').classList.contains('open')) sBarOpened = performance.now();
   $('s-bar').classList.toggle('open', !!S);
   if (!S) { viewer.invalidate(); return; }
   $('s-dims').textContent = shapeText(S.kind, S.size);
@@ -1834,11 +1904,33 @@ function refreshCage() {
   const px = mmPerPx(S.center), side = Math.min(S.size.x, S.size.y, S.size.z);
   const grab = (touch ? 9 : 6) * px, hs = Math.min(grab, 0.1 * side);
   const half = S.size.clone().multiplyScalar(0.5);
-  // the cage's edges
+  // rings sit around the centre, a little outside the cage; the arrows past them
+  const R = Math.max(half.length() * 1.15, 22 * px);
+  const G = { S, q, touch, px, side, grab, hs, half, R };
+  // ONLY the handles of the active mode — each mode is its own branch, and a
+  // new one (C's deform, D's per-axis scale) adds a branch, never edits another
+  if (gizmoMode !== 'none') cageOutline(G);    // the selection's outline: not a handle
+  switch (gizmoMode) {
+    case 'move': cageArrows(G); break;
+    case 'rotate': cageRings(G); break;
+    case 'cage':
+      if (cageMode === 'scale') { cageCorners(G); cageCentre(G); /* D: cageFaces(G) — ±X/±Y/±Z face handles, RING_INK */ }
+      // C: else if (cageMode === 'deform') { cageDeformCorners(G); } — the 8 FFD corners, amber
+      break;
+    case 'none': break;                        // the bare shape; its body still slides
+  }
+  viewer.invalidate();
+}
+// the cage's edges
+function cageOutline({ S, q }) {
   const box = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
     new THREE.LineBasicMaterial({ color: '#e9e3ff', toneMapped: false, depthTest: false, transparent: true, opacity: 0.9 }));
   box.position.copy(S.center); box.quaternion.copy(q); box.scale.copy(S.size); box.renderOrder = 20;
   cageGroup.add(box);
+}
+// ▣ scale: the 8 corners resize (opposite corner fixed); index i = the order
+// sx, sy, sz ∈ {−1, 1} — the order C's S.ffd follows
+function cageCorners({ S, q, grab, hs, half }) {
   const cube = new THREE.BoxGeometry(2 * hs, 2 * hs, 2 * hs), pickCube = new THREE.BoxGeometry(2 * grab, 2 * grab, 2 * grab);
   let i = 0;
   for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
@@ -1849,15 +1941,18 @@ function refreshCage() {
     for (const m of [c, pk]) { m.position.copy(at); m.quaternion.copy(q); m.renderOrder = 22; m.userData.handle = handle; }
     cageGroup.add(c, pk);
   }
+}
+// ▣ scale: the dot at the centre scales the whole about its base
+function cageCentre({ S, grab, side }) {
   const ctr = new THREE.Mesh(new THREE.SphereGeometry(Math.min(grab * 1.4, 0.15 * side), 16, 10), handleMat(MEASURE_INK));
   const ctrPick = new THREE.Mesh(new THREE.SphereGeometry(grab * 1.4, 12, 8), handleMat(MEASURE_INK, 0));
   ctrPick.visible = false;
   for (const m of [ctr, ctrPick]) { m.position.copy(S.center); m.renderOrder = 23; m.userData.handle = { type: 'center' }; }
   cageGroup.add(ctr, ctrPick);
-  // rings: around the centre, a little outside the cage, in the shape's own axes
-  const R = Math.max(half.length() * 1.15, 22 * px);
-  // move arrows, the classic X/Y/Z, past the rings: drag one to slide the
-  // shape along that axis of its own (Z = off the surface)
+}
+// ✥ move: the classic X/Y/Z arrows, past the rings: drag one to slide the
+// shape along that axis of its own (Z = off the surface)
+function cageArrows({ S, q, touch, px, R }) {
   const AL = R * 1.45, ar = Math.max(px * 1.4, 0.01), cone = Math.max(10 * px, 0.04);
   for (let a = 0; a < 3; a++) {
     const u = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), Z_UP][a].clone().applyQuaternion(q);
@@ -1870,6 +1965,9 @@ function refreshCage() {
     for (const m of [shaft, head, pick]) { m.renderOrder = 22; m.userData.handle = handle; }
     cageGroup.add(shaft, head, pick);
   }
+}
+// ⟳ rotate: three rings in the shape's own axes
+function cageRings({ S, q, touch, px, R }) {
   for (let a = 0; a < 3; a++) {
     const t = new THREE.TorusGeometry(R, Math.max(px * 1.2, 0.01), 6, 96);
     const fat = new THREE.TorusGeometry(R, (touch ? 10 : 6) * px, 6, 48);   // what is picked: thicker than what is drawn
@@ -1881,7 +1979,6 @@ function refreshCage() {
     hit.userData.handle = ring.userData.handle = { type: 'ring', axis: a };
     cageGroup.add(ring, hit);
   }
-  viewer.invalidate();
 }
 function selectShape(S) {
   selShape = S || null;
@@ -2038,7 +2135,7 @@ const endShapeDrag = e => {
 };
 vp.addEventListener('pointerup', endShapeDrag, true);
 vp.addEventListener('pointercancel', endShapeDrag, true);
-$('s-del').onclick = () => { if (selShape) deleteShape(selShape); };
+$('s-del').onclick = () => { if (selShape && !sBarGhost()) deleteShape(selShape); };
 $('s-done').onclick = () => selectShape(null);
 // the cage is drawn at a size in px: keep it so while the view zooms
 viewer.controls.addEventListener('change', () => { if (selShape && !sDrag) refreshCage(); });
@@ -2821,6 +2918,11 @@ addEventListener('keydown', e => {
   else if (k === 't') { e.stopImmediatePropagation(); setTool('text'); }
   else if (k === 'm') { e.stopImmediatePropagation(); setTool('measure'); }
   else if (k === 'f') { e.stopImmediatePropagation(); setTool('shape'); }
+  // the shape's handles: G move · R rotate · C cage (again: Scala ⇄ Deforma).
+  // No H for «hide the gizmo»: H already hides the selected PIECE
+  else if (tool === 'shape' && ['g', 'r', 'c'].includes(k)) {
+    e.stopImmediatePropagation(); setGizmoMode({ g: 'move', r: 'rotate', c: 'cage' }[k]);
+  }
 }, true);
 
 function toast(html, ms = 6000) {
