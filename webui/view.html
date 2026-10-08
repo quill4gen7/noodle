@@ -1702,11 +1702,43 @@ function shapeGeo(kind) {
   if (kind === 'sphere') return new THREE.SphereGeometry(0.5, 40, 20);
   return new THREE.BoxGeometry(1, 1, 1);
 }
-// a shape as drawn: translucent body + its edges (a sphere: its equator)
+// Graph paper in the shape's colour: a pale translucent body ruled every 1 mm
+// (thin), 5 mm and 10 mm (bold), in the shape's OWN millimetres — the grid is
+// computed from the local position times the size, so a 6 mm cube shows six
+// squares however it was scaled. Each face is ruled on the plane it mostly
+// faces (triplanar), and the 1 mm rule fades out where it would be denser than
+// a few pixels. Injected into the standard material, so the light stays the same.
+const MM_GRID_VERT = `varying vec3 vGP; varying vec3 vGN; uniform vec3 uSize;`;
+const MM_GRID_FRAG = `varying vec3 vGP; varying vec3 vGN; uniform vec3 uInk;
+float mmRule(vec2 uv, float step, float w) {
+  vec2 q = uv / step, g = abs(fract(q - 0.5) - 0.5) / max(fwidth(q), vec2(1e-6));
+  float line = 1.0 - min(min(g.x, g.y) / w, 1.0);
+  float dense = max(fwidth(q).x, fwidth(q).y);            // squares per pixel
+  return line * (1.0 - smoothstep(0.12, 0.33, dense));
+}`;
+function mmGridMaterial(color, size) {
+  const ink = new THREE.Color(color), pale = ink.clone().lerp(new THREE.Color('#ffffff'), 0.55);
+  const m = new THREE.MeshStandardMaterial({ color: pale, transparent: true, opacity: 0.42, roughness: 0.55,
+    depthWrite: false, side: THREE.DoubleSide });
+  m.onBeforeCompile = sh => {
+    sh.uniforms.uSize = { value: size.clone() };
+    sh.uniforms.uInk = { value: ink };
+    sh.vertexShader = MM_GRID_VERT + '\n' + sh.vertexShader.replace('#include <begin_vertex>',
+      '#include <begin_vertex>\n  vGP = position * uSize; vGN = normal;');
+    sh.fragmentShader = MM_GRID_FRAG + '\n' + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+  vec3 an = abs(normalize(vGN));
+  vec2 uv = (an.z >= an.x && an.z >= an.y) ? vGP.xy : (an.y >= an.x ? vGP.xz : vGP.yz);
+  float r = max(max(mmRule(uv, 1.0, 1.0) * 0.45, mmRule(uv, 5.0, 1.4) * 0.8), mmRule(uv, 10.0, 2.0));
+  diffuseColor.rgb = mix(diffuseColor.rgb, uInk, r);
+  diffuseColor.a = max(diffuseColor.a, r * 0.95);`);
+  };
+  m.customProgramCacheKey = () => 'mm-grid';
+  return m;
+}
+// a shape as drawn: millimetre-ruled body + its edges (a sphere: its equator)
 function shapeObject(S) {
   const g = new THREE.Group(), geo = shapeGeo(S.kind);
-  const body = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: S.color, transparent: true, opacity: 0.5,
-    roughness: 0.5, depthWrite: false, side: THREE.DoubleSide }));
+  const body = new THREE.Mesh(geo, mmGridMaterial(S.color, S.size));
   const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 30),
     new THREE.LineBasicMaterial({ color: S.color, toneMapped: false }));
   body.renderOrder = 4; edges.renderOrder = 5;

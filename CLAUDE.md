@@ -1871,7 +1871,11 @@ result while the workflow moves on.
   piece's box grown by max(¼ of the piece, the shape's size). MOVING IS
   NOT FREE: dragging the body re-anchors it on the surface hit under the
   pointer (`stickAt`) or does nothing — quill: «si clicca e appiccica sui
-  pezzi». The minimum side follows the PIECE it sits on (2% of its size), so
+  pezzi». The body is GRAPH PAPER in the shape's colour (`mmGridMaterial`, a
+  shader injected into the standard material): 1 / 5 / 10 mm rules in the
+  shape's own millimetres (local position × size, triplanar per face), the
+  1 mm rule fading where it would be denser than a few px. The minimum side
+  follows the PIECE it sits on (2% of its size), so
   corners never meet; the handle MARKS shrink with the shape (≤ 10% of its
   shortest side) while the GRAB volumes stay ~6/9 px, nearest one wins, and
   on the body of the selected shape a handle wins only within half a grab

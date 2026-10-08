@@ -548,3 +548,14 @@ def test_two_edges_are_measured_side_to_side():
     assert "offPart && !['vertex', 'edge', 'circle_center'].includes(f.snap)" in VIEW
     M = (ROOT / "cad_nodes" / "measure.py").read_text()
     assert 'if "edge" in A and "edge" in B:' in M      # exact: the two edges' closest points
+
+
+def test_shapes_are_ruled_in_millimetres_in_their_colour():
+    # graph paper in the shape's colour, in the shape's OWN mm (local position
+    # × size), 1 / 5 / 10 mm rules, the 1 mm one fading where it gets too dense
+    assert "function mmGridMaterial(color, size)" in VIEW
+    assert "vGP = position * uSize;" in VIEW
+    for rule in ("mmRule(uv, 1.0,", "mmRule(uv, 5.0,", "mmRule(uv, 10.0,"):
+        assert rule in VIEW
+    assert "smoothstep(0.12, 0.33, dense)" in VIEW
+    assert "const body = new THREE.Mesh(geo, mmGridMaterial(S.color, S.size));" in VIEW
