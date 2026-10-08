@@ -471,6 +471,7 @@ import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
 import { CadViewer, PALETTE, poseAnim } from '/static/viewer.js';
 import * as MS from '/static/measure.js';
 import * as FFD from '/static/ffd.js';
+import * as P3 from '/static/pen3d.js';
 
 const $ = id => document.getElementById(id);
 const seg = location.pathname.split('/').filter(Boolean);     // ['view', name, gen?]
@@ -1123,10 +1124,12 @@ function strokeMat(color) {
     polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
 }
 // A tube through the points, lifted along the normals so half of it sits above
-// the surface (a tube ON the surface is half buried and flickers).
+// the surface (a tube ON the surface is half buried and flickers) — plus the
+// sample's own `lift` where the ink piled up (the 3D pen, webui/pen3d.js).
 function strokeObject(s) {
   const r = s.width / 2;
-  const lifted = s.pts.map((p, i) => p.clone().addScaledVector(s.nrm[i] || new THREE.Vector3(), r * 0.6));
+  const lifted = s.pts.map((p, i) => p.clone().addScaledVector(s.nrm[i] || new THREE.Vector3(),
+    r * 0.6 + ((s.lift && s.lift[i]) || 0)));
   const mat = strokeMat(s.color);
   const g = new THREE.Group();
   const cap = new THREE.SphereGeometry(r, 12, 8);
@@ -1151,9 +1154,19 @@ function redrawStroke(s) {
   if (s.obj) disposeObj(s.obj);
   s.obj = strokeObject(s); annoGroup.add(s.obj); viewer.invalidate();
 }
+// ✎ the 3D pen: the lift a new pen sample gets from the ink already under it
+// (only where the pen INSISTS — see webui/pen3d.js). Painted text never stacks.
+const p3 = v => [v.x, v.y, v.z];
+function penLift(p, w, cur) {
+  const ink = draft.filter(s => !s.label).map(s => (s._p3 && s._p3.length === s.pts.length ? s
+    : Object.assign(s, { _p3: s.pts.map(p3) })));
+  const view = ink.map(s => ({ k: s.k, width: s.width, pts: s._p3, lift: s.lift }));
+  return P3.liftAt(p3(p), w, view, cur ? view[ink.indexOf(cur)] : null);
+}
 function startStroke(hit, g) {
-  const s = { color: pen.color, width: pen.size * mmPerPx(hit.p), g, k: ++seq, piece: hit.key,
-              pts: [hit.p], nrm: [hit.n], obj: null };
+  const width = pen.size * mmPerPx(hit.p);
+  const s = { color: pen.color, width, g, k: ++seq, piece: hit.key,
+              pts: [hit.p], nrm: [hit.n], lift: [penLift(hit.p, width, null)], obj: null };
   draft.push(s); redrawStroke(s); syncDraw();
   return s;
 }
@@ -1213,7 +1226,8 @@ vp.addEventListener('pointermove', e => {
   if (!s || last.distanceTo(hit.p) > 4 * d * mmPerPx(hit.p) + s.width || s.pts.length > 1500) {
     painting.s = startStroke(hit, painting.g);
   } else {
-    s.pts.push(hit.p); s.nrm.push(hit.n); redrawStroke(s);
+    const lift = penLift(hit.p, s.width, s);
+    s.pts.push(hit.p); s.nrm.push(hit.n); s.lift.push(lift); redrawStroke(s);
   }
   painting.x = e.clientX; painting.y = e.clientY;
 }, true);
@@ -3195,7 +3209,9 @@ async function sendNote() {
       ...(s.label && words.includes(s.label) ? { label: words.indexOf(s.label) } : {}),
       view: s.view == null ? null : remap.get(s.view),
       points: s.pts.map(p => [r4(p.x), r4(p.y), r4(p.z)]),
-      normals: s.nrm.map(n => [+n.x.toFixed(3), +n.y.toFixed(3), +n.z.toFixed(3)]) })),
+      normals: s.nrm.map(n => [+n.x.toFixed(3), +n.y.toFixed(3), +n.z.toFixed(3)]),
+      // the 3D pen: how far each sample sits above the part, only when it piled up
+      ...(s.lift && s.lift.some(v => v > 0) ? { lifts: s.lift.map(r4) } : {}) })),
     // text written ON the part is DATA for the agent, not only pixels: a
     // text-only model reads «qui 8 mm» and which mark it sits next to
     labels: words.map(L => ({ text: L.text, color: L.color, style: L.style, piece: L.piece,
@@ -3234,7 +3250,8 @@ function noteObject(n) {
   for (const s of n.strokes || []) {
     const pts = (s.points || []).map(p => new THREE.Vector3(...p));
     const nrm = (s.normals || []).map(p => new THREE.Vector3(...p));
-    if (pts.length) g.add(strokeObject({ color: s.color, width: s.width_mm || 1, pts, nrm }));
+    const lift = s.lifts && s.lifts.length === pts.length ? s.lifts : null;
+    if (pts.length) g.add(strokeObject({ color: s.color, width: s.width_mm || 1, pts, nrm, lift }));
   }
   for (const l of n.labels || []) {
     try {
@@ -3881,6 +3898,7 @@ $('b-measures').onclick = () => { measuresOn = !measuresOn; syncMeasures(); writ
 window.__noodleMeasures = { draw: drawMeasures, list: () => measures, text: measureText, viewer,
   probe: (x1, y1, x2, y2) => { const a = snapAt(x1, y1), b = snapAt(x2, y2); try { const M = measurePair(a, b, false); return M ? [M.kind, M.value, a.snap, b.snap, MS.sameFeature(msPick(a), msPick(b))] : ['null', a && a.snap, b && b.snap]; } catch (e) { return String(e.stack).slice(0, 600); } },
   pending: () => mPending && mPending.snap, draft: () => dmeasures.map(M => [M.kind, +M.value.toFixed(3)]),
+  pen: () => draft.map(s => ({ n: s.pts.length, w: +s.width.toFixed(3), lift: +Math.max(0, ...(s.lift || [])).toFixed(3) })),
   handleAt: (x, y) => handleAt(x, y), shapeAt: (x, y) => { const S = shapeAt(x, y); return S ? { selected: S === selShape } : null; } };
 
 // ── load ─────────────────────────────────────────────────────────────────

@@ -1824,6 +1824,10 @@ def _marks(strokes: list[dict]) -> list[dict]:
             if s.get("node") and s["node"] not in [n["node"] for n in nodes]:
                 nodes.append({k: s[k] for k in ("node", "title", "type") if k in s})
         m["on"] = nodes
+        # a heap built with the 3D pen: how tall it stands off the part
+        h = max((s.get("height_mm", 0) for s in ss), default=0)
+        if h:
+            m["height_mm"] = h
         # the picture this mark is in: the view its strokes were drawn from
         # (0 = the note's main picture, the final view)
         m["view"] = next((s["view"] for s in ss if s.get("view")), 0)
@@ -2284,6 +2288,18 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
             out["view"] = v + 1                # 1-based, as the picture file: aK.v1.jpg
         if s.get("normals") and len(s["normals"]) == len(pts):
             out["normals"] = [_vec(n, f"stroke {i} normal") for n in s["normals"]]
+        # ✎ the 3D pen: where the user circled one spot the ink piled up, and
+        # each sample sits `lifts[i]` mm above the part along its normal
+        if s.get("lifts") is not None:
+            lifts = s["lifts"]
+            if not isinstance(lifts, list) or len(lifts) != len(pts):
+                raise ValueError(f"note: stroke {i} lifts must be one number per point")
+            lifts = [round(_num(v, f"stroke {i} lift"), 4) for v in lifts]
+            if any(not 0 <= v <= 1e4 for v in lifts):
+                raise ValueError(f"note: stroke {i} lifts must be 0..10000 mm")
+            if max(lifts) > 0:
+                out["lifts"] = lifts
+                out["height_mm"] = round(max(lifts) + width, 3)
         if node:
             out["piece"] = piece
             out["node"] = node

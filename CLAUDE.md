@@ -1729,6 +1729,22 @@ result while the workflow moves on.
     task, `_renderFrame` before the browser composites); a view left empty
     keeps its camera with `image: null` and is not sent; only a persp↔ortho
     change falls back to a fresh picture of the current view.
+  - **✎ as a 3D pen — ink piles up where you INSIST** (`webui/pen3d.js`,
+    pure, `tests/ui/pen3d.test.cjs`). quill: «penna 3D immaginaria con cui
+    fare cacchette… solo se si insiste a girare su un punto, senza torri
+    fuori controllo». Each pen sample gets a `lift` (mm along its normal) on
+    top of the 0.6 r the tube always has: the ink under the pen is measured
+    as the LENGTH of earlier stroke inside its reach, in passes (one straight
+    pass = 2 × reach) — counting runs of samples read a circle's seam, where
+    it starts AND ends, as two passes. Under 1.5 passes → 0 (a line crossed
+    once or twice stays flat); from there one layer (0.7 × width) on top of
+    the highest ink under the pen, so each further loop adds ONE layer; along
+    the stroke the lift moves ≤ 1 mm per mm (a ramp, never a wall — off a
+    heap it hangs a moment, like a real 3D pen). The pen's own last 2.5
+    widths are its wake, not old ink. Painted text never stacks. Measured in
+    the browser: 1 and 2 loops flat, 8 loops ≈ 2.5 mm. The note carries
+    `lifts` per stroke (only when > 0) and `height_mm` per stroke and per mark
+    — read by the agent as «material here, this tall».
   - **⌫ eraser**: whole strokes (the pen already splits them where it leaves
     the surface), hit-tested in 3D — the point on the PART vs each stroke's
     polyline, radius from the size buttons in px → mm (`ERASE_PX`). Picking

@@ -309,6 +309,8 @@ def cad_notes(graph_id: str = "", gen: str = "", limit: int = 10,
     surface `anchor`/`normal` it sits on, the node, a `summary` and `near_marks`;
     one bent with the cage (▣ Deforma) adds `ffd` (8 corner offsets, own frame,
     1 = its size) and `corners` (its 8 cage corners in world mm), «deformed».
+    A mark with `height_mm` is a heap the user piled up with the pen by circling
+    one spot (its strokes carry `lifts`, mm above the part): «material here».
     `points=True` adds the raw
     `strokes` (surface points + normals, split where the pen left the surface).
     Once handled, close it with `cad_note_done` so the user sees your answer."""

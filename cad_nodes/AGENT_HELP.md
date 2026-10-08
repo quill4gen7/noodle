@@ -147,7 +147,10 @@ More detail on demand — `cad_help(topic=...)` / `GET /api/agent/help?topic=...
    Deforma) also has `ffd` (8 corner offsets in its own frame, 1 = its size)
    and `corners` — its 8 cage corners in world mm — and its `summary` says
    «deformed»: read the corners as the shape (a tapered block, a wedge, a
-   leaning post), the trilinear blend between them is the body. A label's `style` says how it was drawn: `paint` (the letters are
+   leaning post), the trilinear blend between them is the body. A mark with
+   `height_mm` is a HEAP the user built with the pen by circling one spot
+   (✎ as a 3D pen: its strokes carry `lifts`, mm above the part per point) —
+   read it as «add material here, about this tall», a bump, a boss, a blob. A label's `style` says how it was drawn: `paint` (the letters are
    pen strokes on the surface — they are NOT in `marks`; with `points=True`
    they show up as strokes with `kind: "text"`), `tag` (a plate on a stem) or
    `decal`. Pictures the user PLACED on the part (a PNG/JPEG — a sketch, a

@@ -758,3 +758,41 @@ def test_the_shape_features_work_together():
     phone = VIEW[VIEW.index("#s-dims{font-size:11px;}"):][:400]
     assert "#s-dims .s-def{font-size:0;" in phone and "content:'≈'" in phone
     assert "#s-bar{width:max-content;}" in VIEW
+
+
+def test_a_heap_built_with_the_3d_pen_says_how_tall_it_is(store):
+    # ✎ as a 3D pen: circling one spot piles the ink up; each point carries how
+    # far it sits above the part, and the mark says how tall the heap stands
+    pts = _circle(n=72)
+    lifts = [0.0] * 50 + [round(0.35 * k, 4) for k in range(1, 24)]
+    note = api.add_note(store, "demo", "g1", {"strokes": [
+        {"color": "#f59e0b", "width": 0.5, "piece": "n1", "g": 1, "points": pts, "lifts": lifts},
+        {"color": "#ef4444", "width": 0.5, "piece": "n1", "g": 2, "points": _circle(cx=0),
+         "lifts": [0] * 25}]})                       # all flat = an ordinary stroke
+    heap, flat = note["strokes"]
+    assert heap["lifts"] == lifts and heap["height_mm"] == round(max(lifts) + 0.5, 3)
+    assert "lifts" not in flat and "height_mm" not in flat
+    marks = api.list_notes(store)[0]["marks"]
+    assert marks[0]["height_mm"] == heap["height_mm"] and "height_mm" not in marks[1]
+
+
+def test_bad_lifts_are_refused(store):
+    for lifts in ([0, 1], [-1] * 25, [float("nan")] * 25, "up", [2e4] * 25):
+        with pytest.raises(ValueError):
+            api.add_note(store, "demo", "g1", {"strokes": [{"points": _circle(), "lifts": lifts}]})
+
+
+def test_the_pen_piles_ink_only_where_it_insists():
+    # the lift comes from the pure module (tests/ui/pen3d.test.cjs) and rides
+    # every sample: the tube is drawn lifted, the note carries it, a saved note
+    # redraws it; painted text never stacks
+    assert "import * as P3 from '/static/pen3d.js';" in VIEW
+    assert (ROOT / "webui" / "pen3d.js").exists()
+    assert '"pen3d.js"' in (ROOT / "scripts" / "build_pages.py").read_text()
+    assert "r * 0.6 + ((s.lift && s.lift[i]) || 0)" in VIEW
+    assert "const ink = draft.filter(s => !s.label)" in VIEW
+    assert "lift: [penLift(hit.p, width, null)]" in VIEW
+    assert "const lift = penLift(hit.p, s.width, s);" in VIEW
+    assert "{ lifts: s.lift.map(r4) }" in VIEW
+    assert "strokeObject({ color: s.color, width: s.width_mm || 1, pts, nrm, lift })" in VIEW
+    assert "height_mm" in HELP and "`lifts`" in MCP
