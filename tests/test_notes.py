@@ -559,3 +559,21 @@ def test_shapes_are_ruled_in_millimetres_in_their_colour():
         assert rule in VIEW
     assert "smoothstep(0.12, 0.33, dense)" in VIEW
     assert "const body = new THREE.Mesh(geo, mmGridMaterial(S.color, S.size));" in VIEW
+
+
+def test_a_pen_colour_recolours_the_selected_shape():
+    # with a shape in hand a colour paints THE SHAPE (and the pen), instead of
+    # switching tool; without one it stays the pen's colour as before
+    fn = VIEW[VIEW.index("function recolorShape(c, merge)"):]
+    fn = fn[:fn.index("\n}\n")]
+    assert "if (!S) return false;" in fn and "pen.color = c;" in fn
+    assert "S.color = c; drawShape(S);" in fn
+    assert "actions.push({ type: 'shape', S, before: shapeState(S), recolor: merge })" in fn
+    assert "if (recolorShape(c, false)) return;" in VIEW
+    assert "if (recolorShape(e.target.value, true)) return;" in VIEW
+    # undo puts the old colour back: the shape's state carries it
+    st = VIEW[VIEW.index("function shapeState(S)"):].split("\n")[0]
+    assert "color: S.color" in st
+    assert "if (st.color) S.color = st.color;" in VIEW[VIEW.index("function setShapeState(S, st)"):].split("\n")[0]
+    # …and the note says it
+    assert "return { kind: S.kind, color: S.color," in VIEW

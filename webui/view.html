@@ -1695,8 +1695,8 @@ function surfQuat(n) { return new THREE.Quaternion().setFromUnitVectors(Z_UP, n.
 function shapeQuat(S) { return surfQuat(S.n).multiply(S.rot); }
 // the centre sits half a height above the anchor, along the shape's own Z
 function placeShape(S) { S.center = S.anchor.clone().add(new THREE.Vector3(0, 0, S.size.z / 2).applyQuaternion(shapeQuat(S))); }
-function shapeState(S) { return { anchor: S.anchor.clone(), n: S.n.clone(), rot: S.rot.clone(), size: S.size.clone(), piece: S.piece }; }
-function setShapeState(S, st) { S.anchor = st.anchor.clone(); S.n = st.n.clone(); S.rot = st.rot.clone(); S.size = st.size.clone(); S.piece = st.piece; placeShape(S); }
+function shapeState(S) { return { anchor: S.anchor.clone(), n: S.n.clone(), rot: S.rot.clone(), size: S.size.clone(), piece: S.piece, color: S.color }; }
+function setShapeState(S, st) { S.anchor = st.anchor.clone(); S.n = st.n.clone(); S.rot = st.rot.clone(); S.size = st.size.clone(); S.piece = st.piece; if (st.color) S.color = st.color; placeShape(S); }
 function shapeGeo(kind) {
   if (kind === 'cylinder') { const g = new THREE.CylinderGeometry(0.5, 0.5, 1, 48); g.rotateX(Math.PI / 2); return g; }
   if (kind === 'sphere') return new THREE.SphereGeometry(0.5, 40, 20);
@@ -2775,13 +2775,30 @@ function setDrawing(on) {
   if (!on) { cancelGesture(); cancelMeasure(); selectShape(null); closeEditor(true); $('d-text').blur(); $('d-ring').style.display = 'none'; }
   syncDraw();
 }
+// With a shape in hand a colour paints THAT shape (and the pen, so the next
+// shape is born in it) instead of switching tool. One undo step per pick; the
+// custom picker fires `input` all along its drag, so those merge into one.
+function recolorShape(c, merge) {
+  const S = selShape;
+  if (!S) return false;
+  pen.color = c;
+  if (S.color !== c) {
+    const last = actions[actions.length - 1];
+    if (!(merge && last && last.type === 'shape' && last.S === S && last.recolor))
+      actions.push({ type: 'shape', S, before: shapeState(S), recolor: merge });
+    S.color = c; drawShape(S);
+    refreshViews(viewsOf([S]));
+  }
+  syncDraw();
+  return true;
+}
 for (const c of PEN_COLORS) {
   const b = document.createElement('button');
   b.className = 'sw-btn'; b.dataset.c = c; b.style.background = c; b.title = c;
-  b.onclick = () => { pen.color = c; if (tool !== 'pen' && tool !== 'text') setTool('pen'); else syncDraw(); };
+  b.onclick = () => { if (recolorShape(c, false)) return; pen.color = c; if (tool !== 'pen' && tool !== 'text') setTool('pen'); else syncDraw(); };
   $('d-colors').appendChild(b);
 }
-$('d-custom').addEventListener('input', e => { pen.color = e.target.value; if (tool !== 'pen' && tool !== 'text') setTool('pen'); else syncDraw(); });
+$('d-custom').addEventListener('input', e => { if (recolorShape(e.target.value, true)) return; pen.color = e.target.value; if (tool !== 'pen' && tool !== 'text') setTool('pen'); else syncDraw(); });
 PEN_SIZES.forEach(sz => {
   const b = document.createElement('button');
   b.className = 'btn sz'; b.dataset.s = sz; b.title = `Tratto ${sz}px`;
