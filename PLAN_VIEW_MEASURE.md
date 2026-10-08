@@ -158,7 +158,9 @@ come «◆ Tag». Tocco su una quota → dettaglio (nota dell'agente, atteso, st
 
 ## Fasi proposte (una PR per fase o due)
 
-1. **La quota come oggetto grafico**
+1. **La quota come oggetto grafico** — FATTA (`measureObject` in view.html,
+   `window.__noodleMeasures.draw(list)` per i dati finti, bottone «↔ Quote» +
+   `#measures=0`)
    - `measureObject(a, b, value, style)` in view.html, accanto a `tagObject`: due
      ancore, linea con tacche, targa a metà, la stessa doppia copia
      depthTest/attenuata.
@@ -184,7 +186,19 @@ come «◆ Tag». Tocco su una quota → dettaglio (nota dell'agente, atteso, st
      esatto.
    - Costa un'esecuzione: va bene su richiesta, non a ogni misura.
 
-## Da decidere prima di scrivere codice
+## Decisioni prese (2026-10-08, con quill)
+
+- **Unità:** mm, 2 decimali, virgola decimale (`12,40 mm`, `Ø 8,00`); angoli 1
+  decimale. Nessun interruttore in/mm.
+- **Angolo:** dopo la fase 4, come v2.
+- **Quote dell'agente:** file a parte, `gens/gN/measures.json`.
+- **Pezzi animati:** coordinate mondo + `t`, come le note di ✎ Disegna.
+- **Snap/lente (da tarare in fase 3):** 10 px mouse / 18 px dito; lente ~90 px,
+  2×, ~110 px sopra il dito.
+- **Superfici fitte:** oltre ~20k segmenti di spigolo vivo su un pezzo lo snap si
+  spegne su quel pezzo (resta punto–punto), con avviso.
+
+## Da decidere prima di scrivere codice (testo originale)
 
 - **Unità e decimali:** mm con 2 decimali, virgola decimale (UI italiana)? Un
   interruttore in/mm serve?

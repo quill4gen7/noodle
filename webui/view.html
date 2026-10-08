@@ -162,6 +162,8 @@
   .tgb{font:600 10px var(--mono);color:#22d3ee;border:1px solid #22d3ee;border-radius:8px;padding:0 4px;margin-left:4px;}
   #b-tags.on{border-color:#22d3ee;color:#22d3ee;}
   #b-tags[hidden]{display:none;}
+  #b-measures.on{border-color:#a78bfa;color:#a78bfa;}
+  #b-measures[hidden]{display:none;}
   .hint{padding:8px 10px;border-top:1px solid var(--border);color:var(--text-dim);font-size:11px;line-height:1.5;}
   kbd{font:10px var(--mono);border:1px solid var(--border);border-radius:3px;padding:0 3px;}
   .touch-only{display:none;}
@@ -378,6 +380,7 @@
         <button class="btn" id="b-inv" title="Inverti: i nascosti si vedono, i visibili si nascondono (I)"><span class="ic">⇄</span>Inverti</button>
         <button class="btn" id="b-frame" title="Inquadra i pezzi visibili (F)"><span class="ic">▣</span>Inquadra</button>
         <button class="btn" id="b-tags" hidden title="Etichette dell'agente: mostra/nascondi"><span class="ic">◆</span>Tag</button>
+        <button class="btn" id="b-measures" hidden title="Quote: mostra/nascondi"><span class="ic">↔</span>Quote</button>
         <button class="btn desk-ortho" id="b-ortho" title="Prospettiva / ortografica (O)"><span class="ic">▦</span><span id="b-ortho-t">Persp</span></button>
       </div>
       <div id="list"></div>
@@ -427,6 +430,7 @@ function apply() {
     n.obj.visible = any;
   }
   if (agentTags.length) syncTags();
+  if (measures.length) syncMeasures();
   viewer.invalidate();
   const shown = allLeaves().filter(k => !hidden.has(k)).length;
   $('stats').textContent = `${shown}/${allLeaves().length} pezzi visibili` + (sizeTxt ? ' · ' + sizeTxt : '');
@@ -456,6 +460,7 @@ function writeHash() {
   const ps = [];
   if (out.length) ps.push('hide=' + out.join(','));
   if (!tagsOn && agentTags.length) ps.push('tags=0');
+  if (!measuresOn && measures.length) ps.push('measures=0');
   if (anims.length) {
     if (clock.playing) ps.push('play=1');
     else ps.push('t=' + (+clock.t.toFixed(3)));
@@ -2401,6 +2406,214 @@ function agentTagAt(x, y) {
 }
 $('b-tags').onclick = () => { tagsOn = !tagsOn; syncTags(); writeHash(); };
 
+// ── 📏 quote: a dimension drawn on the part ──────────────────────────────
+// The third kind of targhetta, beside the user's labels and the agent's tags,
+// with the same build: every piece twice, depth-tested and a 0.35 ghost on top,
+// so a dimension through the material (a wall's thickness, an axis-to-axis
+// distance) still reads. TWO anchors instead of one, joined by a dimension line
+// with arrowheads; `off` lifts the line off the part along `n` with extension
+// lines, as on a drawing. The plate carries the value and stands BESIDE the
+// line on screen — above it when the line runs across the screen, to its right
+// when it runs up — re-decided every frame in onBeforeRender, so it never hides
+// the line it labels. A circle (Ø / R) also draws its rim.
+// Colour says whose and how it went: the user's are violet; the agent's carry
+// a `status` — ok green, check amber, fail red — and the agent's ◆.
+const MEASURE_INK = '#a78bfa';
+const STATUS_INK = { ok: '#22c55e', check: '#f59e0b', fail: '#ef4444' };
+const measureGroup = new THREE.Group(); measureGroup.name = 'measures';
+viewer.scene.add(measureGroup);
+let measures = [], measuresOn = true;
+// mm, 2 decimals, decimal comma; angles 1 decimal
+const fmtNum = (v, d = 2) => (+v).toFixed(d).replace('.', ',').replace(/^-/, '−');
+function measureText(M) {
+  const ap = M.approx ? '≈ ' : '';
+  if (M.kind === 'angle') return `${ap}${fmtNum(M.value, 1)}°`;
+  if (M.kind === 'diameter') return `Ø ${ap}${fmtNum(M.value)}`;
+  if (M.kind === 'radius') return `R ${ap}${fmtNum(M.value)}`;
+  return `${ap}${fmtNum(M.value)} mm`;
+}
+function measureSub(M) {
+  const parts = [];
+  if (typeof M.expected === 'number') {
+    let e = `atteso ${fmtNum(M.expected, M.kind === 'angle' ? 1 : 2)}`;
+    if (typeof M.tolerance === 'number') e += ` ±${fmtNum(M.tolerance, M.kind === 'angle' ? 1 : 2)}`;
+    parts.push(e);
+  }
+  if (M.text) parts.push(M.text);
+  return parts.join(' · ');
+}
+function measureCanvas(main, sub, ink, agent) {
+  const H = sub ? 200 : 128, pad = 26, icon = agent ? 40 : 0, gap = agent ? 16 : 0;
+  const ff = getComputedStyle(document.body).fontFamily, f1 = `700 64px ${ff}`, f2 = `600 50px ${ff}`;
+  const m = document.createElement('canvas').getContext('2d');
+  m.font = f1; let tw = m.measureText(main).width;
+  if (sub) { m.font = f2; tw = Math.max(tw, m.measureText(sub).width); }
+  const W = Math.min(2048, Math.ceil(pad + icon + gap + tw + pad));
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const c = cv.getContext('2d');
+  c.fillStyle = 'rgba(10,12,20,0.92)'; c.strokeStyle = ink; c.lineWidth = 7;
+  c.beginPath(); c.roundRect(4, 4, W - 8, H - 8, 26); c.fill(); c.stroke();
+  const y1 = sub ? 66 : H / 2 + 3, x = pad + icon + gap;
+  if (agent) {                                     // ◆, drawn (no font needed)
+    const cx = pad + icon / 2, cy = y1 - 3;
+    c.fillStyle = ink; c.beginPath();
+    c.moveTo(cx, cy - icon / 2); c.lineTo(cx + icon / 2, cy); c.lineTo(cx, cy + icon / 2); c.lineTo(cx - icon / 2, cy);
+    c.closePath(); c.fill();
+  }
+  c.textBaseline = 'middle';
+  c.font = f1; c.fillStyle = '#fff'; c.fillText(main, x, y1, W - x - pad);
+  if (sub) { c.font = f2; c.fillStyle = ink; c.fillText(sub, x, 142, W - x - pad); }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  return { tex, aspect: W / H };
+}
+// a cylinder from p to q
+function rodGeo(p, q, r) {
+  const d = q.clone().sub(p), L = d.length();
+  const g = new THREE.CylinderGeometry(r, r, Math.max(L, 1e-6), 8);
+  g.translate(0, L / 2, 0);
+  g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()));
+  g.translate(p.x, p.y, p.z);
+  return g;
+}
+// a cone whose TIP is at `tip`, pointing along `dir`
+function arrowGeo(tip, dir, len, r) {
+  const g = new THREE.ConeGeometry(r, len, 12);
+  g.translate(0, -len / 2, 0);                    // tip at the origin, body below
+  g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize()));
+  g.translate(tip.x, tip.y, tip.z);
+  return g;
+}
+// any unit vector perpendicular to `axis`, preferring world X (then Y)
+function perpTo(axis) {
+  const a = axis.clone().normalize(), ref = Math.abs(a.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+  return ref.sub(a.clone().multiplyScalar(ref.dot(a))).normalize();
+}
+// The geometry of one dimension, in world mm: the two ends of the dimension
+// line, the points it is measured from, and the rim of a circle if any.
+function measureEnds(M) {
+  let a = M.a ? M.a.clone() : null, b = M.b ? M.b.clone() : null, ring = null;
+  if (M.circle && (M.kind === 'diameter' || M.kind === 'radius')) {
+    const C = M.circle.center.clone(), ax = M.circle.axis.clone().normalize(), u = perpTo(ax);
+    ring = { C, ax, r: M.circle.r };
+    if (M.kind === 'diameter') { a = C.clone().addScaledVector(u, -M.circle.r); b = C.clone().addScaledVector(u, M.circle.r); }
+    else { a = C.clone(); b = C.clone().addScaledVector(u, M.circle.r); }
+  }
+  const lift = M.n && M.off ? M.n.clone().normalize().multiplyScalar(M.off) : new THREE.Vector3();
+  return { a, b, A: a.clone().add(lift), B: b.clone().add(lift), lifted: lift.lengthSq() > 0, ring };
+}
+function measureObject(M, h) {
+  const g = new THREE.Group();
+  const ink = M.ink || (M.status ? STATUS_INK[M.status] : null) || MEASURE_INK;
+  const { a, b, A, B, lifted, ring } = measureEnds(M);
+  const L = A.distanceTo(B), dir = B.clone().sub(A).normalize();
+  const r = Math.max(h * 0.028, 0.012), dotR = Math.max(h * 0.08, 0.03);
+  const al = Math.min(h * 0.42, Math.max(L * 0.3, h * 0.2)), ar = al * 0.33;
+  const geos = [];
+  // arrowheads point AT the anchors; with no room between them they go outside
+  // and point in, on a short run of line beyond each end
+  const inside = L > 2.6 * al;
+  if (inside) {
+    geos.push(rodGeo(A.clone().addScaledVector(dir, M.kind === 'radius' ? 0 : al * 0.9), B.clone().addScaledVector(dir, -al * 0.9), r));
+    if (M.kind !== 'radius') geos.push(arrowGeo(A, dir.clone().negate(), al, ar));
+    geos.push(arrowGeo(B, dir, al, ar));
+  } else {
+    geos.push(rodGeo(A, B, r));
+    const out = al * 1.9;
+    if (M.kind !== 'radius') {
+      geos.push(rodGeo(A.clone().addScaledVector(dir, -out), A.clone().addScaledVector(dir, -al * 0.9), r));
+      geos.push(arrowGeo(A, dir, al, ar));
+    }
+    geos.push(rodGeo(B.clone().addScaledVector(dir, al * 0.9), B.clone().addScaledVector(dir, out), r));
+    geos.push(arrowGeo(B, dir.clone().negate(), al, ar));
+  }
+  if (lifted) {                                    // extension lines, a little past the dimension line
+    const over = M.n.clone().normalize().multiplyScalar(al * 0.5);
+    geos.push(rodGeo(a, A.clone().add(over), r * 0.7), rodGeo(b, B.clone().add(over), r * 0.7));
+  }
+  const dots = [];
+  if (!ring) dots.push(a, b);
+  else dots.push(ring.C);
+  let ringGeo = null;
+  if (ring) {
+    ringGeo = new THREE.TorusGeometry(ring.r, r, 6, 96);
+    ringGeo.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), ring.ax));
+    ringGeo.translate(ring.C.x, ring.C.y, ring.C.z);
+  }
+  const dotG = new THREE.SphereGeometry(dotR, 12, 8);
+  const { tex, aspect } = measureCanvas(measureText(M), measureSub(M), ink, M.agent);
+  const k = measureSub(M) ? 200 / 128 : 1, ph = h * k, pw = h * k * aspect;
+  const mid = A.clone().add(B).multiplyScalar(0.5);
+  const sA = new THREE.Vector3(), sB = new THREE.Vector3();
+  for (const ghost of [false, true]) {
+    const mat = new THREE.MeshBasicMaterial({ color: ink, toneMapped: false, transparent: ghost, opacity: ghost ? GHOST : 1,
+                                              depthTest: !ghost, depthWrite: !ghost });
+    for (const geo of geos) g.add(Object.assign(new THREE.Mesh(geo, mat), { renderOrder: ghost ? 10 : 3 }));
+    if (ringGeo) g.add(Object.assign(new THREE.Mesh(ringGeo, mat), { renderOrder: ghost ? 10 : 3 }));
+    for (const p of dots) {
+      const d = new THREE.Mesh(dotG, mat); d.position.copy(p); d.renderOrder = ghost ? 10 : 3; g.add(d);
+    }
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, toneMapped: false, transparent: true,
+      opacity: ghost ? GHOST : 1, depthTest: !ghost, depthWrite: false, sizeAttenuation: true }));
+    sp.position.copy(mid); sp.scale.set(pw, ph, 1); sp.renderOrder = ghost ? 11 : 4;
+    // beside the line, never on it: read where the line runs ON SCREEN now
+    sp.onBeforeRender = (_r, _s, cam) => {
+      sA.copy(A).project(cam); sB.copy(B).project(cam);
+      const asp = viewer.renderer.domElement.width / Math.max(viewer.renderer.domElement.height, 1);
+      const dx = (sB.x - sA.x) * asp, dy = sB.y - sA.y;
+      if (Math.abs(dx) >= Math.abs(dy) * 0.7) sp.center.set(0.5, -0.18);   // across: above it
+      else sp.center.set(-0.12, 0.5);                                      // upright: to its right
+    };
+    g.add(sp);
+  }
+  g.userData.measure = M;
+  return g;
+}
+const V3 = v => (Array.isArray(v) ? new THREE.Vector3(...v) : v && v.isVector3 ? v.clone() : null);
+// plain JSON (as stored) → the in-memory measure
+function measureFrom(m) {
+  const end = e => (e ? V3(e.at || e) : null);
+  const M = { ...m, a: end(m.a), b: end(m.b), n: V3(m.n), agent: !!m.agent || !!m.status,
+              nodes: [].concat(m.node || [], (m.a && m.a.node) || [], (m.b && m.b.node) || []) };
+  if (m.circle) M.circle = { center: V3(m.circle.center), axis: V3(m.circle.axis) || new THREE.Vector3(0, 0, 1), r: +m.circle.r };
+  return M;
+}
+function measureH() {
+  const size = visibleBox().getSize(new THREE.Vector3()).length() || 50;
+  return THREE.MathUtils.clamp(size * 0.035, 0.5, 200);
+}
+function drawMeasures(list, { replace = true } = {}) {
+  if (replace) {
+    for (const M of measures) { measureGroup.remove(M.obj); M.obj.traverse(o => { o.geometry?.dispose(); o.material?.map?.dispose(); o.material?.dispose(); }); }
+    measures = [];
+  }
+  const h = measureH();
+  for (const raw of list) {
+    const M = measureFrom(raw);
+    if (!(M.a || M.circle)) continue;
+    if (!M.circle && !M.b) continue;
+    M.obj = measureObject(M, h);
+    measureGroup.add(M.obj);
+    measures.push(M);
+  }
+  $('b-measures').hidden = !measures.length;
+  syncMeasures();
+  return measures.length;
+}
+function syncMeasures() {
+  measureGroup.visible = measuresOn;
+  for (const M of measures) {
+    const ids = M.nodes;
+    M.obj.visible = !ids.length || ids.some(id => { const n = nodes.find(x => x.id === id); return !n || n.obj.visible; });
+  }
+  $('b-measures').classList.toggle('on', measuresOn);
+  viewer.invalidate();
+}
+$('b-measures').onclick = () => { measuresOn = !measuresOn; syncMeasures(); writeHash(); };
+// For tests and for drawing from data before any store exists:
+// window.__noodleMeasures.draw([{kind, a:{at}, b:{at}, value, …}])
+window.__noodleMeasures = { draw: drawMeasures, list: () => measures, text: measureText, viewer };
+
 // ── load ─────────────────────────────────────────────────────────────────
 let sizeTxt = '';
 async function boot() {
@@ -2490,6 +2703,7 @@ async function boot() {
   }
   readHash();
   if (hashParam('tags') === '0') tagsOn = false;
+  if (hashParam('measures') === '0') measuresOn = false;
   apply();
   initTimeline(view);
   writeHash();
