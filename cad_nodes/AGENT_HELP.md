@@ -74,6 +74,19 @@ More detail on demand — `cad_help(topic=...)` / `GET /api/agent/help?topic=...
    any side, the user can hide them (`#tags=0`), and tapping one selects its
    piece. HTTP: `POST /api/graph/{name}/gens/{gen}/tags` body `{tags,
    replace?}`, or a `{tags}` body on `POST .../snapshot`.
+   **Dimension what matters**: `cad_measure_gen(graph, gen, measures=[...])`
+   — or `cad_snapshot(..., measures=[...])` — draws DIMENSIONS on the part:
+   two anchors, a line with arrows, the value on a plate, coloured by
+   `status` (ok green, check amber, fail red). Never guess the points:
+   `{"between": ["n5", "n7"], "expected": 1.6, "tolerance": 0.1,
+   "text": "parete", "note": "sotto il minimo per FDM"}` measures the gen's
+   frozen graph on the real B-Rep (closest points, exact value) and judges
+   the status for you. Or give `a`/`b` [x,y,z] mm yourself — the round trip
+   is `cad_measure` (op `distance`, returns `at_a`/`at_b`) → a dimension with
+   those points. A hole: `{"kind": "diameter", "circle": {"center", "axis",
+   "r"}}`. `offset` [x,y,z] lifts the line off the part. The user hides them
+   with «↔ Quote» (`#measures=0`). HTTP: `POST .../gens/{gen}/measures` body
+   `{measures, replace?}`.
    **Several alternatives to choose from?** Give each its own snapshot with a
    label that says what differs (`"B — wall 3mm, round lid"`), then send the
    gallery link `/views` (every generation of every project, as cards, newest
@@ -117,7 +130,13 @@ More detail on demand — `cad_help(topic=...)` / `GET /api/agent/help?topic=...
    `normal` / `up` / `size_mm` in model mm, the `node` it is on, `near_marks` =
    the marks it sits next to («qui 8 mm» beside mark 1 is about mark 1; each
    mark also lists them under its own `labels`). A note may hold labels
-   only. A label's `style` says how it was drawn: `paint` (the letters are
+   only. DIMENSIONS the user took with the ↔ Metro arrive as `measures`:
+   `kind` (distance, edge, face_gap, diameter, radius), `value` in mm
+   (`approx` = measured on a tessellated curve: confirm with `cad_measure`
+   before acting on a hundredth), the ends `a`/`b` with `at`, the `snap`
+   (vertex / circle_center / edge / face / free) and the node, a one-line
+   `summary`, and `near_marks` («Ø ≈ 8,00» on a circled hole is what the
+   user measured there; the mark lists it under `measures`). A label's `style` says how it was drawn: `paint` (the letters are
    pen strokes on the surface — they are NOT in `marks`; with `points=True`
    they show up as strokes with `kind: "text"`), `tag` (a plate on a stem) or
    `decal`. Pictures the user PLACED on the part (a PNG/JPEG — a sketch, a
@@ -207,6 +226,7 @@ section is slow, or where a run fails (`run=True` → `failed_in`).
 | `GET /api/graph/{name}/screenshot?view=&node=&…` | **PNG of the viewport** (`cad_screenshot`) |
 | `POST /api/graph/{name}/snapshot?label=&run=` · `GET .../gens` | freeze a generation → `{gen, url}` for the read-only viewer (`cad_snapshot`, `cad_list_gens`) — send the user the `url` |
 | `GET /api/gens/recent?limit=&project=` · page `/views` | generations of every project, newest first, with `ref` (`graph/gN`), `seen` and `last_seen` = the one the user opened last (`cad_recent_gens`) |
+| `POST /api/graph/{name}/gens/{gen}/measures` body `{measures, replace?}` · `GET` same | dimensions drawn on a generation, coloured by status (`cad_measure_gen`) |
 | `GET /api/notes?project=&gen=&done=&points=` · `GET .../gens/{gen}/notes/{id}.jpg[?view=k]` · `PATCH .../gens/{gen}/notes/{id}` body `{done, reply}` | what the user DREW on a generation in the viewer (`cad_notes`, `cad_note_image`, `cad_note_done`) |
 | `GET /api/agent/tags` | ToAgent provenance index (`cad_agent_tags`) |
 | `GET /api/graph/{name}/slice_summary?path=&n=` · `.../section_outline?axis=&pos=&path=` | sections (`cad_slice_summary`, `cad_section_outline`) |

@@ -487,6 +487,12 @@ class GraphStore:
     # — a file of its own beside tags.json: separate validation, separate toggle.
     GEN_MEASURES = "measures.json"
 
+    def save_gen_measures(self, graph_id: str, gen: str, measures: list) -> None:
+        d = self.gen_dir(graph_id, gen)
+        if not (d / "meta.json").exists():
+            raise KeyError(f"No generation {gen!r} in {graph_id!r}")
+        atomic_write(d / self.GEN_MEASURES, json.dumps({"measures": measures}, indent=1))
+
     def load_gen_measures(self, graph_id: str, gen: str) -> list:
         d = self.gen_dir(graph_id, gen)
         if not (d / "meta.json").exists():

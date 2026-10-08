@@ -183,3 +183,11 @@ test('a ridged spot (a thread) snaps no vertex or edge, a circle still', async (
   const B = M.buildFeatures(...box(0, 0, 0, 20, 10, 6));
   assert.equal(M.pickFeature(B, [10, 9.8, 6], 3, { rV: 0.3, rE: 0.3 }).snap, 'edge');
 });
+
+test('a point lying ON the tapped face: the distance to the tapped spot, not 0', async () => {
+  const M = await load();
+  const F = M.buildFeatures(...box(0, 0, 0, 20, 10, 6));
+  const top = M.pickFeature(F, [3, 4, 6], 3, { rV: 0.1, rE: 0.1 });
+  const m = M.measureTwo(top, { snap: 'circle_center', point: [15, 4, 6], approx: true });
+  assert.equal(m.kind, 'distance'); assert.ok(!m.toPlane); near(m.value, 12); assert.ok(m.approx);
+});

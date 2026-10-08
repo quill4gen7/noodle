@@ -876,6 +876,8 @@ $('c').addEventListener('pointerup', e => {
     if (now - lastTap < 320) { lastTap = 0; frameVisible(); return; }
     lastTap = now;
   }
+  const mz = measureAt(e.clientX, e.clientY);   // a dimension explains itself
+  if (mz) { showMeasure(mz); return; }
   const tg = agentTagAt(e.clientX, e.clientY);  // an agent's tag names its piece
   if (tg) { select(tg.key); return; }
   const k = pickLeaf(e.clientX, e.clientY);
@@ -2900,7 +2902,7 @@ function measureEnds(M) {
 }
 function measureObject(M, h) {
   const g = new THREE.Group();
-  const ink = M.ink || (M.status ? STATUS_INK[M.status] : null) || MEASURE_INK;
+  const ink = M.ink || (M.status ? STATUS_INK[M.status] : null) || (M.agent ? AGENT_INK : MEASURE_INK);
   const { a, b, A, B, lifted, ring, picked } = measureEnds(M);
   const L = A.distanceTo(B), dir = B.clone().sub(A).normalize();
   const r = Math.max(h * 0.028, 0.012), dotR = Math.max(h * 0.08, 0.03);
@@ -2970,7 +2972,9 @@ function measureObject(M, h) {
 const V3 = v => (Array.isArray(v) ? new THREE.Vector3(...v) : v && v.isVector3 ? v.clone() : null);
 // plain JSON (as stored) → the in-memory measure
 function measureFrom(m) {
-  const end = e => (e ? V3(e.at || e) : null);
+  // an end is [x,y,z] (the agent's file) or {at: [x,y,z], …} (a note) — and an
+  // array HAS an .at: it is Array.prototype.at, so test for the array first
+  const end = e => (!e ? null : V3(Array.isArray(e) ? e : e.at));
   const M = { ...m, a: end(m.a), b: end(m.b), n: V3(m.n), agent: !!m.agent || !!m.status,
               nodes: [].concat(m.node || [], (m.a && m.a.node) || [], (m.b && m.b.node) || []) };
   const circ = m.circle || (m.a && m.a.circle);
@@ -3002,7 +3006,30 @@ function drawMeasures(list, { replace = true } = {}) {
 async function loadMeasures(base) {
   let raw = [];
   try { raw = (await getJSON(`${base}/measures`)).measures || []; } catch { raw = []; }
-  if (raw.length) drawMeasures(raw);
+  if (raw.length) drawMeasures(raw.map(m => ({ ...m, agent: true })));   // measures.json is the agent's
+}
+// A tap on a dimension says what it is: value, expectation, status, the
+// agent's note and how it was measured — the plate has room for the value only.
+const STATUS_WORD = { ok: '✓ ok', check: '● da controllare', fail: '✕ fuori tolleranza' };
+function measureAt(x, y) {
+  if (!measuresOn || !measures.length) return null;
+  const r = $('c').getBoundingClientRect();
+  ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, viewer.camera);
+  const h = ray.intersectObjects(measures.filter(M => M.obj.visible).map(M => M.obj), true)[0];
+  if (!h) return null;
+  let o = h.object; while (o && !o.userData.measure) o = o.parent;
+  return o ? o.userData.measure : null;
+}
+function showMeasure(M) {
+  const lines = [`<b>${esc(measureText(M))}</b>${M.text ? ' · ' + esc(M.text) : ''}`];
+  if (typeof M.expected === 'number')
+    lines.push(`atteso ${fmtNum(M.expected)}${typeof M.tolerance === 'number' ? ' ±' + fmtNum(M.tolerance) : ''} mm`);
+  if (M.status) lines.push(`<span style="color:${STATUS_INK[M.status]}">${STATUS_WORD[M.status]}</span>`);
+  if (M.note) lines.push(esc(M.note));
+  if (M.between) lines.push(`<small>misurata sul B-Rep fra ${M.between.map(esc).join(' e ')}</small>`);
+  else if (M.approx) lines.push('<small>≈ da una superficie curva tassellata</small>');
+  toast((M.agent ? '◆ ' : '↔ ') + lines.join('<br>'), 7000);
 }
 function syncMeasures() {
   measureGroup.visible = measuresOn;

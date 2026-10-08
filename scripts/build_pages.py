@@ -15,7 +15,7 @@ Output:
     site/demo/index.html       /view, reading ?g=<name>&gen=<gN>
     site/static/               viewer.js, icon.svg, vendor/three-0.170.0
     site/data/<name>/          gens.json, version.json, <gen>/{view,graph,meta}.json
-                               + <gen>/notes.json, notes/<images>, tags.json when present
+                               + <gen>/notes.json, notes/<images>, tags.json, measures.json when present
 
 A generation can be given as  <project>/<gN>[=<shown-name>][:<note ids>]
     zz-note-probe/g2=bolt-and-nut-notes:a1,a21,a23
@@ -55,7 +55,7 @@ FETCH_SHIM = """<script>
   const json = (o, status) => Promise.resolve(new Response(JSON.stringify(o),
     {status, headers: {'Content-Type': 'application/json'}}));
   const map = url => {
-    let m = /^\\/api\\/graph\\/([^/]+)\\/gens\\/(g\\d+)\\/(view|graph|meta|notes|tags)$/.exec(url);
+    let m = /^\\/api\\/graph\\/([^/]+)\\/gens\\/(g\\d+)\\/(view|graph|meta|notes|tags|measures)$/.exec(url);
     if (m) return `../data/${m[1]}/${m[2]}/${m[3]}.json`;
     m = /^\\/api\\/graph\\/([^/]+)\\/(gens|version)$/.exec(url);
     if (m) return `../data/${m[1]}/${m[2]}.json`;
@@ -138,7 +138,7 @@ def _parse(spec: str) -> tuple[str, str, str, list[str] | None]:
 
 def _copy_notes(src: Path, dst: Path, shown: str, ids: list[str] | None) -> int:
     """The gen's notes (only `ids`, if given) as one notes.json, their placed
-    pictures next to it, and the agent's tags.json. Returns notes copied."""
+    pictures next to it, and the agent's tags.json and measures.json. Returns notes copied."""
     notes_dir, out = src / "notes", []
     if notes_dir.is_dir():
         for f in sorted(notes_dir.glob("a*.json"), key=lambda f: int(re.sub(r"\D", "", f.stem) or 0)):
@@ -156,6 +156,8 @@ def _copy_notes(src: Path, dst: Path, shown: str, ids: list[str] | None) -> int:
         (dst / "notes.json").write_text(json.dumps({"notes": out}))
     if (src / "tags.json").exists():
         shutil.copy(src / "tags.json", dst / "tags.json")
+    if (src / "measures.json").exists():
+        shutil.copy(src / "measures.json", dst / "measures.json")
     return len(out)
 
 
@@ -168,6 +170,8 @@ def build(projects: Path, out: Path, gens: list[str], base_site: Path | None = N
     viewer = (WEBUI / "viewer.js").read_text()
     viewer = re.sub(r"(['\"])/static/", r"\1../static/", viewer)
     (out / "static" / "viewer.js").write_text(viewer)
+    # the ↔ Metro's snaps: measuring is computation in the browser, so it works here too
+    shutil.copy(WEBUI / "measure.js", out / "static" / "measure.js")
     shutil.copy(WEBUI / "icon.svg", out / "static" / "icon.svg")
     shutil.copytree(WEBUI / "vendor" / "three-0.170.0", out / "static" / "vendor" / "three-0.170.0")
     # landing page + media
@@ -217,6 +221,8 @@ def build(projects: Path, out: Path, gens: list[str], base_site: Path | None = N
             (d / "notes.json").write_text('{"notes": []}')
         if not (d / "tags.json").exists():
             (d / "tags.json").write_text('{"tags": []}')
+        if not (d / "measures.json").exists():
+            (d / "measures.json").write_text('{"measures": []}')
     (out / ".nojekyll").write_text("")          # serve dirs/files starting with _ as is
     print(f"site: {out}  ({len(gens)} generations built"
           + (f", carried over: {' '.join(kept)})" if kept else ")"))

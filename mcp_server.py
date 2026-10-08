@@ -202,7 +202,7 @@ async def cad_screenshot(graph_id: str, view: str = "iso", azim: float = None,
 
 @mcp.tool()
 def cad_snapshot(graph_id: str, label: str = "", run: bool = True,
-                 tags: Optional[list] = None) -> dict:
+                 tags: Optional[list] = None, measures: Optional[list] = None) -> dict:
     """SHOW the user a result: freeze the graph's current geometry as a new
     GENERATION and get back a `url` to the read-only 3D viewer. Send that link
     instead of screenshots — the user orbits it, hides pieces, inverts the
@@ -214,8 +214,9 @@ def cad_snapshot(graph_id: str, label: str = "", run: bool = True,
     If the graph has Animate/Drop nodes the viewer PLAYS them (`timeline` in the
     result): send one link for a movement — open ⇄ close — rather than one per
     pose; `#play=1` autoplays, `#t=0.5` / `#mode=pingpong|loop|once`.
-    `tags` labels its pieces in the same call — see `cad_tag_gen`."""
-    return _safe(api.snapshot, STORE, graph_id, label=label, run=run, tags=tags)
+    `tags` labels its pieces in the same call — see `cad_tag_gen`; `measures`
+    pins dimensions on it — see `cad_measure_gen`."""
+    return _safe(api.snapshot, STORE, graph_id, label=label, run=run, tags=tags, measures=measures)
 
 
 @mcp.tool()
@@ -231,6 +232,30 @@ def cad_tag_gen(graph_id: str, gen: str, tags: list, replace: bool = True) -> di
     At most 40. `replace=False` appends to the tags already there. Stored
     beside the gen (tags.json): the gen itself never changes."""
     return _safe(api.tag_gen, STORE, graph_id, gen, tags, replace=replace)
+
+
+@mcp.tool()
+def cad_measure_gen(graph_id: str, gen: str, measures: list, replace: bool = True) -> dict:
+    """DIMENSION a generation you send the user: «parete 1,2 mm — sotto il minimo
+    di 1,6», «interasse 30 ±0,1». The viewer draws each as a dimension ON the
+    part (two anchors, a line with arrows, the value on a plate that faces the
+    camera, faded where the part covers it), coloured by `status`: ok green,
+    check amber, fail red. `measures` = [{...}] with:
+    - WHERE — `between: ["n5", "n7.body"]` (node refs, as in cad_measure): the
+      server measures the gen's FROZEN graph on the real B-Rep and takes the two
+      closest points and the exact distance. Prefer it: never guess points.
+      Or `a`/`b` = [x,y,z] mm (e.g. `at_a`/`at_b` from cad_measure distance), or
+      for `kind` diameter/radius a `circle` {center, axis, r}.
+    - `kind` distance (default) | edge | face_gap | diameter | radius;
+      `value` defaults to what a/b/circle give.
+    - `expected` + `tolerance` → `status` ok/fail is judged for you
+      (`expected` alone → check); or set `status` yourself.
+    - `text` (≤120, on the plate under the value), `note` (≤500, shown when the
+      user taps it), `node` (piece id/title: hidden with it), `offset` [x,y,z]
+      mm to lift the line off the part with extension lines, `approx`.
+    At most 40; `replace=False` appends. Stored beside the gen (measures.json);
+    the user hides them with «↔ Quote» (`#measures=0`)."""
+    return _safe(api.measure_gen, STORE, graph_id, gen, measures, replace=replace)
 
 
 @mcp.tool()
@@ -271,7 +296,12 @@ def cad_notes(graph_id: str = "", gen: str = "", limit: int = 10,
     mm» beside mark 1 is information about mark 1. A `paint` label is written
     with pen strokes; those strokes are not marks. Pictures the user placed on
     the part are `images` (same placement fields, plus `image_path`/`image_url`
-    of the picture itself — open it). `points=True` adds the raw
+    of the picture itself — open it). DIMENSIONS the user took with ↔ Metro
+    come as `measures`: `kind`, `value` (mm; `approx` when it came from a
+    tessellated curve), ends `a`/`b` with `at` and `snap` (vertex /
+    circle_center / edge / face / free) and the piece, a one-line `summary`,
+    and `near_marks` (each such mark lists them under `measures`): «Ø ≈ 8,00»
+    next to a circled hole is what the user measured there. `points=True` adds the raw
     `strokes` (surface points + normals, split where the pen left the surface).
     Once handled, close it with `cad_note_done` so the user sees your answer."""
     return _safe(api.list_notes, STORE, graph_id=graph_id, gen=gen, limit=limit,

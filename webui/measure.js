@@ -517,8 +517,12 @@ export function measureTwo(a, b, { parallelDeg = FACE_DEG } = {}) {
   if (f) {
     const P = (f === a ? b : a).point, n = f.plane.normal;
     const foot = sub(P, mul(n, dot(sub(P, f.plane.point), n)));
-    const [A, B] = f === a ? [foot, P] : [P, foot];
-    return { kind: 'distance', a: A, b: B, value: dist(A, B), approx, toPlane: true };
+    // a point ON that plane (a hole's centre on the face it is drilled in) is
+    // 0 from it: what is meant then is the distance to the spot that was tapped
+    if (dist(P, foot) > 1e-6 * Math.max(1, dist(P, f.point))) {
+      const [A, B] = f === a ? [foot, P] : [P, foot];
+      return { kind: 'distance', a: A, b: B, value: dist(A, B), approx, toPlane: true };
+    }
   }
   return { kind: 'distance', a: a.point, b: b.point, value: dist(a.point, b.point), approx };
 }

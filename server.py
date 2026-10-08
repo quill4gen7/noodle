@@ -590,21 +590,23 @@ def _gen_http(fn, *args, **kwargs):
 async def snapshot_graph(request: Request, name: str, label: str = "",
                          run: bool = True):
     """Freeze the current result as a new generation; returns its viewer `url`.
-    Optional JSON body {tags: [{text, node, at?, color?}]} labels its pieces."""
+    Optional JSON body {tags: [{text, node, at?, color?}], measures: [...]}
+    labels its pieces and pins dimensions on it (see measure_generation)."""
     require_project(name)
     store = GraphStore(PROJECTS_DIR)
     raw = await request.body()
-    tags = None
+    tags = measures = None
     if raw.strip():
         try:
             body = json.loads(raw)
         except ValueError as e:
             raise HTTPException(400, f"Invalid JSON: {e}") from e
-        tags = body.get("tags") if isinstance(body, dict) else None
+        if isinstance(body, dict):
+            tags, measures = body.get("tags"), body.get("measures")
     try:
         # off the loop: with run=1 this executes the graph (see off_loop)
         return await off_loop(api.snapshot, store, name, label=label, run=run,
-                              base_url=_public_base(request), tags=tags)
+                              base_url=_public_base(request), tags=tags, measures=measures)
     except KeyError as e:
         raise HTTPException(404, str(e.args[0] if e.args else e)) from e
     except ValueError as e:
@@ -714,6 +716,27 @@ async def get_generation_measures(name: str, gen: str):
     """The agent's dimensions on this gen (measures.json beside the gen)."""
     require_project(name)
     return {"measures": _gen_http(api.gen_measures, GraphStore(PROJECTS_DIR), name, gen)}
+
+
+@app.post("/api/graph/{name}/gens/{gen}/measures")
+async def measure_generation(request: Request, name: str, gen: str):
+    """Body {measures: [{kind?, a, b | between | circle, value?, text?, expected?,
+    tolerance?, status?, note?, node?, offset?}], replace?: true} — dimensions
+    drawn on the gen. Off the loop: `between` measures the frozen graph."""
+    require_project(name)
+    try:
+        body = await request.json()
+    except ValueError as e:
+        raise HTTPException(400, f"Invalid JSON: {e}") from e
+    if not isinstance(body, dict):
+        raise HTTPException(400, "Expected a JSON object")
+    try:
+        return await off_loop(api.measure_gen, GraphStore(PROJECTS_DIR), name, gen, body.get("measures"),
+                              replace=body.get("replace", True) is not False, base_url=_public_base(request))
+    except KeyError as e:
+        raise HTTPException(404, str(e.args[0] if e.args else e)) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
 
 
 @app.post("/api/graph/{name}/gens/{gen}/tags")

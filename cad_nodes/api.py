@@ -1366,13 +1366,15 @@ def _timeline(view: dict):
 
 
 def snapshot(store: GraphStore, graph_id: str, label: str = "",
-             run: bool = True, base_url: str = "", tags: Optional[list] = None) -> dict:
+             run: bool = True, base_url: str = "", tags: Optional[list] = None,
+             measures: Optional[list] = None) -> dict:
     """Freeze the graph's current result as a new generation and return its
     viewer link. `run=True` (default) executes first, so the generation is the
     graph AS SAVED NOW, not whatever last ran; `run=False` freezes the last
     view.json as is. An unchanged result is not duplicated: if it is identical
     to the newest generation (same geometry, same label) that one is returned
-    with `reused: true`. `tags` (see tag_gen) label its pieces in the same call."""
+    with `reused: true`. `tags` (see tag_gen) label its pieces in the same call,
+    `measures` (see measure_gen) pin dimensions on it."""
     out = _snapshot(store, graph_id, label, run, base_url)
     if tags is not None:
         # the gen exists by now: a bad tag must not read as a failed snapshot
@@ -1380,6 +1382,11 @@ def snapshot(store: GraphStore, graph_id: str, label: str = "",
             out["tags"] = tag_gen(store, graph_id, out["gen"], tags, base_url=base_url)["tags"]
         except ValueError as e:
             out["tags_error"] = str(e)
+    if measures is not None:
+        try:
+            out["measures"] = measure_gen(store, graph_id, out["gen"], measures, base_url=base_url)["measures"]
+        except ValueError as e:
+            out["measures_error"] = str(e)
     return out
 
 
@@ -1494,6 +1501,142 @@ def gen_tags(store: GraphStore, graph_id: str, gen: str) -> list:
 
 def gen_measures(store: GraphStore, graph_id: str, gen: str) -> list:
     return store.load_gen_measures(graph_id, gen)
+
+
+# --- 📏 the agent's dimensions on a gen ---------------------------------------
+# The other direction of the user's ↔ Metro: «parete 1,2 mm — sotto il minimo
+# di 1,6», «interasse 30 ±0,1: controllalo», drawn ON the part in /view, coloured
+# by `status` (ok green, check amber, fail red). Beside the gen in its own file
+# (measures.json), separate from tags.json: separate checks, separate toggle.
+# The agent must not GUESS points: `between: [refA, refB]` measures the gen's
+# FROZEN graph on the real B-Rep (measure.py `distance`) and takes the two
+# closest points and the exact value from there.
+
+_GEN_MEASURES_MAX = 40
+_GEN_MEASURE_KINDS = ("distance", "edge", "face_gap", "diameter", "radius")
+_STATUSES = ("ok", "check", "fail")
+
+
+def _point(v, what) -> list:
+    if isinstance(v, dict):
+        v = v.get("at")
+    return [round(_num(c, what), 4) for c in _check3(v, what)]
+
+
+def _between_points(store: GraphStore, graph_id: str, gen: str, pairs: dict) -> dict:
+    """{index: (refA, refB)} → {index: result of a `distance` query} on the gen's
+    frozen graph (one run for all of them; memo makes it cheap after a snapshot)."""
+    from .executor import measure_graph
+    graph = Graph.from_dict(store.load_gen(graph_id, gen, "graph"))
+    idx = list(pairs)
+    data = measure_graph(graph, store.dir(graph_id),
+                         [{"op": "distance", "a": pairs[i][0], "b": pairs[i][1]} for i in idx])
+    if not data.get("success"):
+        raise ValueError(f"measure: the gen's graph did not run: "
+                         f"{data.get('error') or data.get('errors') or data.get('error_detail')}")
+    out = {}
+    for i, r in zip(idx, data.get("results") or []):
+        if r.get("error") or r.get("distance") is None:
+            raise ValueError(f"measure {i}: between {list(pairs[i])}: {r.get('error') or 'no result'}")
+        out[i] = r
+    return out
+
+
+def measure_gen(store: GraphStore, graph_id: str, gen: str, measures: list,
+                replace: bool = True, base_url: str = "") -> dict:
+    """Pin DIMENSIONS on generation `gen`: `measures` = [{kind?, a, b, value?,
+    circle?, between?, text?, expected?, tolerance?, status?, note?, node?,
+    offset?, approx?}] — see cad_measure_gen. `replace=False` appends."""
+    import math
+    meta = store.load_gen(graph_id, gen, "meta")
+    if not isinstance(measures, list):
+        raise ValueError("measures must be a list")
+    old = [] if replace else store.load_gen_measures(graph_id, gen)
+    if len(old) + len(measures) > _GEN_MEASURES_MAX:
+        raise ValueError(f"at most {_GEN_MEASURES_MAX} measures per generation")
+    pairs = {}
+    for i, m in enumerate(measures):
+        if not isinstance(m, dict):
+            raise ValueError(f"measure {i} must be an object")
+        bt = m.get("between")
+        if bt is not None:
+            if not (isinstance(bt, (list, tuple)) and len(bt) == 2 and all(isinstance(x, str) and x for x in bt)):
+                raise ValueError(f"measure {i}: between must be two node refs, e.g. [\"n5\", \"n7.body\"]")
+            pairs[i] = tuple(bt)
+    found = _between_points(store, graph_id, gen, pairs) if pairs else {}
+    out = [dict(m) for m in old]
+    for i, m in enumerate(measures):
+        kind = m.get("kind") or ("diameter" if m.get("circle") else "distance")
+        if kind not in _GEN_MEASURE_KINDS:
+            raise ValueError(f"measure {i}: kind must be one of {', '.join(_GEN_MEASURE_KINDS)}")
+        o: dict = {"kind": kind}
+        if i in found:
+            r = found[i]
+            o["a"], o["b"] = _point(r["at_a"], f"measure {i} a"), _point(r["at_b"], f"measure {i} b")
+            o["between"] = list(pairs[i])
+            value = float(r["distance"])
+        elif kind in ("diameter", "radius"):
+            c = m.get("circle")
+            if not isinstance(c, dict):
+                raise ValueError(f"measure {i}: a {kind} needs circle {{center, axis, r}}")
+            ax = _point(c.get("axis") or [0, 0, 1], f"measure {i} circle axis")
+            na = math.hypot(*ax)
+            if na < 1e-9:
+                raise ValueError(f"measure {i}: circle axis must not be zero")
+            r_ = _num(c.get("r"), f"measure {i} circle r")
+            if not 0 < r_ < 1e6:
+                raise ValueError(f"measure {i}: circle r out of range")
+            o["circle"] = {"center": _point(c.get("center"), f"measure {i} circle center"),
+                           "axis": [round(x / na, 4) for x in ax], "r": round(r_, 4)}
+            value = 2 * r_ if kind == "diameter" else r_
+        else:
+            if m.get("a") is None or m.get("b") is None:
+                raise ValueError(f"measure {i}: give a and b ([x,y,z] mm), or between: [refA, refB]")
+            o["a"], o["b"] = _point(m["a"], f"measure {i} a"), _point(m["b"], f"measure {i} b")
+            value = math.dist(o["a"], o["b"])
+        if m.get("value") is not None:
+            value = _num(m["value"], f"measure {i} value")
+            if value < 0:
+                raise ValueError(f"measure {i}: value must not be negative")
+        o["value"] = round(value, 4)
+        o["unit"] = "mm"
+        o["approx"] = bool(m.get("approx"))
+        for k, lim in (("text", 120), ("note", 500)):
+            t = m.get(k)
+            if t is not None:
+                if not isinstance(t, str) or len(t) > lim:
+                    raise ValueError(f"measure {i}: {k} must be a string of at most {lim} chars")
+                if t.strip():
+                    o[k] = t.strip()
+        for k in ("expected", "tolerance"):
+            if m.get(k) is not None:
+                o[k] = round(_num(m[k], f"measure {i} {k}"), 4)
+        if o.get("tolerance", 0) < 0:
+            raise ValueError(f"measure {i}: tolerance must not be negative")
+        st = m.get("status")
+        if st is None and "expected" in o:
+            # judged here when it can be: within tolerance = ok, else fail;
+            # an expectation with no tolerance is something to check
+            st = ("ok" if abs(o["value"] - o["expected"]) <= o["tolerance"] + 1e-9 else "fail") \
+                if "tolerance" in o else "check"
+        if st is not None:
+            if st not in _STATUSES:
+                raise ValueError(f"measure {i}: status must be one of {', '.join(_STATUSES)}")
+            o["status"] = st
+        if m.get("node") is not None:
+            p = _resolve_piece(meta, m["node"])
+            o["node"], o["title"] = p["id"], p.get("title") or p.get("type")
+        if m.get("offset") is not None:
+            off = _point(m["offset"], f"measure {i} offset")
+            L = math.hypot(*off)
+            if L > 0:
+                o["n"], o["off"] = [round(x / L, 4) for x in off], round(L, 4)
+        out.append(o)
+    for k, o in enumerate(out, 1):
+        o["measure"] = k
+    store.save_gen_measures(graph_id, gen, out)
+    return {"gen": gen, "ref": gen_ref(graph_id, gen), "url": gen_url(graph_id, gen, base_url),
+            "measures": out}
 
 
 def list_gens(store: GraphStore, graph_id: str, base_url: str = "") -> list[dict]:
@@ -1829,6 +1972,64 @@ def _link_labels(marks: list[dict], strokes: list[dict], labels: list[dict]) -> 
     return out
 
 
+def measure_phrase(m: dict) -> str:
+    """«Ø ≈ 8,00» / «12,40 mm» — the way the viewer writes a dimension."""
+    v = m.get("value", 0)
+    num = (f"{v:.1f}" if m.get("unit") == "deg" else f"{v:.2f}").replace(".", ",")
+    ap = "≈ " if m.get("approx") else ""
+    k = m.get("kind")
+    if k == "angle":
+        return f"{ap}{num}°"
+    if k == "diameter":
+        return f"Ø {ap}{num}"
+    if k == "radius":
+        return f"R {ap}{num}"
+    return f"{ap}{num} mm"
+
+
+_MEASURE_SAYS = {"distance": "distance", "edge": "edge length", "face_gap": "gap between parallel faces",
+                 "diameter": "diameter", "radius": "radius", "angle": "angle"}
+
+
+def _link_measures(marks: list[dict], strokes: list[dict], measures: list[dict]) -> list[dict]:
+    """The user's dimensions, for the agent: each with a one-line `summary`
+    a text-only model can read («face_gap 8,00 mm on Move (face → face)»), and
+    `near_marks` = the marks drawn at either end (within a quarter of the
+    dimension, ≥ 2 mm) — a red circle round a hole plus «Ø ≈ 8,00» on it is one
+    remark. Each such mark lists the dimension under `measures`."""
+    import math
+    pts: dict[int, list] = {}
+    for s in strokes:
+        if s.get("kind") != "text":
+            pts.setdefault(s.get("g"), []).extend(s["points"])
+    by_mark = list(pts.values())
+    out = []
+    for m in measures:
+        m = {k: v for k, v in m.items() if k != "near_marks"}
+        ends = [e for e in (m.get("a"), m.get("b")) if isinstance(e, dict)]
+        reach = max(2.0, 0.25 * float(m.get("value") or 0))
+        circ = (m.get("a") or {}).get("circle") if isinstance(m.get("a"), dict) else None
+        if circ:                             # a circled hole: the pen is ON the rim, the Ø at its centre
+            reach = max(reach, 1.5 * float(circ.get("r") or 0))
+        near = [k + 1 for k, ps in enumerate(by_mark)
+                if ps and any(min(math.dist(e["at"], p) for p in ps) <= reach for e in ends)]
+        on = [e.get("title") or e.get("node") for e in ends if e.get("title") or e.get("node")]
+        snaps = " → ".join(e.get("snap", "free") for e in ends)
+        summary = f"{_MEASURE_SAYS.get(m.get('kind'), m.get('kind'))} {measure_phrase(m)}"
+        if on:
+            summary += f" on {' / '.join(dict.fromkeys(on))}"
+        summary += f" ({snaps})"
+        if m.get("axis"):
+            summary += f", along {m['axis'].upper()} only"
+        if m.get("text"):
+            summary += f" — «{m['text']}»"
+        m["summary"], m["near_marks"] = summary, near
+        out.append(m)
+        for k in near:
+            marks[k - 1].setdefault("measures", []).append(measure_phrase(m))
+    return out
+
+
 def _camera(cam, what="camera") -> Optional[dict]:
     if not (isinstance(cam, dict) and cam.get("position") and cam.get("target")):
         return None
@@ -2000,6 +2201,8 @@ def _note_for_agent(n: dict, base_url: str, points: bool) -> dict:
             im["image_path"] = f"projects/{g}/gens/{gen}/notes/{im.get('file', '')}"
             if im.get("view"):                 # the photo of the view it was placed from
                 im["view_image_path"] = f"projects/{g}/gens/{gen}/notes/{nid}.v{im['view']}.jpg"
+    if n.get("measures"):
+        out["measures"] = _link_measures(out["marks"], n.get("strokes") or [], n["measures"])
     if points:
         out["strokes"] = n.get("strokes", [])
     for k in ("t", "hide", "camera"):
