@@ -107,13 +107,15 @@ def test_the_viewer_reads_only_the_frozen_copy():
               and "measure: measureBody(M)" not in ln]
     assert sum("measure: measureBody(M)" in ln for ln in VIEW.splitlines()) == 1
     assert "/measures/exact`" in VIEW
-    assert len(writes) == 4
+    # notes save AS THE USER DRAWS (POST/PUT on one id, DELETE when all is
+    # taken back) + the ✕ in the notes list
+    assert len(writes) == 5
     assert sum("/api/client-error" in ln for ln in VIEW.splitlines()) == 1
     assert any("/seen`" in ln and "'POST'" in ln for ln in writes)
     assert any("/thumb`" in ln and "'PUT'" in ln for ln in writes)
-    notes = [ln for ln in writes if "/notes" in ln or "method: 'POST', headers" in ln]
-    assert len(notes) == 2
-    assert "/gens/${GEN}/notes`, {" in VIEW
+    notes = [ln for ln in writes if "/notes" in ln or "${base}/${save.id}" in ln or "save.id ?" in ln]
+    assert len(notes) == 3
+    assert "const base = `/api/graph/${encodeURIComponent(NAME)}/gens/${GEN}/notes`;" in VIEW
 
 
 # --- timelines -----------------------------------------------------------------

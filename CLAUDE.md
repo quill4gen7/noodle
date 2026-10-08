@@ -1692,7 +1692,7 @@ result while the workflow moves on.
   Example project: `projects/cassone-demo` (a chest whose lid opens on a hinge).
 - **✎ Disegna — the user draws FOR the agent.** In /view (button, or `D`) the
   user paints on the part — circles a hole in red, marks a fillet — picks
-  colour/size and writes a sentence; "Invia all'agente" stores a NOTE beside
+  colour/size and writes a sentence; it is stored AS THEY DRAW as a NOTE beside
   the gen (`gens/gN/notes/aK.{json,jpg}` — the gen's own files stay immutable;
   `aK.claim` is kept so an id is never reused, like a gen number). Strokes are
   paint ON THE SURFACE, not on the screen: each pointer sample is a raycast
@@ -1745,6 +1745,27 @@ result while the workflow moves on.
     the browser: 1 and 2 loops flat, 8 loops ≈ 2.5 mm. The note carries
     `lifts` per stroke (only when > 0) and `height_mm` per stroke and per mark
     — read by the agent as «material here, this tall».
+  - **The note saves itself — there is no send button.** Paid for on
+    `creepyfinger-v4/g13` (feedback 20261008-153010): quill drew for a quarter
+    of an hour, the page was reloaded, and it was gone — the server log showed
+    not one write in between, because a note reached the server only when
+    "Invia all'agente" was pressed. Now every change goes through `syncDraw()`,
+    which schedules `flushSave()` (900ms debounce, one request in flight): the
+    first change POSTs and gets the id, every later one PUTs the WHOLE note
+    back under that id (`PUT …/notes/{id}` → `api.add_note(note_id=)` →
+    `store.save_gen_note`, which keeps `created`, sets `updated`, deletes the
+    pictures the rewrite no longer names and REOPENS a note the agent had
+    closed, its reply kept in `reopened`), and taking everything back (↶,
+    Pulisci) DELETEs it. It compares a signature of the content, computed with
+    every view at its own index — tied to the camera, orbiting after a stroke
+    re-saved the note. A failed save shows `⚠ non salvata, riprovo` in the
+    `#d-save` chip and retries every 4s; `visibilitychange` (a phone
+    backgrounding the page) saves at once, `beforeunload` with a change still
+    unsent saves AND asks. «Fatto ✓» (or Enter in the text) closes the note:
+    the next mark starts a new one. The live note is drawn by the draft, not
+    by `noteObject` (it would show twice), and is «✎ in corso» in the list.
+    Not yet: a note is not loaded BACK into the draft — after a reload, more
+    marks make a new note, the saved one stays as it was.
   - **⌫ eraser**: whole strokes (the pen already splits them where it leaves
     the surface), hit-tested in 3D — the point on the PART vs each stroke's
     polyline, radius from the size buttons in px → mm (`ERASE_PX`). Picking

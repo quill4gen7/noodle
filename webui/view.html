@@ -283,6 +283,10 @@
     border:1px solid var(--border);border-radius:8px;padding:5px 9px;font:13px var(--font);}
   #d-send{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;}
   #d-send:disabled{opacity:.4;cursor:default;}
+  #d-save{font-size:12px;color:var(--muted,#9ca3af);white-space:nowrap;cursor:pointer;}
+  #d-save:empty{display:none;}
+  #d-save[data-state="error"]{color:#f59e0b;}
+  #d-save[data-state="saved"]{color:#22c55e;}
   #d-hint{flex-basis:100%;color:var(--text-dim);font-size:11px;padding:0 2px;}
   #toast{position:absolute;left:50%;top:64px;transform:translateX(-50%);z-index:8;display:none;
     background:var(--bg-2);border:1px solid var(--green);color:var(--text);border-radius:10px;padding:8px 12px;
@@ -421,7 +425,8 @@
         <button class="btn" id="d-undo" title="Annulla l'ultima azione: tratto, testo, cancellatura (Ctrl+Z)">↶</button>
         <button class="btn" id="d-clear" title="Cancella tutti i tratti non inviati">Pulisci</button>
         <input id="d-text" placeholder="Nota per l'agente: es. «questo foro si può fare meglio»" maxlength="4000" autocomplete="off">
-        <button class="btn" id="d-send" title="Salva la nota (tratti + testo + la tua vista) per l'agente">Invia all'agente ➤</button>
+        <span id="d-save" role="status" aria-live="polite"></span>
+        <button class="btn" id="d-send" title="La nota si salva da sola mentre disegni e l'agente la vede già. Fatto la chiude: i prossimi segni fanno una nota nuova (Invio nel campo di testo)">Fatto ✓</button>
         <button class="btn" id="d-x" aria-label="Chiudi" title="Esci dal disegno (Esc)">✕</button>
         <div id="d-hint">Disegna trascinando sul pezzo · T: trascina un riquadro e scrivi · ⌫ gomma: passa sopra un tratto · fuori dal pezzo / tasto destro / rotella / due dita: muovi la vista · un tocco = un punto</div>
       </div>
@@ -1063,8 +1068,9 @@ new ResizeObserver(() => viewer.resize()).observe($('vp'));
 
 // ── ✎ Disegna: notes for the agent ───────────────────────────────────────
 // The user zooms onto a hole that looks wrong, circles it in red ON THE MODEL
-// and writes "could be done better"; "Invia all'agente" stores it beside this
-// generation (POST …/gens/gN/notes): their own view as a JPEG with the strokes
+// and writes "could be done better"; it is stored beside this generation AS
+// THEY DRAW (POST …/gens/gN/notes, then PUT on the same id — see «the note
+// SAVES ITSELF»): their own view as a JPEG with the strokes
 // on it, the sentence, and every stroke as surface points in model mm with the
 // piece it was drawn on. The agent reads it with cad_notes / GET /api/notes.
 //
@@ -1103,6 +1109,9 @@ let notesData = [];                            // this gen's notes, as stored
 // re-shot so it shows this stroke too.
 const views = [];                              // [{image, cam}]
 const noteObjs = new Map();                    // note id → Group
+// the note being drawn, as the server holds it (see «the note SAVES ITSELF»)
+const SAVE_MS = 900;
+const save = { id: null, sig: '', timer: 0, busy: null, again: false, state: 'idle', err: '', note: null };
 const shownNotes = new Set();
 
 // mm per CSS pixel at a point, for either camera
@@ -3083,7 +3092,8 @@ function clearDraft() {
 function setTool(t) { tool = t; if (t !== 'measure') cancelMeasure(); if (t !== 'shape') selectShape(null); if (t !== 'erase') $('d-ring').style.display = 'none'; if (t !== 'text') closeEditor(true); syncDraw(); }
 function syncDraw() {
   const any = draft.length || labels.length || dmeasures.length || shapes.length;
-  $('d-send').disabled = !any && !$('d-text').value.trim();
+  $('d-send').disabled = !any && !$('d-text').value.trim() && !save.id;
+  if (any || save.id || $('d-text').value.trim()) scheduleSave();
   $('d-undo').disabled = !actions.length; $('d-clear').disabled = !any;
   $('d-hint').textContent = drawing && tool === 'measure' ? measureHint() : drawing && tool === 'shape' ? SHAPE_HINT : DRAW_HINT;
   vp.classList.toggle('pen', drawing && tool === 'pen');
@@ -3144,7 +3154,7 @@ $('d-clear').onclick = () => { if (draft.length < 4 || confirm('Cancellare tutti
 $('d-text').addEventListener('input', syncDraw);
 $('d-text').addEventListener('keydown', e => {
   e.stopPropagation();                         // typing "a" must not show all pieces
-  if (e.key === 'Enter') { e.preventDefault(); sendNote(); }
+  if (e.key === 'Enter') { e.preventDefault(); finishNote(); }
   if (e.key === 'Escape') e.target.blur();
 });
 addEventListener('keydown', e => {
@@ -3179,15 +3189,20 @@ const fitOut = f => f ? { centre: [r4(f.centre.x), r4(f.centre.y), r4(f.centre.z
   convex: f.convex, ...(f.axis ? { axis: v3(f.axis) } : {}) } : null;
 const fitIn = f => f ? { centre: new THREE.Vector3(...f.centre), radius: f.radius, convex: f.convex || 1,
   ...(f.axis ? { axis: new THREE.Vector3(...f.axis).normalize() } : {}) } : null;
-async function sendNote() {
+// ── the note SAVES ITSELF ────────────────────────────────────────────────
+// Feedback 20261008-153010 (creepyfinger-v4/g13): quill drew and wrote on a
+// gen for a quarter of an hour, the page was reloaded, and it was all gone —
+// the server log shows not one write in between, because a note reached the
+// server only when "Invia all'agente" was pressed. Now there is no send: what
+// is on the part IS on the server, a moment after each change. One sitting is
+// ONE note: the first change creates it (POST, it gets its id), every later
+// one rewrites it under that id (PUT), and taking everything back (↶,
+// Pulisci) deletes it. "Fatto" closes it: the next mark starts a new note.
+// Saving is serial (one request in flight) and compares a signature of the
+// content, so orbiting the view or switching tool sends nothing.
+function noteBody(withPictures) {
   const text = $('d-text').value.trim();
-  closeEditor(true);
-  if (!draft.length && !labels.length && !dmeasures.length && !shapes.length && !text) return;
-  $('d-send').disabled = true;
-  cancelMeasure(); selectShape(null);
-  // the picture is the user's own view, strokes and all: the agent sees what
-  // they saw, at their zoom (frame:false keeps the camera where it is)
-  const image = viewer.snapshot({ frame: false, maxSize: 1400, quality: 0.85 });
+  if (!draft.length && !labels.length && !dmeasures.length && !shapes.length && !text) return null;
   const camera = camState();
   // the views strokes were drawn from, minus the final one (that IS `image`)
   // and minus any whose strokes were all undone
@@ -3195,6 +3210,9 @@ async function sendNote() {
   for (const s of [...draft, ...labels, ...dmeasures, ...shapes]) {
     if (s.view == null || remap.has(s.view)) continue;
     const v = views[s.view];
+    // the signature must not move with the camera (orbiting is not an edit):
+    // without pictures every view keeps its own index
+    if (!withPictures) { remap.set(s.view, s.view); continue; }
     if (!v || !v.image || sameCam(v.cam, camera)) { remap.set(s.view, null); continue; }
     remap.set(s.view, keep.length); keep.push(v);
   }
@@ -3203,8 +3221,7 @@ async function sendNote() {
     size_mm: [r4(L.w), r4(L.h)], surface: L.surface || null, fit: fitOut(L.fit),
     view: L.view == null ? null : remap.get(L.view) });
   const body = {
-    text, image, camera,
-    views: keep.map(v => ({ image: v.image, camera: v.cam })),
+    text,
     strokes: draft.map(s => ({ color: s.color, width: s.width, piece: s.piece, g: s.g,
       ...(s.label && words.includes(s.label) ? { label: words.indexOf(s.label) } : {}),
       view: s.view == null ? null : remap.get(s.view),
@@ -3227,22 +3244,122 @@ async function sendNote() {
     hide: location.hash.replace(/^#/, ''),
   };
   if (anims.length) body.t = clock.t;
+  // the signature: the content, not the pictures (a placed image by its size)
+  body.sig = JSON.stringify({ ...body, images: body.images.map(im => ({ ...im, data: im.data.length })) });
+  if (withPictures) {
+    // the picture is the user's own view, strokes and all: the agent sees what
+    // they saw, at their zoom (frame:false keeps the camera where it is)
+    body.image = viewer.snapshot({ frame: false, maxSize: 1400, quality: 0.85 });
+    body.camera = camera;
+    body.views = keep.map(v => ({ image: v.image, camera: v.cam }));
+  }
+  return body;
+}
+function scheduleSave(ms = SAVE_MS) {
+  if (save.state === 'static') return;
+  if (save.state === 'error') ms = Math.max(ms, 4000);  // the server came back? try again
+  clearTimeout(save.timer);
+  save.timer = setTimeout(flushSave, ms);
+}
+// Save now if the content changed. Resolves when what was on the part when it
+// was called is on the server (or the save failed: then save.state = 'error').
+async function flushSave() {
+  clearTimeout(save.timer);
+  if (save.busy) { save.again = true; return save.busy; }
+  if (painting) { scheduleSave(); return; }   // mid-stroke: when the pen lifts
+  const light = noteBody(false);
+  const sig = light ? light.sig : '';
+  if (sig === save.sig) return;
+  save.busy = (async () => {
+    const base = `/api/graph/${encodeURIComponent(NAME)}/gens/${GEN}/notes`;
+    setSaveState('saving');
+    try {
+      if (!light) {                            // everything taken back: so is the note
+        if (save.id) {
+          const r = await fetch(`${base}/${save.id}`, { method: 'DELETE' });
+          if (!r.ok && r.status !== 404) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+          notesData = notesData.filter(n => n.id !== save.id);
+          save.id = null; save.note = null; renderNotes();
+        }
+      } else {
+        const body = noteBody(true); delete body.sig;
+        const r = await fetch(save.id ? `${base}/${save.id}` : base, {
+          method: save.id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body) });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+        const note = await r.json();
+        const first = !save.id;
+        save.id = note.id; save.note = note;
+        const i = notesData.findIndex(n => n.id === note.id);
+        if (i >= 0) notesData[i] = note; else notesData.push(note);
+        renderNotes();
+        if (first) {
+          const ref = `${NAME}/${GEN}#${note.id}`;
+          toast(`✓ Nota <code>${esc(ref)}</code>: si salva da sola mentre disegni, l'agente la vede già.<br>Di' all'agente «guarda la nota ${esc(ref)}» (o solo «guarda cosa ho segnato»). «Fatto» la chiude.`);
+        }
+      }
+      save.sig = sig; save.err = '';
+      setSaveState('saved');
+    } catch (err) {
+      save.err = err.message;
+      if (err.message === 'STATIC_PREVIEW') { setSaveState('static'); return; }
+      setSaveState('error');                   // → syncDraw → scheduleSave retries
+    } finally {
+      save.busy = null;
+      if (save.again) { save.again = false; scheduleSave(0); }
+    }
+  })();
+  return save.busy;
+}
+function setSaveState(st) {
+  save.state = st;
+  const el = $('d-save'), ref = save.id ? `${GEN}#${save.id}` : '';
+  el.dataset.state = st;
+  el.textContent = st === 'saving' ? '… salvo' : st === 'error' ? '⚠ non salvata, riprovo'
+    : st === 'static' ? 'anteprima: non salvata' : save.id ? `● ${ref} salvata` : '';
+  el.title = st === 'error' ? `Il server non risponde (${save.err}): riprovo da solo, il disegno resta qui`
+    : save.id ? `La nota ${NAME}/${ref} è sul server e segue quello che disegni. Clic: copia il riferimento` : '';
+  syncDraw();
+}
+$('d-save').onclick = async () => {
+  if (!save.id) return;
+  const ref = `${NAME}/${GEN}#${save.id}`;
+  try { await navigator.clipboard.writeText(ref); toast(`📋 Copiato: <code>${esc(ref)}</code>`, 2500); } catch {}
+};
+// "Fatto": this note is finished — the next mark starts a new one.
+async function finishNote() {
+  closeEditor(true);
+  cancelMeasure(); selectShape(null);
+  $('d-send').disabled = true;
   try {
-    const r = await fetch(`/api/graph/${encodeURIComponent(NAME)}/gens/${GEN}/notes`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
-    const note = await r.json();
+    await flushSave();
+    if (save.busy) await save.busy;            // a save that was already running
+    if (save.state === 'static') throw new Error('STATIC_PREVIEW');
+    if (save.state === 'error') throw new Error(save.err);
+    const id = save.id;
+    save.id = null; save.sig = ''; save.note = null;
     clearDraft(); $('d-text').value = '';
-    shownNotes.add(note.id);
-    await loadNotes();
-    const ref = `${NAME}/${GEN}#${note.id}`;
-    toast(`✓ Nota inviata: <code>${esc(ref)}</code><br>Di' all'agente «guarda la nota ${esc(ref)}» (o solo «guarda cosa ho segnato»).`);
-    try { await navigator.clipboard.writeText(ref); } catch {}
+    if (id) {
+      shownNotes.add(id);
+      await loadNotes();
+      const ref = `${NAME}/${GEN}#${id}`;
+      toast(`✓ Nota <code>${esc(ref)}</code> chiusa. I prossimi segni fanno una nota nuova.`);
+      try { await navigator.clipboard.writeText(ref); } catch {}
+    }
+    setSaveState('idle');
   } catch (err) {
     toast(`⚠ Nota non salvata: ${esc(err.message)}`);
   } finally { syncDraw(); }
 }
-$('d-send').onclick = sendNote;
+$('d-send').onclick = finishNote;
+// leaving the page: a phone backgrounds it without warning, so save at once;
+// a desktop tab closing with a change still unsent asks first
+addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSave(); });
+addEventListener('beforeunload', e => {
+  if (save.state === 'static') return;
+  const light = noteBody(false);
+  if (save.busy || (light ? light.sig : '') !== save.sig) { flushSave(); e.preventDefault(); e.returnValue = ''; }
+});
 
 // ── saved notes: list, show/hide, go to, delete ──────────────────────────
 function noteObject(n) {
@@ -3323,6 +3440,7 @@ async function loadNotes() {
   noteObjs.clear();
   viewer.scene.updateMatrixWorld();            // labels find their mesh by raycast
   for (const n of notesData) {
+    if (n.id === save.id) continue;            // the draft draws the note being drawn
     const o = noteObject(n); o.visible = shownNotes.has(n.id);
     noteObjs.set(n.id, o); annoGroup.add(o);
   }
@@ -3335,22 +3453,28 @@ function renderNotes() {
   for (const n of [...notesData].reverse()) {
     const on = shownNotes.has(n.id);
     const row = document.createElement('div');
-    row.className = 'note' + (n.done ? ' done' : '') + (on ? '' : ' off');
+    const live = n.id === save.id;
+    row.className = 'note' + (n.done ? ' done' : '') + (on || live ? '' : ' off') + (live ? ' live' : '');
     const cols = [...new Set([...(n.strokes || []), ...(n.labels || [])].map(s => s.color))].slice(0, 5);
     const said = [...(n.labels || []).map(l => `«${esc(l.text)}»`),
       ...(n.measures || []).map(m => `↔ ${esc(measureText(m))}`),
       ...(n.shapes || []).map(sh => `▣ ${esc(shapeText(sh.kind, sh.size))}${sh.ffd ? " · deformato" : ""}`),
       ...((n.images || []).length ? [`▣ ${n.images.length} immagin${n.images.length > 1 ? 'i' : 'e'}`] : [])].join(' ');
     row.innerHTML = `<span class="dots">${cols.map(c => `<i style="background:${esc(c)}"></i>`).join('')}</span>
-      <span class="tx"><span class="id">${esc(n.id)}${n.done ? ' ✓' : ''}</span>${esc(n.text) || said || '<i>(solo disegno)</i>'}${n.text && said ? ` <span class="id">${said}</span>` : ''}
+      <span class="tx"><span class="id">${esc(n.id)}${n.done ? ' ✓' : ''}${live ? ' ✎ in corso' : ''}</span>${esc(n.text) || said || '<i>(solo disegno)</i>'}${n.text && said ? ` <span class="id">${said}</span>` : ''}
         ${n.done && n.done.reply ? `<div class="rp">↳ ${esc(n.done.reply)}</div>` : ''}</span>
-      <span class="ib" role="button" title="Mostra/nascondi i tratti">${on ? '●' : '○'}</span>
+      <span class="ib" role="button" title="Mostra/nascondi i tratti"${live ? ' style="visibility:hidden"' : ''}>${on ? '●' : '○'}</span>
       <span class="ib" role="button" title="Elimina la nota">✕</span>`;
     const [eye, del] = row.querySelectorAll('.ib');
     eye.onclick = e => { e.stopPropagation(); showNote(n.id, !on); };
     del.onclick = async e => {
       e.stopPropagation();
       if (!confirm(`Eliminare la nota ${n.id}?`)) return;
+      if (live) {                              // the note being drawn: its draft goes too
+        clearTimeout(save.timer); if (save.busy) await save.busy;
+        save.id = null; save.sig = ''; save.note = null;
+        clearDraft(); $('d-text').value = ''; setSaveState('idle');
+      }
       await fetch(`/api/graph/${encodeURIComponent(NAME)}/gens/${GEN}/notes/${n.id}`, { method: 'DELETE' });
       shownNotes.delete(n.id); loadNotes();
     };

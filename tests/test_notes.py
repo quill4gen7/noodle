@@ -796,3 +796,56 @@ def test_the_pen_piles_ink_only_where_it_insists():
     assert "{ lifts: s.lift.map(r4) }" in VIEW
     assert "strokeObject({ color: s.color, width: s.width_mm || 1, pts, nrm, lift })" in VIEW
     assert "height_mm" in HELP and "`lifts`" in MCP
+
+
+# ── the note saves itself (feedback 20261008-153010-creepyfinger-v4) ────────
+# quill drew for a quarter of an hour, the page was reloaded and nothing had
+# reached the server: a note was only written when "Invia all'agente" was
+# pressed. Now /view saves as the user draws — POST once, then PUT on the SAME
+# id — so these pin the rewrite: one note, never copies.
+
+def test_a_note_is_rewritten_in_place_under_the_same_id(store):
+    first = api.add_note(store, "demo", "g1", {"text": "foro", "strokes": [{"points": _circle()}],
+                                               "views": [{"camera": {"position": [1, 2, 3], "target": [0, 0, 0]}}]},
+                         JPEG, [JPEG])
+    d = store.gen_dir("demo", "g1") / "notes"
+    assert (d / "a1.v1.jpg").exists()
+    again = api.add_note(store, "demo", "g1", {"text": "foro più grande",
+                                               "strokes": [{"points": _circle()}, {"points": [[0, 0, 10], [8, 0, 10]]}]},
+                         JPEG, note_id="a1")
+    assert again["id"] == "a1" and again["created"] == first["created"] and again["updated"]
+    assert [n["id"] for n in api.list_notes(store)] == ["a1"]           # one note, no copy
+    assert api.list_notes(store)[0]["text"] == "foro più grande"
+    assert len(api.list_notes(store)[0]["marks"]) == 2
+    # the view the rewrite no longer has is gone with it — no stale picture
+    assert not (d / "a1.v1.jpg").exists() and (d / "a1.jpg").exists() and (d / "a1.claim").exists()
+    # the next NEW note still gets a new id
+    assert api.add_note(store, "demo", "g1", {"text": "altro"})["id"] == "a2"
+
+
+def test_a_rewrite_reopens_a_note_the_agent_had_closed(store):
+    api.add_note(store, "demo", "g1", {"text": "uno"})
+    api.resolve_note(store, "demo", "g1", "a1", reply="fatto")
+    api.add_note(store, "demo", "g1", {"text": "uno, e anche questo"}, note_id="a1")
+    n = api.list_notes(store)[0]
+    assert n["done"] is None and n["reopened"]["reply"] == "fatto" and n["updated"]
+
+
+def test_a_rewrite_needs_an_existing_note(store):
+    with pytest.raises(KeyError):
+        api.add_note(store, "demo", "g1", {"text": "x"}, note_id="a7")
+    with pytest.raises(ValueError):
+        api.add_note(store, "demo", "g1", {"text": "x"}, note_id="../a1")
+
+
+def test_the_viewer_saves_as_you_draw_and_has_no_send_button():
+    assert '@app.put("/api/graph/{name}/gens/{gen}/notes/{note_id}")' in SERVER
+    assert "async function flushSave()" in VIEW and "method: save.id ? 'PUT' : 'POST'" in VIEW
+    # every change goes through syncDraw, and syncDraw schedules the save
+    sync = VIEW[VIEW.index("function syncDraw()"):]
+    assert "scheduleSave()" in sync[:sync.index("\n}\n")]
+    # taking everything back deletes the note; a closing tab saves or asks
+    assert "method: 'DELETE'" in VIEW[VIEW.index("async function flushSave()"):VIEW.index("function setSaveState")]
+    assert "visibilitychange" in VIEW and "beforeunload" in VIEW
+    assert "Invia all'agente ➤" not in VIEW and "async function sendNote" not in VIEW
+    assert "updated" in HELP and "reopened" in HELP

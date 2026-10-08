@@ -2219,9 +2219,11 @@ def _image_kind(data: bytes) -> str:
 def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
              jpeg: Optional[bytes] = None,
              view_jpegs: Optional[list] = None,
-             image_blobs: Optional[list] = None) -> dict:
+             image_blobs: Optional[list] = None,
+             note_id: Optional[str] = None) -> dict:
     """Validate and store what the /view page sends. `payload` = {text, strokes:
-    [{color, width, points:[[x,y,z]…], normals?, piece?}], camera?, t?, hide?}."""
+    [{color, width, points:[[x,y,z]…], normals?, piece?}], camera?, t?, hide?}.
+    With `note_id` it REPLACES that note (same id): /view saves as you draw."""
     import datetime
     if not isinstance(payload, dict):
         raise ValueError("note: expected a JSON object")
@@ -2342,7 +2344,7 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
     if isinstance(payload.get("hide"), str):
         note["hide"] = payload["hide"][:500]
     return store.save_gen_note(graph_id, gen, note, jpeg, view_jpegs,
-                               list(zip(kinds, image_blobs, strict=True)))
+                               list(zip(kinds, image_blobs, strict=True)), note_id=note_id)
 
 
 def _open_notes(store: GraphStore, graph_id: str, gen: str) -> int:
@@ -2386,7 +2388,9 @@ def _note_for_agent(n: dict, base_url: str, points: bool) -> dict:
         out["shapes"] = _link_shapes(out["marks"], n.get("strokes") or [], n["shapes"])
     if points:
         out["strokes"] = n.get("strokes", [])
-    for k in ("t", "hide", "camera"):
+    # the user keeps drawing on a note after it is first saved: `updated` says
+    # when it last changed, `reopened` = the reply it had before that change
+    for k in ("t", "hide", "camera", "updated", "reopened"):
         if n.get(k) is not None:
             out[k] = n[k]
     if n.get("image"):

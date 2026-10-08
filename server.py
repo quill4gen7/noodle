@@ -776,6 +776,17 @@ async def tag_generation(request: Request, name: str, gen: str):
 @app.post("/api/graph/{name}/gens/{gen}/notes")
 async def add_generation_note(name: str, gen: str, request: Request):
     """Body: {text, strokes, camera, t, hide, image: "data:image/jpeg;base64,…"}."""
+    return await _note_upload(name, gen, request)
+
+
+@app.put("/api/graph/{name}/gens/{gen}/notes/{note_id}")
+async def replace_generation_note(name: str, gen: str, note_id: str, request: Request):
+    """The same body as POST: the note is rewritten under the SAME id. /view
+    saves this way as the user draws (feedback 20261008-153010)."""
+    return await _note_upload(name, gen, request, note_id)
+
+
+async def _note_upload(name: str, gen: str, request: Request, note_id: Optional[str] = None):
     import base64
     require_project(name)
     raw = await request.body()
@@ -811,7 +822,8 @@ async def add_generation_note(name: str, gen: str, request: Request):
             raise HTTPException(400, "Invalid image") from e
     imgs = body.get("images") if isinstance(body.get("images"), list) else []
     blobs = [blob_of(im.pop("data", None)) if isinstance(im, dict) else None for im in imgs]
-    return _gen_http(api.add_note, GraphStore(PROJECTS_DIR), name, gen, body, jpeg, view_jpegs, blobs)
+    return _gen_http(api.add_note, GraphStore(PROJECTS_DIR), name, gen, body, jpeg, view_jpegs, blobs,
+                     note_id=note_id)
 
 
 @app.get("/api/graph/{name}/gens/{gen}/notes/{note_id}/img/{k}")

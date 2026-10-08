@@ -540,22 +540,41 @@ class GraphStore:
     def save_gen_note(self, graph_id: str, gen: str, note: dict,
                       jpeg: bytes | None = None,
                       view_jpegs: list[bytes | None] | None = None,
-                      images: list[tuple[str, bytes]] | None = None) -> dict:
-        """Store a NEW note; returns it with its id. Image first, JSON last and
-        atomic, so a listed note always has its picture."""
+                      images: list[tuple[str, bytes]] | None = None,
+                      note_id: str | None = None) -> dict:
+        """Store a note; returns it with its id. Image first, JSON last and
+        atomic, so a listed note always has its picture.
+
+        With `note_id` the note is REWRITTEN in place: /view saves as the user
+        draws, so one sitting is one note however often it changes (feedback
+        20261008-153010: a draft that lived only in the page was lost on a
+        reload). `created` is kept, `updated` set, and a note the agent had
+        closed is reopened — the user changed it after the reply."""
+        import datetime
         d = self.gen_notes_dir(graph_id, gen)
         d.mkdir(exist_ok=True)
-        # `aN.claim` is the atomic claim on the id and is KEPT, even when the note
-        # is deleted: like a gen number, `graph/gN#aK` must mean one note forever.
-        n = max([int(p.stem[1:]) for p in d.glob("a*.claim")
-                 if _NOTE_ID_RE.fullmatch(p.stem)] or [0]) + 1
-        while True:
-            try:
-                (d / f"a{n}.claim").open("x").close()
-                break
-            except FileExistsError:
-                n += 1
-        nid = f"a{n}"
+        if note_id is not None:
+            nid = validate_note_id(note_id)
+            p = d / f"{nid}.json"
+            if not p.exists():
+                raise KeyError(f"No note {note_id!r} on {graph_id}/{gen}")
+            old = json.loads(p.read_text())
+            note = {**note, "created": old.get("created") or note.get("created"),
+                    "updated": datetime.datetime.now().isoformat(timespec="seconds")}
+            if old.get("done"):
+                note["reopened"] = old["done"]
+        else:
+            # `aN.claim` is the atomic claim on the id and is KEPT, even when the
+            # note is deleted: like a gen number, `graph/gN#aK` means one note forever.
+            n = max([int(p.stem[1:]) for p in d.glob("a*.claim")
+                     if _NOTE_ID_RE.fullmatch(p.stem)] or [0]) + 1
+            while True:
+                try:
+                    (d / f"a{n}.claim").open("x").close()
+                    break
+                except FileExistsError:
+                    n += 1
+            nid = f"a{n}"
         note = {**note, "id": nid, "gen": gen, "graph": graph_id, "image": bool(jpeg)}
         if jpeg:
             (d / f"{nid}.jpg").write_bytes(jpeg)
@@ -568,6 +587,13 @@ class GraphStore:
             (d / f"{nid}.img{k}.{ext}").write_bytes(data)
             note["images"][k - 1]["file"] = f"{nid}.img{k}.{ext}"
         atomic_write(d / f"{nid}.json", json.dumps(note, indent=1))
+        if note_id is not None:                # what the rewrite no longer names
+            keep = {f"{nid}.json", f"{nid}.claim"} | ({f"{nid}.jpg"} if jpeg else set())
+            keep |= {f"{nid}.v{k}.jpg" for k, data in enumerate(view_jpegs or [], 1) if data}
+            keep |= {f"{nid}.img{k}.{ext}" for k, (ext, _) in enumerate(images or [], 1)}
+            for f in d.glob(f"{nid}.*"):
+                if f.name not in keep:
+                    f.unlink(missing_ok=True)
         return note
 
     def update_gen_note(self, graph_id: str, gen: str, note_id: str, **fields) -> dict:
