@@ -1853,6 +1853,24 @@ result while the workflow moves on.
     value. Mesh-lane pieces have no B-Rep and say so. Static preview: the
     snaps work (computation in the browser), exact does not.
   Tests: `tests/test_measures.py`, `tests/test_notes.py`, `tests/ui/measure.test.cjs`.
+- **▣ Forme — basic shapes placed ON the part** (✎ Disegna → ▣, `F`): a cube,
+  a cylinder or a sphere, in the pen's colour, sent as the note's `shapes`
+  (`kind`, `size` in its own frame — a cylinder is [Ø, Ø, h] along `axis` —
+  `center`, `quat`, `anchor`/`normal` of the surface, the piece; `cad_notes`
+  adds a `summary` and `near_marks`). A tap on the part sets one down SITTING
+  on the surface (local Z = the normal). Selected, it wears a cage: 8 corners
+  resize with the opposite corner fixed (signed along the corner's direction —
+  dragged past the opposite one it STOPS, never flips), the centre dot scales
+  about the base, three rings rotate about the centre (Shift 15°). MOVING IS
+  NOT FREE: dragging the body re-anchors it on the surface hit under the
+  pointer (`stickAt`) or does nothing — quill: «si clicca e appiccica sui
+  pezzi». The minimum side follows the PIECE it sits on (2% of its size), so
+  corners never meet; the handle MARKS shrink with the shape (≤ 10% of its
+  shortest side) while the GRAB volumes stay ~6/9 px, nearest one wins, and
+  on the body of the selected shape a handle wins only within half a grab
+  radius (else a small shape could never be moved). Phone: the tool row
+  wraps and each tool's menu shows only while it is in hand — 604px of tools
+  in a 390px screen had been scrolling the whole viewer sideways.
 - **The viewer draws on demand** (`CadViewer.invalidate()`, no continuous loop):
   anything that changes the scene from outside the viewer must ask for a frame.
   `/view` does it in `poseTrack()` (every timeline pose) and `apply()` (hidden

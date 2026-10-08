@@ -301,7 +301,12 @@ def cad_notes(graph_id: str = "", gen: str = "", limit: int = 10,
     tessellated curve), ends `a`/`b` with `at` and `snap` (vertex /
     circle_center / edge / face / free) and the piece, a one-line `summary`,
     and `near_marks` (each such mark lists them under `measures`): «Ø ≈ 8,00»
-    next to a circled hole is what the user measured there. `points=True` adds the raw
+    next to a circled hole is what the user measured there. Basic SHAPES the user
+    placed on the part (▣ Forme: a cube, a cylinder, a sphere — «a Ø 6 pin here»,
+    «a block this big there») come as `shapes`: `kind`, `size` [x,y,z] mm in its
+    own frame (a cylinder [Ø, Ø, height] along `axis`), `center`, `quat`, the
+    surface `anchor`/`normal` it sits on, the node, a `summary` and `near_marks`.
+    `points=True` adds the raw
     `strokes` (surface points + normals, split where the pen left the surface).
     Once handled, close it with `cad_note_done` so the user sees your answer."""
     return _safe(api.list_notes, STORE, graph_id=graph_id, gen=gen, limit=limit,

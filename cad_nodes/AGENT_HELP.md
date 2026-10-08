@@ -136,7 +136,13 @@ More detail on demand — `cad_help(topic=...)` / `GET /api/agent/help?topic=...
    before acting on a hundredth), the ends `a`/`b` with `at`, the `snap`
    (vertex / circle_center / edge / face / free) and the node, a one-line
    `summary`, and `near_marks` («Ø ≈ 8,00» on a circled hole is what the
-   user measured there; the mark lists it under `measures`). A label's `style` says how it was drawn: `paint` (the letters are
+   user measured there; the mark lists it under `measures`). SHAPES the user
+   placed on the part (▣ Forme) arrive as `shapes`: `kind` box / cylinder /
+   sphere, `size` [x,y,z] mm in its own frame (a cylinder is [Ø, Ø, height]
+   along `axis`), `center`, `quat`, the surface `anchor`/`normal` it sits on,
+   the node, a `summary` and `near_marks` — read a Ø 6 × 10 cylinder on a face
+   as «put a pin / boss / hole of this size HERE», then ask if unsure whether
+   it adds or cuts. A label's `style` says how it was drawn: `paint` (the letters are
    pen strokes on the surface — they are NOT in `marks`; with `points=True`
    they show up as strokes with `kind: "text"`), `tag` (a plate on a stem) or
    `decal`. Pictures the user PLACED on the part (a PNG/JPEG — a sketch, a

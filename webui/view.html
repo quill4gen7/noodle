@@ -241,6 +241,11 @@
   #vp.drawing[data-tool=measure] canvas{cursor:crosshair;}
   #m-snap{position:absolute;display:none;pointer-events:none;z-index:6;padding:2px 7px;border-radius:6px;
     background:rgba(10,12,20,.88);border:1px solid #a78bfa;color:#e9e3ff;font-size:12px;white-space:nowrap;}
+  #vp.drawing[data-tool=shape] canvas{cursor:copy;}
+  #s-bar{position:absolute;left:50%;transform:translateX(-50%);bottom:28px;display:none;align-items:center;gap:6px;z-index:6;
+    background:var(--bg-2);border:1px solid #a78bfa;border-radius:12px;padding:5px 6px 5px 12px;box-shadow:0 8px 24px rgba(0,0,0,.5);}
+  #s-bar.open{display:flex;}
+  #s-dims{font-variant-numeric:tabular-nums;white-space:nowrap;}
   #m-lens{position:absolute;display:none;pointer-events:none;z-index:7;width:120px;}
   #m-lens canvas{width:120px;height:120px;border-radius:50%;border:2px solid #a78bfa;background:#000;
     box-shadow:0 4px 18px rgba(0,0,0,.6);display:block;}
@@ -297,6 +302,13 @@
     #dbar .sz{width:36px;}
     #dbar .sep,#d-hint{display:none;}
     #dbar .tool{min-width:36px;padding:4px 6px;}
+    /* the tools row must wrap, never widen the page: one too many tools and a tap
+       on the last one scrolled the whole viewer sideways (measured: 604px of
+       tools in 390). Each tool's menu shows only while that tool is in hand. */
+    #dbar .grp{flex-wrap:wrap;}
+    #dbar select{display:none;}
+    #vp[data-tool=text] #d-lstyle,#vp[data-tool=measure] #d-mmode,#vp[data-tool=shape] #d-shapekind{display:inline-block;}
+    #s-bar{top:8px;bottom:auto;}          /* the draw bar owns the bottom on a phone */
     #d-lstyle{min-height:36px;max-width:104px;}
     #d-text{flex:1 1 140px;min-height:36px;min-width:0;}
     #toast{top:8px;}
@@ -363,6 +375,12 @@
             <option value="hole">Foro / cerchio</option>
             <option value="faces">Faccia–faccia</option>
           </select>
+          <button class="btn tool" id="d-shape" title="Forme: tocca il pezzo per posarci un cubo, un cilindro o una sfera (F) — trascinala per spostarla SUL pezzo, i vertici della gabbia la ridimensionano, il centro la scala, gli anelli la ruotano (Shift: a 15°)">▣</button>
+          <select id="d-shapekind" title="Quale forma posare">
+            <option value="box">Cubo</option>
+            <option value="cylinder">Cilindro</option>
+            <option value="sphere">Sfera</option>
+          </select>
           <button class="btn tool" id="d-erase" title="Gomma: passa sopra un tratto per toglierlo intero (E) — la misura sceglie il raggio">⌫</button>
           <button class="btn tool" id="d-hand" title="Muovi: ruota/zoom senza disegnare (anche: trascina fuori dal pezzo, tasto destro, rotella)">Muovi</button>
         </div>
@@ -381,6 +399,7 @@
       </div>
       <div id="d-ring"></div><div id="d-box"></div>
       <div id="m-snap"></div>
+      <div id="s-bar"><span id="s-dims"></span><button class="btn" id="s-del" title="Togli questa forma (Canc)">Togli</button><button class="btn" id="s-done" title="Fatto (Esc)">✓</button></div>
       <div id="m-lens"><canvas></canvas><div id="m-lens-t"></div></div>
       <input id="d-label" maxlength="200" autocomplete="off" placeholder="scrivi… (Invio)">
       <div id="toast"></div>
@@ -870,7 +889,7 @@ $('c').addEventListener('pointerup', e => {
   if (moved > tol || long) return;
   // the measure tool's taps are its points: no select, and two quick taps on a
   // phone are a dimension, not a double tap that frames the view
-  if (drawing && tool === 'measure') return;
+  if (drawing && (tool === 'measure' || tool === 'shape')) return;
   if (e.pointerType !== 'mouse') {
     const now = performance.now();
     if (now - lastTap < 320) { lastTap = 0; frameVisible(); return; }
@@ -1117,7 +1136,7 @@ vp.addEventListener('pointerdown', e => {
     }
     return;
   }
-  if (tool === 'hand' || tool === 'measure' || e.button !== 0 || !e.isPrimary) return;
+  if (tool === 'hand' || tool === 'measure' || tool === 'shape' || e.button !== 0 || !e.isPrimary) return;
   const hit = surfaceHit(e.clientX, e.clientY);
   let onLabel = tool === 'text' || tool === 'erase' ? labelAt(e.clientX, e.clientY) : null;
   if (onLabel && onLabel.img && tool === 'text') onLabel = null;   // T edits words, not pictures
@@ -1128,7 +1147,7 @@ vp.addEventListener('pointerdown', e => {
   const down = { pointerId: e.pointerId, pointerType: e.pointerType, isPrimary: true, button: 0, buttons: 1,
                  clientX: e.clientX, clientY: e.clientY, bubbles: true, cancelable: true };
   painting = { id: e.pointerId, mode: tool, x: e.clientX, y: e.clientY, down, hit };
-  if (tool === 'erase') { painting.erased = { strokes: [], labels: [], measures: [] }; eraseAt(hit, e.clientX, e.clientY); return; }
+  if (tool === 'erase') { painting.erased = { strokes: [], labels: [], measures: [], shapes: [] }; eraseAt(hit, e.clientX, e.clientY); return; }
   if (tool === 'image') { painting.x0 = e.clientX; painting.y0 = e.clientY; return; }
   if (tool === 'text') {
     painting.x0 = e.clientX; painting.y0 = e.clientY;
@@ -1170,9 +1189,10 @@ const endPaint = e => {
   if (p.mode === 'pen') {
     const mine = draft.filter(s => s.g === p.g);
     if (mine.length) { actions.push({ type: 'pen', g: p.g }); takeView(mine); }
-  } else if (p.mode === 'erase' && (p.erased.strokes.length || p.erased.labels.length || p.erased.measures.length)) {
+  } else if (p.mode === 'erase' && (p.erased.strokes.length || p.erased.labels.length || p.erased.measures.length
+             || p.erased.shapes.length)) {
     actions.push({ type: 'erase', ...p.erased });
-    refreshViews(viewsOf([...p.erased.strokes, ...p.erased.labels, ...p.erased.measures]));
+    refreshViews(viewsOf([...p.erased.strokes, ...p.erased.labels, ...p.erased.measures, ...p.erased.shapes]));
   } else if (p.mode === 'image') {
     hideBox();
     if (e.type === 'pointerup' && p.hit) newImage(p, boxRect(p, e.clientX, e.clientY));
@@ -1239,6 +1259,12 @@ function eraseAt(hit, x, y) {
     if (segDist(hit.p, A, B) > r) continue;
     dmeasures.splice(i, 1); disposeObj(M.obj); M.obj = null; er.measures.push(M);
   }
+  for (let i = shapes.length - 1; i >= 0; i--) {     // a shape: rubbed out anywhere on it
+    const S = shapes[i];
+    if (!shapeContains(S, hit.p, r)) continue;
+    if (S === selShape) selectShape(null);
+    shapes.splice(i, 1); disposeObj(S.obj); S.obj = null; er.shapes.push(S);
+  }
   viewer.invalidate(); syncDraw();
 }
 // inside a label's box, measured in its own frame (right, up, normal)
@@ -1256,6 +1282,8 @@ function restore(er) {
   labels.sort((a, b) => a.k - b.k);
   for (const M of er.measures || []) { dmeasures.push(M); drawDraftMeasure(M); }
   dmeasures.sort((a, b) => a.k - b.k);
+  for (const S of er.shapes || []) { shapes.push(S); drawShape(S); }
+  shapes.sort((a, b) => a.k - b.k);
 }
 const viewsOf = items => items.map(x => x.view).filter(v => v != null);
 function moveRing(e) {
@@ -1599,6 +1627,304 @@ function aimAt(x, y) {
   $('m-lens-t').textContent = q ? snapLabel(q) : 'niente qui';
 }
 function lensOff() { const l = $('m-lens'); if (l) l.style.display = 'none'; }
+
+// ── ▣ Forme: basic shapes placed ON the part ──
+// «a Ø 6 cylinder here», «a block this big there»: the user puts a cube, a
+// cylinder or a sphere on the part, and the agent gets it as DATA (kind, size,
+// centre, orientation, the piece it sits on). A tap on the part sets one down
+// sitting ON the surface, its axis along the normal, in the pen's colour.
+// Selected, it wears a CAGE: the 8 corners resize it (the opposite corner stays
+// put), the dot at the centre scales the whole (drag up = bigger, the base stays
+// on the surface), three rings turn it (Shift: 15° steps). Moving is not free:
+// drag the shape itself and it SLIDES ON the parts, stuck to the surface under
+// the pointer and turned with its normal — it never floats in the air.
+// A drag that does not start on the selected shape or a handle still orbits.
+// Part of the draft like a stroke: ↶, ⌫, the view pictures, Canc / «Togli».
+const SHAPE_KINDS = ['box', 'cylinder', 'sphere'];
+const SHAPE_NAME = { box: 'cubo', cylinder: 'cilindro', sphere: 'sfera' };
+const SHAPE_HINT = 'Forme: tocca il pezzo per posare la forma · trascinala per farla scorrere SUL pezzo · vertici = misura, centro = scala, anelli = ruota (Shift 15°) · Canc / «Togli» per toglierla';
+let shapeKind = 'box';
+try { const v = localStorage.getItem('noodle:view:shapeKind'); if (SHAPE_KINDS.includes(v)) shapeKind = v; } catch {}
+$('d-shapekind').value = shapeKind;
+$('d-shapekind').addEventListener('change', e => {
+  shapeKind = SHAPE_KINDS.includes(e.target.value) ? e.target.value : 'box';
+  try { localStorage.setItem('noodle:view:shapeKind', shapeKind); } catch {}
+  setTool('shape');
+});
+const shapes = [];                             // the draft's shapes
+let selShape = null, sDrag = null, sDown = null;
+const cageGroup = new THREE.Group(); cageGroup.name = 'shape-cage';
+viewer.scene.add(cageGroup);
+const Z_UP = new THREE.Vector3(0, 0, 1);
+function shapeText(kind, size) {
+  const [x, y, z] = size.isVector3 ? size.toArray() : size;
+  if (kind === 'sphere') return Math.abs(x - y) < 1e-3 && Math.abs(y - z) < 1e-3 ? `sfera Ø ${fmtNum(x)}` : `ellissoide ${fmtNum(x)} × ${fmtNum(y)} × ${fmtNum(z)}`;
+  if (kind === 'cylinder') return `cilindro Ø ${fmtNum(x)} × ${fmtNum(z)}`;
+  return `cubo ${fmtNum(x)} × ${fmtNum(y)} × ${fmtNum(z)}`;
+}
+// the world orientation: the surface frame (Z along its normal) then the
+// user's own turn on top of it
+function surfQuat(n) { return new THREE.Quaternion().setFromUnitVectors(Z_UP, n.clone().normalize()); }
+function shapeQuat(S) { return surfQuat(S.n).multiply(S.rot); }
+// the centre sits half a height above the anchor, along the shape's own Z
+function placeShape(S) { S.center = S.anchor.clone().add(new THREE.Vector3(0, 0, S.size.z / 2).applyQuaternion(shapeQuat(S))); }
+function shapeState(S) { return { anchor: S.anchor.clone(), n: S.n.clone(), rot: S.rot.clone(), size: S.size.clone(), piece: S.piece }; }
+function setShapeState(S, st) { S.anchor = st.anchor.clone(); S.n = st.n.clone(); S.rot = st.rot.clone(); S.size = st.size.clone(); S.piece = st.piece; placeShape(S); }
+function shapeGeo(kind) {
+  if (kind === 'cylinder') { const g = new THREE.CylinderGeometry(0.5, 0.5, 1, 48); g.rotateX(Math.PI / 2); return g; }
+  if (kind === 'sphere') return new THREE.SphereGeometry(0.5, 40, 20);
+  return new THREE.BoxGeometry(1, 1, 1);
+}
+// a shape as drawn: translucent body + its edges (a sphere: its equator)
+function shapeObject(S) {
+  const g = new THREE.Group(), geo = shapeGeo(S.kind);
+  const body = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: S.color, transparent: true, opacity: 0.5,
+    roughness: 0.5, depthWrite: false, side: THREE.DoubleSide }));
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 30),
+    new THREE.LineBasicMaterial({ color: S.color, toneMapped: false }));
+  body.renderOrder = 4; edges.renderOrder = 5;
+  g.add(body, edges);
+  g.position.copy(S.center); g.quaternion.copy(S.quat || shapeQuat(S)); g.scale.copy(S.size);
+  g.userData.shape = S; body.userData.shapeBody = S;
+  return g;
+}
+function drawShape(S) {
+  if (S.obj) disposeObj(S.obj);
+  S.quat = null; placeShape(S);
+  S.obj = shapeObject(S); annoGroup.add(S.obj); viewer.invalidate();
+}
+// plain JSON (as stored in a note) → what shapeObject draws
+function shapeFrom(sh) {
+  return { kind: sh.kind, color: sh.color || MEASURE_INK, center: new THREE.Vector3(...sh.center),
+           size: new THREE.Vector3(...sh.size), quat: new THREE.Quaternion(...sh.quat) };
+}
+function shapeData(S) {
+  const q = shapeQuat(S), ax = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
+  return { kind: S.kind, color: S.color, piece: S.piece, center: v3(S.center), size: v3(S.size),
+           quat: [q.x, q.y, q.z, q.w].map(r4), axis: v3(ax), anchor: v3(S.anchor), normal: v3(S.n) };
+}
+// is p (within r) on or in the shape? — the eraser's test, in its own frame
+function shapeContains(S, p, r) {
+  const l = p.clone().sub(S.center).applyQuaternion(shapeQuat(S).invert());
+  const h = S.size.clone().multiplyScalar(0.5);
+  return Math.abs(l.x) <= h.x + r && Math.abs(l.y) <= h.y + r && Math.abs(l.z) <= h.z + r;
+}
+// The smallest a side may get while scaling: the corners must never meet nor
+// pass each other. It follows the PIECE the shape sits on (2% of its size),
+// not the zoom — the handles are drawn in px, so zooming in always pulls them
+// apart again.
+function shapeMin(S) {
+  const li = S.piece && leafIndex.get(S.piece);
+  const obj = li ? li.node.obj : null;
+  const box = obj ? new THREE.Box3().setFromObject(obj) : visibleBox();
+  const L = box.isEmpty() ? 0 : box.getSize(new THREE.Vector3()).length();
+  return Math.max(0.02 * L, 1e-3);
+}
+function addShape(hit) {
+  const s = 40 * mmPerPx(hit.p);
+  const S = { kind: shapeKind, color: pen.color, anchor: hit.p.clone(), n: hit.n.clone(), rot: new THREE.Quaternion(),
+              size: new THREE.Vector3(s, s, shapeKind === 'cylinder' ? s * 1.2 : s), piece: hit.key, k: ++seq };
+  const m = 2 * shapeMin(S);
+  if (S.size.x < m) S.size.multiplyScalar(m / S.size.x);
+  shapes.push(S); drawShape(S);
+  actions.push({ type: 'shape', S, before: null });
+  takeView([S]);
+  selectShape(S); syncDraw();
+}
+function deleteShape(S) {
+  const i = shapes.indexOf(S); if (i < 0) return;
+  if (S === selShape) selectShape(null);
+  shapes.splice(i, 1); disposeObj(S.obj); S.obj = null;
+  actions.push({ type: 'erase', strokes: [], labels: [], measures: [], shapes: [S] });
+  refreshViews(viewsOf([S])); syncDraw();
+}
+// ── the cage: corners, centre, rings ──
+function handleMat(color, op = 1) {
+  return new THREE.MeshBasicMaterial({ color, toneMapped: false, depthTest: false, depthWrite: false, transparent: true, opacity: op });
+}
+const RING_INK = ['#ef4444', '#22c55e', '#3b82f6'];
+function refreshCage() {
+  while (cageGroup.children.length) disposeObj(cageGroup.children[0]);
+  const S = selShape;
+  $('s-bar').classList.toggle('open', !!S);
+  if (!S) { viewer.invalidate(); return; }
+  $('s-dims').textContent = shapeText(S.kind, S.size);
+  const q = shapeQuat(S), touch = matchMedia('(pointer:coarse)').matches;
+  // the marks shrink WITH the shape (never bigger than a slice of its shortest
+  // side, or a tiny cage hides the part under its own corners); what the
+  // pointer grabs stays the comfortable size, nearest corner wins
+  const px = mmPerPx(S.center), side = Math.min(S.size.x, S.size.y, S.size.z);
+  const grab = (touch ? 9 : 6) * px, hs = Math.min(grab, 0.1 * side);
+  const half = S.size.clone().multiplyScalar(0.5);
+  // the cage's edges
+  const box = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
+    new THREE.LineBasicMaterial({ color: '#e9e3ff', toneMapped: false, depthTest: false, transparent: true, opacity: 0.9 }));
+  box.position.copy(S.center); box.quaternion.copy(q); box.scale.copy(S.size); box.renderOrder = 20;
+  cageGroup.add(box);
+  const cube = new THREE.BoxGeometry(2 * hs, 2 * hs, 2 * hs), pickCube = new THREE.BoxGeometry(2 * grab, 2 * grab, 2 * grab);
+  let i = 0;
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
+    const handle = { type: 'corner', s: new THREE.Vector3(sx, sy, sz), i: i++ };
+    const at = new THREE.Vector3(sx * half.x, sy * half.y, sz * half.z).applyQuaternion(q).add(S.center);
+    const c = new THREE.Mesh(cube, handleMat('#ffffff')), pk = new THREE.Mesh(pickCube, handleMat('#ffffff', 0));
+    pk.visible = false;
+    for (const m of [c, pk]) { m.position.copy(at); m.quaternion.copy(q); m.renderOrder = 22; m.userData.handle = handle; }
+    cageGroup.add(c, pk);
+  }
+  const ctr = new THREE.Mesh(new THREE.SphereGeometry(Math.min(grab * 1.4, 0.15 * side), 16, 10), handleMat(MEASURE_INK));
+  const ctrPick = new THREE.Mesh(new THREE.SphereGeometry(grab * 1.4, 12, 8), handleMat(MEASURE_INK, 0));
+  ctrPick.visible = false;
+  for (const m of [ctr, ctrPick]) { m.position.copy(S.center); m.renderOrder = 23; m.userData.handle = { type: 'center' }; }
+  cageGroup.add(ctr, ctrPick);
+  // rings: around the centre, a little outside the cage, in the shape's own axes
+  const R = Math.max(half.length() * 1.15, 22 * px);
+  for (let a = 0; a < 3; a++) {
+    const t = new THREE.TorusGeometry(R, Math.max(px * 1.2, 0.01), 6, 96);
+    const fat = new THREE.TorusGeometry(R, (touch ? 10 : 6) * px, 6, 48);   // what is picked: thicker than what is drawn
+    const toAxis = new THREE.Quaternion().setFromUnitVectors(Z_UP, [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), Z_UP][a]);
+    const qq = q.clone().multiply(toAxis);
+    const ring = new THREE.Mesh(t, handleMat(RING_INK[a], 0.95));
+    const hit = new THREE.Mesh(fat, handleMat(RING_INK[a], 0)); hit.visible = false;
+    for (const m of [ring, hit]) { m.position.copy(S.center); m.quaternion.copy(qq); m.renderOrder = 21; }
+    hit.userData.handle = ring.userData.handle = { type: 'ring', axis: a };
+    cageGroup.add(ring, hit);
+  }
+  viewer.invalidate();
+}
+function selectShape(S) {
+  selShape = S || null;
+  if (typeof viewer !== 'undefined') refreshCage();
+}
+function rayAt(x, y) {
+  const r = $('c').getBoundingClientRect();
+  ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, viewer.camera);
+  return ray;
+}
+function handleAt(x, y) {
+  if (!selShape) return null;
+  const hs = rayAt(x, y).intersectObjects(cageGroup.children, false).filter(h => h.object.userData.handle);
+  // corners and the centre win over a ring that passes in front of them; among
+  // those, the one whose centre is NEAREST the pointer on screen — the grab
+  // volumes are bigger than the marks and may overlap on a small cage
+  const r = $('c').getBoundingClientRect(), dist2 = o => {
+    const v = o.position.clone().project(viewer.camera);
+    return (r.left + (v.x + 1) / 2 * r.width - x) ** 2 + (r.top + (1 - v.y) / 2 * r.height - y) ** 2;
+  };
+  const pts = hs.filter(h => h.object.userData.handle.type !== 'ring').sort((a, b) => dist2(a.object) - dist2(b.object));
+  const pick = pts[0] || hs[0];
+  if (!pick) return null;
+  return { ...pick.object.userData.handle, px: pick.object.userData.handle.type === 'ring' ? 0 : Math.sqrt(dist2(pick.object)) };
+}
+function shapeAt(x, y) {
+  const objs = shapes.filter(S => S.obj).map(S => S.obj);
+  const h = rayAt(x, y).intersectObjects(objs, true).find(h => h.object.userData.shapeBody);
+  return h ? h.object.userData.shapeBody : null;
+}
+// where the pointer is on the plane through `p` facing the camera
+function onViewPlane(x, y, p) {
+  const n = viewer.camera.getWorldDirection(new THREE.Vector3());
+  const pl = new THREE.Plane().setFromNormalAndCoplanarPoint(n, p);
+  return rayAt(x, y).ray.intersectPlane(pl, new THREE.Vector3());
+}
+// a surface hit that is NOT on one of the shapes (the shapes live in annoGroup,
+// surfaceHit looks at the parts only — so a shape can be slid across itself)
+function stickAt(x, y) { return surfaceHit(x, y); }
+vp.addEventListener('pointerdown', e => {
+  if (!drawing || tool !== 'shape' || e.target !== $('c') || e.button !== 0 || !e.isPrimary) return;
+  let h = handleAt(e.clientX, e.clientY);
+  const onBody = shapeAt(e.clientX, e.clientY);
+  // on the body of the selected shape a corner / the centre wins only when the
+  // pointer is right on it — on a small shape (or under a finger) the grab
+  // volumes cover the body, and grabbing the shape must still MOVE it
+  const grabPx = e.pointerType === 'mouse' ? 6 : 9;
+  if (h && onBody === selShape && h.type !== 'ring' && h.px > 0.5 * grabPx) h = null;
+  const body = !h && onBody;
+  if (h || body) {
+    e.stopPropagation(); e.preventDefault();
+    try { $('c').setPointerCapture(e.pointerId); } catch {}
+    if (body && body !== selShape) selectShape(body);
+    const S = selShape;
+    sDrag = { id: e.pointerId, x: e.clientX, y: e.clientY, h: h || { type: 'move' }, S, before: shapeState(S),
+              q0: shapeQuat(S), center0: S.center.clone(), size0: S.size.clone(), moved: false };
+    if (h && h.type === 'corner') {
+      sDrag.fixed = h.s.clone().negate().multiply(S.size).multiplyScalar(0.5).applyQuaternion(sDrag.q0).add(S.center);
+      sDrag.grab = h.s.clone().multiply(S.size).multiplyScalar(0.5).applyQuaternion(sDrag.q0).add(S.center);
+    }
+    if (h && h.type === 'ring') {
+      const c = S.center.clone().project(viewer.camera), r = $('c').getBoundingClientRect();
+      sDrag.cx = r.left + (c.x + 1) / 2 * r.width; sDrag.cy = r.top + (1 - c.y) / 2 * r.height;
+      sDrag.a0 = Math.atan2(e.clientY - sDrag.cy, e.clientX - sDrag.cx);
+      sDrag.axis = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), Z_UP][h.axis].clone().applyQuaternion(sDrag.q0);
+    }
+    return;
+  }
+  sDown = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() };   // maybe a tap, maybe an orbit
+}, true);
+vp.addEventListener('pointermove', e => {
+  if (!sDrag || e.pointerId !== sDrag.id) return;
+  e.stopPropagation(); e.preventDefault();
+  const d = sDrag, S = d.S;
+  if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 3) return;
+  d.moved = true;
+  if (d.h.type === 'move') {                   // slide ON the parts, never in the air
+    const hit = stickAt(e.clientX, e.clientY);
+    if (!hit) return;
+    S.anchor = hit.p.clone(); S.n = hit.n.clone(); S.piece = hit.key;
+  } else if (d.h.type === 'corner') {
+    const W = onViewPlane(e.clientX, e.clientY, d.grab);
+    if (!W) return;
+    const l = W.clone().sub(d.fixed).applyQuaternion(d.q0.clone().invert());
+    const min = shapeMin(S), s0 = d.h.s;
+    // SIGNED along the corner's own direction: dragged past the opposite
+    // corner it stops at the minimum instead of turning the cage inside out
+    let sz = new THREE.Vector3(Math.max(l.x * s0.x, min), Math.max(l.y * s0.y, min), Math.max(l.z * s0.z, min));
+    if (S.kind === 'sphere') { const m = Math.max(sz.x, sz.y, sz.z); sz.set(m, m, m); }
+    if (S.kind === 'cylinder') { const m = Math.max(sz.x, sz.y); sz.x = sz.y = m; }
+    S.size = sz;
+    const s = d.h.s;
+    const center = s.clone().multiply(sz).multiplyScalar(0.5).applyQuaternion(d.q0).add(d.fixed);
+    S.anchor = center.clone().sub(new THREE.Vector3(0, 0, sz.z / 2).applyQuaternion(d.q0));
+  } else if (d.h.type === 'center') {          // the whole, about its base
+    // never below the piece's minimum on its smallest side
+    const f = Math.max(Math.exp((d.y - e.clientY) / 120), shapeMin(S) / Math.min(d.size0.x, d.size0.y, d.size0.z));
+    S.size = d.size0.clone().multiplyScalar(f);
+  } else if (d.h.type === 'ring') {
+    let da = Math.atan2(e.clientY - d.cy, e.clientX - d.cx) - d.a0;
+    const toward = d.axis.dot(viewer.camera.getWorldDirection(new THREE.Vector3())) < 0;
+    if (toward) da = -da;                      // screen y points down: turn the way the hand goes
+    if (e.shiftKey) da = Math.round(da / (Math.PI / 12)) * (Math.PI / 12);
+    const qNew = new THREE.Quaternion().setFromAxisAngle(d.axis, da).multiply(d.q0);
+    S.rot = surfQuat(S.n).invert().multiply(qNew);
+    // turn about the CENTRE: the anchor follows
+    S.anchor = d.center0.clone().sub(new THREE.Vector3(0, 0, S.size.z / 2).applyQuaternion(qNew));
+  }
+  drawShape(S); refreshCage();
+}, true);
+const endShapeDrag = e => {
+  if (sDrag && e.pointerId === sDrag.id) {
+    e.stopPropagation();
+    const d = sDrag; sDrag = null;
+    if (d.moved) {
+      actions.push({ type: 'shape', S: d.S, before: d.before });
+      refreshViews(viewsOf([d.S])); takeView([d.S]);
+      syncDraw();
+    }
+    return;
+  }
+  if (!sDown || e.pointerId !== sDown.id || !drawing || tool !== 'shape') { sDown = null; return; }
+  const d = sDown; sDown = null;
+  if (e.type !== 'pointerup' || Math.hypot(e.clientX - d.x, e.clientY - d.y) > TAP_PX(e) || performance.now() - d.t > 600) return;
+  if (selShape) { selectShape(null); return; }  // a tap away lets go; the next one sets a shape down
+  const hit = surfaceHit(e.clientX, e.clientY);
+  if (hit) { if (clock.playing) setPlaying(false); addShape(hit); }
+};
+vp.addEventListener('pointerup', endShapeDrag, true);
+vp.addEventListener('pointercancel', endShapeDrag, true);
+$('s-del').onclick = () => { if (selShape) deleteShape(selShape); };
+$('s-done').onclick = () => selectShape(null);
+// the cage is drawn at a size in px: keep it so while the view zooms
+viewer.controls.addEventListener('change', () => { if (selShape && !sDrag) refreshCage(); });
 
 // ── T: text ON the part — two styles, the user picks (⚑ / ▭ next to T) ──
 // Press on the part and drag a box (a tap gives a default one), type, Enter.
@@ -2230,7 +2556,7 @@ function takeView(items) {
 function refreshViews(idxs) {
   for (const i of new Set(idxs)) {
     const v = views[i]; if (!v) continue;
-    const left = [...draft, ...labels, ...dmeasures].filter(x => x.view === i);
+    const left = [...draft, ...labels, ...dmeasures, ...shapes].filter(x => x.view === i);
     if (!left.length) { v.image = null; continue; }      // nothing left to show
     if (sameCam(v.cam, camState())) { v.image = viewer.snapshot(VIEW_SHOT); continue; }
     if (!!v.cam.ortho !== viewer.isOrtho) {
@@ -2285,6 +2611,15 @@ function undo() {
     touched = viewsOf([a.L, ...takeLabelStrokes(a.L)]);
     a.L.text = a.before; restore({ strokes: a.oldStrokes }); touched.push(...viewsOf(a.oldStrokes));
   } else if (a.type === 'edit') { a.L.text = a.before; drawLabel(a.L); touched = viewsOf([a.L]); }
+  else if (a.type === 'shape') {
+    const S = a.S;
+    if (!a.before) {                           // it was added: take it away
+      if (S === selShape) selectShape(null);
+      const i = shapes.indexOf(S); if (i >= 0) shapes.splice(i, 1);
+      disposeObj(S.obj); S.obj = null;
+    } else { setShapeState(S, a.before); drawShape(S); if (S === selShape) refreshCage(); }
+    touched = viewsOf([S]);
+  }
   else if (a.type === 'measure') {
     const i = dmeasures.indexOf(a.M);
     if (i >= 0) { dmeasures.splice(i, 1); disposeObj(a.M.obj); a.M.obj = null; }
@@ -2299,18 +2634,20 @@ function clearDraft() {
   while (labels.length) disposeObj(labels.pop().obj);
   while (dmeasures.length) disposeObj(dmeasures.pop().obj);
   cancelMeasure();
+  selectShape(null);
+  while (shapes.length) disposeObj(shapes.pop().obj);
   views.length = 0; actions.length = 0;
   viewer.invalidate(); syncDraw();
 }
-function setTool(t) { tool = t; if (t !== 'measure') cancelMeasure(); if (t !== 'erase') $('d-ring').style.display = 'none'; if (t !== 'text') closeEditor(true); syncDraw(); }
+function setTool(t) { tool = t; if (t !== 'measure') cancelMeasure(); if (t !== 'shape') selectShape(null); if (t !== 'erase') $('d-ring').style.display = 'none'; if (t !== 'text') closeEditor(true); syncDraw(); }
 function syncDraw() {
-  const any = draft.length || labels.length || dmeasures.length;
+  const any = draft.length || labels.length || dmeasures.length || shapes.length;
   $('d-send').disabled = !any && !$('d-text').value.trim();
   $('d-undo').disabled = !actions.length; $('d-clear').disabled = !any;
-  $('d-hint').textContent = drawing && tool === 'measure' ? measureHint() : DRAW_HINT;
+  $('d-hint').textContent = drawing && tool === 'measure' ? measureHint() : drawing && tool === 'shape' ? SHAPE_HINT : DRAW_HINT;
   vp.classList.toggle('pen', drawing && tool === 'pen');
   vp.dataset.tool = drawing ? tool : '';
-  for (const [id, t] of [['d-pen', 'pen'], ['d-texttool', 'text'], ['d-imgtool', 'image'], ['d-measure', 'measure'], ['d-erase', 'erase'], ['d-hand', 'hand']]) $(id).classList.toggle('on', tool === t);
+  for (const [id, t] of [['d-pen', 'pen'], ['d-texttool', 'text'], ['d-imgtool', 'image'], ['d-measure', 'measure'], ['d-shape', 'shape'], ['d-erase', 'erase'], ['d-hand', 'hand']]) $(id).classList.toggle('on', tool === t);
   for (const b of $('d-colors').children) b.classList.toggle('on', b.dataset.c === pen.color);
   for (const b of $('d-sizes').children) b.classList.toggle('on', +b.dataset.s === pen.size);
 }
@@ -2318,7 +2655,7 @@ function setDrawing(on) {
   drawing = on;
   vp.classList.toggle('drawing', on);
   if (on && clock.playing) setPlaying(false);
-  if (!on) { cancelGesture(); cancelMeasure(); closeEditor(true); $('d-text').blur(); $('d-ring').style.display = 'none'; }
+  if (!on) { cancelGesture(); cancelMeasure(); selectShape(null); closeEditor(true); $('d-text').blur(); $('d-ring').style.display = 'none'; }
   syncDraw();
 }
 for (const c of PEN_COLORS) {
@@ -2343,6 +2680,7 @@ $('d-erase').onclick = () => setTool('erase');
 $('d-texttool').onclick = () => setTool('text');
 $('d-hand').onclick = () => setTool('hand');
 $('d-measure').onclick = () => setTool('measure');
+$('d-shape').onclick = () => setTool('shape');
 $('d-undo').onclick = undo;
 $('d-clear').onclick = () => { if (draft.length < 4 || confirm('Cancellare tutti i tratti non inviati?')) clearDraft(); };
 $('d-text').addEventListener('input', syncDraw);
@@ -2356,6 +2694,8 @@ addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); e.stopImmediatePropagation(); undo(); }
   else if (e.key === 'Escape' && mPending) { e.stopImmediatePropagation(); cancelMeasure(); }
+  else if (e.key === 'Escape' && selShape) { e.stopImmediatePropagation(); selectShape(null); }
+  else if ((e.key === 'Delete' || e.key === 'Backspace') && selShape) { e.stopImmediatePropagation(); e.preventDefault(); deleteShape(selShape); }
   else if (e.key === 'Enter' && tool === 'measure' && mPending) { e.stopImmediatePropagation(); finishSingle(); }
   else if (e.key === 'Escape') { e.stopImmediatePropagation(); setDrawing(false); }
   else if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -2363,6 +2703,7 @@ addEventListener('keydown', e => {
   else if (k === 'e') { e.stopImmediatePropagation(); setTool('erase'); }
   else if (k === 't') { e.stopImmediatePropagation(); setTool('text'); }
   else if (k === 'm') { e.stopImmediatePropagation(); setTool('measure'); }
+  else if (k === 'f') { e.stopImmediatePropagation(); setTool('shape'); }
 }, true);
 
 function toast(html, ms = 6000) {
@@ -2378,9 +2719,9 @@ const fitIn = f => f ? { centre: new THREE.Vector3(...f.centre), radius: f.radiu
 async function sendNote() {
   const text = $('d-text').value.trim();
   closeEditor(true);
-  if (!draft.length && !labels.length && !dmeasures.length && !text) return;
+  if (!draft.length && !labels.length && !dmeasures.length && !shapes.length && !text) return;
   $('d-send').disabled = true;
-  cancelMeasure();
+  cancelMeasure(); selectShape(null);
   // the picture is the user's own view, strokes and all: the agent sees what
   // they saw, at their zoom (frame:false keeps the camera where it is)
   const image = viewer.snapshot({ frame: false, maxSize: 1400, quality: 0.85 });
@@ -2388,7 +2729,7 @@ async function sendNote() {
   // the views strokes were drawn from, minus the final one (that IS `image`)
   // and minus any whose strokes were all undone
   const keep = [], remap = new Map();
-  for (const s of [...draft, ...labels, ...dmeasures]) {
+  for (const s of [...draft, ...labels, ...dmeasures, ...shapes]) {
     if (s.view == null || remap.has(s.view)) continue;
     const v = views[s.view];
     if (!v || !v.image || sameCam(v.cam, camera)) { remap.set(s.view, null); continue; }
@@ -2416,6 +2757,8 @@ async function sendNote() {
     measures: dmeasures.map(M => ({ kind: M.kind, a: M.aEnd, b: M.bEnd, value: r4(M.value), approx: !!M.approx,
       ...(M.axis ? { axis: M.axis } : {}), ...(M.text ? { text: M.text } : {}), ...(M.exact ? { exact: true } : {}),
       view: M.view == null ? null : remap.get(M.view) })),
+    // basic shapes placed on the part: «a Ø 6 cylinder HERE», as data
+    shapes: shapes.map(S => ({ ...shapeData(S), view: S.view == null ? null : remap.get(S.view) })),
     hide: location.hash.replace(/^#/, ''),
   };
   if (anims.length) body.t = clock.t;
@@ -2453,6 +2796,9 @@ function noteObject(n) {
   }
   for (const m of n.measures || []) {
     try { g.add(measureObject(measureFrom(m), measureH())); } catch {}
+  }
+  for (const sh of n.shapes || []) {
+    try { g.add(shapeObject(shapeFrom(sh))); } catch {}
   }
   for (const im of n.images || []) {
     new THREE.TextureLoader().load(`/api/graph/${encodeURIComponent(NAME)}/gens/${GEN}/notes/${n.id}/img/${im.image}`, tex => {
@@ -2496,7 +2842,8 @@ function goToNote(n) {
   };
   apply(back);
   const pts = [...(n.strokes || []).flatMap(s => s.points || []), ...(n.labels || []).map(l => l.at),
-    ...(n.images || []).map(l => l.at), ...(n.measures || []).flatMap(m => [m.a && m.a.at, m.b && m.b.at].filter(Boolean))]
+    ...(n.images || []).map(l => l.at), ...(n.measures || []).flatMap(m => [m.a && m.a.at, m.b && m.b.at].filter(Boolean)),
+    ...(n.shapes || []).map(sh => sh.center)]
     .map(p => new THREE.Vector3(...p));
   const inside = () => pts.every(p => { const q = p.clone().project(cam);
     return Math.abs(q.x) <= 0.92 && Math.abs(q.y) <= 0.92 && q.z < 1; });
@@ -2526,6 +2873,7 @@ function renderNotes() {
     const cols = [...new Set([...(n.strokes || []), ...(n.labels || [])].map(s => s.color))].slice(0, 5);
     const said = [...(n.labels || []).map(l => `«${esc(l.text)}»`),
       ...(n.measures || []).map(m => `↔ ${esc(measureText(m))}`),
+      ...(n.shapes || []).map(sh => `▣ ${esc(shapeText(sh.kind, sh.size))}`),
       ...((n.images || []).length ? [`▣ ${n.images.length} immagin${n.images.length > 1 ? 'i' : 'e'}`] : [])].join(' ');
     row.innerHTML = `<span class="dots">${cols.map(c => `<i style="background:${esc(c)}"></i>`).join('')}</span>
       <span class="tx"><span class="id">${esc(n.id)}${n.done ? ' ✓' : ''}</span>${esc(n.text) || said || '<i>(solo disegno)</i>'}${n.text && said ? ` <span class="id">${said}</span>` : ''}
@@ -3081,7 +3429,8 @@ function syncMeasures() {
 $('b-measures').onclick = () => { measuresOn = !measuresOn; syncMeasures(); writeHash(); };
 // For tests and for drawing from data before any store exists:
 // window.__noodleMeasures.draw([{kind, a:{at}, b:{at}, value, …}])
-window.__noodleMeasures = { draw: drawMeasures, list: () => measures, text: measureText, viewer };
+window.__noodleMeasures = { draw: drawMeasures, list: () => measures, text: measureText, viewer,
+  handleAt: (x, y) => handleAt(x, y), shapeAt: (x, y) => { const S = shapeAt(x, y); return S ? { selected: S === selShape } : null; } };
 
 // ── load ─────────────────────────────────────────────────────────────────
 let sizeTxt = '';

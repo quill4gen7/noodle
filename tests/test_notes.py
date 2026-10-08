@@ -265,7 +265,7 @@ def test_the_text_tool_projects_a_decal_and_sends_labels():
     # labels are data in the note, and part of the undo / eraser / views machinery
     assert "labels: words.map(L => ({ text: L.text" in VIEW
     for t in ("else if (a.type === 'label')", "else if (a.type === 'edit')", "er.labels.push(L)",
-              "[...draft, ...labels, ...dmeasures].filter(x => x.view === i)"):
+              "[...draft, ...labels, ...dmeasures, ...shapes].filter(x => x.view === i)"):
         assert t in VIEW
     # saved notes draw their labels too
     assert "for (const l of n.labels || [])" in VIEW
@@ -469,7 +469,7 @@ def test_the_measure_tool_is_part_of_the_draft():
               "er.measures.push(M)", "measures: dmeasures.map(M =>"):
         assert t in VIEW
     # the tool never captures the pointer: a drag on the part still orbits
-    assert "if (tool === 'hand' || tool === 'measure' || e.button !== 0" in VIEW
+    assert "if (tool === 'hand' || tool === 'measure' || tool === 'shape' || e.button !== 0" in VIEW
     # saved notes draw their dimensions
     assert "for (const m of n.measures || [])" in VIEW
     # the snaps come from webui/measure.js (tested in tests/ui/measure.test.cjs)
@@ -477,3 +477,53 @@ def test_the_measure_tool_is_part_of_the_draft():
     assert (ROOT / "webui" / "measure.js").exists()
     for mode in ("auto", "p2p", "edge", "hole", "faces"):
         assert f'<option value="{mode}">' in VIEW
+
+
+SHAPE = {"kind": "cylinder", "size": [6, 6, 10], "center": [5, 5, 15], "quat": [0, 0, 0, 1],
+         "anchor": [5, 5, 10], "normal": [0, 0, 1], "color": "#ef4444", "piece": "n1"}
+
+
+def test_a_shape_is_data_in_the_note(store):
+    # ▣ Forme: «a Ø 6 pin here» — kind, size, centre, axis, the piece it sits on
+    note = api.add_note(store, "demo", "g1", {"shapes": [SHAPE, {**SHAPE, "kind": "box",
+        "quat": [0.2588, 0, 0, 0.9659], "size": [4, 2, 3]}]})
+    c, b = note["shapes"]
+    assert c["axis"] == [0, 0, 1] and c["node"] == "n1" and c["title"] == "Body"
+    assert b["axis"] == pytest.approx([0, -0.5, 0.866], abs=1e-3), "the box was turned 30° about x"
+    n, = api.list_notes(store)
+    assert n["shapes"][0]["summary"] == "cylinder Ø 6,00 × 10,00 mm centred at (5.00, 5.00, 15.00), axis (0.00, 0.00, 1.00), on Body"
+
+
+def test_bad_shapes_are_refused(store):
+    bad = [{**SHAPE, "kind": "cone"}, {**SHAPE, "size": [6, 0, 10]}, {**SHAPE, "quat": [0, 0, 0, 0]},
+           {**SHAPE, "quat": [0, 0, 1]}, {**SHAPE, "center": [1, 2]}, {**SHAPE, "color": "red"},
+           {**SHAPE, "view": 0}, "a pin"]
+    for b in bad:
+        with pytest.raises(ValueError):
+            api.add_note(store, "demo", "g1", {"shapes": [b]})
+    with pytest.raises(ValueError):
+        api.add_note(store, "demo", "g1", {"shapes": [SHAPE] * 31})
+
+
+def test_the_shape_tool_stays_on_the_parts():
+    assert 'id="d-shape"' in VIEW and 'id="d-shapekind"' in VIEW
+    # moving is NOT free: the shape follows a surface hit, or does not move
+    move = VIEW[VIEW.index("if (d.h.type === 'move') {"):]
+    move = move[:move.index("} else if")]
+    assert "stickAt(e.clientX, e.clientY)" in move and "if (!hit) return;" in move
+    # a corner never passes the opposite one, and the minimum follows the PIECE
+    assert "Math.max(l.x * s0.x, min)" in VIEW and "function shapeMin(S)" in VIEW
+    assert "leafIndex.get(S.piece)" in VIEW[VIEW.index("function shapeMin(S)"):][:400]
+    # the marks shrink with the shape; the grab volume does not
+    assert "hs = Math.min(grab, 0.1 * side)" in VIEW
+    # a shape rides the draft like a stroke
+    for t in ("actions.push({ type: 'shape', S, before: null })", "else if (a.type === 'shape')",
+              "er.shapes.push(S)", "shapes: shapes.map(S =>", "for (const sh of n.shapes || [])"):
+        assert t in VIEW
+    assert "`shapes`" in HELP[HELP.index("cad_notes"):] and "Basic SHAPES" in MCP
+
+
+def test_the_draw_tools_wrap_on_a_phone():
+    # 604px of tools in a 390px screen scrolled the whole viewer sideways
+    assert "#dbar .grp{flex-wrap:wrap;}" in VIEW
+    assert "#vp[data-tool=shape] #d-shapekind{display:inline-block;}" in VIEW

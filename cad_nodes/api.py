@@ -2030,6 +2030,100 @@ def measure_phrase(m: dict) -> str:
     return f"{ap}{num} mm"
 
 
+_SHAPE_KINDS = ("box", "cylinder", "sphere")
+_NOTE_MAX_SHAPES = 30
+
+
+def _shapes(items, n_views: int, titles: dict) -> list[dict]:
+    """Basic shapes the user PLACED on the part (▣ Forme): a cube, a cylinder or
+    a sphere, with its size, centre and orientation in model mm — «a Ø 6
+    cylinder here» as data. `size` is [x, y, z] in the shape's own frame (a
+    cylinder: [Ø, Ø, height], its axis = local z = `axis`); `anchor` is the
+    point of the surface it sits on, `normal` that surface's normal."""
+    import math
+    if not isinstance(items, list) or len(items) > _NOTE_MAX_SHAPES:
+        raise ValueError(f"note: shapes must be a list of at most {_NOTE_MAX_SHAPES}")
+    out = []
+    for i, sh in enumerate(items):
+        if not isinstance(sh, dict):
+            raise ValueError(f"note: shape {i} must be an object")
+        kind = sh.get("kind")
+        if kind not in _SHAPE_KINDS:
+            raise ValueError(f"note: shape {i} kind must be one of {', '.join(_SHAPE_KINDS)}")
+        size = _vec(sh.get("size"), f"shape {i} size")
+        if not all(0 < x < 1e5 for x in size):
+            raise ValueError(f"note: shape {i} size must be positive")
+        q = sh.get("quat")
+        if not isinstance(q, (list, tuple)) or len(q) != 4:
+            raise ValueError(f"note: shape {i} quat must be [x, y, z, w]")
+        q = [_num(c, f"shape {i} quat") for c in q]
+        nq = math.sqrt(sum(c * c for c in q))
+        if nq < 1e-6:
+            raise ValueError(f"note: shape {i} quat must not be zero")
+        o = {"kind": kind, "center": _vec(sh.get("center"), f"shape {i} center"), "size": size,
+             "quat": [round(c / nq, 5) for c in q]}
+        # the shape's own z axis in the world, from the quaternion
+        x, y, z, w = o["quat"]
+        o["axis"] = [round(2 * (x * z + w * y), 4), round(2 * (y * z - w * x), 4), round(1 - 2 * (x * x + y * y), 4)]
+        for k in ("anchor", "normal"):
+            if sh.get(k) is not None:
+                o[k] = _vec(sh[k], f"shape {i} {k}")
+        color = str(sh.get("color") or "").lower()
+        if color:
+            if not re.fullmatch(r"#[0-9a-f]{6}", color):
+                raise ValueError(f"note: shape {i} color must be #rrggbb")
+            o["color"] = color
+        piece = str(sh["piece"])[:40] if sh.get("piece") else None
+        if piece:
+            node = piece.split(".")[0]
+            o.update(piece=piece, node=node)
+            if node in titles:
+                o["title"] = titles[node].get("title")
+        v = sh.get("view")
+        if v is not None:
+            v = int(_num(v, f"shape {i} view"))
+            if not 0 <= v < n_views:
+                raise ValueError(f"note: shape {i} view {v} out of range")
+            o["view"] = v + 1
+        out.append(o)
+    return out
+
+
+def shape_phrase(sh: dict) -> str:
+    x, y, z = sh["size"]
+    f = lambda v: f"{v:.2f}".replace(".", ",")
+    if sh["kind"] == "sphere":
+        return f"sphere Ø {f(x)}" if abs(x - y) < 1e-3 and abs(y - z) < 1e-3 else f"ellipsoid {f(x)} × {f(y)} × {f(z)}"
+    if sh["kind"] == "cylinder":
+        return f"cylinder Ø {f(x)} × {f(z)} mm"
+    return f"box {f(x)} × {f(y)} × {f(z)} mm"
+
+
+def _link_shapes(marks: list[dict], strokes: list[dict], shapes: list[dict]) -> list[dict]:
+    """The user's shapes for the agent: a one-line `summary` and the marks
+    drawn on or next to them (`near_marks`; the mark lists them under `shapes`)."""
+    import math
+    pts: dict[int, list] = {}
+    for s in strokes:
+        if s.get("kind") != "text":
+            pts.setdefault(s.get("g"), []).extend(s["points"])
+    by_mark = list(pts.values())
+    out = []
+    for sh in shapes:
+        sh = {k: v for k, v in sh.items() if k != "near_marks"}
+        reach = max(2.0, 0.75 * max(sh["size"]))
+        near = [k + 1 for k, ps in enumerate(by_mark) if ps and min(math.dist(sh["center"], p) for p in ps) <= reach]
+        c = ", ".join(f"{v:.2f}" for v in sh["center"])
+        a = ", ".join(f"{v:.2f}" for v in sh["axis"])
+        sh["summary"] = (f"{shape_phrase(sh)} centred at ({c}), axis ({a})"
+                         + (f", on {sh.get('title') or sh['node']}" if sh.get("node") else ""))
+        sh["near_marks"] = near
+        out.append(sh)
+        for k in near:
+            marks[k - 1].setdefault("shapes", []).append(shape_phrase(sh))
+    return out
+
+
 _MEASURE_SAYS = {"distance": "distance", "edge": "edge length", "face_gap": "gap between parallel faces",
                  "diameter": "diameter", "radius": "radius", "angle": "angle"}
 
@@ -2125,7 +2219,9 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
             raise ValueError(f"note: a placed image is over {_NOTE_IMAGE_BYTES // (1024 * 1024)} MB")
     kinds = [_image_kind(b) for b in image_blobs]
     measures_in = payload.get("measures") or []
-    if not strokes_in and not labels_in and not images_in and not measures_in and not text.strip():
+    shapes_in = payload.get("shapes") or []
+    if (not strokes_in and not labels_in and not images_in and not measures_in and not shapes_in
+            and not text.strip()):
         raise ValueError("note: nothing drawn and nothing written")
     views_in = payload.get("views") or []
     if not isinstance(views_in, list) or len(views_in) > _NOTE_MAX_VIEWS:
@@ -2186,6 +2282,7 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
                                 if k not in ("label", "text", "style", "color", "color_name")}}
         images.append(o)
     measures = _measures(measures_in, len(views), titles)
+    shapes = _shapes(shapes_in, len(views), titles)
     marks = _marks(strokes)
     note = {"text": text.strip(),
             "created": datetime.datetime.now().isoformat(timespec="seconds"),
@@ -2196,6 +2293,8 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
         note["images"] = _link_labels(marks, strokes, images)
     if measures:
         note["measures"] = measures
+    if shapes:
+        note["shapes"] = shapes
     cam = _camera(payload.get("camera"))
     if cam:
         note["camera"] = cam
@@ -2246,6 +2345,8 @@ def _note_for_agent(n: dict, base_url: str, points: bool) -> dict:
                 im["view_image_path"] = f"projects/{g}/gens/{gen}/notes/{nid}.v{im['view']}.jpg"
     if n.get("measures"):
         out["measures"] = _link_measures(out["marks"], n.get("strokes") or [], n["measures"])
+    if n.get("shapes"):
+        out["shapes"] = _link_shapes(out["marks"], n.get("strokes") or [], n["shapes"])
     if points:
         out["strokes"] = n.get("strokes", [])
     for k in ("t", "hide", "camera"):
