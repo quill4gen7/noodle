@@ -225,31 +225,42 @@
     background:rgba(26,32,48,.92);backdrop-filter:blur(4px);}
   #d-open .n{background:var(--accent);color:#fff;border-radius:9px;padding:0 6px;font-size:11px;}
   #d-open .n:empty{display:none;}
-  #dbar{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:7;display:none;flex-wrap:wrap;
-    align-items:center;gap:6px;background:rgba(21,26,34,.95);border:1px solid var(--border);border-radius:12px;
+  #dbar{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:7;display:none;flex-direction:column;
+    align-items:stretch;gap:6px;background:rgba(21,26,34,.95);border:1px solid var(--border);border-radius:12px;
     padding:6px 8px;box-shadow:0 8px 24px rgba(0,0,0,.5);max-width:calc(100% - 20px);width:max-content;
     backdrop-filter:blur(4px);}
   #vp.drawing #dbar{display:flex;}
   #vp.drawing #d-open,#vp.drawing #stats{display:none;}
-  #vp.drawing.pen canvas{cursor:crosshair;}
-  #vp.drawing[data-tool=erase] canvas{cursor:none;}
+  /* tabs | the row every tab shares (↶ ↷ ⌫ colours sizes state ✕) / the tab's tools */
+  #d-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  #d-tabs{display:flex;gap:2px;background:var(--bg-0);border:1px solid var(--border);border-radius:10px;padding:2px;}
+  #d-tabs .dtab{border:0;background:none;min-height:30px;padding:3px 10px;color:var(--text-dim);}
+  #d-tabs .dtab.on{background:var(--bg-3);color:#fff;box-shadow:inset 0 -2px 0 var(--accent);}
+  #d-tabs .dtab .ic{font-size:14px;}
+  #d-common{display:flex;align-items:center;gap:6px;flex-wrap:wrap;position:relative;}
+  #d-rows .trow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+  #d-rows .trow[hidden]{display:none;}
+  .titem{display:inline-flex;align-items:center;gap:4px;}
+  .titem .tool .lb{font-size:11px;}
+  .tool:disabled{opacity:.4;cursor:default;}
+  .narrow{display:none !important;}
+  #d-menu{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:9;flex-direction:column;gap:4px;
+    background:var(--bg-2);border:1px solid var(--border);border-radius:10px;padding:6px;box-shadow:0 10px 30px rgba(0,0,0,.5);}
+  #d-menu.open{display:flex;}
+  #d-menu .btn{justify-content:flex-start;white-space:nowrap;}
   #d-ring{position:absolute;display:none;pointer-events:none;z-index:6;border-radius:50%;
     border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.6),inset 0 0 0 1px rgba(0,0,0,.6);}
   #vp:not([data-tool=erase]) #d-ring{display:none !important;}
-  #vp.drawing[data-tool=text] canvas{cursor:text;}
-  #vp.drawing[data-tool=image] canvas{cursor:copy;}
-  #vp.drawing[data-tool=measure] canvas{cursor:crosshair;}
   #m-snap{position:absolute;display:none;pointer-events:none;z-index:6;padding:2px 7px;border-radius:6px;
     background:rgba(10,12,20,.88);border:1px solid #a78bfa;color:#e9e3ff;font-size:12px;white-space:nowrap;}
-  #vp.drawing[data-tool=shape] canvas{cursor:copy;}
   #s-bar{position:absolute;left:50%;transform:translateX(-50%);bottom:28px;display:none;align-items:center;gap:6px;z-index:6;
     background:var(--bg-2);border:1px solid #a78bfa;border-radius:12px;padding:5px 6px 5px 12px;box-shadow:0 8px 24px rgba(0,0,0,.5);}
   #s-bar.open{display:flex;}
   #s-dims{font-variant-numeric:tabular-nums;white-space:nowrap;}
   #s-dims .s-def{color:#f59e0b;}
-  /* which handles the selected shape wears: one row of its own under the size */
   #s-bar{flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 16px);box-sizing:border-box;}
-  #s-modes{display:flex;gap:4px;flex-basis:100%;justify-content:center;flex-wrap:nowrap;}
+  /* which handles the selected shape wears: ▣ Blocky's tool row, one row that never wraps */
+  #s-modes{display:inline-flex;gap:4px;flex-wrap:nowrap;}
   #s-modes .btn{padding:4px 8px;gap:4px;white-space:nowrap;}
   #s-modes .gm.on,#s-cagemode.on{border-color:#a78bfa;background:var(--bg-2);color:#e9e3ff;}
   #s-cagemode{display:none;font-size:11px;}
@@ -257,15 +268,14 @@
   #s-presets{display:inline-flex;gap:3px;}
   #s-presets .btn{padding:2px 6px;font-size:11px;white-space:nowrap;}
   #s-presets .btn:disabled{opacity:.45;cursor:default;}
-  #s-bar[data-gm=cage] #s-cagemode{display:inline-flex;}
+  #s-modes[data-gm=cage] #s-cagemode{display:inline-flex;}
   #s-cagemode:disabled{opacity:.45;cursor:default;}
   #m-lens{position:absolute;display:none;pointer-events:none;z-index:7;width:120px;}
   #m-lens canvas{width:120px;height:120px;border-radius:50%;border:2px solid #a78bfa;background:#000;
     box-shadow:0 4px 18px rgba(0,0,0,.6);display:block;}
   #m-lens-t{margin-top:4px;text-align:center;font-size:12px;color:#e9e3ff;background:rgba(10,12,20,.88);
     border-radius:6px;padding:1px 6px;}
-  #d-texttool{font:700 15px Georgia,serif;}
-  #d-lstyle{min-height:var(--tap);padding:4px 4px;max-width:112px;}
+  #dt-paint .ic{font:700 15px Georgia,serif;}
   #d-box{position:absolute;display:none;pointer-events:none;z-index:6;border:2px dashed #fff;border-radius:4px;
     box-shadow:0 0 0 1px rgba(0,0,0,.6);}
   #d-label{position:absolute;display:none;z-index:9;min-width:140px;min-height:32px;background:rgba(11,14,20,.92);
@@ -279,8 +289,6 @@
   .sz{width:var(--tap);padding:0;}
   .sz i{display:block;border-radius:50%;background:var(--text);}
   .sz.on,.tool.on{border-color:var(--accent);background:var(--bg-2);}
-  #d-text{flex:1 1 120px;min-width:90px;min-height:var(--tap);background:var(--bg-0);color:var(--text);
-    border:1px solid var(--border);border-radius:8px;padding:5px 9px;font:13px var(--font);}
   #d-send{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;}
   #d-send:disabled{opacity:.4;cursor:default;}
   #d-save{font-size:12px;color:var(--muted,#9ca3af);white-space:nowrap;cursor:pointer;}
@@ -313,18 +321,29 @@
     #d-open{top:auto;bottom:12px;right:10px;}
     #vp.has-anim #d-open{bottom:calc(var(--tlh,104px) + 16px);}
     /* at the BOTTOM of the viewport, compact: the part sits in the middle and
-       the bar must not hide what you are drawing on */
-    #dbar{top:auto;bottom:6px;left:6px;right:6px;transform:none;width:auto;max-width:none;gap:4px;padding:5px;}
+       the bar must not hide what you are drawing on. Top to bottom: the tabs as
+       segments, the tab's tools (ONE row that scrolls sideways — it must never
+       widen the page: 604px of tools in 390 once scrolled the whole viewer),
+       the common row, always there. */
+    #dbar{top:auto;bottom:6px;left:6px;right:6px;transform:none;width:auto;max-width:none;gap:5px;padding:5px;}
     #dbar .btn{min-height:36px;padding:4px 8px;}
     #dbar .sz{width:36px;}
     #dbar .sep,#d-hint{display:none;}
     #dbar .tool{min-width:36px;padding:4px 6px;}
-    /* the tools row must wrap, never widen the page: one too many tools and a tap
-       on the last one scrolled the whole viewer sideways (measured: 604px of
-       tools in 390). Each tool's menu shows only while that tool is in hand. */
-    #dbar .grp{flex-wrap:wrap;}
-    #dbar select{display:none;}
-    #vp[data-tool=text] #d-lstyle,#vp[data-tool=measure] #d-mmode,#vp[data-tool=shape] #d-shapekind{display:inline-block;}
+    #d-head{display:contents;}
+    #d-tabs{order:1;}
+    #d-tabs .dtab{flex:1;min-height:36px;padding:2px 4px;gap:4px;font-size:12px;}
+    #d-rows{order:2;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;
+      scrollbar-width:none;}
+    #d-rows .trow{flex-wrap:nowrap;width:max-content;}
+    #d-common{order:3;gap:4px;justify-content:space-between;}
+    #d-common .grp{flex-wrap:nowrap;gap:3px;}
+    #d-common .sw-btn{width:20px;height:20px;}
+    #d-common .tool .lb{display:none;}       /* ⌫ ✋: icons only, the row has to fit in two lines */
+    #d-save{max-width:84px;overflow:hidden;text-overflow:ellipsis;font-size:11px;}
+    #d-menu{top:auto;bottom:calc(100% + 6px);}
+    .wide{display:none !important;}
+    .narrow{display:inline-flex !important;}
     #s-bar{top:8px;bottom:auto;}          /* the draw bar owns the bottom on a phone */
     /* the modes row stays ONE row in 390px: short labels, tight padding */
     #s-modes .btn{min-height:36px;padding:3px 6px;font-size:12px;gap:3px;}
@@ -340,8 +359,6 @@
     #s-dims .s-def::after{content:'≈';font-size:13px;font-weight:700;}
     #s-presets .btn{min-height:36px;padding:2px 4px;min-width:0;}
     #s-del,#s-done{padding:4px 8px;min-width:0;}
-    #d-lstyle{min-height:36px;max-width:104px;}
-    #d-text{flex:1 1 140px;min-height:36px;min-width:0;}
     #toast{top:8px;}
   }
 </style>
@@ -391,14 +408,33 @@
       </div>
       <button class="btn" id="d-open" title="Disegna sul pezzo e manda la nota all'agente (D)">✎ Disegna <span class="n" id="d-count"></span></button>
       <div id="dbar">
-        <div class="grp">
-          <button class="btn tool on" id="d-pen" title="Penna: trascina SUL pezzo per disegnare (P)">✎</button>
-          <button class="btn tool" id="d-texttool" title="Testo SUL pezzo: tocca e trascina per il riquadro, poi scrivi (T) — tocca un riquadro per correggerlo">T</button>
-          <select id="d-lstyle" title="Stile del testo T: vernice (lettere a tratto dipinte come la penna, su ogni superficie), targhetta (si legge da ogni lato) o decal (incollato alla superficie)">
-            <option value="paint">✎ Vernice</option><option value="tag">⚑ Targhetta</option><option value="decal">▭ Decal</option></select>
-          <button class="btn tool" id="d-imgtool" title="Immagine: scegli un PNG/JPEG (o una foto), poi trascina un riquadro sul pezzo">Img</button>
+        <!-- the tabs + the row every tab shares; the tools themselves are put in
+             their tab rows by webui/view-tools.js (registerTool), not written here -->
+        <div id="d-head">
+          <div id="d-tabs" role="tablist" aria-label="Strumenti di disegno"></div>
+          <div id="d-common">
+            <button class="btn" id="d-undo" title="Annulla l'ultima azione: tratto, testo, cancellatura, quota, forma (Ctrl+Z)">↶</button>
+            <button class="btn" id="d-redo" title="Ripeti l'azione annullata (Ctrl+Shift+Z, Ctrl+Y)">↷</button>
+            <span class="grp" id="d-ctools"></span>
+            <span class="sep"></span>
+            <div class="grp" id="d-colors"></div>
+            <input type="color" id="d-custom" title="Altro colore" value="#d946ef">
+            <span class="sep"></span>
+            <div class="grp" id="d-sizes"></div>
+            <span class="sep"></span>
+            <span id="d-save" role="status" aria-live="polite"></span>
+            <button class="btn wide" id="d-clear" title="Togli tutto dalla nota">Pulisci</button>
+            <button class="btn" id="d-send" title="La nota si salva da sola mentre disegni e l'agente la vede già. Fatto la chiude: i prossimi segni fanno una nota nuova">Fatto ✓</button>
+            <button class="btn narrow" id="d-more" aria-label="Altro" title="Altro">⋯</button>
+            <button class="btn" id="d-x" aria-label="Chiudi" title="Esci dal disegno (Esc)">✕</button>
+            <div id="d-menu" role="menu"><button class="btn" id="d-clear2">Pulisci: togli tutto dalla nota</button></div>
+          </div>
+        </div>
+        <div id="d-rows"></div>
+        <div id="d-hint"></div>
+        <!-- a tool's own controls: registerTool's options() moves them beside its button -->
+        <div id="d-stash" hidden>
           <input type="file" id="d-imgfile" accept="image/*" hidden>
-          <button class="btn tool" id="d-measure" title="Metro: tocca due punti sul pezzo per misurarne la distanza (M) — Shift blocca la quota su X/Y/Z, Esc annulla il primo punto">↔</button>
           <select id="d-mmode" title="Cosa misurare col metro">
             <option value="auto">Auto</option>
             <option value="p2p">Punto–punto</option>
@@ -407,39 +443,24 @@
             <option value="hole">Foro / cerchio</option>
             <option value="faces">Faccia–faccia</option>
           </select>
-          <button class="btn tool" id="d-shape" title="Forme: tocca il pezzo per posarci un cubo, un cilindro o una sfera (F) — trascinala per spostarla SUL pezzo, i vertici della gabbia la ridimensionano, il centro la scala, gli anelli la ruotano (Shift: a 15°)">▣</button>
           <select id="d-shapekind" title="Quale forma posare">
             <option value="box">Cubo</option>
             <option value="cylinder">Cilindro</option>
             <option value="sphere">Sfera</option>
           </select>
-          <button class="btn tool" id="d-erase" title="Gomma: passa sopra un tratto per toglierlo intero (E) — la misura sceglie il raggio">⌫</button>
-          <button class="btn tool" id="d-hand" title="Muovi: ruota/zoom senza disegnare (anche: trascina fuori dal pezzo, tasto destro, rotella)">Muovi</button>
+          <!-- which handles the selected shape wears: ▣ Blocky's row -->
+          <div id="s-modes" role="radiogroup" aria-label="Maniglie della forma">
+            <button class="btn gm" id="s-gm-move" data-gm="move" role="radio" title="Sposta: solo le frecce X/Y/Z (G)">✥<span>Sposta</span></button>
+            <button class="btn gm" id="s-gm-rotate" data-gm="rotate" role="radio" title="Ruota: solo gli anelli, Shift a 15° (R)">⟳<span>Ruota</span></button>
+            <button class="btn gm" id="s-gm-cage" data-gm="cage" role="radio" title="Gabbia: vertici = misura, centro = scala (C)">▣<span>Gabbia</span></button>
+            <button class="btn" id="s-cagemode" title="Gabbia: Scala ⇄ Deforma (un secondo tocco su Gabbia o C)">Scala</button>
+            <button class="btn gm" id="s-gm-none" data-gm="none" role="radio" title="Nascondi le maniglie: resta la forma, che si sposta ancora trascinandola sul pezzo">◌<span>Nascondi</span></button>
+          </div>
         </div>
-        <span class="sep"></span>
-        <div class="grp" id="d-colors"></div>
-        <input type="color" id="d-custom" title="Altro colore" value="#d946ef">
-        <span class="sep"></span>
-        <div class="grp" id="d-sizes"></div>
-        <span class="sep"></span>
-        <button class="btn" id="d-undo" title="Annulla l'ultima azione: tratto, testo, cancellatura (Ctrl+Z)">↶</button>
-        <button class="btn" id="d-clear" title="Cancella tutti i tratti non inviati">Pulisci</button>
-        <input id="d-text" placeholder="Nota per l'agente: es. «questo foro si può fare meglio»" maxlength="4000" autocomplete="off">
-        <span id="d-save" role="status" aria-live="polite"></span>
-        <button class="btn" id="d-send" title="La nota si salva da sola mentre disegni e l'agente la vede già. Fatto la chiude: i prossimi segni fanno una nota nuova (Invio nel campo di testo)">Fatto ✓</button>
-        <button class="btn" id="d-x" aria-label="Chiudi" title="Esci dal disegno (Esc)">✕</button>
-        <div id="d-hint">Disegna trascinando sul pezzo · T: trascina un riquadro e scrivi · ⌫ gomma: passa sopra un tratto · fuori dal pezzo / tasto destro / rotella / due dita: muovi la vista · un tocco = un punto</div>
       </div>
       <div id="d-ring"></div><div id="d-box"></div>
       <div id="m-snap"></div>
-      <div id="s-bar"><span id="s-dims"></span><span id="s-presets" role="group" aria-label="Misure standard"><button class="btn sp" data-sp="1" title="Misura 1 mm: lati / diametro e altezza a 1 mm, la base resta sul pezzo">1mm</button><button class="btn sp" data-sp="10" title="Misura 10 mm: lati / diametro e altezza a 10 mm, la base resta sul pezzo">10mm</button><button class="btn sp" data-sp="half" id="s-halfvol" title="½ volume del pezzo su cui poggia: stessa forma, scalata in proporzione">½ vol</button></span><button class="btn" id="s-del" title="Togli questa forma (Canc)">Togli</button><button class="btn" id="s-done" title="Fatto (Esc)">✓</button>
-        <div id="s-modes" role="radiogroup" aria-label="Maniglie della forma">
-          <button class="btn gm" id="s-gm-move" data-gm="move" role="radio" title="Sposta: solo le frecce X/Y/Z (G)">✥<span>Sposta</span></button>
-          <button class="btn gm" id="s-gm-rotate" data-gm="rotate" role="radio" title="Ruota: solo gli anelli, Shift a 15° (R)">⟳<span>Ruota</span></button>
-          <button class="btn gm" id="s-gm-cage" data-gm="cage" role="radio" title="Gabbia: vertici = misura, centro = scala (C)">▣<span>Gabbia</span></button>
-          <button class="btn" id="s-cagemode" title="Gabbia: Scala ⇄ Deforma (un secondo tocco su Gabbia o C)">Scala</button>
-          <button class="btn gm" id="s-gm-none" data-gm="none" role="radio" title="Nascondi le maniglie: resta la forma, che si sposta ancora trascinandola sul pezzo">◌<span>Nascondi</span></button>
-        </div></div>
+      <div id="s-bar"><span id="s-dims"></span><span id="s-presets" role="group" aria-label="Misure standard"><button class="btn sp" data-sp="1" title="Misura 1 mm: lati / diametro e altezza a 1 mm, la base resta sul pezzo">1mm</button><button class="btn sp" data-sp="10" title="Misura 10 mm: lati / diametro e altezza a 10 mm, la base resta sul pezzo">10mm</button><button class="btn sp" data-sp="half" id="s-halfvol" title="½ volume del pezzo su cui poggia: stessa forma, scalata in proporzione">½ vol</button></span><button class="btn" id="s-del" title="Togli questa forma (Canc)">Togli</button><button class="btn" id="s-done" title="Fatto (Esc)">✓</button></div>
       <div id="m-lens"><canvas></canvas><div id="m-lens-t"></div></div>
       <input id="d-label" maxlength="200" autocomplete="off" placeholder="scrivi… (Invio)">
       <div id="toast"></div>
@@ -477,6 +498,7 @@ import { CadViewer, PALETTE, poseAnim } from '/static/viewer.js';
 import * as MS from '/static/measure.js';
 import * as FFD from '/static/ffd.js';
 import * as P3 from '/static/pen3d.js';
+import * as TOOLS from '/static/view-tools.js';
 
 const $ = id => document.getElementById(id);
 const seg = location.pathname.split('/').filter(Boolean);     // ['view', name, gen?]
@@ -931,7 +953,7 @@ $('c').addEventListener('pointerup', e => {
   if (moved > tol || long) return;
   // the measure tool's taps are its points: no select, and two quick taps on a
   // phone are a dimension, not a double tap that frames the view
-  if (drawing && (tool === 'measure' || tool === 'shape')) return;
+  if (drawing && toolDef && toolDef.ownsTaps) return;
   if (e.pointerType !== 'mouse') {
     const now = performance.now();
     if (now - lastTap < 320) { lastTap = 0; frameVisible(); return; }
@@ -1094,14 +1116,24 @@ viewer.scene.add(annoGroup);
 const PEN_COLORS = ['#ef4444', '#f59e0b', '#facc15', '#22c55e', '#3b82f6', '#ffffff', '#111827'];
 const PEN_SIZES = [3, 6, 12];                  // px on screen at the stroke's start
 const pen = { color: PEN_COLORS[0], size: PEN_SIZES[1] };
-let tool = 'pen';                              // pen | text | erase | hand
+// the tool in hand: `toolDef` is its registerTool entry (webui/view-tools.js),
+// `tool` its gesture family — pen | text | image | erase | hand | measure | shape
+// (✎ and ✎³ are both 'pen'; vernice, decal and targhetta are all 'text')
+let tool = 'pen', toolDef = null;
 const draft = [];                              // [{color, width, g, k, piece, pts:[V3], nrm:[V3], view, obj}]
 // [{text, color, at, n, up:V3, w, h (mm), k, piece, mesh, view, obj}] — text ON the part
 const labels = [];
-// the undo stack: {type: 'pen', g} | {type: 'erase', strokes, labels} | {type: 'label', L} | {type: 'edit', L, before}
-const actions = [];
+// the undo stack: {type: 'pen', g} | {type: 'erase', strokes, labels, measures, shapes} | {type: 'label', L}
+// | {type: 'edit', L, before} | {type: 'measure', M} | {type: 'shape', S, before} | a module's {undo(), redo()}.
+// `redone` is its other side: ↶ moves an action there, ↷ moves it back, and a
+// NEW action empties it (pushAction).
+const actions = [], redone = [];
 let gesture = 0, seq = 0, painting = null, drawing = false;
 let notesData = [];                            // this gen's notes, as stored
+// A note has no text field any more — it is what is drawn and written ON the
+// part. An OLD note resumed into the draft keeps its sentence here, so a PUT
+// does not wipe it; a new note sends text: ''.
+let noteText = '';
 // One picture per VIEW the user drew from, taken when the pen lifts. The note's
 // main picture is only the last view, and a cross drawn under the head from
 // below is not in it — the agent got the cross as coordinates and nothing to
@@ -1167,6 +1199,7 @@ function redrawStroke(s) {
 // (only where the pen INSISTS — see webui/pen3d.js). Painted text never stacks.
 const p3 = v => [v.x, v.y, v.z];
 function penLift(p, w, cur) {
+  if (!(toolDef && toolDef.pen3d)) return 0;   // ✎ is flat; ✎³ piles up where you insist
   const ink = draft.filter(s => !s.label).map(s => (s._p3 && s._p3.length === s.pts.length ? s
     : Object.assign(s, { _p3: s.pts.map(p3) })));
   const view = ink.map(s => ({ k: s.k, width: s.width, pts: s._p3, lift: s.lift }));
@@ -1182,7 +1215,9 @@ function startStroke(hit, g) {
 
 const vp = $('vp');
 let redispatch = false;
-vp.addEventListener('pointerdown', e => {
+// The pen family's gesture (✎ ✎³ T ▭ ⚑ Img ⌫): registered as their down/move/up
+// in the tool table below, which calls them in the CAPTURE phase on #vp.
+function penDown(e) {
   if (redispatch || !drawing || e.target !== $('c')) return;
   if (painting) {
     // a second finger: this was a pinch, not a stroke. Drop the stroke and hand
@@ -1214,8 +1249,8 @@ vp.addEventListener('pointerdown', e => {
   }
   painting.g = ++gesture;
   painting.s = startStroke(hit, painting.g);
-}, true);
-vp.addEventListener('pointermove', e => {
+}
+function penMove(e) {
   if (drawing && tool === 'erase' && e.pointerType === 'mouse') moveRing(e);
   if (!painting || e.pointerId !== painting.id) return;
   e.stopPropagation();
@@ -1239,7 +1274,7 @@ vp.addEventListener('pointermove', e => {
     s.pts.push(hit.p); s.nrm.push(hit.n); s.lift.push(lift); redrawStroke(s);
   }
   painting.x = e.clientX; painting.y = e.clientY;
-}, true);
+}
 const endPaint = e => {
   if (!painting || e.pointerId !== painting.id) return;
   e.stopPropagation();
@@ -1247,10 +1282,10 @@ const endPaint = e => {
   painting = null;
   if (p.mode === 'pen') {
     const mine = draft.filter(s => s.g === p.g);
-    if (mine.length) { actions.push({ type: 'pen', g: p.g }); takeView(mine); }
+    if (mine.length) { pushAction({ type: 'pen', g: p.g }); takeView(mine); }
   } else if (p.mode === 'erase' && (p.erased.strokes.length || p.erased.labels.length || p.erased.measures.length
              || p.erased.shapes.length)) {
-    actions.push({ type: 'erase', ...p.erased });
+    pushAction({ type: 'erase', ...p.erased });
     refreshViews(viewsOf([...p.erased.strokes, ...p.erased.labels, ...p.erased.measures, ...p.erased.shapes]));
   } else if (p.mode === 'image') {
     hideBox();
@@ -1266,8 +1301,6 @@ const endPaint = e => {
   }
   syncDraw();
 };
-vp.addEventListener('pointerup', endPaint, true);
-vp.addEventListener('pointercancel', endPaint, true);
 vp.addEventListener('pointerleave', () => { $('d-ring').style.display = 'none'; });
 
 // ── ⌫ the eraser ──
@@ -1335,7 +1368,7 @@ function inLabel(L, p, margin) {
 // put erased strokes back in their original order (`k`): a circle broken over
 // a hole is read by the server in stroke order, and must stay a loop
 function restore(er) {
-  for (const s of er.strokes) { draft.push(s); redrawStroke(s); }
+  for (const s of er.strokes || []) { draft.push(s); redrawStroke(s); }
   draft.sort((a, b) => a.k - b.k);
   for (const L of er.labels || []) { labels.push(L); drawLabel(L); }
   labels.sort((a, b) => a.k - b.k);
@@ -1380,7 +1413,7 @@ $('d-mmode').addEventListener('change', e => {
   try { localStorage.setItem('noodle:view:measureMode', measureMode); } catch {}
   cancelMeasure(); setTool('measure');
 });
-const DRAW_HINT = $('d-hint').textContent;
+const DRAW_HINT = 'fuori dal pezzo / tasto destro / rotella / due dita: muovi la vista · ↶ ↷ annulla e ripeti · la nota si salva da sola';
 const MODE_HINT = {
   auto: 'Metro Auto: tocca due cose sul pezzo — vertici, centri dei fori, spigoli (due spigoli = distanza fra i punti più vicini), facce (due facce parallele = spessore) · la stessa due volte o Invio = Ø / lunghezza',
   edges: 'Metro spigolo–spigolo: tocca due spigoli — la distanza fra i loro punti più vicini',
@@ -1603,7 +1636,7 @@ function addDraftMeasure(M) {
   if (!M || !(M.value >= 0) || (M.kind !== 'diameter' && M.kind !== 'radius' && M.value < 1e-6)) return;
   M.k = ++seq;
   dmeasures.push(M); drawDraftMeasure(M);
-  actions.push({ type: 'measure', M });
+  pushAction({ type: 'measure', M });
   takeView([M]);
   syncDraw();
 }
@@ -1636,7 +1669,8 @@ function finishSingle() {
   if (!M) { toast('Questo punto da solo non ha una misura: tocca il secondo.', 2500); return true; }
   cancelMeasure(); addDraftMeasure(M); return true;
 }
-vp.addEventListener('pointerdown', e => {
+// ↔'s gesture: registered as the measure tool's down/move/up below
+function measureDown(e) {
   if (!drawing || tool !== 'measure' || e.target !== $('c') || e.button !== 0) return;
   if (!e.isPrimary) { if (mDown) clearTimeout(mDown.timer); mDown = null; lensOff(); clearSnap(); return; }
   mDown = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), touch: e.pointerType !== 'mouse', aim: false };
@@ -1644,8 +1678,8 @@ vp.addEventListener('pointerdown', e => {
     const d = mDown;
     d.timer = setTimeout(() => { if (mDown === d) { d.aim = true; aimAt(d.x, d.y); } }, 300);
   }
-}, true);
-vp.addEventListener('pointermove', e => {
+}
+function measureMove(e) {
   if (!drawing || tool !== 'measure') return;
   if (mDown && e.pointerId === mDown.id && mDown.aim) {      // aiming: the finger moves the pick, not the view
     e.stopPropagation(); e.preventDefault();
@@ -1659,7 +1693,7 @@ vp.addEventListener('pointermove', e => {
   const x = e.clientX, y = e.clientY, lock = e.shiftKey;
   cancelAnimationFrame(mRaf);
   mRaf = requestAnimationFrame(() => hoverAt(x, y, lock, false));
-}, true);
+}
 function hoverAt(x, y, lock, touch) {
   const q = snapAt(x, y, touch);
   showSnap(q, x, y);
@@ -1671,7 +1705,7 @@ function hoverAt(x, y, lock, touch) {
   if (M && (M.value > 1e-6 || M.circle)) { mHover = measureObject(M, measureH()); annoGroup.add(mHover); viewer.invalidate(); }
   return q;
 }
-vp.addEventListener('pointerup', e => {
+function measureUp(e) {
   if (!drawing || tool !== 'measure' || !mDown || e.pointerId !== mDown.id) return;
   const d = mDown; mDown = null; clearTimeout(d.timer);
   if (d.aim) {                                 // lift = take what the lens shows
@@ -1682,8 +1716,8 @@ vp.addEventListener('pointerup', e => {
   if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > TAP_PX(e) || performance.now() - d.t > 600) return;
   measureTap(e.clientX, e.clientY, e.shiftKey, d.touch);
   if (d.touch) clearSnap();
-}, true);
-vp.addEventListener('pointercancel', () => { if (mDown) clearTimeout(mDown.timer); mDown = null; lensOff(); }, true);
+}
+function measureCancel() { if (mDown) clearTimeout(mDown.timer); mDown = null; lensOff(); }
 vp.addEventListener('pointerleave', () => { if (tool === 'measure' && !mDown) { clearSnap(); clearHover(); } });
 
 // ── the lens: what is under the finger, magnified, above it ──
@@ -1751,7 +1785,7 @@ let gizmoMode = 'cage', cageMode = 'scale';
 try { const v = localStorage.getItem('noodle:view:gizmoMode'); if (GIZMO_MODES.includes(v)) gizmoMode = v; } catch {}
 try { const v = localStorage.getItem('noodle:view:cageMode'); if (CAGE_MODES.includes(v)) cageMode = v; } catch {}
 function syncGizmoBar() {
-  $('s-bar').dataset.gm = gizmoMode;
+  $('s-modes').dataset.gm = gizmoMode;
   for (const b of $('s-modes').querySelectorAll('.gm')) {
     const on = b.dataset.gm === gizmoMode;
     b.classList.toggle('on', on); b.setAttribute('aria-checked', on);
@@ -1788,8 +1822,9 @@ function toggleCageMode() {
 // bar is that ghost, not the user.
 let sBarOpened = 0;
 const sBarGhost = () => performance.now() - sBarOpened < 400;
-for (const b of $('s-modes').querySelectorAll('.gm')) b.onclick = () => { if (!sBarGhost()) setGizmoMode(b.dataset.gm); };
-$('s-cagemode').onclick = () => { if (!sBarGhost()) toggleCageMode(); };
+// (the modes are ▣ Blocky's tool row, no longer in that bar: no ghost to fear)
+for (const b of $('s-modes').querySelectorAll('.gm')) b.onclick = () => setGizmoMode(b.dataset.gm);
+$('s-cagemode').onclick = () => toggleCageMode();
 syncGizmoBar();
 const shapes = [];                             // the draft's shapes
 let selShape = null, sDrag = null, sDown = null;
@@ -1966,7 +2001,7 @@ function addShape(hit) {
   const m = 2 * shapeMin(S);
   if (S.size.x < m) S.size.multiplyScalar(m / S.size.x);
   shapes.push(S); drawShape(S);
-  actions.push({ type: 'shape', S, before: null });
+  pushAction({ type: 'shape', S, before: null });
   takeView([S]);
   selectShape(S); syncDraw();
 }
@@ -1974,7 +2009,7 @@ function deleteShape(S) {
   const i = shapes.indexOf(S); if (i < 0) return;
   if (S === selShape) selectShape(null);
   shapes.splice(i, 1); disposeObj(S.obj); S.obj = null;
-  actions.push({ type: 'erase', strokes: [], labels: [], measures: [], shapes: [S] });
+  pushAction({ type: 'erase', strokes: [], labels: [], measures: [], shapes: [S] });
   refreshViews(viewsOf([S])); syncDraw();
 }
 // ── the cage: corners, centre, rings ──
@@ -2158,7 +2193,8 @@ function onViewPlane(x, y, p) {
 // a surface hit that is NOT on one of the shapes (the shapes live in annoGroup,
 // surfaceHit looks at the parts only — so a shape can be slid across itself)
 function stickAt(x, y) { return surfaceHit(x, y); }
-vp.addEventListener('pointerdown', e => {
+// ▣'s gesture: registered as the shape tool's down/move/up below
+function shapeDown(e) {
   if (!drawing || tool !== 'shape' || e.target !== $('c') || e.button !== 0 || !e.isPrimary) return;
   let h = handleAt(e.clientX, e.clientY);
   const onBody = shapeAt(e.clientX, e.clientY);
@@ -2207,8 +2243,8 @@ vp.addEventListener('pointerdown', e => {
     return;
   }
   sDown = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() };   // maybe a tap, maybe an orbit
-}, true);
-vp.addEventListener('pointermove', e => {
+}
+function shapeMove(e) {
   if (!sDrag || e.pointerId !== sDrag.id) return;
   e.stopPropagation(); e.preventDefault();
   const d = sDrag, S = d.S;
@@ -2285,13 +2321,13 @@ vp.addEventListener('pointermove', e => {
     S.anchor = d.center0.clone().sub(new THREE.Vector3(0, 0, S.size.z / 2).applyQuaternion(qNew));
   }
   drawShape(S); refreshCage();
-}, true);
+}
 const endShapeDrag = e => {
   if (sDrag && e.pointerId === sDrag.id) {
     e.stopPropagation();
     const d = sDrag; sDrag = null;
     if (d.moved && !sameShapeState(d.before, shapeState(d.S))) {
-      actions.push({ type: 'shape', S: d.S, before: d.before });
+      pushAction({ type: 'shape', S: d.S, before: d.before });
       refreshViews(viewsOf([d.S])); takeView([d.S]);
       syncDraw();
     }
@@ -2304,8 +2340,6 @@ const endShapeDrag = e => {
   const hit = surfaceHit(e.clientX, e.clientY);
   if (hit) { if (clock.playing) setPlaying(false); addShape(hit); }
 };
-vp.addEventListener('pointerup', endShapeDrag, true);
-vp.addEventListener('pointercancel', endShapeDrag, true);
 $('s-del').onclick = () => { if (selShape && !sBarGhost()) deleteShape(selShape); };
 $('s-done').onclick = () => selectShape(null);
 // ── standard sizes (quill: «bottoncini per misure standard 10mm 1mm e 50% del
@@ -2365,7 +2399,7 @@ function setShapePreset(S, p) {
     size = S.size.clone().multiplyScalar(Math.cbrt(0.5 * vp / vs));
   } else size = new THREE.Vector3(+p, +p, +p);   // an explicit size: not clamped by shapeMin
   if (size.distanceTo(S.size) < 1e-9) return;
-  actions.push({ type: 'shape', S, before: shapeState(S) });
+  pushAction({ type: 'shape', S, before: shapeState(S) });
   S.size = size;
   drawShape(S); refreshCage();
   refreshViews(viewsOf([S])); takeView([S]);
@@ -2376,7 +2410,7 @@ for (const b of $('s-presets').querySelectorAll('.sp'))
 // the cage is drawn at a size in px: keep it so while the view zooms
 viewer.controls.addEventListener('change', () => { if (selShape && !sDrag) refreshCage(); });
 
-// ── T: text ON the part — two styles, the user picks (⚑ / ▭ next to T) ──
+// ── T: text ON the part — three styles, three tools (T vernice, ▭ decal, ⚑ targhetta) ──
 // Press on the part and drag a box (a tap gives a default one), type, Enter.
 // ⚑ TARGHETTA (default — the one you can always read): a dot on the surface, a
 // short stem along the normal, and a plate with the words that always FACES THE
@@ -2399,15 +2433,16 @@ viewer.controls.addEventListener('change', () => { if (selShape && !sDrag) refre
 // to), not pixels: models that never look at the pictures still read it.
 // px, the box a tap without a drag makes — smaller on a phone, where 170 px is half the screen
 const LABEL_TAP = matchMedia('(max-width:760px)').matches ? [110, 34] : [170, 46];
+// The style is the TOOL in hand (T vernice and ▭ decal in ✎ Matita, ⚑
+// targhetta in ◆ Tag): its registerTool entry carries `style`, and taking it
+// sets labelStyle — remembered, so T goes back to the style last used.
 const LABEL_STYLES = ['paint', 'tag', 'decal'];
 let labelStyle = 'paint';                      // the default: paint goes on any surface
 try { const v = localStorage.getItem('noodle:view:labelStyle'); if (LABEL_STYLES.includes(v)) labelStyle = v; } catch {}
-$('d-lstyle').value = labelStyle;
-$('d-lstyle').addEventListener('change', e => {
-  labelStyle = LABEL_STYLES.includes(e.target.value) ? e.target.value : 'paint';
+function useLabelStyle(st) {
+  labelStyle = LABEL_STYLES.includes(st) ? st : 'paint';
   try { localStorage.setItem('noodle:view:labelStyle', labelStyle); } catch {}
-  setTool('text');
-});
+}
 function boxRect(p, x, y) {
   const w = Math.abs(x - p.x0), h = Math.abs(y - p.y0);
   if (w < 14 && h < 14) {
@@ -2501,7 +2536,8 @@ function makeLabel(p, r, style) {
 // ↶ and ⌫ treat it like a label; replacing = rub it out and place another.
 const IMG_MAX = 1600;
 let pendingImg = null;
-$('d-imgtool').onclick = () => { if (pendingImg) setTool('image'); $('d-imgfile').click(); };
+// the 🖼 button (◆ Tag): pick a picture; the tool is in hand once one is picked
+function pickImage() { if (pendingImg) setTool('image'); $('d-imgfile').click(); }
 $('d-imgfile').addEventListener('change', async e => {
   const f = e.target.files && e.target.files[0];
   e.target.value = '';
@@ -2533,7 +2569,7 @@ function newImage(p, r) {
   L.h = L.w / a;
   L.img = pendingImg; L.color = '#ffffff';
   labels.push(L); drawLabel(L);
-  actions.push({ type: 'label', L });
+  pushAction({ type: 'label', L });
   takeView([L]);
   syncDraw();
 }
@@ -2768,28 +2804,28 @@ function closeEditor(commit) {
     const st = paintText(L, L.box);
     if (!st.length) { toast('⚠ Il testo cade fuori dal pezzo: riprova sul pezzo.'); return; }
     labels.push(L); drawLabel(L);
-    actions.push({ type: 'label', L, strokes: st });
+    pushAction({ type: 'label', L, strokes: st });
     takeView([L, ...st]);
   } else if (ed.isNew) {
     if (!text) return;
     L.text = text; labels.push(L); drawLabel(L);
-    actions.push({ type: 'label', L });
+    pushAction({ type: 'label', L });
     takeView([L]);
   } else if (!text) {                          // emptied = rubbed out, and ↶ brings it back
     const st = takeLabelStrokes(L);
     labels.splice(labels.indexOf(L), 1); disposeObj(L.obj); L.obj = null;
-    actions.push({ type: 'erase', strokes: st, labels: [L] });
+    pushAction({ type: 'erase', strokes: st, labels: [L], measures: [], shapes: [] });
     refreshViews(viewsOf([L, ...st]));
   } else if (text !== L.text && L.style === 'paint') {
     // re-lettered in its box as it shows NOW (from the current camera)
     const before = L.text, oldSt = takeLabelStrokes(L);
     L.text = text;
     const newSt = paintText(L, ed.rect);
-    actions.push({ type: 'edit', L, before, oldStrokes: oldSt, newStrokes: newSt });
+    pushAction({ type: 'edit', L, before, oldStrokes: oldSt, newStrokes: newSt });
     refreshViews(viewsOf([L, ...oldSt]));
     takeView([L, ...newSt]);
   } else if (text !== L.text) {
-    actions.push({ type: 'edit', L, before: L.text });
+    pushAction({ type: 'edit', L, before: L.text });
     L.text = text; drawLabel(L);
     refreshViews(viewsOf([L]));
   }
@@ -3048,26 +3084,43 @@ function removeGesture(g) {
   for (let i = draft.length - 1; i >= 0; i--) if (draft[i].g === g) { gone.push(draft[i]); disposeObj(draft[i].obj); draft.splice(i, 1); }
   return gone;
 }
-function undo() {
-  const a = actions.pop();
-  if (!a) return;
+// ↶ / ↷ — the stack has two sides. ↶ steps the last action BACK and keeps it on
+// `redone`; ↷ steps it FORWARD again; a new action (pushAction) empties
+// `redone`. Each step goes through syncDraw → the autosave, so the note on the
+// server follows (PUT; DELETE when nothing is left — and a ↷ after that makes a
+// new note, as any first mark does), and the pictures of the views it touched
+// are re-shot from their own cameras (refreshViews), both ways.
+function pushAction(a) { actions.push(a); redone.length = 0; }
+const allItems = a => [...(a.strokes || []), ...(a.labels || []), ...(a.measures || []), ...(a.shapes || [])];
+// the inverse of restore(): take items off the drawing (↷ of an erase)
+function takeAway(er) {
+  const off = (list, x) => { const i = list.indexOf(x); if (i >= 0) list.splice(i, 1); if (x.obj) disposeObj(x.obj); x.obj = null; };
+  for (const x of er.strokes || []) off(draft, x);
+  for (const x of er.labels || []) off(labels, x);
+  for (const x of er.measures || []) off(dmeasures, x);
+  for (const x of er.shapes || []) { if (x === selShape) selectShape(null); off(shapes, x); }
+}
+function stepBack(a) {
   let touched = [];
-  if (a.type === 'pen') touched = viewsOf(removeGesture(a.g));
-  else if (a.type === 'erase') { restore(a); touched = viewsOf([...a.strokes, ...a.labels]); }
+  if (a.undo) touched = a.undo() || [];        // a tool module's own action
+  else if (a.type === 'pen') { a.strokes = removeGesture(a.g); touched = viewsOf(a.strokes); }
+  else if (a.type === 'erase') { restore(a); touched = viewsOf(allItems(a)); }
   else if (a.type === 'label') {
     const st = takeLabelStrokes(a.L);
+    if (st.length) a.strokes = st;
     labels.splice(labels.indexOf(a.L), 1); disposeObj(a.L.obj); a.L.obj = null; touched = viewsOf([a.L, ...st]);
   } else if (a.type === 'edit' && a.oldStrokes) {
-    touched = viewsOf([a.L, ...takeLabelStrokes(a.L)]);
+    a.after = a.L.text; a.newStrokes = takeLabelStrokes(a.L);
+    touched = viewsOf([a.L, ...a.newStrokes]);
     a.L.text = a.before; restore({ strokes: a.oldStrokes }); touched.push(...viewsOf(a.oldStrokes));
-  } else if (a.type === 'edit') { a.L.text = a.before; drawLabel(a.L); touched = viewsOf([a.L]); }
+  } else if (a.type === 'edit') { a.after = a.L.text; a.L.text = a.before; drawLabel(a.L); touched = viewsOf([a.L]); }
   else if (a.type === 'shape') {
     const S = a.S;
     if (!a.before) {                           // it was added: take it away
       if (S === selShape) selectShape(null);
       const i = shapes.indexOf(S); if (i >= 0) shapes.splice(i, 1);
       disposeObj(S.obj); S.obj = null;
-    } else { setShapeState(S, a.before); drawShape(S); if (S === selShape) refreshCage(); }
+    } else { a.after = shapeState(S); setShapeState(S, a.before); drawShape(S); if (S === selShape) refreshCage(); }
     touched = viewsOf([S]);
   }
   else if (a.type === 'measure') {
@@ -3075,6 +3128,41 @@ function undo() {
     if (i >= 0) { dmeasures.splice(i, 1); disposeObj(a.M.obj); a.M.obj = null; }
     touched = viewsOf([a.M]);
   }
+  return touched;
+}
+function stepForward(a) {
+  let touched = [];
+  if (a.redo) touched = a.redo() || [];
+  else if (a.type === 'pen') { restore({ strokes: a.strokes || [] }); touched = viewsOf(a.strokes || []); }
+  else if (a.type === 'erase') { takeAway(a); touched = viewsOf(allItems(a)); }
+  else if (a.type === 'label') {
+    restore({ labels: [a.L], strokes: a.strokes || [] }); touched = viewsOf([a.L, ...(a.strokes || [])]);
+  } else if (a.type === 'edit' && a.oldStrokes) {
+    touched = viewsOf([a.L, ...takeLabelStrokes(a.L)]);
+    a.L.text = a.after; restore({ strokes: a.newStrokes || [] }); touched.push(...viewsOf(a.newStrokes || []));
+  } else if (a.type === 'edit') { a.L.text = a.after; drawLabel(a.L); touched = viewsOf([a.L]); }
+  else if (a.type === 'shape') {
+    const S = a.S;
+    if (!a.before) restore({ shapes: [S] });   // it was added: put it back
+    else { setShapeState(S, a.after); drawShape(S); if (S === selShape) refreshCage(); }
+    touched = viewsOf([S]);
+  }
+  else if (a.type === 'measure') { restore({ measures: [a.M] }); touched = viewsOf([a.M]); }
+  return touched;
+}
+function undo() {
+  const a = actions.pop();
+  if (!a) return;
+  const touched = stepBack(a);
+  redone.push(a);
+  refreshViews(touched);
+  viewer.invalidate(); syncDraw();
+}
+function redo() {
+  const a = redone.pop();
+  if (!a) return;
+  const touched = stepForward(a);
+  actions.push(a);
   refreshViews(touched);
   viewer.invalidate(); syncDraw();
 }
@@ -3086,19 +3174,29 @@ function clearDraft() {
   cancelMeasure();
   selectShape(null);
   while (shapes.length) disposeObj(shapes.pop().obj);
-  views.length = 0; actions.length = 0;
+  views.length = 0; actions.length = 0; redone.length = 0;
   viewer.invalidate(); syncDraw();
 }
-function setTool(t) { tool = t; if (t !== 'measure') cancelMeasure(); if (t !== 'shape') selectShape(null); if (t !== 'erase') $('d-ring').style.display = 'none'; if (t !== 'text') closeEditor(true); syncDraw(); }
+// a tool by its registerTool id ('pen', 'pen3d', 'paint', 'decal', 'tag',
+// 'image', 'shape', 'measure', 'erase', 'hand', …): its deselect / select do
+// the tidying (an unfinished dimension dropped, the shape let go…)
+function setTool(id) { TOOLS.select(id); }
+const penTool = () => (TOOLS.byKey('p') || { id: 'pen' }).id;   // ✎ or ✎³, the one used last
+function onToolChange(def) {
+  toolDef = def; tool = def.mode || def.id;
+  syncDraw();
+}
 function syncDraw() {
   const any = draft.length || labels.length || dmeasures.length || shapes.length;
-  $('d-send').disabled = !any && !$('d-text').value.trim() && !save.id;
-  if (any || save.id || $('d-text').value.trim()) scheduleSave();
-  $('d-undo').disabled = !actions.length; $('d-clear').disabled = !any;
-  $('d-hint').textContent = drawing && tool === 'measure' ? measureHint() : drawing && tool === 'shape' ? SHAPE_HINT : DRAW_HINT;
-  vp.classList.toggle('pen', drawing && tool === 'pen');
+  $('d-send').disabled = !any && !save.id;
+  if (any || save.id) scheduleSave();
+  $('d-undo').disabled = !actions.length; $('d-redo').disabled = !redone.length;
+  $('d-clear').disabled = $('d-clear2').disabled = !any;
+  const h = toolDef && toolDef.hint;
+  $('d-hint').textContent = (typeof h === 'function' ? h() : h || '') + (h ? ' · ' : '') + DRAW_HINT;
   vp.dataset.tool = drawing ? tool : '';
-  for (const [id, t] of [['d-pen', 'pen'], ['d-texttool', 'text'], ['d-imgtool', 'image'], ['d-measure', 'measure'], ['d-shape', 'shape'], ['d-erase', 'erase'], ['d-hand', 'hand']]) $(id).classList.toggle('on', tool === t);
+  $('c').style.cursor = drawing && toolDef && toolDef.cursor ? toolDef.cursor : '';
+  TOOLS.sync();
   for (const b of $('d-colors').children) b.classList.toggle('on', b.dataset.c === pen.color);
   for (const b of $('d-sizes').children) b.classList.toggle('on', +b.dataset.s === pen.size);
 }
@@ -3106,7 +3204,7 @@ function setDrawing(on) {
   drawing = on;
   vp.classList.toggle('drawing', on);
   if (on && clock.playing) setPlaying(false);
-  if (!on) { cancelGesture(); cancelMeasure(); selectShape(null); closeEditor(true); $('d-text').blur(); $('d-ring').style.display = 'none'; }
+  if (!on) { cancelGesture(); cancelMeasure(); selectShape(null); closeEditor(true); $('d-ring').style.display = 'none'; $('d-menu').classList.remove('open'); }
   syncDraw();
 }
 // With a shape in hand a colour paints THAT shape (and the pen, so the next
@@ -3119,7 +3217,8 @@ function recolorShape(c, merge) {
   if (S.color !== c) {
     const last = actions[actions.length - 1];
     if (!(merge && last && last.type === 'shape' && last.S === S && last.recolor))
-      actions.push({ type: 'shape', S, before: shapeState(S), recolor: merge });
+      pushAction({ type: 'shape', S, before: shapeState(S), recolor: merge });
+    else redone.length = 0;
     S.color = c; drawShape(S);
     refreshViews(viewsOf([S]));
   }
@@ -3129,54 +3228,97 @@ function recolorShape(c, merge) {
 for (const c of PEN_COLORS) {
   const b = document.createElement('button');
   b.className = 'sw-btn'; b.dataset.c = c; b.style.background = c; b.title = c;
-  b.onclick = () => { if (recolorShape(c, false)) return; pen.color = c; if (tool !== 'pen' && tool !== 'text') setTool('pen'); else syncDraw(); };
+  b.onclick = () => { if (recolorShape(c, false)) return; pen.color = c; if (tool !== 'pen' && tool !== 'text') setTool(penTool()); else syncDraw(); };
   $('d-colors').appendChild(b);
 }
-$('d-custom').addEventListener('input', e => { if (recolorShape(e.target.value, true)) return; pen.color = e.target.value; if (tool !== 'pen' && tool !== 'text') setTool('pen'); else syncDraw(); });
+$('d-custom').addEventListener('input', e => { if (recolorShape(e.target.value, true)) return; pen.color = e.target.value; if (tool !== 'pen' && tool !== 'text') setTool(penTool()); else syncDraw(); });
 PEN_SIZES.forEach(sz => {
   const b = document.createElement('button');
   b.className = 'btn sz'; b.dataset.s = sz; b.title = `Tratto ${sz}px`;
   b.innerHTML = `<i style="width:${4 + sz}px;height:${4 + sz}px"></i>`;
   // a size is also the eraser's radius: picking one keeps the eraser in hand
-  b.onclick = () => { pen.size = sz; if (tool === 'hand') setTool('pen'); else syncDraw(); };
+  b.onclick = () => { pen.size = sz; if (tool === 'hand') setTool(penTool()); else syncDraw(); };
   $('d-sizes').appendChild(b);
 });
 $('d-open').onclick = () => setDrawing(true);
 $('d-x').onclick = () => setDrawing(false);
-$('d-pen').onclick = () => setTool('pen');
-$('d-erase').onclick = () => setTool('erase');
-$('d-texttool').onclick = () => setTool('text');
-$('d-hand').onclick = () => setTool('hand');
-$('d-measure').onclick = () => setTool('measure');
-$('d-shape').onclick = () => setTool('shape');
 $('d-undo').onclick = undo;
-$('d-clear').onclick = () => { if (draft.length < 4 || confirm('Cancellare tutti i tratti non inviati?')) clearDraft(); };
-$('d-text').addEventListener('input', syncDraw);
-$('d-text').addEventListener('keydown', e => {
-  e.stopPropagation();                         // typing "a" must not show all pieces
-  if (e.key === 'Enter') { e.preventDefault(); finishNote(); }
-  if (e.key === 'Escape') e.target.blur();
+$('d-redo').onclick = redo;
+const askClear = () => { $('d-menu').classList.remove('open'); if (draft.length < 4 || confirm('Togliere tutto dalla nota?')) clearDraft(); };
+$('d-clear').onclick = $('d-clear2').onclick = askClear;
+// ⋯ (a phone has no room for Pulisci in the common row)
+$('d-more').onclick = e => { e.stopPropagation(); $('d-menu').classList.toggle('open'); };
+document.addEventListener('pointerdown', e => {
+  if (!$('d-menu').contains(e.target) && e.target !== $('d-more')) $('d-menu').classList.remove('open');
 });
+
+// ── the tools: ONE registerTool each (webui/view-tools.js) ───────────────
+// Tab rows: ✎ Matita · ◆ Tag · ▣ Blocky · 🔧 Tool (keys 1-4); `common` = the
+// row every tab shares. `mode` is the gesture family the handlers above check
+// (`tool`); the handlers run in the capture phase on #vp, before OrbitControls.
+const PEN_GESTURE = { down: penDown, move: penMove, up: endPaint, cancel: endPaint };
+const closeText = () => closeEditor(true);
+const TEXT_HINT = 'trascina un riquadro sul pezzo e scrivi (un tocco = riquadro standard), Invio · tocca un testo per correggerlo';
+TOOLS.registerTool({ id: 'pen', tab: 'pencil', key: 'p', mode: 'pen', icon: '✎', label: 'Penna', cursor: 'crosshair',
+  title: 'Penna: trascina SUL pezzo per disegnare — un tratto piatto, steso sulla superficie',
+  hint: 'Penna: trascina sul pezzo per disegnare', ...PEN_GESTURE });
+TOOLS.registerTool({ id: 'pen3d', tab: 'pencil', key: 'p', mode: 'pen', pen3d: true, icon: '✎³', label: 'Penna 3D', cursor: 'crosshair',
+  title: 'Penna 3D: come la penna, ma dove insisti girando sullo stesso punto l\'inchiostro si accumula in altezza',
+  hint: 'Penna 3D: gira più volte sullo stesso punto e l\'inchiostro sale, uno strato a giro', ...PEN_GESTURE });
+TOOLS.registerTool({ id: 'paint', tab: 'pencil', key: 't', mode: 'text', style: 'paint', icon: 'T', label: 'Vernice', cursor: 'text',
+  title: 'Testo a vernice: lettere a tratto dipinte SUL pezzo come la penna, su ogni superficie — trascina un riquadro e scrivi',
+  hint: 'Vernice: ' + TEXT_HINT, select: () => useLabelStyle('paint'), deselect: closeText, ...PEN_GESTURE });
+TOOLS.registerTool({ id: 'decal', tab: 'pencil', key: 't', mode: 'text', style: 'decal', icon: '▭', label: 'Decal', cursor: 'text',
+  title: 'Decal: il testo incollato alla superficie (piano, cilindro, sfera) — trascina un riquadro e scrivi',
+  hint: 'Decal: ' + TEXT_HINT, select: () => useLabelStyle('decal'), deselect: closeText, ...PEN_GESTURE });
+TOOLS.registerTool({ id: 'tag', tab: 'tag', key: 't', mode: 'text', style: 'tag', icon: '⚑', label: 'Targhetta', cursor: 'text',
+  title: 'Targhetta: un cartellino con uno stelo che indica il punto e si legge da ogni lato — trascina un riquadro e scrivi',
+  hint: 'Targhetta: ' + TEXT_HINT, select: () => useLabelStyle('tag'), deselect: closeText, ...PEN_GESTURE });
+TOOLS.registerTool({ id: 'image', tab: 'tag', mode: 'image', icon: '🖼', label: 'Img', cursor: 'copy', click: pickImage,
+  title: 'Immagine: scegli un PNG/JPEG (o una foto), poi trascina un riquadro sul pezzo',
+  hint: 'Img: trascina un riquadro sul pezzo per posare l\'immagine · il bottone ne sceglie un\'altra', ...PEN_GESTURE });
+TOOLS.registerTool({ id: 'shape', tab: 'blocky', key: 'f', icon: '▣', label: 'Forma', cursor: 'copy', ownsTaps: true,
+  title: 'Forme: tocca il pezzo per posarci un cubo, un cilindro o una sfera — trascinala per spostarla SUL pezzo; le maniglie a destra: ✥ sposta (G), ⟳ ruota (R), ▣ gabbia (C), ◌ nessuna',
+  options: () => [$('d-shapekind'), $('s-modes')], hint: SHAPE_HINT, deselect: () => selectShape(null),
+  down: shapeDown, move: shapeMove, up: endShapeDrag, cancel: endShapeDrag });
+TOOLS.registerTool({ id: 'measure', tab: 'tool', key: 'm', icon: '↔', label: 'Metro', cursor: 'crosshair', ownsTaps: true,
+  title: 'Metro: tocca due punti sul pezzo per misurarne la distanza — Shift blocca la quota su X/Y/Z, Esc annulla il primo punto',
+  options: () => $('d-mmode'), hint: () => measureHint(), deselect: cancelMeasure,
+  down: measureDown, move: measureMove, up: measureUp, cancel: measureCancel });
+// ✂ is task A's (PLAN_VIEW_TOOLS §2): the place is kept, the tool fills it
+TOOLS.registerTool({ id: 'section', tab: 'tool', icon: '✂', label: 'Sezione', disabled: true, title: '✂ Sezione — in arrivo' });
+TOOLS.registerTool({ id: 'erase', tab: 'common', key: 'e', mode: 'erase', icon: '⌫', cursor: 'none',
+  title: 'Gomma: passa sopra qualunque cosa della nota per toglierla intera — tratto, testo, targhetta, immagine, quota, forma (la misura sceglie il raggio)',
+  hint: 'Gomma: passa sopra un oggetto per toglierlo', deselect: () => { $('d-ring').style.display = 'none'; }, ...PEN_GESTURE });
+TOOLS.registerTool({ id: 'hand', tab: 'common', mode: 'hand', icon: '✋', label: 'Muovi',
+  title: 'Muovi: ruota/zoom senza disegnare (anche: trascina fuori dal pezzo, tasto destro, rotella)',
+  hint: 'Muovi: trascina per ruotare la vista' });
+TOOLS.preferKey('t', labelStyle);              // T goes back to the text style used last
+Object.assign(TOOLS.ctx, { THREE, viewer, vp, $, surfaceHit, firstHit, mmPerPx, annoGroup, pen, pushAction,
+  syncDraw, setTool, toast, takeView, refreshViews, disposeObj, isDrawing: () => drawing });
+TOOLS.mount({ tabs: $('d-tabs'), rows: $('d-rows'), common: $('d-ctools'), onChange: onToolChange, active: () => drawing });
+TOOLS.attach(vp);
+onToolChange(TOOLS.current());
+
 addEventListener('keydown', e => {
   if (!drawing || e.target.tagName === 'INPUT') return;
-  const k = e.key.toLowerCase();
-  if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); e.stopImmediatePropagation(); undo(); }
+  const k = e.key.toLowerCase(), tab = TOOLS.TABS.find(t => t.key === k);
+  if ((e.ctrlKey || e.metaKey) && (k === 'y' || (k === 'z' && e.shiftKey))) { e.preventDefault(); e.stopImmediatePropagation(); redo(); }
+  else if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); e.stopImmediatePropagation(); undo(); }
   else if (e.key === 'Escape' && mPending) { e.stopImmediatePropagation(); cancelMeasure(); }
   else if (e.key === 'Escape' && selShape) { e.stopImmediatePropagation(); selectShape(null); }
   else if ((e.key === 'Delete' || e.key === 'Backspace') && selShape) { e.stopImmediatePropagation(); e.preventDefault(); deleteShape(selShape); }
   else if (e.key === 'Enter' && tool === 'measure' && mPending) { e.stopImmediatePropagation(); finishSingle(); }
   else if (e.key === 'Escape') { e.stopImmediatePropagation(); setDrawing(false); }
   else if (e.ctrlKey || e.metaKey || e.altKey) return;
-  else if (k === 'p') { e.stopImmediatePropagation(); setTool('pen'); }
-  else if (k === 'e') { e.stopImmediatePropagation(); setTool('erase'); }
-  else if (k === 't') { e.stopImmediatePropagation(); setTool('text'); }
-  else if (k === 'm') { e.stopImmediatePropagation(); setTool('measure'); }
-  else if (k === 'f') { e.stopImmediatePropagation(); setTool('shape'); }
+  else if (tab) { e.stopImmediatePropagation(); TOOLS.setTab(tab.id); }
   // the shape's handles: G move · R rotate · C cage (again: Scala ⇄ Deforma).
   // No H for «hide the gizmo»: H already hides the selected PIECE
   else if (tool === 'shape' && ['g', 'r', 'c'].includes(k)) {
     e.stopImmediatePropagation(); setGizmoMode({ g: 'move', r: 'rotate', c: 'cage' }[k]);
   }
+  // a tool's own key (P ✎/✎³, T vernice/decal/targhetta — the one used last —, E, M, F…)
+  else if (TOOLS.byKey(k)) { e.stopImmediatePropagation(); setTool(TOOLS.byKey(k).id); }
 }, true);
 
 function toast(html, ms = 6000) {
@@ -3201,7 +3343,7 @@ const fitIn = f => f ? { centre: new THREE.Vector3(...f.centre), radius: f.radiu
 // Saving is serial (one request in flight) and compares a signature of the
 // content, so orbiting the view or switching tool sends nothing.
 function noteBody(withPictures) {
-  const text = $('d-text').value.trim();
+  const text = noteText;                       // '' for a new note; an old one keeps its sentence
   if (!draft.length && !labels.length && !dmeasures.length && !shapes.length && !text) return null;
   const camera = camState();
   // the views strokes were drawn from, minus the final one (that IS `image`)
@@ -3338,7 +3480,7 @@ async function finishNote() {
     if (save.state === 'error') throw new Error(save.err);
     const id = save.id;
     save.id = null; save.sig = ''; save.note = null; rememberLive(null);
-    clearDraft(); $('d-text').value = '';
+    clearDraft(); noteText = '';
     if (id) {
       shownNotes.add(id);
       await loadNotes();
@@ -3374,10 +3516,10 @@ async function dataUrlOf(url) {
 }
 async function resumeNote(n) {
   if (save.id === n.id) return;
-  if (save.id || draft.length || labels.length || dmeasures.length || shapes.length || $('d-text').value.trim()) {
+  if (save.id || draft.length || labels.length || dmeasures.length || shapes.length || noteText) {
     await flushSave(); if (save.busy) await save.busy;
     if (save.state === 'error') { toast(`⚠ La nota in corso non è salvata: riprova tra poco.`); return; }
-    save.id = null; save.sig = ''; save.note = null; clearDraft(); $('d-text').value = '';
+    save.id = null; save.sig = ''; save.note = null; clearDraft(); noteText = '';
   }
   const base = `/api/graph/${encodeURIComponent(NAME)}/gens/${GEN}/notes/${n.id}`;
   const pic = async url => { try { return await dataUrlOf(url); } catch { return null; } };
@@ -3440,7 +3582,7 @@ async function resumeNote(n) {
       view: viewOf(sh.view), obj: null };
     shapes.push(S); drawShape(S);
   }
-  $('d-text').value = n.text || '';
+  noteText = n.text || '';                     // shown in the list, kept on every PUT
   // the note is now the draft: drawn once (not also as a saved note), saved under its id
   save.id = n.id; save.note = n; save.err = '';
   const o = noteObjs.get(n.id);
@@ -3577,7 +3719,7 @@ function renderNotes() {
       if (live) {                              // the note being drawn: its draft goes too
         clearTimeout(save.timer); if (save.busy) await save.busy;
         save.id = null; save.sig = ''; save.note = null; rememberLive(null);
-        clearDraft(); $('d-text').value = ''; setSaveState('idle');
+        clearDraft(); noteText = ''; setSaveState('idle');
       }
       await fetch(`/api/graph/${encodeURIComponent(NAME)}/gens/${GEN}/notes/${n.id}`, { method: 'DELETE' });
       shownNotes.delete(n.id); loadNotes();

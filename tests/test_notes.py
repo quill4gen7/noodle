@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SERVER = (ROOT / "server.py").read_text()
 MCP = (ROOT / "mcp_server.py").read_text()
 VIEW = (ROOT / "webui" / "view.html").read_text()
+TOOLS_JS = (ROOT / "webui" / "view-tools.js").read_text()
 HELP = (ROOT / "cad_nodes" / "AGENT_HELP.md").read_text()
 
 BOX = {"id": "n1", "type": "Box", "title": "Body",
@@ -161,11 +162,12 @@ def test_the_pen_paints_on_the_surface_and_leaves_the_background_to_orbit():
     # strokes come from a raycast on the part, not from screen coordinates, and a
     # press that misses the part is left to OrbitControls
     assert "function surfaceHit" in VIEW and "if (!hit && !onLabel) return;" in VIEW
-    assert "vp.addEventListener('pointerdown'" in VIEW and "}, true);" in VIEW
+    # the tools' handlers run in the CAPTURE phase on #vp (webui/view-tools.js)
+    assert "TOOLS.attach(vp);" in VIEW and "}, true);" in TOOLS_JS
     # the picture is the user's own view, not a re-framed one — and one more per
     # view the user drew from, taken when the pen lifts
     assert "snapshot({ frame: false" in VIEW
-    assert "if (mine.length) { actions.push({ type: 'pen', g: p.g }); takeView(mine); }" in VIEW
+    assert "if (mine.length) { pushAction({ type: 'pen', g: p.g }); takeView(mine); }" in VIEW
     # a note opened on another screen backs off by the aspect ratio, then
     # until every stroke is inside the picture
     assert "c.aspect / now" in VIEW and "!inside()" in VIEW
@@ -188,7 +190,7 @@ def test_the_eraser_takes_whole_draft_strokes_and_undo_gives_them_back():
     """⌫ hits in 3D: distance from the point on the PART to each stroke's
     polyline, radius from the size buttons in px → mm. ↶ is a stack of
     actions, so it restores what an erase removed, in the original order."""
-    assert 'id="d-erase"' in VIEW
+    assert "TOOLS.registerTool({ id: 'erase', tab: 'common', key: 'e'" in VIEW
     erase = VIEW[VIEW.index("function eraseAt"):]
     erase = erase[:erase.index("\n}\n")]
     assert "strokeDist(s, hit.p) > r + s.width / 2" in erase and "mmPerPx(hit.p)" in erase
@@ -196,7 +198,7 @@ def test_the_eraser_takes_whole_draft_strokes_and_undo_gives_them_back():
     assert "else if (a.type === 'erase') { restore(a);" in VIEW
     assert "draft.sort((a, b) => a.k - b.k)" in VIEW
     # an erase drag is ONE action, pushed at pointer-up; a pinch undoes it on the spot
-    assert "actions.push({ type: 'erase', ...p.erased })" in VIEW
+    assert "pushAction({ type: 'erase', ...p.erased })" in VIEW
     assert "if (p.mode === 'erase') restore(p.erased);" in VIEW
     # only the draft: saved notes are never touched by the eraser
     assert "notesData" not in erase
@@ -247,14 +249,16 @@ def test_the_text_tool_projects_a_decal_and_sends_labels():
     # three's DecalGeometry, vendored at the pinned version, imported via the map
     assert "from 'three/addons/geometries/DecalGeometry.js'" in VIEW
     assert (ROOT / "webui/vendor/three-0.170.0/examples/jsm/geometries/DecalGeometry.js").exists()
-    assert 'id="d-texttool"' in VIEW
+    for t in ("id: 'paint', tab: 'pencil', key: 't'", "id: 'decal', tab: 'pencil', key: 't'", "id: 'tag', tab: 'tag', key: 't'"):
+        assert t in VIEW
     # the normal is the surface under the WHOLE box, size measured on its plane
     new = VIEW[VIEW.index("function makeLabel"):]
     new = new[:new.index("\n}\n")]
     assert "for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++)" in new and "planeSize(" in new
-    # two styles, the user's choice, remembered; a decal that cannot be made
-    # becomes a plate — never the one-sided flying card it used to be
-    assert 'id="d-lstyle"' in VIEW and "localStorage.getItem('noodle:view:labelStyle')" in VIEW
+    # three styles = three tools, the last one remembered (T goes back to it); a
+    # decal that cannot be made becomes a plate — never the one-sided flying card
+    assert 'id="d-lstyle"' not in VIEW and "localStorage.getItem('noodle:view:labelStyle')" in VIEW
+    assert "TOOLS.preferKey('t', labelStyle);" in VIEW
     assert "if (mesh && !under.ridged)" in VIEW and "mat.map.dispose(); mat.dispose(); L.surface = 'tag';" in VIEW
     assert "PlaneGeometry" not in VIEW
     # the plate faces the camera and shows through the part, faded
@@ -463,9 +467,9 @@ def test_bad_dimensions_are_refused(store):
 
 
 def test_the_measure_tool_is_part_of_the_draft():
-    assert 'id="d-measure"' in VIEW and 'id="d-mmode"' in VIEW
+    assert "id: 'measure', tab: 'tool', key: 'm'" in VIEW and 'id="d-mmode"' in VIEW
     # a dimension rides the undo / eraser / views machinery like a stroke
-    for t in ("actions.push({ type: 'measure', M })", "else if (a.type === 'measure')",
+    for t in ("pushAction({ type: 'measure', M })", "else if (a.type === 'measure')",
               "er.measures.push(M)", "measures: dmeasures.map(M =>"):
         assert t in VIEW
     # the tool never captures the pointer: a drag on the part still orbits
@@ -506,7 +510,7 @@ def test_bad_shapes_are_refused(store):
 
 
 def test_the_shape_tool_stays_on_the_parts():
-    assert 'id="d-shape"' in VIEW and 'id="d-shapekind"' in VIEW
+    assert "id: 'shape', tab: 'blocky', key: 'f'" in VIEW and 'id="d-shapekind"' in VIEW
     # moving is NOT free: the shape follows a surface hit, or does not move
     move = VIEW[VIEW.index("if (d.h.type === 'move') {"):]
     move = move[:move.index("} else if")]
@@ -518,16 +522,18 @@ def test_the_shape_tool_stays_on_the_parts():
     # the marks shrink with the shape; the grab volume does not
     assert "hs = Math.min(grab, 0.1 * side)" in VIEW
     # a shape rides the draft like a stroke
-    for t in ("actions.push({ type: 'shape', S, before: null })", "else if (a.type === 'shape')",
+    for t in ("pushAction({ type: 'shape', S, before: null })", "else if (a.type === 'shape')",
               "er.shapes.push(S)", "shapes: shapes.map(S =>", "for (const sh of n.shapes || [])"):
         assert t in VIEW
     assert "`shapes`" in HELP[HELP.index("cad_notes"):] and "Basic SHAPES" in MCP
 
 
-def test_the_draw_tools_wrap_on_a_phone():
-    # 604px of tools in a 390px screen scrolled the whole viewer sideways
-    assert "#dbar .grp{flex-wrap:wrap;}" in VIEW
-    assert "#vp[data-tool=shape] #d-shapekind{display:inline-block;}" in VIEW
+def test_the_draw_tools_never_widen_a_phone():
+    # 604px of tools in a 390px screen scrolled the whole viewer sideways: the
+    # tab's tool row scrolls on its own, the common row stays
+    assert "#d-rows{order:2;overflow-x:auto;" in VIEW
+    assert "#d-rows .trow{flex-wrap:nowrap;width:max-content;}" in VIEW
+    assert "#d-common{order:3;" in VIEW
 
 
 def test_shapes_have_move_arrows_on_a_leash():
@@ -585,13 +591,15 @@ def test_shapes_wear_one_set_of_handles_at_a_time():
     assert "if (m === 'cage' && gizmoMode === 'cage') return toggleCageMode();" in VIEW
     # G / R / C, only with the shape tool; no H (it already hides the piece)
     assert "setGizmoMode({ g: 'move', r: 'rotate', c: 'cage' }[k])" in VIEW
-    # on a phone the modes are one row that never widens the page
-    assert "#s-modes{display:flex;gap:4px;flex-basis:100%;justify-content:center;flex-wrap:nowrap;}" in VIEW
+    # the modes are ▣ Blocky's tool row (no longer in the bar over the shape),
+    # one row that never wraps; the size bar keeps the sizes, Togli and ✓
+    assert "#s-modes{display:inline-flex;gap:4px;flex-wrap:nowrap;}" in VIEW
+    assert "options: () => [$('d-shapekind'), $('s-modes')]" in VIEW
     assert "max-width:calc(100vw - 16px)" in VIEW
     # the tap that sets a shape down opens the bar under the finger on a phone:
     # its compatibility click must not press the button that just appeared
     assert "const sBarGhost = () => performance.now() - sBarOpened < 400;" in VIEW
-    assert "if (!sBarGhost()) setGizmoMode(b.dataset.gm);" in VIEW
+    assert "setGizmoMode(b.dataset.gm)" in VIEW
     assert "if (selShape && !sBarGhost()) deleteShape(selShape);" in VIEW
 
 
@@ -697,7 +705,7 @@ def test_a_pen_colour_recolours_the_selected_shape():
     fn = fn[:fn.index("\n}\n")]
     assert "if (!S) return false;" in fn and "pen.color = c;" in fn
     assert "S.color = c; drawShape(S);" in fn
-    assert "actions.push({ type: 'shape', S, before: shapeState(S), recolor: merge })" in fn
+    assert "pushAction({ type: 'shape', S, before: shapeState(S), recolor: merge })" in fn
     assert "if (recolorShape(c, false)) return;" in VIEW
     assert "if (recolorShape(e.target.value, true)) return;" in VIEW
     # undo puts the old colour back: the shape's state carries it
@@ -729,7 +737,7 @@ def test_shapes_have_standard_sizes():
     fn = fn[:fn.index("\n}\n")]
     assert "Math.cbrt(0.5 * vp / vs)" in fn
     assert "new THREE.Vector3(+p, +p, +p)" in fn
-    assert "actions.push({ type: 'shape', S, before: shapeState(S) });" in fn
+    assert "pushAction({ type: 'shape', S, before: shapeState(S) });" in fn
     assert "refreshViews(viewsOf([S])); takeView([S]);" in fn
     assert "if (selShape && !sBarGhost() && !b.disabled) setShapePreset(selShape, b.dataset.sp);" in VIEW
     # no volume known → the button says why instead of doing nothing
@@ -863,3 +871,60 @@ def test_a_saved_note_comes_back_into_the_draft():
     assert "noodle:view:live:${NAME}/${GEN}" in VIEW
     assert "await resumeNote(liveN)" in VIEW            # picked up again on load
     assert "Continua questa nota" in VIEW               # ✎ in the list
+
+
+# ── ✎ Disegna as tabs (PLAN_VIEW_TOOLS.md §1, task T0) ──────────────────────
+
+def test_the_draw_bar_is_four_tabs_and_a_common_row():
+    for t in ("{ id: 'pencil', icon: '✎', label: 'Matita', key: '1'", "{ id: 'tag', icon: '◆', label: 'Tag', key: '2'",
+              "{ id: 'blocky', icon: '▣', label: 'Blocky', key: '3'", "{ id: 'tool', icon: '🔧', label: 'Tool', key: '4'"):
+        assert t in TOOLS_JS, t
+    assert 'id="d-tabs" role="tablist"' in VIEW and 'id="d-common"' in VIEW and 'id="d-rows"' in VIEW
+    # the common row: ↶ ↷ ⌫ (and Muovi), colours, sizes, state, Fatto, ✕
+    common = VIEW[VIEW.index('<div id="d-common">'):VIEW.index('<div id="d-rows">')]
+    for el in ('id="d-undo"', 'id="d-redo"', 'id="d-ctools"', 'id="d-colors"', 'id="d-sizes"',
+               'id="d-save"', 'id="d-send"', 'id="d-x"'):
+        assert el in common, el
+    assert "TOOLS.registerTool({ id: 'hand', tab: 'common'" in VIEW
+    # every tool of today, in its tab
+    for t in ("id: 'pen', tab: 'pencil', key: 'p'", "id: 'pen3d', tab: 'pencil', key: 'p', mode: 'pen', pen3d: true",
+              "id: 'image', tab: 'tag'", "id: 'shape', tab: 'blocky'", "id: 'measure', tab: 'tool'"):
+        assert t in VIEW, t
+    # ✂ waits for task A, in its place and disabled
+    assert "id: 'section', tab: 'tool', icon: '✂', label: 'Sezione', disabled: true, title: '✂ Sezione — in arrivo'" in VIEW
+    # 1-4 switch tabs; the tab and the tool per tab are remembered
+    assert "TOOLS.setTab(tab.id)" in VIEW and "noodle:view:drawTools" in TOOLS_JS
+    assert "try { localStorage.setItem(STORE" in TOOLS_JS
+
+
+def test_there_is_no_note_field_any_more():
+    # the note is what is drawn and written ON the part; `text` stays in the
+    # data — empty for a new note, an old note's sentence kept on resume
+    assert 'id="d-text"' not in VIEW and "$('d-text')" not in VIEW
+    assert "const text = noteText;" in VIEW and "noteText = n.text || '';" in VIEW
+
+
+def test_redo_is_the_other_side_of_the_undo_stack():
+    assert "const actions = [], redone = [];" in VIEW
+    assert "function pushAction(a) { actions.push(a); redone.length = 0; }" in VIEW
+    # every action goes through pushAction (a new one empties the redo side)
+    assert "actions.push({" not in VIEW
+    for fn in ("function undo()", "function redo()"):
+        body = VIEW[VIEW.index(fn):]
+        body = body[:body.index("\n}\n")]
+        # each step re-shoots the pictures it touched and saves (syncDraw → autosave)
+        assert "refreshViews(touched);" in body and "syncDraw();" in body, fn
+    assert "(e.ctrlKey || e.metaKey) && (k === 'y' || (k === 'z' && e.shiftKey))" in VIEW
+    # a tool module's own action carries its own undo/redo
+    assert "if (a.undo) touched = a.undo() || [];" in VIEW and "if (a.redo) touched = a.redo() || [];" in VIEW
+
+
+def test_a_tool_is_one_register_call():
+    # webui/view-tools.js: the table and the dispatcher, nothing else
+    assert "export function registerTool(def)" in TOOLS_JS and "export const ctx = {};" in TOOLS_JS
+    assert "export function attach(el)" in TOOLS_JS and "export function byKey(k)" in TOOLS_JS
+    # a gesture stays with the tool that got its pointerdown
+    assert "owner.set(e.pointerId, cur)" in TOOLS_JS
+    # the static preview ships it
+    BP = (ROOT / "scripts" / "build_pages.py").read_text()
+    assert '"view-tools.js"' in BP
