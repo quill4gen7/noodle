@@ -499,6 +499,7 @@ import * as MS from '/static/measure.js';
 import * as FFD from '/static/ffd.js';
 import * as P3 from '/static/pen3d.js';
 import * as TOOLS from '/static/view-tools.js';
+import { makePlate, plateSprites, installPlates, GHOST } from '/static/view-plates.js';
 
 const $ = id => document.getElementById(id);
 const seg = location.pathname.split('/').filter(Boolean);     // ['view', name, gen?]
@@ -1214,6 +1215,7 @@ function startStroke(hit, g) {
 }
 
 const vp = $('vp');
+installPlates(THREE, viewer, vp);            // the plates step aside when you zoom into them (view-plates.js)
 let redispatch = false;
 // The pen family's gesture (✎ ✎³ T ▭ ⚑ Img ⌫): registered as their down/move/up
 // in the tool table below, which calls them in the CAPTURE phase on #vp.
@@ -2869,6 +2871,7 @@ function labelCanvas(text, color, w, h) {
   lines.forEach((l, i) => c.fillText(l, cw / 2, ch / 2 + (i - (lines.length - 1) / 2) * fs * 1.12));
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  tex.userData.letter = fs / ch;               // view-plates.js: how tall the letters are on the plate
   return tex;
 }
 // The visible mesh the label was written on — for a saved note, found again by
@@ -2978,28 +2981,14 @@ function tagRect(L) {
   return { x0: x - w / 2, y0: y - h, x1: x + w / 2, y1: y };
 }
 // Dot + stem + plate, each twice: `solid` depth-tested at full opacity, `ghost`
-// with no depth test at 0.35, drawn after everything. Sprites need
-// `raycaster.camera` to be picked — setFromCamera sets it.
-const GHOST = 0.35;
+// with no depth test at 0.35, drawn after everything — built by makePlate
+// (webui/view-plates.js), the ONE plate of /view: the agent's tags and the
+// metro's values come out of the same module, and all three step aside when
+// you zoom in so close you can no longer read the word (PLAN_VIEW_TOOLS §3).
+// Sprites need `raycaster.camera` to be picked — setFromCamera sets it.
 function tagObject(L, tex = labelCanvas(L.text, L.color, L.w, L.h), ink = L.color) {
-  const g = new THREE.Group();
-  const n = L.n.clone().normalize(), stem = stemOf(L), tip = tipOf(L);
-  const r = Math.max(L.h * 0.09, 0.03);        // the anchor dot
-  const dotG = new THREE.SphereGeometry(r, 12, 8);
-  const stemG = new THREE.CylinderGeometry(r * 0.35, r * 0.35, stem, 8);
-  stemG.translate(0, stem / 2, 0);
-  const qn = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), n);
-  for (const ghost of [false, true]) {
-    const opt = { color: ink, toneMapped: false, transparent: ghost, opacity: ghost ? GHOST : 1,
-                  depthTest: !ghost, depthWrite: !ghost };
-    const dot = new THREE.Mesh(dotG, new THREE.MeshBasicMaterial(opt)); dot.position.copy(L.at);
-    const st = new THREE.Mesh(stemG, new THREE.MeshBasicMaterial(opt)); st.position.copy(L.at); st.quaternion.copy(qn);
-    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, toneMapped: false, transparent: true,
-      opacity: ghost ? GHOST : 1, depthTest: !ghost, depthWrite: false, sizeAttenuation: true }));
-    sp.center.set(0.5, 0);                     // the plate sits ON the tip of the stem
-    sp.position.copy(tip); sp.scale.set(L.w, L.h, 1);
-    for (const o of [dot, st, sp]) { o.renderOrder = ghost ? 10 : 3; g.add(o); }
-  }
+  const g = makePlate(THREE, { at: L.at, n: L.n, stem: stemOf(L), tex, w: L.w, h: L.h, ink,
+                               letter: L.img ? 1 : null });
   g.userData.tag = true;
   return g;
 }
@@ -4137,19 +4126,18 @@ function measureObject(M, h) {
     for (const p of dots) {
       const d = new THREE.Mesh(dotG, mat); d.position.copy(p); d.renderOrder = ghost ? 10 : 3; g.add(d);
     }
-    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, toneMapped: false, transparent: true,
-      opacity: ghost ? GHOST : 1, depthTest: !ghost, depthWrite: false, sizeAttenuation: true }));
-    sp.position.copy(mid); sp.scale.set(pw, ph, 1); sp.renderOrder = ghost ? 11 : 4;
-    // beside the line, never on it: read where the line runs ON SCREEN now
-    sp.onBeforeRender = (_r, _s, cam) => {
+  }
+  // the value: a plate (view-plates.js) beside the line, never on it — which
+  // side is read every frame from where the line runs ON SCREEN now
+  g.add(plateSprites(THREE, { tex, w: pw, h: ph, pos: mid, ink, order: [4, 11], keep: [A, B],
+    letter: (measureSub(M) ? 64 / 200 : 0.5),
+    place: cam => {
       sA.copy(A).project(cam); sB.copy(B).project(cam);
       const asp = viewer.renderer.domElement.width / Math.max(viewer.renderer.domElement.height, 1);
       const dx = (sB.x - sA.x) * asp, dy = sB.y - sA.y;
-      if (Math.abs(dx) >= Math.abs(dy) * 0.7) sp.center.set(0.5, -0.18);   // across: above it
-      else sp.center.set(-0.12, 0.5);                                      // upright: to its right
-    };
-    g.add(sp);
-  }
+      return Math.abs(dx) >= Math.abs(dy) * 0.7 ? [0.5, -0.18]   // across: above it
+                                                 : [-0.12, 0.5];  // upright: to its right
+    } }));
   g.userData.measure = M;
   return g;
 }

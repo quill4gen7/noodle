@@ -261,10 +261,14 @@ def test_the_text_tool_projects_a_decal_and_sends_labels():
     assert "TOOLS.preferKey('t', labelStyle);" in VIEW
     assert "if (mesh && !under.ridged)" in VIEW and "mat.map.dispose(); mat.dispose(); L.surface = 'tag';" in VIEW
     assert "PlaneGeometry" not in VIEW
-    # the plate faces the camera and shows through the part, faded
+    # the plate faces the camera and shows through the part, faded — built by
+    # the ONE plate module (webui/view-plates.js), shared with the agent's tags
+    # and the metro's values
     tag = VIEW[VIEW.index("function tagObject"):]
     tag = tag[:tag.index("\n}\n")]
-    assert "new THREE.Sprite(" in tag and "depthTest: !ghost" in tag and "for (const ghost of [false, true])" in tag
+    assert "makePlate(THREE," in tag
+    PLATES = (ROOT / "webui/view-plates.js").read_text()
+    assert "new THREE.Sprite(" in PLATES and "depthTest: !ghost" in PLATES and "for (const ghost of [false, true])" in PLATES
     assert "style: L.style" in VIEW and "style: l.style || 'tag'" in VIEW
     # labels are data in the note, and part of the undo / eraser / views machinery
     assert "labels: words.map(L => ({ text: L.text" in VIEW
