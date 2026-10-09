@@ -524,8 +524,13 @@ export class CadViewer {
       }
       this._wasAnimating = anim;
       const moving = this.controls.update();
-      if (this._dirty || anim || moving) this._renderFrame(true);
+      // the flag is cleared BEFORE drawing: a page hook that runs inside the
+      // frame (scene.onBeforeRender — the plates easing aside, view-plates.js)
+      // and asks for the next one must get it. Cleared after, its request was
+      // eaten and the animation froze half way.
+      const dirty = this._dirty;
       this._dirty = false;
+      if (dirty || anim || moving) this._renderFrame(true);
       if (anim || moving) this.invalidate();
     };
     this._onChange = () => this.invalidate();

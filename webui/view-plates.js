@@ -342,8 +342,8 @@ function update(cam) {
     S.debug.push({ s: +s.toFixed(3), on: p.on, mode: p.mode, held: p.held, dx: Math.round(p.dx), dy: Math.round(p.dy),
                    op: +p.op.toFixed(2), w: r ? Math.round(r.x1 - r.x0) : null, h: r ? Math.round(r.y1 - r.y0) : null });
   }
-  // NOT a plain invalidate(): this runs INSIDE the viewer's frame, which clears
-  // its dirty flag right after rendering — a request made now would be eaten
-  // and the plate would freeze half way (seen: stuck at 0.69 on g51)
-  if (moving) queueMicrotask(() => viewer.invalidate());
+  // this runs INSIDE the viewer's frame: the viewer clears its dirty flag
+  // before drawing, so asking for the next frame from here is kept (it used to
+  // be eaten and the plate froze half way — seen: stuck at 0.69 on g51)
+  if (moving) viewer.invalidate();
 }
