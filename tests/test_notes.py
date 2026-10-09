@@ -890,8 +890,8 @@ def test_the_draw_bar_is_four_tabs_and_a_common_row():
     for t in ("id: 'pen', tab: 'pencil', key: 'p'", "id: 'pen3d', tab: 'pencil', key: 'p', mode: 'pen', pen3d: true",
               "id: 'image', tab: 'tag'", "id: 'shape', tab: 'blocky'", "id: 'measure', tab: 'tool'"):
         assert t in VIEW, t
-    # ✂ waits for task A, in its place and disabled
-    assert "id: 'section', tab: 'tool', icon: '✂', label: 'Sezione', disabled: true, title: '✂ Sezione — in arrivo'" in VIEW
+    # ✂ in its place: task A filled it (webui/view-section.js, tests/test_view_section.py)
+    assert "TOOLS.registerTool(SECUI.tool);" in VIEW
     # 1-4 switch tabs; the tab and the tool per tab are remembered
     assert "TOOLS.setTab(tab.id)" in VIEW and "noodle:view:drawTools" in TOOLS_JS
     assert "try { localStorage.setItem(STORE" in TOOLS_JS

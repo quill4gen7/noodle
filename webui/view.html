@@ -499,6 +499,7 @@ import * as MS from '/static/measure.js';
 import * as FFD from '/static/ffd.js';
 import * as P3 from '/static/pen3d.js';
 import * as TOOLS from '/static/view-tools.js';
+import { initSection } from '/static/view-section.js';
 
 const $ = id => document.getElementById(id);
 const seg = location.pathname.split('/').filter(Boolean);     // ['view', name, gen?]
@@ -537,6 +538,7 @@ function apply() {
   const shown = allLeaves().filter(k => !hidden.has(k)).length;
   $('stats').textContent = `${shown}/${allLeaves().length} pezzi visibili` + (sizeTxt ? ' · ' + sizeTxt : '');
   renderList();
+  SECUI.sync();                    // ✂ the slider spans what is shown now
   writeHash();
 }
 
@@ -563,6 +565,7 @@ function writeHash() {
   if (out.length) ps.push('hide=' + out.join(','));
   if (!tagsOn && agentTags.length) ps.push('tags=0');
   if (!measuresOn && measures.length) ps.push('measures=0');
+  ps.push(...SECUI.hashParts());
   if (anims.length) {
     if (clock.playing) ps.push('play=1');
     else ps.push('t=' + (+clock.t.toFixed(3)));
@@ -574,6 +577,7 @@ function writeHash() {
   history.replaceState(null, '', location.pathname + (ps.length ? '#' + ps.join('&') : ''));
 }
 function readHash() {
+  SECUI.readHash(hashParam);
   const hide = hashParam('hide');
   if (!hide) return;
   for (const k of hide.split(',').filter(Boolean)) {
@@ -614,6 +618,7 @@ const fmtT = (t, T) => `${(t * T).toFixed(1)} / ${T.toFixed(1)} s`;
 function poseTrack(a, t) {
   a.t = Math.min(Math.max(t, 0), 1);
   poseAnim(a.obj, a.anim, a.t);
+  SECUI.sec.posed();               // ✂ the outline follows once the pieces stop
   viewer.invalidate();             // the viewer draws on demand, not every frame
   if (a.el) { a.el.range.value = a.t; a.el.time.textContent = fmtT(a.t, a.T); }
 }
@@ -633,6 +638,7 @@ function setT(t) { if (clock.only) poseTrack(clock.only, t); else poseAll(t); }
 function setPlaying(on, only = null) {
   clock.playing = on;
   clock.only = on ? only : null;
+  SECUI.sec.setMoving(on);
   clock.last = performance.now(); clock.hold = 0; clock.dir = 1; clock.jump = false;
   $('tl-play').textContent = on && !only ? '❚❚' : '▶';
   $('tl-play').setAttribute('aria-label', on && !only ? 'Pausa' : 'Riproduci');
@@ -748,6 +754,7 @@ function renderList() {
       <span class="ib solo" role="button" aria-label="Solo questo" title="Solo questo">◎</span>`;
     if (multi) row.querySelector('.tw').onclick = e => { e.stopPropagation(); open.has(n.id) ? open.delete(n.id) : open.add(n.id); renderList(); };
     bindRow(row, keys, multi ? null : n.leaves[0].key);
+    SECUI.decorate(row, keys);
     if (!multi) row.dataset.key = n.leaves[0].key;
     L.appendChild(row);
     if (multi && open.has(n.id)) for (const l of n.leaves) {
@@ -760,6 +767,7 @@ function renderList() {
         <span class="name">${esc(l.label)}</span><span class="id">${esc(l.key)}</span>
         <span class="ib solo" role="button" aria-label="Solo questo" title="Solo questo">◎</span>`;
       bindRow(r, [l.key], l.key);
+      SECUI.decorate(r, [l.key]);
       L.appendChild(r);
     }
   }
@@ -885,6 +893,7 @@ function firstHit(x, y) {
   ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
   ray.setFromCamera(ndc, viewer.camera);
   ray.params.Line.threshold = 0.5; ray.params.Points.threshold = 3;
+  const cut = SECUI.sec.on, seen = [];
   for (const h of ray.intersectObjects(viewer.previewGroup.children, true)) {
     const o = h.object; let shown = true;
     for (let p = o; p && p !== viewer.previewGroup; p = p.parent) if (!p.visible) shown = false;
@@ -894,15 +903,21 @@ function firstHit(x, y) {
     let top = h.object; while (top.parent && top.parent !== viewer.previewGroup) top = top.parent;
     const id = top.userData.nodeId; if (id == null) continue;
     const n = nodes.find(x => x.id === id); if (!n) continue;
-    if (n.leaves.length === 1) return { h, key: n.leaves[0].key };
-    if (top.userData.isScene) {
+    let key = n.leaves[0].key;
+    if (n.leaves.length > 1 && top.userData.isScene) {
       let b = h.object; while (b && b.parent !== top) b = b.parent;
-      return { h, key: `${id}.${b ? b.userData.bodyIndex : 0}` };
-    }
-    if (h.face && Array.isArray(top.material)) return { h, key: `${id}.${h.face.materialIndex}` };
-    return { h, key: n.leaves[0].key };
+      key = `${id}.${b ? b.userData.bodyIndex : 0}`;
+    } else if (n.leaves.length > 1 && h.face && Array.isArray(top.material)) key = `${id}.${h.face.materialIndex}`;
+    if (!cut) return { h, key };
+    seen.push({ h, key });
   }
-  return null;
+  if (!cut) return null;
+  // ✂ the raycaster knows nothing of clipping planes: a hit on the side the
+  // cut took away is air. What the eye meets is the first KEPT hit or, nearer,
+  // the cap of a piece the ray is inside of when it crosses the plane.
+  const kept = seen.find(x => !SECUI.sec.hides(x.key, x.h.point)) || null;
+  const cap = SECUI.sec.capAt(ray.ray, seen);
+  return cap && (!kept || cap.h.distance < kept.h.distance) ? cap : kept;
 }
 // ── selection in the 3D view ─────────────────────────────────────────────
 // A tap/click selects the piece under it; the floating bar then offers what a
@@ -977,6 +992,7 @@ addEventListener('keydown', e => {
   else if (k === 'a') showAll();
   else if (k === 'f') frameVisible();
   else if (k === 'o') toggleOrtho();
+  else if (k === 'x' && !drawing) SECUI.toggle();
   else if (k === 'd') setDrawing(!drawing);
   else if (k === '[') $('prev').click();
   else if (k === ']') $('next').click();
@@ -1158,7 +1174,7 @@ function surfaceHit(x, y) {
   if (!f || !f.h.face) return null;            // lines and dots are not a surface
   const n = f.h.face.normal.clone().transformDirection(f.h.object.matrixWorld);
   if (n.dot(ray.ray.direction) > 0) n.negate(); // the side you are looking at
-  return { p: f.h.point.clone(), n, key: f.key, mesh: f.h.object, tri: f.h.faceIndex };
+  return { p: f.h.point.clone(), n, key: f.key, mesh: f.h.object, tri: f.h.faceIndex, cap: !!f.h.cap };
 }
 function strokeMat(color) {
   return new THREE.MeshBasicMaterial({ color, toneMapped: false,
@@ -1460,7 +1476,7 @@ function snapAt(x, y, touch) {
   }
   if (!hit) return null;
   const base = { snap: 'free', p: hit.p.clone(), n: hit.n.clone(), key: hit.key, mesh: hit.mesh };
-  if (measureMode === 'p2p' || !hit.mesh.geometry || !hit.mesh.geometry.attributes.position) return base;
+  if (measureMode === 'p2p' || hit.cap || !hit.mesh.geometry || !hit.mesh.geometry.attributes.position) return base;
   let F;
   try { F = featuresOf(hit.mesh); } catch { return base; }
   if (F.dense && !denseWarned.has(hit.mesh)) {
@@ -3285,8 +3301,10 @@ TOOLS.registerTool({ id: 'measure', tab: 'tool', key: 'm', icon: '↔', label: '
   title: 'Metro: tocca due punti sul pezzo per misurarne la distanza — Shift blocca la quota su X/Y/Z, Esc annulla il primo punto',
   options: () => $('d-mmode'), hint: () => measureHint(), deselect: cancelMeasure,
   down: measureDown, move: measureMove, up: measureUp, cancel: measureCancel });
-// ✂ is task A's (PLAN_VIEW_TOOLS §2): the place is kept, the tool fills it
-TOOLS.registerTool({ id: 'section', tab: 'tool', icon: '✂', label: 'Sezione', disabled: true, title: '✂ Sezione — in arrivo' });
+// ✂ Sezione (webui/view-section.js): ONE cut, reached from here and from ✂ in the view bar
+const SECUI = initSection({ viewer, $, vp, isDrawing: () => drawing, boxOf: visibleBox, nodes: () => nodes,
+  changed: () => { renderList(); writeHash(); if (draft.length || labels.length || dmeasures.length || shapes.length) scheduleSave(); } });
+TOOLS.registerTool(SECUI.tool);
 TOOLS.registerTool({ id: 'erase', tab: 'common', key: 'e', mode: 'erase', icon: '⌫', cursor: 'none',
   title: 'Gomma: passa sopra qualunque cosa della nota per toglierla intera — tratto, testo, targhetta, immagine, quota, forma (la misura sceglie il raggio)',
   hint: 'Gomma: passa sopra un oggetto per toglierlo', deselect: () => { $('d-ring').style.display = 'none'; }, ...PEN_GESTURE });
@@ -3385,6 +3403,10 @@ function noteBody(withPictures) {
     shapes: shapes.map(S => ({ ...shapeData(S), view: S.view == null ? null : remap.get(S.view) })),
     hide: location.hash.replace(/^#/, ''),
   };
+  // ✂ drawn on a sectioned view: the plane goes with it, or the agent sees a
+  // hole the model does not have
+  const cut = SECUI.noteCut();
+  if (cut) body.cut = cut;
   if (anims.length) body.t = clock.t;
   // the signature: the content, not the pictures (a placed image by its size)
   body.sig = JSON.stringify({ ...body, images: body.images.map(im => ({ ...im, data: im.data.length })) });
@@ -4359,6 +4381,7 @@ async function boot() {
     n.leaves.forEach(l => leafIndex.set(l.key, { node: n, leaf: l }));
     nodes.push(n);
   }
+  SECUI.bind(nodes.flatMap(n => n.leaves));
   readHash();
   if (hashParam('tags') === '0') tagsOn = false;
   if (hashParam('measures') === '0') measuresOn = false;
