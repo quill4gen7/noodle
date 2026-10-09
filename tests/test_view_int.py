@@ -59,3 +59,5 @@ def test_the_work_plane_is_a_light_sheet_and_shows_where_it_cuts_the_part():
 def test_both_row_icons_leave_the_name_room():
     VIEW = (ROOT / "webui/view.html").read_text()
     assert ".row .lk,.row .cut{width:24px;}" in VIEW and ".row .lk,.row .cut{width:36px;}" in VIEW
+    # the id gives way (full in its title), and with a mouse an unused 🎨 takes no room
+    assert ".row > .id{flex:0 1 auto;max-width:56px;" in VIEW and ".row .lk:not(.has){display:none;}" in VIEW

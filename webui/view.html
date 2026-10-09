@@ -162,6 +162,13 @@
   /* 🎨 Aspetto and ✂ Sezione both sit on the row, before ◎: narrower than a
      full tap target, or two of them leave the name four letters wide */
   .row .lk,.row .cut{width:24px;}
+  .row > .id{flex:0 1 auto;max-width:56px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  /* with a mouse an unused 🎨 takes no room until the row is hovered (it was
+     only invisible, and still cost the name its width) */
+  @media (hover:hover) and (pointer:fine){
+    .row .lk:not(.has){display:none;}
+    .row:hover .lk,.row.sel .lk{display:flex;}
+  }
   .tgb{font:600 10px var(--mono);color:#22d3ee;border:1px solid #22d3ee;border-radius:8px;padding:0 4px;margin-left:4px;}
   #b-tags.on{border-color:#22d3ee;color:#22d3ee;}
   #b-tags[hidden]{display:none;}
@@ -759,7 +766,7 @@ function renderList() {
       <span class="ib eye" role="button" aria-label="Mostra/nascondi">${vis === n.leaves.length ? '●' : vis ? '◐' : '○'}</span>
       <span class="sw" style="${swatch(LOOK.colorOf(keys) || n.color)}"></span>
       <span class="name" title="${esc(n.type)}">${esc(n.title)}${multi ? ` <span class="id">×${n.leaves.length}</span>` : ''}${tagBadge(n.id)}</span>
-      <span class="id">${esc(n.id)}</span>
+      <span class="id" title="${esc(n.id)}">${esc(n.id)}</span>
       <span class="ib lk${LOOK.hasLook(keys) ? ' has' : ''}" role="button" aria-label="Aspetto" title="Aspetto: vetro, emissivo, fantasma, colore (G)">🎨</span>
       <span class="ib solo" role="button" aria-label="Solo questo" title="Solo questo">◎</span>`;
     if (multi) row.querySelector('.tw').onclick = e => { e.stopPropagation(); open.has(n.id) ? open.delete(n.id) : open.add(n.id); renderList(); };
