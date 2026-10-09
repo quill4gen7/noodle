@@ -27,7 +27,8 @@ import * as THREE from 'three';
 import { planeOf, sliceTriangles, closedRange, niceStep, signedDist } from './section-core.js';
 
 const NONE = [];
-const ORDER0 = 10;                              // after every ordinary piece (renderOrder 0)
+const ORDER0 = 10;
+const GHOST_CAP = 0.3;                          // a ghost's cap: a bit more than its 0.15 skin, still see-through                              // after every ordinary piece (renderOrder 0)
 
 const HATCH_VS = `
 varying vec3 vW;
@@ -43,6 +44,7 @@ uniform vec3 uAx;
 uniform vec3 vAx;
 uniform float pitch;
 uniform vec2 dir;
+uniform float alpha;
 varying vec3 vW;
 void main() {
   vec3 d = vW - origin;
@@ -51,7 +53,7 @@ void main() {
   float w = fwidth(s);
   float line = 1.0 - smoothstep(0.11 - w, 0.11 + w, k);
   vec3 c = mix(color * 0.82, color * 0.16, line);
-  gl_FragColor = vec4(c, 1.0);
+  gl_FragColor = vec4(c, alpha);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
@@ -103,19 +105,13 @@ export class Section {
       if (!byObj.has(L.obj)) byObj.set(L.obj, []);
       byObj.get(L.obj).push(L);
     }
+    this._objs = [];
     for (const [obj, Ls] of byObj) {
       const keyOf = Ls.length > 1 || Ls[0].part != null
         ? grp => { const L = Ls.find(x => x.part === (grp ? grp.materialIndex : 0)); return L ? L.key : null; }
         : () => Ls[0].key;
-      obj.traverse(o => {
-        if (!o.material) return;
-        const prev = o.onBeforeRender;
-        o.userData._secPrev = prev;
-        o.onBeforeRender = (r, s, c, g, m, grp) => {
-          m.clippingPlanes = this.cuts(keyOf(grp)) ? this._planes : NONE;
-          prev.call(o, r, s, c, g, m, grp);
-        };
-      });
+      this._objs.push([obj, Ls, keyOf]);
+      this._hook(obj, Ls, keyOf);
     }
     // a cap per closed triangle piece; neighbours (overlapping boxes) alternate
     // 45° / 135°, chosen greedily against the ones already placed
@@ -170,7 +166,8 @@ export class Section {
         vertexShader: HATCH_VS, fragmentShader: HATCH_FS, side: THREE.DoubleSide,
         uniforms: { color: { value: new THREE.Color() }, origin: { value: new THREE.Vector3() },
           uAx: { value: new THREE.Vector3(1, 0, 0) }, vAx: { value: new THREE.Vector3(0, 1, 0) },
-          pitch: { value: 1 }, dir: { value: new THREE.Vector2(Math.cos(a), Math.sin(a)) } },
+          pitch: { value: 1 }, alpha: { value: 1 }, dir: { value: new THREE.Vector2(Math.cos(a), Math.sin(a)) } },
+        blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
         stencilWrite: true, stencilRef: 0, stencilFunc: THREE.NotEqualStencilFunc,
         stencilFail: THREE.ReplaceStencilOp, stencilZFail: THREE.ReplaceStencilOp, stencilZPass: THREE.ReplaceStencilOp,
       });
@@ -184,6 +181,26 @@ export class Section {
     this._place();
     this._contoursLater(0);
     this.viewer.invalidate();
+  }
+  // Every drawn object under a piece gets the cut in its onBeforeRender. Run
+  // at bind AND every frame (cheap: a flag per object), because 🔍 Aspetto
+  // (view-look.js) adds children later — a fan-out piece's PROXY mesh and a
+  // ghost's edge lines — and they must be cut like the piece they draw. A
+  // proxy names its group in userData.lookProxy; its own geometry group is 0.
+  _hook(obj, Ls, keyOf) {
+    obj.traverse(o => {
+      if (!o.material || o.userData._secPrev) return;
+      let px = o;
+      while (px && px !== obj && px.userData.lookProxy == null) px = px.parent;
+      const part = px && px !== obj ? px.userData.lookProxy : null;
+      const key = part == null ? keyOf : () => { const L = Ls.find(x => x.part === part); return L ? L.key : null; };
+      const prev = o.onBeforeRender;
+      o.userData._secPrev = prev;
+      o.onBeforeRender = (r, s, c, g, m, grp) => {
+        m.clippingPlanes = this.cuts(key(grp)) ? this._planes : NONE;
+        prev.call(o, r, s, c, g, m, grp);
+      };
+    });
   }
   _unbind() {
     for (const L of this.leaves) L.obj.traverse(o => {
@@ -298,7 +315,9 @@ export class Section {
   _frame() {
     const on = this.state.on;
     this.group.visible = on;
-    if (!on || !this.rigs.length) return;
+    if (!on) return;
+    for (const [obj, Ls, keyOf] of this._objs || NONE) this._hook(obj, Ls, keyOf);
+    if (!this.rigs.length) return;
     const cam = this.viewer.camera;
     const h = this.viewer.canvas.getBoundingClientRect().height || 1;
     const ctr = this._box.isEmpty() ? new THREE.Vector3() : this._box.getCenter(new THREE.Vector3());
@@ -316,6 +335,17 @@ export class Section {
       const m = materialOf(r.L);
       if (m && m.color) r.mat.uniforms.color.value.copy(m.color);
       r.mat.uniforms.pitch.value = pitch;
+      // 👻 a ghost's cut is a ghost too: the hatch at the skin's alpha and no
+      // depth, or the opaque cap would hide what the ghost exists to show.
+      // CustomBlending keeps the cap in the OPAQUE list, in its stencil order
+      // (transparent:true would move it after every other piece's count).
+      const ghost = !!(m && m.userData && m.userData.ghost);
+      if (r.ghost !== ghost) {
+        r.ghost = ghost;
+        r.mat.blending = ghost ? THREE.CustomBlending : THREE.NormalBlending;
+        r.mat.depthWrite = !ghost;
+        r.mat.uniforms.alpha.value = ghost ? GHOST_CAP : 1;
+      }
     }
   }
 
@@ -363,12 +393,20 @@ export class Section {
   }
 }
 
+// 🔍 a fan-out piece with a look is drawn by a PROXY child (view-look.js) and
+// its group material is hidden: the proxy is what is seen, coloured and shown
+function proxyOf(L) {
+  return L.part == null ? null : L.obj.children.find(c => c.userData.lookProxy === L.part) || null;
+}
 function materialOf(L) {
-  const m = L.obj.material;
-  return Array.isArray(m) ? m[L.part || 0] : m;
+  const px = proxyOf(L);
+  const m = px ? px.material : L.obj.material;
+  return Array.isArray(m) ? m[px ? 0 : L.part || 0] : m;
 }
 function shownLeaf(L, root) {
   for (let p = L.obj; p && p !== root; p = p.parent) if (!p.visible) return false;
+  const px = proxyOf(L);
+  if (px) return px.visible;
   if (L.part != null) { const m = materialOf(L); if (m && m.visible === false) return false; }
   return true;
 }

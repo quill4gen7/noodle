@@ -54,7 +54,7 @@ def test_the_cut_is_per_piece_and_the_caps_have_a_stencil():
     assert "localClippingEnabled = true" in SECTION
     assert "renderer.clippingPlanes" not in SECTION.replace("never\n//    `renderer.clippingPlanes`", "")
     # set per draw on whatever material the piece wears (a restyle keeps the cut)
-    assert "m.clippingPlanes = this.cuts(keyOf(grp))" in SECTION
+    assert "m.clippingPlanes = this.cuts(key(grp))" in SECTION
     assert "stencil: true" in VIEWER
     # caps per piece: the stencil is cleared after each one
     assert "clearStencil()" in SECTION and "NotEqualStencilFunc" in SECTION

@@ -16,3 +16,26 @@ def test_a_frame_request_made_inside_a_frame_is_kept():
     # …and the plates no longer need to step out of the frame to ask
     assert "queueMicrotask" not in PLATES
     assert "if (moving) viewer.invalidate();" in PLATES
+
+
+SECTION = (ROOT / "webui/section.js").read_text()
+
+
+def test_the_cut_reaches_what_aspetto_adds_after_bind():
+    # a 🔍 proxy (fan-out piece with a look) and a ghost's edges are children
+    # added AFTER bind: the hook runs every frame, per object, once
+    assert "for (const [obj, Ls, keyOf] of this._objs || NONE) this._hook(obj, Ls, keyOf);" in SECTION
+    assert "px.userData.lookProxy" in SECTION and "if (!o.material || o.userData._secPrev) return;" in SECTION
+    # the proxy is what is drawn: its colour for the hatch, its visibility for the cap
+    assert "function proxyOf(L)" in SECTION and "if (px) return px.visible;" in SECTION
+    # a ghost's cap stays see-through, and in the opaque list (stencil order)
+    assert "THREE.CustomBlending" in SECTION and "transparent: true" not in SECTION
+
+
+def test_first_hit_is_one_function_for_ghost_and_cut():
+    VIEW = (ROOT / "webui/view.html").read_text()
+    fh = VIEW[VIEW.index("function hitOf(hits, skipGhost)"):]
+    fh = fh[:fh.index("\n}\n")]
+    assert "SECUI.sec.hides(" in fh and "SECUI.sec.capAt(ray.ray, seen)" in fh
+    assert "if (skipGhost)" in fh
+    assert "return hitOf(hits, true) || hitOf(hits, false);" in VIEW
