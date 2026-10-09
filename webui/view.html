@@ -510,6 +510,7 @@ import { CadViewer, PALETTE, poseAnim } from '/static/viewer.js';
 import * as MS from '/static/measure.js';
 import * as FFD from '/static/ffd.js';
 import * as P3 from '/static/pen3d.js';
+import * as INK from '/static/view-ink.js';
 import * as TOOLS from '/static/view-tools.js';
 import { initSection } from '/static/view-section.js';
 import * as LOOK from '/static/view-look.js';
@@ -1218,35 +1219,28 @@ function surfaceHit(x, y) {
 function inkHit(x, y) {
   return surfaceHit(x, y) || (VP.on(toolDef) ? VP.planeHit(x, y) : null);
 }
-function strokeMat(color) {
-  return new THREE.MeshBasicMaterial({ color, toneMapped: false,
-    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-}
-// A tube through the points, lifted along the normals so half of it sits above
-// the surface (a tube ON the surface is half buried and flickers) — plus the
-// sample's own `lift` where the ink piled up (the 3D pen, webui/pen3d.js).
-function strokeObject(s) {
-  const r = s.width / 2;
-  const lifted = s.pts.map((p, i) => p.clone().addScaledVector(s.nrm[i] || new THREE.Vector3(),
-    r * 0.6 + ((s.lift && s.lift[i]) || 0)));
-  const mat = strokeMat(s.color);
-  const g = new THREE.Group();
-  const cap = new THREE.SphereGeometry(r, 12, 8);
-  const a = new THREE.Mesh(cap, mat); a.position.copy(lifted[0]); g.add(a);
-  if (lifted.length > 1) {
-    const path = new THREE.CurvePath();
-    for (let i = 1; i < lifted.length; i++) path.add(new THREE.LineCurve3(lifted[i - 1], lifted[i]));
-    const segs = Math.min(lifted.length * 2, 1600);
-    g.add(new THREE.Mesh(new THREE.TubeGeometry(path, segs, r, 8, false), mat));
-    const b = new THREE.Mesh(cap, mat); b.position.copy(lifted[lifted.length - 1]); g.add(b);
+// How a stroke LOOKS is webui/view-ink.js (+ the pure geometry in ink.js):
+// ✎ is SPRAY — a flat, matte, soft-edged coat on the surface where strokes of
+// one colour merge into one even layer; ✎³ is FILAMENT — a lit, shaded tube,
+// stacked where the pen insisted. Same data either way: only the drawing.
+// A stroke that does not say which pen drew it (a saved note) is filament if
+// it piled up (`lift` > 0), spray otherwise. `prev` = the spray stroke before
+// it (its colour run); by default, the one before it in the draft.
+function strokeObject(s, prev) {
+  if (s.pen3d == null) s.pen3d = !!(s.lift && s.lift.some(v => v > 0));
+  if (!s.pen3d && s.run == null) {
+    if (prev === undefined) {
+      prev = null;
+      for (const o of draft) { if (o === s) break; if (!o.pen3d && o.run != null) prev = o; }
+    }
+    s.run = INK.nextRun(prev, s.color);
   }
-  g.renderOrder = 2;
-  return g;
+  return INK.inkObject(s);
 }
 function disposeObj(o) {
   const mats = new Set();
   o.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) mats.add(c.material); });
-  mats.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); });   // a label's text is a texture
+  mats.forEach(m => { if (INK.isShared(m)) return; if (m.map) m.map.dispose(); m.dispose(); });   // a label's text is a texture
   if (o.parent) o.parent.remove(o);
 }
 function redrawStroke(s) {
@@ -1265,7 +1259,7 @@ function penLift(p, w, cur) {
 }
 function startStroke(hit, g) {
   const width = pen.size * mmPerPx(hit.p);
-  const s = { color: pen.color, width, g, k: ++seq, piece: hit.key,
+  const s = { color: pen.color, width, g, k: ++seq, piece: hit.key, pen3d: !!(toolDef && toolDef.pen3d),
               pts: [hit.p], nrm: [hit.n], lift: [penLift(hit.p, width, null)], obj: null };
   if (hit.plane) s.plane = hit.plane;          // ⊞ drawn in the void: no piece, the plane
   draft.push(s); redrawStroke(s); syncDraw();
@@ -3722,11 +3716,15 @@ addEventListener('beforeunload', e => {
 // ── saved notes: list, show/hide, go to, delete ──────────────────────────
 function noteObject(n) {
   const g = new THREE.Group();
+  let prev = null;                             // the colour runs of the spray (view-ink.js)
   for (const s of n.strokes || []) {
     const pts = (s.points || []).map(p => new THREE.Vector3(...p));
     const nrm = (s.normals || []).map(p => new THREE.Vector3(...p));
     const lift = s.lifts && s.lifts.length === pts.length ? s.lifts : null;
-    if (pts.length) g.add(strokeObject({ color: s.color, width: s.width_mm || 1, pts, nrm, lift }));
+    if (!pts.length) continue;
+    const o = { color: s.color, width: s.width_mm || 1, pts, nrm, lift, ...(s.kind === 'text' ? { label: true } : {}) };
+    g.add(strokeObject(o, prev));
+    if (!o.pen3d) prev = o;
   }
   for (const l of n.labels || []) {
     try {

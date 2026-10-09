@@ -175,6 +175,8 @@ def build(projects: Path, out: Path, gens: list[str], base_site: Path | None = N
     # the ▣ Deforma cage's trilinear math (pure, like measure.js)
     shutil.copy(WEBUI / "ffd.js", out / "static" / "ffd.js")
     shutil.copy(WEBUI / "pen3d.js", out / "static" / "pen3d.js")
+    for f in ("ink.js", "view-ink.js"):          # ✎ spray / ✎³ filament (relative import inside)
+        shutil.copy(WEBUI / f, out / "static" / f)
     shutil.copy(WEBUI / "view-tools.js", out / "static" / "view-tools.js")   # ✎ Disegna's tool table
     shutil.copy(WEBUI / "icon.svg", out / "static" / "icon.svg")
     shutil.copytree(WEBUI / "vendor" / "three-0.170.0", out / "static" / "vendor" / "three-0.170.0")

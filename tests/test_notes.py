@@ -801,12 +801,15 @@ def test_the_pen_piles_ink_only_where_it_insists():
     assert "import * as P3 from '/static/pen3d.js';" in VIEW
     assert (ROOT / "webui" / "pen3d.js").exists()
     assert '"pen3d.js"' in (ROOT / "scripts" / "build_pages.py").read_text()
-    assert "r * 0.6 + ((s.lift && s.lift[i]) || 0)" in VIEW
+    ink = (ROOT / "webui" / "ink.js").read_text()
+    assert "r * o.sit + (lift[i] || 0)" in ink        # the filament stands on its lifts
+    assert "if (s.pen3d == null) s.pen3d = !!(s.lift && s.lift.some(v => v > 0));" in VIEW
     assert "const ink = draft.filter(s => !s.label)" in VIEW
     assert "lift: [penLift(hit.p, width, null)]" in VIEW
     assert "const lift = penLift(hit.p, s.width, s);" in VIEW
     assert "{ lifts: s.lift.map(r4) }" in VIEW
-    assert "strokeObject({ color: s.color, width: s.width_mm || 1, pts, nrm, lift })" in VIEW
+    assert "const o = { color: s.color, width: s.width_mm || 1, pts, nrm, lift," in VIEW
+    assert '"view-ink.js"' in (ROOT / "scripts" / "build_pages.py").read_text()
     assert "height_mm" in HELP and "`lifts`" in MCP
 
 

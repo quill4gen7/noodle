@@ -2123,6 +2123,33 @@ result while the workflow moves on.
   order). One stencil count per LEAF, not per drawn object: no double cap.
   In the piece list ✂ and 🎨 are 24 px (36 on touch) before ◎.
 
+- **✎ spray, ✎³ filament — two pens that LOOK different** (`webui/ink.js`, pure,
+  `tests/ui/ink.test.cjs`; materials in `webui/view-ink.js`). quill: «i tubi
+  della penna 3D più ombreggiati … e quella normale più simile a vernice spray
+  che si omogeneizza». Only the drawing changed: the note's data are the same.
+  ✎ is a flat band on the surface, one quad per segment, each quad a soft
+  CAPSULE in its own coordinates (round ends, a fading mist to 1.3 r with a
+  speckle fixed in model space; T vernice letters crisper, and the fade never
+  eats a thin line's last pixel — `fwidth`). **The trick for the even coat:**
+  blending sums coverage, so crossings and every joint went darker; a coat of
+  paint is the MAX. The canvas has no destination alpha, the depth buffer does
+  the max: each fragment writes `gl_FragDepth` pulled toward the camera by its
+  coverage (a × r, view-space mm, never under the depth step at that
+  distance), pass 1 writes depth only, pass 2 blends with LessEqual — one blend
+  per pixel. A new colour starts a RUN (`nextRun`) one `runStep` nearer, drawn
+  after the previous one (renderOrder 100+2·run): the last colour covers, its
+  mist blends over the earlier ink, not over the part. Runs cap at 4 so a long
+  note never floats its last colour off the part. Both passes stay in the
+  OPAQUE list (CustomBlending blends with `transparent:false`): ink on a piece
+  inside 🔎 glass is still in the transmission target, a 👻 ghost blends over
+  it. ✎³ is a real tube framed by the SURFACE normal (no twist), Catmull-Rom
+  smoothed (×3), 16 sides, hemispherical ends, MeshPhysical with a clearcoat,
+  NOT tone mapped (ACES turned green into pastel) and a baked occlusion round
+  the section (dark underside = contact with the part / the layer below),
+  alternate layers ±8%. A saved stroke does not say which pen drew it: it is
+  filament if it piled up (`lifts`), spray otherwise — a ✎³ line that never
+  stacked comes back as spray after a reload. `disposeObj` skips the shared
+  spray materials (`isShared`).
 
 ## 9d. Exports — the bake bundle and the per-workflow index
 
