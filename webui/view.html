@@ -468,6 +468,7 @@
         <span class="nm" id="sel-name"></span>
         <button class="btn" id="sel-hide">Nascondi</button>
         <button class="btn" id="sel-solo">Solo</button>
+        <button class="btn" id="sel-look" title="Aspetto: vetro, emissivo, fantasma, colore, guarda dentro (G)" aria-label="Aspetto">🎨<span class="t"> Aspetto</span></button>
         <button class="btn" id="sel-x" aria-label="Deseleziona">✕</button>
       </div>
     </div>
@@ -500,6 +501,7 @@ import * as FFD from '/static/ffd.js';
 import * as P3 from '/static/pen3d.js';
 import * as TOOLS from '/static/view-tools.js';
 import { initSection } from '/static/view-section.js';
+import * as LOOK from '/static/view-look.js';
 
 const $ = id => document.getElementById(id);
 const seg = location.pathname.split('/').filter(Boolean);     // ['view', name, gen?]
@@ -563,6 +565,7 @@ function writeHash() {
   }
   const ps = [];
   if (out.length) ps.push('hide=' + out.join(','));
+  const look = LOOK.hashValue(); if (look) ps.push('look=' + look);     // 🔍 Aspetto (view-look.js)
   if (!tagsOn && agentTags.length) ps.push('tags=0');
   if (!measuresOn && measures.length) ps.push('measures=0');
   ps.push(...SECUI.hashParts());
@@ -748,13 +751,15 @@ function renderList() {
     row.className = 'row' + (vis ? '' : ' off') + (!multi && selected === n.leaves[0].key ? ' sel' : '');
     row.innerHTML = `<span class="ib tw" ${multi ? 'role="button" aria-label="Espandi"' : ''}>${multi ? (open.has(n.id) ? '▾' : '▸') : ''}</span>
       <span class="ib eye" role="button" aria-label="Mostra/nascondi">${vis === n.leaves.length ? '●' : vis ? '◐' : '○'}</span>
-      <span class="sw" style="${swatch(n.color)}"></span>
+      <span class="sw" style="${swatch(LOOK.colorOf(keys) || n.color)}"></span>
       <span class="name" title="${esc(n.type)}">${esc(n.title)}${multi ? ` <span class="id">×${n.leaves.length}</span>` : ''}${tagBadge(n.id)}</span>
       <span class="id">${esc(n.id)}</span>
+      <span class="ib lk${LOOK.hasLook(keys) ? ' has' : ''}" role="button" aria-label="Aspetto" title="Aspetto: vetro, emissivo, fantasma, colore (G)">🎨</span>
       <span class="ib solo" role="button" aria-label="Solo questo" title="Solo questo">◎</span>`;
     if (multi) row.querySelector('.tw').onclick = e => { e.stopPropagation(); open.has(n.id) ? open.delete(n.id) : open.add(n.id); renderList(); };
     bindRow(row, keys, multi ? null : n.leaves[0].key);
     SECUI.decorate(row, keys);
+    row.querySelector('.lk').addEventListener('click', e => { e.stopPropagation(); LOOK.openMenu(keys, e.currentTarget); });
     if (!multi) row.dataset.key = n.leaves[0].key;
     L.appendChild(row);
     if (multi && open.has(n.id)) for (const l of n.leaves) {
@@ -763,11 +768,13 @@ function renderList() {
       r.className = 'row sub' + (off ? ' off' : '') + (selected === l.key ? ' sel' : '');
       r.dataset.key = l.key;
       r.innerHTML = `<span class="ib eye" role="button" aria-label="Mostra/nascondi">${off ? '○' : '●'}</span>
-        <span class="sw" style="${swatch(l.color || n.color)}"></span>
+        <span class="sw" style="${swatch(LOOK.colorOf([l.key]) || l.color || n.color)}"></span>
         <span class="name">${esc(l.label)}</span><span class="id">${esc(l.key)}</span>
+        <span class="ib lk${LOOK.hasLook([l.key]) ? ' has' : ''}" role="button" aria-label="Aspetto" title="Aspetto: vetro, emissivo, fantasma, colore (G)">🎨</span>
         <span class="ib solo" role="button" aria-label="Solo questo" title="Solo questo">◎</span>`;
       bindRow(r, [l.key], l.key);
       SECUI.decorate(r, [l.key]);
+      r.querySelector('.lk').addEventListener('click', e => { e.stopPropagation(); LOOK.openMenu([l.key], e.currentTarget); });
       L.appendChild(r);
     }
   }
@@ -893,9 +900,27 @@ function firstHit(x, y) {
   ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
   ray.setFromCamera(ndc, viewer.camera);
   ray.params.Line.threshold = 0.5; ray.params.Points.threshold = 3;
+  // A 👻 ghost lets the pointer through to what is inside it (that is why it is
+  // a ghost); only when nothing else is under the pointer is the ghost the hit.
+  const hits = ray.intersectObjects(viewer.previewGroup.children, true);
+  return hitOf(hits, true) || hitOf(hits, false);
+}
+// The first hit the eye meets, as {h, key}. Two filters stack here:
+//  - 👻 skipGhost: a ghost's faces are looked THROUGH (first pass), and only
+//    taken when nothing else is under the pointer (second pass);
+//  - ✂ the raycaster knows nothing of clipping planes: a hit on the side the
+//    cut took away is air. What the eye meets is the first KEPT hit or, nearer,
+//    the cap of a piece the ray is inside of when it crosses the plane. The
+//    parity for that is counted on the pieces this pass can take, so a ghost's
+//    cap is skipped with the ghost and taken with it in the second pass.
+function hitOf(hits, skipGhost) {
   const cut = SECUI.sec.on, seen = [];
-  for (const h of ray.intersectObjects(viewer.previewGroup.children, true)) {
+  for (const h of hits) {
     const o = h.object; let shown = true;
+    if (skipGhost) {
+      const m = Array.isArray(o.material) ? o.material[h.face ? h.face.materialIndex : 0] : o.material;
+      if (o.userData.ghost || (m && m.userData && m.userData.ghost)) continue;
+    }
     for (let p = o; p && p !== viewer.previewGroup; p = p.parent) if (!p.visible) shown = false;
     if (!shown) continue;
     if (Array.isArray(o.material) && h.face && o.material[h.face.materialIndex]
@@ -912,9 +937,6 @@ function firstHit(x, y) {
     seen.push({ h, key });
   }
   if (!cut) return null;
-  // ✂ the raycaster knows nothing of clipping planes: a hit on the side the
-  // cut took away is air. What the eye meets is the first KEPT hit or, nearer,
-  // the cap of a piece the ray is inside of when it crosses the plane.
   const kept = seen.find(x => !SECUI.sec.hides(x.key, x.h.point)) || null;
   const cap = SECUI.sec.capAt(ray.ray, seen);
   return cap && (!kept || cap.h.distance < kept.h.distance) ? cap : kept;
@@ -943,6 +965,7 @@ function select(k) {
 $('sel-hide').onclick = () => { if (selected) { toggle([selected]); if (hidden.has(selected)) select(null); } };
 $('sel-solo').onclick = () => { if (selected) solo([selected]); };
 $('sel-x').onclick = () => select(null);
+$('sel-look').onclick = () => { if (selected) LOOK.openMenu([selected], $('sel-look')); };
 
 // Tap vs drag: a finger wobbles more than a mouse, so the threshold is wider on
 // touch. Multi-touch (pinch) is never a tap. Two taps close together = frame the
@@ -988,6 +1011,7 @@ addEventListener('keydown', e => {
   if (e.key === ' ' && e.target.tagName === 'BUTTON') return;      // the button's own click handles it
   const k = e.key.toLowerCase();
   if (k === 'h' && selected) { hidden.add(selected); select(null); apply(); }
+  else if (k === 'g' && selected) LOOK.openMenu([selected], $('sel-look'));
   else if (k === 'i') invert();
   else if (k === 'a') showAll();
   else if (k === 'f') frameVisible();
@@ -4382,6 +4406,8 @@ async function boot() {
     nodes.push(n);
   }
   SECUI.bind(nodes.flatMap(n => n.leaves));
+  LOOK.init({ viewer, nodes, leafIndex, labelOf, toast, onChange: apply });
+  LOOK.fromHash(hashParam('look'));
   readHash();
   if (hashParam('tags') === '0') tagsOn = false;
   if (hashParam('measures') === '0') measuresOn = false;

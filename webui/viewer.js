@@ -95,7 +95,49 @@ export function makeMaterial(color, finish) {
   }
   if (finish === 'metal')
     return new THREE.MeshStandardMaterial({ ...base, roughness: .22, metalness: 1 });
+  if (finish === 'ghost') {
+    // The CAD «X-ray»: a faint skin that writes no depth, so whatever is inside
+    // stays drawn — another ghost included, which is what glass cannot do (three
+    // refracts only the OPAQUE list; a glass inside glass comes out as a ring,
+    // and on Android not at all). Plain alpha, no transmission target: it costs
+    // nothing and looks the same on a phone. The draw order of alpha is not
+    // exact, at 0.15 nobody can tell. Its sharp edges come from ghostEdges().
+    const m = new THREE.MeshStandardMaterial({ ...base, roughness: .4, metalness: 0,
+      transparent: true, opacity: GHOST_OPACITY, depthWrite: false });
+    m.userData.ghost = true;
+    return m;
+  }
   return new THREE.MeshStandardMaterial({ ...base, roughness: .4, metalness: .12 });
+}
+export const GHOST_OPACITY = 0.15;
+// The sharp edges (dihedral > 30°) of a ghost, drawn OPAQUE — the faces alone
+// at 0.15 read as fog; the edges are what say «a box, a hole, a boss». A child
+// of the mesh, so it follows every pose. `range` = one geometry group (a piece
+// of a fanned-out buffer). It never takes a pick: a click goes to the faces.
+export function ghostEdges(geo, color, range = null) {
+  let src = geo;
+  if (range && geo.index) {
+    src = new THREE.BufferGeometry();
+    src.setAttribute('position', geo.attributes.position);
+    src.setIndex(new THREE.BufferAttribute(geo.index.array.slice(range.start, range.start + range.count), 1));
+  }
+  const eg = new THREE.EdgesGeometry(src, 30);
+  const c = new THREE.Color(color && color.isColor ? color : (color === 'rainbow' || color == null ? 0xc5cdd8 : color));
+  const lines = new THREE.LineSegments(eg, new THREE.LineBasicMaterial({ color: c.lerp(new THREE.Color(0xffffff), .25) }));
+  lines.raycast = () => {};
+  lines.userData.ghostEdges = true;
+  return lines;
+}
+// Keep a mesh's edge child in step with its material(s): edges when every drawn
+// material is a ghost, none otherwise. The editor path (one finish per node).
+export function syncGhostEdges(mesh, color) {
+  if (!mesh || !mesh.isMesh || mesh.isInstancedMesh) return;
+  for (const ch of [...mesh.children]) if (ch.userData.ghostEdges) {
+    ch.removeFromParent(); ch.geometry.dispose(); ch.material.dispose();
+  }
+  const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  if (mats.length && mats.every(m => m && m.userData && m.userData.ghost))
+    mesh.add(ghostEdges(mesh.geometry, color));
 }
 
 export function rainbowHue(i) {
@@ -123,9 +165,13 @@ export function meshFromData(m, color, parts, finish, kind) {
       mats.push(std(rainbowHue(i)));
       start += n;
     });
-    return new THREE.Mesh(geo, mats);
+    const mesh = new THREE.Mesh(geo, mats);
+    if (finish === 'ghost') syncGhostEdges(mesh, null);
+    return mesh;
   }
-  return new THREE.Mesh(geo, std(color === 'rainbow' ? rainbowHue(0) : color));
+  const mesh = new THREE.Mesh(geo, std(color === 'rainbow' ? rainbowHue(0) : color));
+  if (finish === 'ghost') syncGhostEdges(mesh, color);
+  return mesh;
 }
 function lineFromPolylines(polys, color) {
   if (color === 'rainbow') color = rainbowHue(0);
@@ -342,6 +388,7 @@ function restylePreview(obj, p, color, opts) {
       m.wireframe = !!opts.wireframe;
       if (m.wireframe) m.metalness = 0;
     }
+    syncGhostEdges(obj, color);
   } else if (obj.material && obj.material.color){
     obj.material.color.set(color === 'rainbow' ? rainbowHue(0) : color);
   }
@@ -905,6 +952,15 @@ export class CadViewer {
     this.renderer.dispose();
   }
   resetFraming() { this._framed = false; }
+  // After a page restyles pieces in place (the /view 🔍 Aspetto): markGlow() the
+  // objects it touched, then this — the glow passes run only while something on
+  // the GLOW_LAYER is in the scene.
+  syncGlow() {
+    let on = false;
+    this.previewGroup.traverse(o => { if (o.layers.isEnabled(GLOW_LAYER) && o.visible) on = true; });
+    this._bloomOn = on;
+    this.invalidate();
+  }
 
   // Raycast the previews under a screen point; returns the owning graph node id
   // (obj.userData.nodeId) of the nearest hit, or null. For click-to-select.

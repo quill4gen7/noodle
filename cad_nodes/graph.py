@@ -57,7 +57,7 @@ class Node:
     # Display-only (don't affect geometry): preview colour (hex) and wireframe.
     color: Optional[str] = None
     wireframe: bool = False
-    finish: Optional[str] = None      # display-only: solid | glass | emissive | metal
+    finish: Optional[str] = None      # display-only: solid | glass | emissive | metal | ghost
     # Editor-only canvas size [w, h] — a resized sticky Note keeps its box.
     size: Optional[list[float]] = None
     # User-given name for THIS node, replacing the type's label on the title bar.

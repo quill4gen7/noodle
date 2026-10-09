@@ -66,6 +66,11 @@ More detail on demand — `cad_help(topic=...)` / `GET /api/agent/help?topic=...
    hides pieces and inverts the selection. The link stays fixed on THAT result
    while the workflow keeps changing. Append `#hide=n3,n7.2` to open it with
    pieces hidden (a node id = all its pieces, `id.i` = its i-th piece).
+   `#look=n3:ghost,n7.2:emissive:#ffcc00,n5:glass` opens it with pieces
+   restyled for THIS view only (finish `solid|glass|emissive|ghost` and/or a
+   colour) — to show what is INSIDE a part, put the envelope in `ghost` (or
+   `glass`) and leave the inner piece opaque or `emissive`. Never glass inside
+   glass, nor a ghost inside glass: neither shows. Combine with `&`.
    **Label what you show**: `cad_tag_gen(graph, gen, tags=[{text, node,
    at?, color?}])` — or `cad_snapshot(..., tags=[...])` in one go — pins
    plates like «coperchio v2», «foro M8 qui», «parete 2 mm» to the pieces
