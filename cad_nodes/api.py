@@ -2343,8 +2343,32 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
         note["t"] = round(min(max(float(payload["t"]), 0.0), 1.0), 4)
     if isinstance(payload.get("hide"), str):
         note["hide"] = payload["hide"][:500]
+    cut = _note_cut(payload.get("cut"))
+    if cut:
+        note["cut"] = cut
     return store.save_gen_note(graph_id, gen, note, jpeg, view_jpegs,
                                list(zip(kinds, image_blobs, strict=True)), note_id=note_id)
+
+
+def _note_cut(cut) -> Optional[dict]:
+    """✂ The section plane the note was drawn on, as /view sends it:
+    `{axis: x|y|z, pos: mm, flip: bool, nocut?: [piece keys]}`. The view keeps
+    the half where the coordinate is <= pos (>= with flip); `nocut` pieces stay
+    whole. Kept as given (checked, not reinterpreted): without it the agent
+    sees, in the note's picture, a hole the model does not have."""
+    if cut is None:
+        return None
+    if not isinstance(cut, dict) or cut.get("axis") not in ("x", "y", "z"):
+        raise ValueError("note: cut must be {axis: x|y|z, pos, flip?, nocut?}")
+    out = {"axis": cut["axis"], "pos": round(_num(cut.get("pos", 0), "cut pos"), 4),
+           "flip": bool(cut.get("flip"))}
+    nocut = cut.get("nocut") or []
+    if not isinstance(nocut, list) or len(nocut) > 500 or not all(isinstance(k, str) for k in nocut):
+        raise ValueError("note: cut.nocut must be a list of piece keys")
+    if nocut:
+        out["nocut"] = [k[:40] for k in nocut]
+    out["keeps"] = f"{out['axis']} {'>=' if out['flip'] else '<='} {out['pos']:g}"
+    return out
 
 
 def _open_notes(store: GraphStore, graph_id: str, gen: str) -> int:
@@ -2390,7 +2414,7 @@ def _note_for_agent(n: dict, base_url: str, points: bool) -> dict:
         out["strokes"] = n.get("strokes", [])
     # the user keeps drawing on a note after it is first saved: `updated` says
     # when it last changed, `reopened` = the reply it had before that change
-    for k in ("t", "hide", "camera", "updated", "reopened"):
+    for k in ("t", "hide", "cut", "camera", "updated", "reopened"):
         if n.get(k) is not None:
             out[k] = n[k]
     if n.get("image"):
