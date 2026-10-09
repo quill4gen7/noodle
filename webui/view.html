@@ -159,6 +159,9 @@
   .row .name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:6px 0;}
   .row .id{color:var(--text-dim);font:10px var(--mono);}
   .row .tw{width:22px;}
+  /* 🎨 Aspetto and ✂ Sezione both sit on the row, before ◎: narrower than a
+     full tap target, or two of them leave the name four letters wide */
+  .row .lk,.row .cut{width:24px;}
   .tgb{font:600 10px var(--mono);color:#22d3ee;border:1px solid #22d3ee;border-radius:8px;padding:0 4px;margin-left:4px;}
   #b-tags.on{border-color:#22d3ee;color:#22d3ee;}
   #b-tags[hidden]{display:none;}
@@ -172,6 +175,7 @@
     :root{--tap:44px;}
     .row{font-size:14px;} .row.sub{font-size:13px;}
     .row .solo{opacity:1;}
+    .row .lk,.row .cut{width:36px;}
     .keys{display:none;} .touch-only{display:inline;}
   }
   /* ── narrow screens: one-line header + ⋯ menu, pieces in a bottom sheet ── */

@@ -39,3 +39,23 @@ def test_first_hit_is_one_function_for_ghost_and_cut():
     assert "SECUI.sec.hides(" in fh and "SECUI.sec.capAt(ray.ray, seen)" in fh
     assert "if (skipGhost)" in fh
     assert "return hitOf(hits, true) || hitOf(hits, false);" in VIEW
+
+
+PLANE = (ROOT / "webui/view-plane.js").read_text()
+
+
+def test_the_work_plane_is_a_light_sheet_and_shows_where_it_cuts_the_part():
+    # fainter, fading to the border, a tighter margin (it covered g64's whole view)
+    assert "smoothstep(0.45, 1.0, d)" in PLANE and "max(0.025, r * 0.17) * fade" in PLANE
+    assert "m = 0.06 * span + 3" in PLANE and "edge * 0.6" not in PLANE
+    # the line where the plane meets the part: ✂'s CPU slice, once per plane,
+    # never under a pressed pointer, and only what the section left
+    assert "import { sliceTriangles } from '/static/section-core.js';" in PLANE
+    assert "if (pressed) return cutLater();" in PLANE
+    assert "m.clippingPlanes && m.clippingPlanes.length" in PLANE
+    assert "SECTION_HOOK" not in PLANE
+
+
+def test_both_row_icons_leave_the_name_room():
+    VIEW = (ROOT / "webui/view.html").read_text()
+    assert ".row .lk,.row .cut{width:24px;}" in VIEW and ".row .lk,.row .cut{width:36px;}" in VIEW
