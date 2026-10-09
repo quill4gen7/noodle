@@ -273,14 +273,11 @@
   /* which handles the selected shape wears: ▣ Blocky's tool row, one row that never wraps */
   #s-modes{display:inline-flex;gap:4px;flex-wrap:nowrap;}
   #s-modes .btn{padding:4px 8px;gap:4px;white-space:nowrap;}
-  #s-modes .gm.on,#s-cagemode.on{border-color:#a78bfa;background:var(--bg-2);color:#e9e3ff;}
-  #s-cagemode{display:none;font-size:11px;}
+  #s-modes .gm.on{border-color:#a78bfa;background:var(--bg-2);color:#e9e3ff;}
   /* standard sizes, next to the size label: small, never a row of their own on a desktop */
   #s-presets{display:inline-flex;gap:3px;}
   #s-presets .btn{padding:2px 6px;font-size:11px;white-space:nowrap;}
   #s-presets .btn:disabled{opacity:.45;cursor:default;}
-  #s-modes[data-gm=cage] #s-cagemode{display:inline-flex;}
-  #s-cagemode:disabled{opacity:.45;cursor:default;}
   #m-lens{position:absolute;display:none;pointer-events:none;z-index:7;width:120px;}
   #m-lens canvas{width:120px;height:120px;border-radius:50%;border:2px solid #a78bfa;background:#000;
     box-shadow:0 4px 18px rgba(0,0,0,.6);display:block;}
@@ -463,8 +460,7 @@
           <div id="s-modes" role="radiogroup" aria-label="Maniglie della forma">
             <button class="btn gm" id="s-gm-move" data-gm="move" role="radio" title="Sposta: solo le frecce X/Y/Z (G)">✥<span>Sposta</span></button>
             <button class="btn gm" id="s-gm-rotate" data-gm="rotate" role="radio" title="Ruota: solo gli anelli, Shift a 15° (R)">⟳<span>Ruota</span></button>
-            <button class="btn gm" id="s-gm-cage" data-gm="cage" role="radio" title="Gabbia: vertici = misura, centro = scala (C)">▣<span>Gabbia</span></button>
-            <button class="btn" id="s-cagemode" title="Gabbia: Scala ⇄ Deforma (un secondo tocco su Gabbia o C)">Scala</button>
+            <button class="btn gm" id="s-gm-cage" data-gm="cage" role="radio" title="Gabbia, tutto in uno (C): vertici e spigoli (ambra) piegano la forma · maniglie X/Y/Z colorate = scala per asse · pallino al centro = scala tutta · Shift = solo sull'asse dominante">▣<span>Gabbia</span></button>
             <button class="btn gm" id="s-gm-none" data-gm="none" role="radio" title="Nascondi le maniglie: resta la forma, che si sposta ancora trascinandola sul pezzo">◌<span>Nascondi</span></button>
           </div>
         </div>
@@ -1867,16 +1863,16 @@ function lensOff() { const l = $('m-lens'); if (l) l.style.display = 'none'; }
 // cylinder or a sphere on the part, and the agent gets it as DATA (kind, size,
 // centre, orientation, the piece it sits on). A tap on the part sets one down
 // sitting ON the surface, its axis along the normal, in the pen's colour.
-// Selected, it wears a CAGE: the 8 corners resize it (the opposite corner stays
-// put), the dot at the centre scales the whole (drag up = bigger, the base stays
-// on the surface), three rings turn it (Shift: 15° steps). Moving is not free:
+// Selected, it wears a CAGE: vertices and edges bend it, the X/Y/Z face handles
+// stretch one axis, the dot at the centre scales the whole (drag up = bigger,
+// the base stays on the surface); three rings turn it (Shift: 15° steps). Moving is not free:
 // drag the shape itself and it SLIDES ON the parts, stuck to the surface under
 // the pointer and turned with its normal — it never floats in the air.
 // A drag that does not start on the selected shape or a handle still orbits.
 // Part of the draft like a stroke: ↶, ⌫, the view pictures, Canc / «Togli».
 const SHAPE_KINDS = ['box', 'cylinder', 'sphere'];
 const SHAPE_NAME = { box: 'cubo', cylinder: 'cilindro', sphere: 'sfera' };
-const SHAPE_HINT = 'Forme: tocca il pezzo per posare la forma · trascinala per farla scorrere SUL pezzo · maniglie a scelta: ✥ Sposta = frecce X/Y/Z (G) · ⟳ Ruota = anelli, Shift 15° (R) · ▣ Gabbia = vertici misura, centro scala (C) — di nuovo C / «Scala» = Deforma: i vertici ambra piegano la forma · ◌ Nascondi · Canc / «Togli» per toglierla';
+const SHAPE_HINT = 'Forme: tocca il pezzo per posare la forma · trascinala per farla scorrere SUL pezzo · maniglie a scelta: ✥ Sposta = frecce X/Y/Z (G) · ⟳ Ruota = anelli, Shift 15° (R) · ▣ Gabbia (C) = tutto in uno: vertici e spigoli ambra piegano la forma, maniglie X/Y/Z colorate la scalano per asse, il pallino al centro la scala tutta (Shift = solo sull\'asse dominante) · ◌ Nascondi · Canc / «Togli» per toglierla';
 let shapeKind = 'box';
 try { const v = localStorage.getItem('noodle:view:shapeKind'); if (SHAPE_KINDS.includes(v)) shapeKind = v; } catch {}
 $('d-shapekind').value = shapeKind;
@@ -1890,43 +1886,26 @@ $('d-shapekind').addEventListener('change', e => {
 // X/Y/Z arrows, ⟳ rotate = the rings, ▣ cage = corners + centre, ◌ none = the
 // bare shape (dragging its body still slides it on the parts — that is not a
 // handle). refreshCage() builds only the active set; handleAt finds what is there.
-// Inside the cage, cageMode picks what the corners DO: 'scale' (today) or
-// 'deform' (task C, the FFD). Until C lands CAGE_MODES holds 'scale' alone and
-// the Scala ⇄ Deforma toggle stays disabled — C pushes 'deform' here.
+// ▣ Gabbia is ONE set that does everything at once (quill: «fai valere gli
+// spigoli della gabbia per deform, e un po' c'è tutto in uno»): the 8 vertices
+// and the 12 edges BEND the shape (webui/ffd.js), the six X/Y/Z face handles
+// scale one axis, the centre dot scales the whole. There used to be a Scala ⇄
+// Deforma switch (and a localStorage `noodle:view:cageMode`); it is gone, and a
+// stored value is simply never read again.
 const GIZMO_MODES = ['move', 'rotate', 'cage', 'none'];
-const CAGE_MODES = ['scale'];                  // C: CAGE_MODES.push('deform')
-CAGE_MODES.push('deform');                     // C: the corners move one by one, the shape bends (webui/ffd.js)
-let gizmoMode = 'cage', cageMode = 'scale';
+let gizmoMode = 'cage';
 try { const v = localStorage.getItem('noodle:view:gizmoMode'); if (GIZMO_MODES.includes(v)) gizmoMode = v; } catch {}
-try { const v = localStorage.getItem('noodle:view:cageMode'); if (CAGE_MODES.includes(v)) cageMode = v; } catch {}
 function syncGizmoBar() {
   $('s-modes').dataset.gm = gizmoMode;
   for (const b of $('s-modes').querySelectorAll('.gm')) {
     const on = b.dataset.gm === gizmoMode;
     b.classList.toggle('on', on); b.setAttribute('aria-checked', on);
   }
-  const cm = $('s-cagemode');
-  cm.textContent = cageMode === 'deform' ? 'Deforma' : 'Scala';
-  cm.classList.toggle('on', cageMode === 'deform');
-  cm.disabled = CAGE_MODES.length < 2;
-  if (cm.disabled) cm.title = 'Gabbia: Scala (Deforma in arrivo)';
-  else cm.title = cageMode === 'deform' ? 'Gabbia → Deforma: ogni vertice (ambra) si sposta da solo e piega la forma · tocca per Scala'
-    : 'Gabbia → Scala: i vertici misurano, il centro scala · tocca per Deforma';
 }
 function setGizmoMode(m) {
-  // a second tap on ▣ Gabbia flips Scala ⇄ Deforma
-  if (m === 'cage' && gizmoMode === 'cage') return toggleCageMode();
-  if (!GIZMO_MODES.includes(m)) return;
+  if (!GIZMO_MODES.includes(m) || m === gizmoMode) return;
   gizmoMode = m;
   try { localStorage.setItem('noodle:view:gizmoMode', m); } catch {}
-  syncGizmoBar();
-  if (typeof viewer !== 'undefined') refreshCage();
-}
-function toggleCageMode() {
-  const i = CAGE_MODES.indexOf(cageMode), next = CAGE_MODES[(i + 1) % CAGE_MODES.length];
-  if (next === cageMode) return;              // only 'scale' until C lands
-  cageMode = next;
-  try { localStorage.setItem('noodle:view:cageMode', cageMode); } catch {}
   syncGizmoBar();
   if (typeof viewer !== 'undefined') refreshCage();
 }
@@ -1939,7 +1918,6 @@ let sBarOpened = 0;
 const sBarGhost = () => performance.now() - sBarOpened < 400;
 // (the modes are ▣ Blocky's tool row, no longer in that bar: no ghost to fear)
 for (const b of $('s-modes').querySelectorAll('.gm')) b.onclick = () => setGizmoMode(b.dataset.gm);
-$('s-cagemode').onclick = () => toggleCageMode();
 syncGizmoBar();
 const shapes = [];                             // the draft's shapes
 let selShape = null, sDrag = null, sDown = null;
@@ -2138,12 +2116,12 @@ function refreshCage() {
   if (S && !$('s-bar').classList.contains('open')) sBarOpened = performance.now();
   $('s-bar').classList.toggle('open', !!S);
   if (!S) { viewer.invalidate(); return; }
-  // bent by ▣ Deforma: the size is the cage's REST box, say so — in words on a
+  // bent by the cage's vertices / edges: the size is the cage's REST box, say so — in words on a
   // desktop, an amber ≈ on a phone (« · deformato» pushed Togli / ✓ onto a
   // row of their own at 390 px)
   $('s-dims').textContent = shapeText(S.kind, S.size);
   if (FFD.isDeformed(S.ffd)) $('s-dims').append(Object.assign(document.createElement('span'),
-    { className: 's-def', textContent: ' · deformato', title: 'deformato dalla gabbia (▣ Deforma): le misure sono quelle della gabbia a riposo' }));
+    { className: 's-def', textContent: ' · deformato', title: 'deformato dalla gabbia (▣ vertici / spigoli): le misure sono quelle della gabbia a riposo' }));
   syncSizePresets(S);
   const q = shapeQuat(S), touch = matchMedia('(pointer:coarse)').matches;
   // the marks shrink WITH the shape (never bigger than a slice of its shortest
@@ -2162,19 +2140,17 @@ function refreshCage() {
     case 'move': cageArrows(G); break;
     case 'rotate': cageRings(G); break;
     case 'cage':
-      if (cageMode === 'scale') { cageCorners(G); cageCentre(G); cageFaces(G); }
-      else if (cageMode === 'deform') { cageDeformCorners(G); }   // C: the 8 FFD corners, amber
+      // all in one: vertices + edges bend, faces scale an axis, the centre the whole
+      cageDeformCorners(G); cageEdges(G); cageFaces(G); cageCentre(G);
       break;
     case 'none': break;                        // the bare shape; its body still slides
   }
   viewer.invalidate();
 }
-// the cage's edges — once ▣ Deforma has bent the shape they follow its moved
-// corners (straight lines: an edge of the cage is an edge of the bent body),
-// except in Scala, whose corners still work on the upright box
+// the cage's edges — they follow its moved corners (straight lines: an edge
+// of the cage is an edge of the bent body)
 function cageOutline({ S, q }) {
-  const bent = FFD.isDeformed(S.ffd) && !(gizmoMode === 'cage' && cageMode === 'scale');
-  const lines = bent ? new THREE.BufferGeometry().setFromPoints(FFD.CAGE_EDGES.flatMap(([a, b]) =>
+  const lines = FFD.isDeformed(S.ffd) ? new THREE.BufferGeometry().setFromPoints(FFD.CAGE_EDGES.flatMap(([a, b]) =>
     [new THREE.Vector3(...FFD.cornerAt(S.ffd, a)), new THREE.Vector3(...FFD.cornerAt(S.ffd, b))]))
     : new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1));
   const box = new THREE.LineSegments(lines,
@@ -2182,24 +2158,14 @@ function cageOutline({ S, q }) {
   box.position.copy(S.center); box.quaternion.copy(q); box.scale.copy(S.size); box.renderOrder = 20;
   cageGroup.add(box);
 }
-// ▣ scale: the 8 corners resize (opposite corner fixed); index i = the order
-// sx, sy, sz ∈ {−1, 1} — the order C's S.ffd follows
-function cageCorners({ S, q, grab, hs, half }) {
-  const cube = new THREE.BoxGeometry(2 * hs, 2 * hs, 2 * hs), pickCube = new THREE.BoxGeometry(2 * grab, 2 * grab, 2 * grab);
-  let i = 0;
-  for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
-    const handle = { type: 'corner', s: new THREE.Vector3(sx, sy, sz), i: i++ };
-    const at = new THREE.Vector3(sx * half.x, sy * half.y, sz * half.z).applyQuaternion(q).add(S.center);
-    const c = new THREE.Mesh(cube, handleMat('#ffffff')), pk = new THREE.Mesh(pickCube, handleMat('#ffffff', 0));
-    pk.visible = false;
-    for (const m of [c, pk]) { m.position.copy(at); m.quaternion.copy(q); m.renderOrder = 22; m.userData.handle = handle; }
-    cageGroup.add(c, pk);
-  }
-}
-// ▣ scale: the six FACE handles, in the classic axis colours (±X red, ±Y green,
-// ±Z blue — RING_INK): each stretches ONE axis, the opposite face fixed. A flat
-// tile lying on its face; what is grabbed is a ball of the grab size.
-function cageFaces({ S, q, grab, hs, half }) {
+// a point of the shape's normalised frame (webui/ffd.js), in the world
+function shapeLocal(S, c, q = shapeQuat(S)) { return new THREE.Vector3(...c).multiply(S.size).applyQuaternion(q).add(S.center); }
+// ▣ the six FACE handles, in the classic axis colours (±X red, ±Y green, ±Z
+// blue — RING_INK): each stretches ONE axis, the opposite face fixed. A flat
+// tile on the face — on the BENT face once the cage is deformed (the mean of
+// its 4 corners), since the scale works on the shape as it is seen; what is
+// grabbed is a ball of the grab size.
+function cageFaces({ S, q, grab, hs }) {
   const pick = new THREE.SphereGeometry(grab, 12, 8);
   for (let a = 0; a < 3; a++) {
     const dims = [2 * hs, 2 * hs, 2 * hs]; dims[a] = 0.7 * hs;   // squat, so it still reads seen edge-on
@@ -2207,7 +2173,7 @@ function cageFaces({ S, q, grab, hs, half }) {
     for (const sg of [-1, 1]) {
       const s = new THREE.Vector3(); s.setComponent(a, sg);
       const handle = { type: 'face', axis: a, s };
-      const at = s.clone().multiply(half).applyQuaternion(q).add(S.center);
+      const at = shapeLocal(S, FFD.faceMean(S.ffd, a, sg), q);
       const f = new THREE.Mesh(tile, handleMat(RING_INK[a])), pk = new THREE.Mesh(pick, handleMat(RING_INK[a], 0));
       pk.visible = false;
       for (const m of [f, pk]) { m.position.copy(at); m.quaternion.copy(q); m.renderOrder = 22; m.userData.handle = handle; }
@@ -2215,8 +2181,8 @@ function cageFaces({ S, q, grab, hs, half }) {
     }
   }
 }
-// ▣ deform: the same 8 corners, AMBER, each one moved on its own — the shape
-// bends with it (trilinear, webui/ffd.js); same index order as cageCorners
+// ▣ the 8 VERTICES, amber, each moved on its own — the shape bends with it
+// (trilinear, webui/ffd.js); index i = the order sx, sy, sz ∈ {−1, 1}
 const DEFORM_INK = '#f59e0b';
 function cageDeformCorners({ S, q, grab, hs }) {
   const cube = new THREE.BoxGeometry(2 * hs, 2 * hs, 2 * hs), pickCube = new THREE.BoxGeometry(2 * grab, 2 * grab, 2 * grab);
@@ -2228,12 +2194,36 @@ function cageDeformCorners({ S, q, grab, hs }) {
     cageGroup.add(c, pk);
   });
 }
-// ▣ scale: the dot at the centre scales the whole about its base
-function cageCentre({ S, grab, side }) {
-  const ctr = new THREE.Mesh(new THREE.SphereGeometry(Math.min(grab * 1.4, 0.15 * side), 16, 10), handleMat(MEASURE_INK));
-  const ctrPick = new THREE.Mesh(new THREE.SphereGeometry(grab * 1.4, 12, 8), handleMat(MEASURE_INK, 0));
+// ▣ the 12 EDGES: a small pale-amber diamond at the middle of each; the pick is
+// a fat rod over the middle 60% of the edge (the ends belong to the vertices),
+// so the whole side is easy to take, by a finger too. Dragging moves its two
+// vertices TOGETHER (FFD.moveEdge) — one side of the shape bends as a whole.
+const EDGE_INK = '#fcd34d';
+function cageEdges({ S, q, grab, hs }) {
+  const dia = new THREE.OctahedronGeometry(1.05 * hs);
+  FFD.CAGE_EDGES.forEach((e, k) => {
+    const A = shapeLocal(S, FFD.cornerAt(S.ffd, e[0]), q), B = shapeLocal(S, FFD.cornerAt(S.ffd, e[1]), q);
+    const mid = A.clone().lerp(B, 0.5), u = A.clone().lerp(B, 0.2), v = A.clone().lerp(B, 0.8);
+    const handle = { type: 'edge', k, e };
+    const d = new THREE.Mesh(dia, handleMat(EDGE_INK)); d.position.copy(mid); d.quaternion.copy(q);
+    const pk = new THREE.Mesh(u.distanceTo(v) > 1e-9 ? rodGeo(u, v, grab) : new THREE.SphereGeometry(grab, 8, 6), handleMat(EDGE_INK, 0));
+    if (u.distanceTo(v) <= 1e-9) pk.position.copy(mid);
+    pk.visible = false;
+    pk.userData.seg = [u, v];                  // its screen distance: to the segment, not to a point
+    for (const m of [d, pk]) { m.renderOrder = 22; m.userData.handle = handle; }
+    cageGroup.add(d, pk);
+  });
+}
+// ▣ the dot at the centre scales the whole about its base — SMALL, and its
+// grab small too (quill: «rendi il pallino viola al centro più piccolo perché
+// si prende spesso sempre quello»); handleAt lets it win only when nothing
+// else is under the pointer. It sits at the centre of the BENT body.
+function cageCentre({ S, q, grab, side }) {
+  const at = shapeLocal(S, FFD.bodyCentre(S.ffd), q);
+  const ctr = new THREE.Mesh(new THREE.SphereGeometry(Math.min(grab * 0.6, 0.08 * side), 16, 10), handleMat(MEASURE_INK));
+  const ctrPick = new THREE.Mesh(new THREE.SphereGeometry(grab * 0.6, 12, 8), handleMat(MEASURE_INK, 0));
   ctrPick.visible = false;
-  for (const m of [ctr, ctrPick]) { m.position.copy(S.center); m.renderOrder = 23; m.userData.handle = { type: 'center' }; }
+  for (const m of [ctr, ctrPick]) { m.position.copy(at); m.renderOrder = 23; m.userData.handle = { type: 'center' }; }
   cageGroup.add(ctr, ctrPick);
 }
 // ✥ move: the classic X/Y/Z arrows, past the rings: drag one to slide the
@@ -2279,14 +2269,23 @@ function rayAt(x, y) {
 function handleAt(x, y) {
   if (!selShape) return null;
   const hs = rayAt(x, y).intersectObjects(cageGroup.children, false).filter(h => h.object.userData.handle);
-  // corners and the centre win over a ring that passes in front of them; among
-  // those, the one whose centre is NEAREST the pointer on screen — the grab
-  // volumes are bigger than the marks and may overlap on a small cage
-  const r = $('c').getBoundingClientRect(), dist2 = o => {
-    const v = o.position.clone().project(viewer.camera);
-    return (r.left + (v.x + 1) / 2 * r.width - x) ** 2 + (r.top + (1 - v.y) / 2 * r.height - y) ** 2;
+  // vertices, edges, faces and the centre win over a ring that passes in front
+  // of them; among those, the one NEAREST the pointer on screen (an edge: its
+  // segment) — the grab volumes are bigger than the marks and overlap on a
+  // small cage or seen at a slant
+  const r = $('c').getBoundingClientRect();
+  const scr = p => { const v = p.clone().project(viewer.camera); return [r.left + (v.x + 1) / 2 * r.width, r.top + (1 - v.y) / 2 * r.height]; };
+  const dist2 = o => {
+    const seg = o.userData.seg;
+    if (!seg) { const [u, v] = scr(o.position); return (u - x) ** 2 + (v - y) ** 2; }
+    const [ax, ay] = scr(seg[0]), [bx, by] = scr(seg[1]), dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+    const t = L2 > 1e-9 ? Math.min(Math.max(((x - ax) * dx + (y - ay) * dy) / L2, 0), 1) : 0;
+    return (ax + t * dx - x) ** 2 + (ay + t * dy - y) ** 2;
   };
-  const pts = hs.filter(h => !['ring', 'arrow'].includes(h.object.userData.handle.type)).sort((a, b) => dist2(a.object) - dist2(b.object));
+  let pts = hs.filter(h => !['ring', 'arrow'].includes(h.object.userData.handle.type)).sort((a, b) => dist2(a.object) - dist2(b.object));
+  // the centre never wins by default: it sits in the middle of everything, and
+  // took every press near a small shape — any other handle under the pointer beats it
+  if (pts.some(h => h.object.userData.handle.type !== 'center')) pts = pts.filter(h => h.object.userData.handle.type !== 'center');
   const arrow = hs.find(h => h.object.userData.handle.type === 'arrow');
   if (!pts.length && arrow) return { ...arrow.object.userData.handle, px: 0 };
   const pick = pts[0] || hs[0];
@@ -2327,20 +2326,23 @@ function shapeDown(e) {
     const S = selShape;
     sDrag = { id: e.pointerId, x: e.clientX, y: e.clientY, h: h || { type: 'move' }, S, before: shapeState(S),
               q0: shapeQuat(S), center0: S.center.clone(), size0: S.size.clone(), moved: false };
-    if (h && h.type === 'corner') {
-      sDrag.fixed = h.s.clone().negate().multiply(S.size).multiplyScalar(0.5).applyQuaternion(sDrag.q0).add(S.center);
-      sDrag.grab = h.s.clone().multiply(S.size).multiplyScalar(0.5).applyQuaternion(sDrag.q0).add(S.center);
-    }
     if (h && h.type === 'face') {              // along the face's own outward axis
+      // on the shape AS SEEN: the opposite (bent) face stays put, and the
+      // length is the one between the two faces' centres (= the size, unbent)
+      const a = h.axis, sg = h.s.getComponent(a);
+      const mOpp = FFD.faceMean(S.ffd, a, -sg), mThis = FFD.faceMean(S.ffd, a, sg);
       sDrag.axis = h.s.clone().applyQuaternion(sDrag.q0);
-      sDrag.fixed = h.s.clone().negate().multiply(S.size).multiplyScalar(0.5).applyQuaternion(sDrag.q0).add(S.center);
+      sDrag.mOpp = mOpp[a];
+      sDrag.L0 = sg * (mThis[a] - mOpp[a]) * S.size.getComponent(a);
+      sDrag.fixed = shapeLocal(S, mOpp, sDrag.q0);
       sDrag.t0 = axisParam(e.clientX, e.clientY, sDrag.fixed, sDrag.axis);
-      if (sDrag.t0 == null) { sDrag = null; return; }   // the axis points at the camera
+      if (sDrag.t0 == null || !(sDrag.L0 > 0)) { sDrag = null; return; }   // the axis points at the camera
     }
-    if (h && h.type === 'ffd') {               // ▣ deform: this corner, from where it is now
-      sDrag.grab = shapeCorners(S, sDrag.q0)[h.i];
+    if (h && (h.type === 'ffd' || h.type === 'edge')) {   // ▣ bend: this vertex / this edge, from where it is now
+      sDrag.grab = h.type === 'ffd' ? shapeCorners(S, sDrag.q0)[h.i] : shapeLocal(S, FFD.edgeMid(S.ffd, h.e), sDrag.q0);
       sDrag.w0 = onViewPlane(e.clientX, e.clientY, sDrag.grab);
-      sDrag.c0 = FFD.cornerAt(S.ffd, h.i);
+      sDrag.ffd0 = FFD.copyFfd(S.ffd);
+      if (h.type === 'ffd') sDrag.c0 = FFD.cornerAt(S.ffd, h.i);
       if (!sDrag.w0) { sDrag = null; return; }
     }
     if (h && h.type === 'arrow') {
@@ -2369,33 +2371,27 @@ function shapeMove(e) {
     const hit = stickAt(e.clientX, e.clientY);
     if (!hit) return;
     S.anchor = hit.p.clone(); S.n = hit.n.clone(); S.piece = hit.key;
-  } else if (d.h.type === 'corner') {
-    const W = onViewPlane(e.clientX, e.clientY, d.grab);
-    if (!W) return;
-    const l = W.clone().sub(d.fixed).applyQuaternion(d.q0.clone().invert());
-    const min = shapeMin(S), s0 = d.h.s;
-    // SIGNED along the corner's own direction: dragged past the opposite
-    // corner it stops at the minimum instead of turning the cage inside out
-    let sz = new THREE.Vector3(Math.max(l.x * s0.x, min), Math.max(l.y * s0.y, min), Math.max(l.z * s0.z, min));
-    if (S.kind === 'sphere') { const m = Math.max(sz.x, sz.y, sz.z); sz.set(m, m, m); }
-    if (S.kind === 'cylinder') { const m = Math.max(sz.x, sz.y); sz.x = sz.y = m; }
-    S.size = sz;
-    const s = d.h.s;
-    const center = s.clone().multiply(sz).multiplyScalar(0.5).applyQuaternion(d.q0).add(d.fixed);
-    S.anchor = center.clone().sub(new THREE.Vector3(0, 0, sz.z / 2).applyQuaternion(d.q0));
   } else if (d.h.type === 'face') {            // ONE axis, the opposite face fixed
     const t = axisParam(e.clientX, e.clientY, d.fixed, d.axis);
     if (t == null) return;
-    const a = d.h.axis, c = 'xyz'[a], min = shapeMin(S);
-    // SIGNED along the outward axis (t0 = the face's own distance from the
-    // fixed one): dragged past the opposite face it stops at the minimum
-    const L = Math.max(d.size0[c] + (t - d.t0), min);
-    const sz = d.size0.clone(); sz[c] = L;
-    if (S.kind === 'sphere') sz.set(L, L, L);                       // stays a sphere
-    if (S.kind === 'cylinder' && a < 2) sz.x = sz.y = L;           // stays round
+    const a = d.h.axis, c = 'xyz'[a], s0 = d.size0[c];
+    // the shape is scaled AS IT IS, bend included (quill: «si scala con la
+    // deformazione applicata»): ffd is normalised, so scaling the size by k
+    // scales the bent cage by k along this axis, its offsets with it. SIGNED
+    // along the outward axis: dragged past the opposite face it stops at the
+    // minimum side instead of turning the cage inside out
+    const ref = S.kind === 'sphere' ? Math.min(d.size0.x, d.size0.y, d.size0.z)
+      : S.kind === 'cylinder' && a < 2 ? Math.min(d.size0.x, d.size0.y) : s0;
+    const k = Math.max((d.L0 + (t - d.t0)) / d.L0, shapeMin(S) / ref);
+    const sz = d.size0.clone();
+    if (S.kind === 'sphere') sz.multiplyScalar(k);                       // stays a sphere
+    else if (S.kind === 'cylinder' && a < 2) { sz.x *= k; sz.y *= k; }   // stays round
+    else sz[c] = s0 * k;
     S.size = sz;
-    // the centre slides along the dragged axis only; the other axes stay centred
-    const center = d.fixed.clone().addScaledVector(d.axis, L / 2);
+    // the centre slides along the dragged axis only, so that the opposite
+    // face's centre stays where it was; the other axes stay centred
+    const sh = new THREE.Vector3(); sh.setComponent(a, d.mOpp * (s0 - sz[c]));
+    const center = d.center0.clone().add(sh.applyQuaternion(d.q0));
     S.anchor = center.sub(new THREE.Vector3(0, 0, sz.z / 2).applyQuaternion(d.q0));
   } else if (d.h.type === 'arrow') {           // along one axis, on a leash
     const t = axisParam(e.clientX, e.clientY, d.center0, d.axis);
@@ -2413,14 +2409,18 @@ function shapeMove(e) {
     }
     const center = d.center0.clone().addScaledVector(d.axis, k);
     S.anchor = center.sub(new THREE.Vector3(0, 0, S.size.z / 2).applyQuaternion(d.q0));
-  } else if (d.h.type === 'ffd') {             // ▣ deform: one corner, the shape bends
+  } else if (d.h.type === 'ffd' || d.h.type === 'edge') {   // ▣ bend: a vertex, or an edge's two
     const W = onViewPlane(e.clientX, e.clientY, d.grab);
     if (!W) return;
-    // the hand's move on the view plane, in the shape's own normalised frame
-    const l = W.sub(d.w0).applyQuaternion(d.q0.clone().invert()).divide(S.size);
-    // it stays in its own octant, never closer than the minimum to the others
+    // the hand's move on the view plane, in the shape's own frame (mm);
+    // Shift keeps only its dominant axis; then normalised (1 = the size)
+    let l = W.sub(d.w0).applyQuaternion(d.q0.clone().invert()).toArray();
+    if (e.shiftKey) l = FFD.dominantOnly(l);
+    l = [l[0] / S.size.x, l[1] / S.size.y, l[2] / S.size.z];
+    // each vertex stays in its own octant, never closer than the minimum to the others
     const m = shapeMin(S), minN = [m / S.size.x, m / S.size.y, m / S.size.z];
-    S.ffd = FFD.moveCorner(S.ffd, d.h.i, [d.c0[0] + l.x, d.c0[1] + l.y, d.c0[2] + l.z], minN);
+    S.ffd = d.h.type === 'ffd' ? FFD.moveCorner(d.ffd0, d.h.i, [d.c0[0] + l[0], d.c0[1] + l[1], d.c0[2] + l[2]], minN)
+      : FFD.moveEdge(d.ffd0, d.h.e, l, minN);
   } else if (d.h.type === 'center') {          // the whole, about its base
     // never below the piece's minimum on its smallest side
     const f = Math.max(Math.exp((d.y - e.clientY) / 120), shapeMin(S) / Math.min(d.size0.x, d.size0.y, d.size0.z));
@@ -3424,7 +3424,7 @@ addEventListener('keydown', e => {
   else if (e.key === 'Escape') { e.stopImmediatePropagation(); setDrawing(false); }
   else if (e.ctrlKey || e.metaKey || e.altKey) return;
   else if (tab) { e.stopImmediatePropagation(); TOOLS.setTab(tab.id); }
-  // the shape's handles: G move · R rotate · C cage (again: Scala ⇄ Deforma).
+  // the shape's handles: G move · R rotate · C cage (bend + scale, all in one).
   // No H for «hide the gizmo»: H already hides the selected PIECE
   else if (tool === 'shape' && ['g', 'r', 'c'].includes(k)) {
     e.stopImmediatePropagation(); setGizmoMode({ g: 'move', r: 'rotate', c: 'cage' }[k]);
@@ -4387,7 +4387,13 @@ window.__noodleMeasures = { draw: drawMeasures, list: () => measures, text: meas
   probe: (x1, y1, x2, y2) => { const a = snapAt(x1, y1), b = snapAt(x2, y2); try { const M = measurePair(a, b, false); return M ? [M.kind, M.value, a.snap, b.snap, MS.sameFeature(msPick(a), msPick(b))] : ['null', a && a.snap, b && b.snap]; } catch (e) { return String(e.stack).slice(0, 600); } },
   pending: () => mPending && mPending.snap, draft: () => dmeasures.map(M => [M.kind, +M.value.toFixed(3)]),
   pen: () => draft.map(s => ({ n: s.pts.length, w: +s.width.toFixed(3), lift: +Math.max(0, ...(s.lift || [])).toFixed(3) })),
-  handleAt: (x, y) => handleAt(x, y), shapeAt: (x, y) => { const S = shapeAt(x, y); return S ? { selected: S === selShape } : null; } };
+  handleAt: (x, y) => handleAt(x, y), shapeAt: (x, y) => { const S = shapeAt(x, y); return S ? { selected: S === selShape } : null; },
+  // the selected shape as the note will carry it, and where its handles are on screen (probes)
+  sel: () => selShape && shapeData(selShape),
+  handles: () => { const r = $('c').getBoundingClientRect();
+    return cageGroup.children.filter(o => o.visible && o.userData.handle && !['ring', 'arrow'].includes(o.userData.handle.type)).map(o => {
+      const h = o.userData.handle, p = o.position.clone().project(viewer.camera);
+      return { type: h.type, i: h.i, k: h.k, axis: h.axis, s: h.s && h.s.toArray(), x: r.left + (p.x + 1) / 2 * r.width, y: r.top + (1 - p.y) / 2 * r.height }; }); } };
 
 // ── load ─────────────────────────────────────────────────────────────────
 let sizeTxt = '';

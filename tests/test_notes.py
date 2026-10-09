@@ -519,8 +519,8 @@ def test_the_shape_tool_stays_on_the_parts():
     move = VIEW[VIEW.index("if (d.h.type === 'move') {"):]
     move = move[:move.index("} else if")]
     assert "stickAt(e.clientX, e.clientY)" in move and "if (!hit) return;" in move
-    # a corner never passes the opposite one, and the minimum follows the PIECE
-    assert "Math.max(l.x * s0.x, min)" in VIEW and "function shapeMin(S)" in VIEW
+    # a face never passes the opposite one, and the minimum follows the PIECE
+    assert "shapeMin(S) / ref" in VIEW and "function shapeMin(S)" in VIEW
     assert "const box = pieceBox(S);" in VIEW[VIEW.index("function shapeMin(S)"):][:200]
     assert "leafIndex.get(S.piece)" in VIEW[VIEW.index("function pieceBox(S)"):][:200]
     # the marks shrink with the shape; the grab volume does not
@@ -578,21 +578,17 @@ def test_shapes_wear_one_set_of_handles_at_a_time():
     for m in ("move", "rotate", "cage", "none"):
         assert f'data-gm="{m}"' in VIEW
     assert "const GIZMO_MODES = ['move', 'rotate', 'cage', 'none'];" in VIEW
-    assert "let gizmoMode = 'cage', cageMode = 'scale';" in VIEW
-    for key in ("noodle:view:gizmoMode", "noodle:view:cageMode"):
-        assert f"localStorage.getItem('{key}')" in VIEW and f"localStorage.setItem('{key}'" in VIEW
+    assert "let gizmoMode = 'cage';" in VIEW
+    key = "noodle:view:gizmoMode"
+    assert f"localStorage.getItem('{key}')" in VIEW and f"localStorage.setItem('{key}'" in VIEW
     # refreshCage builds ONLY the active mode's handles, one branch per mode
     rc = VIEW[VIEW.index("function refreshCage() {"):]
     rc = rc[:rc.index("\n}\n")]
     assert "switch (gizmoMode) {" in rc
     assert "case 'move': cageArrows(G); break;" in rc
     assert "case 'rotate': cageRings(G); break;" in rc
-    assert "if (cageMode === 'scale') { cageCorners(G); cageCentre(G);" in rc
+    assert "cageDeformCorners(G); cageEdges(G); cageFaces(G); cageCentre(G);" in rc
     assert "case 'none': break;" in rc
-    # 'deform' is task C's: until it lands the toggle is there and disabled
-    assert "const CAGE_MODES = ['scale'];" in VIEW and "cm.disabled = CAGE_MODES.length < 2;" in VIEW
-    # a second tap on Gabbia flips Scala ⇄ Deforma
-    assert "if (m === 'cage' && gizmoMode === 'cage') return toggleCageMode();" in VIEW
     # G / R / C, only with the shape tool; no H (it already hides the piece)
     assert "setGizmoMode({ g: 'move', r: 'rotate', c: 'cage' }[k])" in VIEW
     # the modes are ▣ Blocky's tool row (no longer in the bar over the shape),
@@ -612,25 +608,23 @@ def test_scale_mode_has_six_face_handles_in_the_axis_colours():
     # ±X red / ±Y green / ±Z blue; corners stay white, the centre uniform
     rc = VIEW[VIEW.index("function refreshCage() {"):]
     rc = rc[:rc.index("\n}\n")]
-    assert "if (cageMode === 'scale') { cageCorners(G); cageCentre(G); cageFaces(G); }" in rc
+    assert "cageFaces(G)" in rc
     assert "const RING_INK = ['#ef4444', '#22c55e', '#3b82f6'];" in VIEW
-    fc = VIEW[VIEW.index("function cageFaces({ S, q, grab, hs, half }) {"):]
+    fc = VIEW[VIEW.index("function cageFaces({ S, q, grab, hs }) {"):]
     fc = fc[:fc.index("\n}\n")]
     assert "for (let a = 0; a < 3; a++) {" in fc and "for (const sg of [-1, 1]) {" in fc
     assert "const handle = { type: 'face', axis: a, s };" in fc
     assert "handleMat(RING_INK[a])" in fc
-    assert "handleMat('#ffffff')" in VIEW[VIEW.index("function cageCorners("):]  # corners stay white
     # a face sits ON the body: it is grabbed in its whole radius there
     assert "h.px > (h.type === 'face' ? 1 : 0.5) * grabPx" in VIEW
     # the drag: along the face's outward axis, opposite face fixed, signed min
     assert "if (h && h.type === 'face') {" in VIEW
     br = VIEW[VIEW.index("} else if (d.h.type === 'face') {"):]
     br = br[:br.index("} else if (d.h.type === 'arrow') {")]
-    assert "const L = Math.max(d.size0[c] + (t - d.t0), min);" in br
-    assert "min = shapeMin(S)" in br
-    assert "if (S.kind === 'sphere') sz.set(L, L, L);" in br
-    assert "if (S.kind === 'cylinder' && a < 2) sz.x = sz.y = L;" in br
-    assert "const center = d.fixed.clone().addScaledVector(d.axis, L / 2);" in br
+    assert "const k = Math.max((d.L0 + (t - d.t0)) / d.L0, shapeMin(S) / ref);" in br
+    assert "if (S.kind === 'sphere') sz.multiplyScalar(k);" in br
+    assert "else if (S.kind === 'cylinder' && a < 2) { sz.x *= k; sz.y *= k; }" in br
+    assert "sh.setComponent(a, d.mOpp * (s0 - sz[c]));" in br
 
 
 DEFORMED = [[0, 0, 0]] * 7 + [[0.25, -0.1, 0.3]]
@@ -666,12 +660,10 @@ def test_bad_deformations_are_refused(store):
 
 
 def test_the_cage_deforms():
-    # C: Gabbia → Deforma is on, its own branch in refreshCage and pointermove
-    assert "CAGE_MODES.push('deform');" in VIEW
-    assert VIEW.index("CAGE_MODES.push('deform');") < VIEW.index("localStorage.getItem('noodle:view:cageMode')")
+    # the cage bends: its vertices, in the one ▣ Gabbia set
     rc = VIEW[VIEW.index("function refreshCage() {"):]
     rc = rc[:rc.index("\n}\n")]
-    assert "else if (cageMode === 'deform') { cageDeformCorners(G); }" in rc
+    assert "cageDeformCorners(G);" in rc
     assert "import * as FFD from '/static/ffd.js';" in VIEW
     # the pure math lives in webui/ffd.js (tests/ui/ffd.test.cjs) and ships to the static pages
     assert (ROOT / "webui" / "ffd.js").exists()
@@ -686,11 +678,11 @@ def test_the_cage_deforms():
         assert t in geo
     assert "const g = new THREE.Group(), geo = shapeGeoOf(S);" in VIEW
     # the drag: on the view plane, into the shape's normalised frame, constrained
-    br = VIEW[VIEW.index("} else if (d.h.type === 'ffd') {"):]
+    br = VIEW[VIEW.index("} else if (d.h.type === 'ffd' || d.h.type === 'edge') {"):]
     br = br[:br.index("} else if", 1)]
     assert "onViewPlane(e.clientX, e.clientY, d.grab)" in br
-    assert ".applyQuaternion(d.q0.clone().invert()).divide(S.size)" in br
-    assert "FFD.moveCorner(S.ffd, d.h.i," in br and "shapeMin(S)" in br
+    assert ".applyQuaternion(d.q0.clone().invert()).toArray();" in br
+    assert "FFD.moveCorner(d.ffd0, d.h.i," in br and "shapeMin(S)" in br
     # the cage lines follow the moved corners
     assert "FFD.CAGE_EDGES.flatMap" in VIEW[VIEW.index("function cageOutline("):][:600]
     # undo carries the deformation; the note says it; eraser + leash see the bent box
@@ -932,3 +924,29 @@ def test_a_tool_is_one_register_call():
     # the static preview ships it
     BP = (ROOT / "scripts" / "build_pages.py").read_text()
     assert '"view-tools.js"' in BP
+
+
+def test_the_cage_is_all_in_one():
+    # quill: «in Blocky in modalità gabbia fai valere gli spigoli della gabbia
+    # per deform, e un po' c'è tutto in uno» — no Scala ⇄ Deforma switch any more
+    assert 's-cagemode' not in VIEW and 'cageMode' not in VIEW.replace("noodle:view:cageMode", "")
+    assert "toggleCageMode" not in VIEW and "function cageCorners(" not in VIEW
+    # the 12 edges: a diamond each, picked on a fat rod over the edge's middle,
+    # measured on screen to the SEGMENT; dragging moves its two vertices together
+    fn = VIEW[VIEW.index("function cageEdges("):]
+    fn = fn[:fn.index("\n}\n")]
+    assert "FFD.CAGE_EDGES.forEach((e, k) => {" in fn and "const handle = { type: 'edge', k, e };" in fn
+    assert "pk.userData.seg = [u, v];" in fn
+    br = VIEW[VIEW.index("} else if (d.h.type === 'ffd' || d.h.type === 'edge') {"):]
+    br = br[:br.index("} else if", 1)]
+    assert ": FFD.moveEdge(d.ffd0, d.h.e, l, minN);" in br
+    assert "if (e.shiftKey) l = FFD.dominantOnly(l);" in br
+    # the centre: small, and never the default winner
+    cc = VIEW[VIEW.index("function cageCentre("):]
+    cc = cc[:cc.index("\n}\n")]
+    assert "new THREE.SphereGeometry(grab * 0.6, 12, 8)" in cc
+    ha = VIEW[VIEW.index("function handleAt(x, y) {"):]
+    ha = ha[:ha.index("\n}\n")]
+    assert "pts = pts.filter(h => h.object.userData.handle.type !== 'center')" in ha
+    # the face handles sit on the BENT face; the scale keeps the bend
+    assert "shapeLocal(S, FFD.faceMean(S.ffd, a, sg), q)" in VIEW

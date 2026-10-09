@@ -1,9 +1,10 @@
-// ▣ Forme → Gabbia → Deforma: the cage that DEFORMS the shape (free-form
+// ▣ Forme → Gabbia: the cage that DEFORMS the shape (free-form
 // deformation with 8 control points, trilinear).
 //
 // A shape is drawn from a unit geometry in [−0.5, 0.5]³ scaled by its size. In
-// Deforma each of the cage's 8 corners can be moved on its own; the shape
-// follows. The data is `ffd` = 8 displacements [dx, dy, dz] of the corners in
+// ▣ Gabbia each of the cage's 8 corners can be moved on its own, and each of
+// its 12 edges moves its two corners together (moveEdge); the shape follows.
+// The data is `ffd` = 8 displacements [dx, dy, dz] of the corners in
 // the shape's OWN normalised frame (1 = the shape's size on that axis), in the
 // order of the cage's corners: sx, sy, sz ∈ {−1, 1}, nested in that order, so
 // corner i has sx = i & 4 ? 1 : −1, sy = i & 2 ? 1 : −1, sz = i & 1 ? 1 : −1.
@@ -122,3 +123,56 @@ export const CAGE_EDGES = (() => {
   for (let i = 0; i < 8; i++) for (const b of [4, 2, 1]) if (!(i & b)) e.push([i, i | b]);
   return e;
 })();
+
+// ── the cage's EDGES (▣ Gabbia: vertices bend, edges bend a whole side) ──
+// Dragging an edge moves its two corners TOGETHER by the same displacement
+// `delta` (normalised frame), from where they were at the press (`ffd0`). The
+// delta is clamped ONCE for both, per axis, to the range that keeps each of
+// the two corners in its own octant (≥ minN/2 from the centre) and within
+// FFD_MAX — so the edge stays parallel to itself instead of one end sticking
+// at the limit while the other carries on.
+export function edgeRange(ffd0, e, minN) {
+  const lo = [-Infinity, -Infinity, -Infinity], hi = [Infinity, Infinity, Infinity];
+  for (const i of e) {
+    const s = SIGNS[i], c = cornerAt(ffd0, i);
+    for (let a = 0; a < 3; a++) {
+      const m = Math.max(0.5 * (minN ? minN[a] : 0), 0);
+      // s·(c + δ) ∈ [m, FFD_MAX]  →  δ ∈ [m − s·c, FFD_MAX − s·c] · s
+      const p = m - s[a] * c[a], q = FFD_MAX - s[a] * c[a];
+      const a1 = s[a] * p, a2 = s[a] * q;
+      lo[a] = Math.max(lo[a], Math.min(a1, a2)); hi[a] = Math.min(hi[a], Math.max(a1, a2));
+    }
+  }
+  return { lo, hi };
+}
+export function moveEdge(ffd0, e, delta, minN) {
+  const f = copyFfd(ffd0) || zeroFfd(), { lo, hi } = edgeRange(ffd0, e, minN);
+  // an empty range (a corner already outside — never by our hands) moves nothing
+  const d = delta.map((v, a) => lo[a] > hi[a] ? 0 : Math.min(Math.max(v, lo[a]), hi[a]));
+  for (const i of e) for (let a = 0; a < 3; a++) f[i][a] += d[a];
+  return f;
+}
+// where the edge's handle sits: its midpoint, normalised
+export function edgeMid(ffd, e) {
+  const a = cornerAt(ffd, e[0]), b = cornerAt(ffd, e[1]);
+  return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
+}
+// the mean of the 4 corners of the face on `axis` at sign `sg` — the centre of
+// the (bilinear) bent face: the trilinear map at a face centre IS that mean
+export function faceMean(ffd, axis, sg) {
+  const o = [0, 0, 0];
+  for (let i = 0; i < 8; i++) if (SIGNS[i][axis] === sg) {
+    const c = cornerAt(ffd, i);
+    o[0] += c[0] / 4; o[1] += c[1] / 4; o[2] += c[2] / 4;
+  }
+  return o;
+}
+// the centre of the bent body (the map at the cube's centre = the corners' mean)
+export function bodyCentre(ffd) { return deformPoint(ffd, [0, 0, 0]); }
+// Shift: keep only the dominant component of a move (in mm, so a long thin
+// cage does not favour its short axis); a NEW array
+export function dominantOnly(v) {
+  let k = 0;
+  for (let a = 1; a < 3; a++) if (Math.abs(v[a]) > Math.abs(v[k])) k = a;
+  return v.map((x, a) => a === k ? x : 0);
+}

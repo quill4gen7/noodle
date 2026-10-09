@@ -1936,20 +1936,32 @@ result while the workflow moves on.
   `center`, `quat`, `anchor`/`normal` of the surface, the piece; `cad_notes`
   adds a `summary` and `near_marks`). A tap on the part sets one down SITTING
   on the surface (local Z = the normal). Selected, it wears ONE set of handles
-  at a time, picked in ▣ Blocky's tool row (`#s-modes`; `gizmoMode`, `cageMode`,
-  remembered in localStorage `noodle:view:gizmoMode|cageMode`; `refreshCage`
+  at a time, picked in ▣ Blocky's tool row (`#s-modes`; `gizmoMode`,
+  remembered in localStorage `noodle:view:gizmoMode`; `refreshCage`
   builds only the active set, one function per set, and `handleAt` finds what
   is there): **✥ Sposta** = three arrows along its own X/Y/Z, on a LEASH (the
   centre stays in the piece's box grown by max(¼ of the piece, the shape's
-  size)); **⟳ Ruota** = three rings about the centre (Shift 15°); **▣ Gabbia**,
-  whose second tap (or the Scala/Deforma chip) flips between **Scala** — 8
-  white corners resize with the opposite corner fixed (signed along the
-  corner's direction: dragged past the opposite one it STOPS, never flips),
-  the centre dot scales about the base, and six FACE handles in the classic
-  axis colours (±X red, ±Y green, ±Z blue) stretch ONE axis with the opposite
-  face fixed (a cylinder keeps round, a sphere scales whole) — and
-  **Deforma**: the 8 corners turn amber and each moves ON ITS OWN
-  (`webui/ffd.js`, pure, `tests/ui/ffd.test.cjs`). It is a trilinear FFD: a
+  size)); **⟳ Ruota** = three rings about the centre (Shift 15°); **▣ Gabbia**
+  = ALL IN ONE (quill: «fai valere gli spigoli della gabbia per deform, e un po'
+  c'è tutto in uno» — the old Scala ⇄ Deforma chip and `cageMode` are gone, a
+  stored `noodle:view:cageMode` is simply never read): the 8 **vertices**
+  (amber cubes) and the 12 **edges** (pale-amber diamonds at their middle,
+  picked on a fat rod over the middle 60% of the edge, distance measured to the
+  SEGMENT on screen) bend the shape — an edge moves its two vertices by ONE
+  delta, clamped once for both (`FFD.moveEdge`), so the side stays parallel;
+  Shift keeps only the dominant axis of the move (in mm). The six **face**
+  handles (±X red, ±Y green, ±Z blue) stretch ONE axis with the opposite face
+  fixed (a cylinder keeps round, a sphere scales whole), the small violet
+  **centre** dot scales the whole about its base. Precedence: the handle
+  nearest the pointer on screen wins, and the centre NEVER wins by default — it
+  is dropped whenever any other handle is under the pointer, and both its mark
+  and its grab are small (quill: «si prende spesso sempre quello»). **Scale
+  after a bend** (quill: «si scala con la deformazione applicata»): `ffd` is
+  normalised, so a face / the centre scales `size` and the bend grows with it;
+  the face handles sit on the BENT face (`FFD.faceMean`, the mean of its 4
+  corners), the fixed side is the opposite bent face's centre, and the centre
+  dot sits at the bent body's centre. The deformation is a trilinear FFD
+  (`webui/ffd.js`, pure, `tests/ui/ffd.test.cjs`): a
   corner's motion fades over the whole body, the other 7 corners and the
   three faces that do not touch it stay exactly put, so the cage's edges stay
   straight and the millimetre paper bends with the body (it reads the REST

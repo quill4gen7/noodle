@@ -1,4 +1,4 @@
-// webui/ffd.js — ▣ Forme → Gabbia → Deforma: the trilinear cage (FFD) and its
+// webui/ffd.js — ▣ Forme → Gabbia: the trilinear cage (FFD) and its
 // constraints. Pure module, so it runs here on hand-made points.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -151,4 +151,45 @@ test('the corner box holds the whole deformed shape', async () => {
   for (let k = 0; k < out.length; k += 3) for (let a = 0; a < 3; a++) {
     assert.ok(out[k + a] >= box.min[a] - 1e-6 && out[k + a] <= box.max[a] + 1e-6);
   }
+});
+
+test('an edge moves its two vertices together, clamped as one', async () => {
+  const F = await load();
+  for (const e of F.CAGE_EDGES) {
+    const f = F.moveEdge(null, e, [0.1, -0.2, 0.05], [0, 0, 0]);
+    // the free axis (along the edge) moves freely; the other two stay ≥ 0 from the centre
+    for (let i = 0; i < 8; i++) {
+      if (!e.includes(i)) { assert.deepEqual(f[i], [0, 0, 0], 'the other six stay'); continue; }
+    }
+    assert.deepEqual(f[e[0]], f[e[1]], 'both by the SAME delta');
+  }
+  // corner 0 (−,−,−) to corner 4 (+,−,−): an edge along X. Pull it in +y by 2
+  // (past the centre): both stop at y = −minN/2, the same, so the edge stays parallel
+  const minN = [0.2, 0.2, 0.2];
+  const f = F.moveEdge(null, [0, 4], [0, 2, 0], minN);
+  near(F.cornerAt(f, 0)[1], -0.1); near(F.cornerAt(f, 4)[1], -0.1);
+  // along the edge (x): corner 4 can go anywhere ≥ 0.1, corner 0 ≤ −0.1 → δx ≤ 0.4 and ≥ −0.4
+  const g = F.moveEdge(null, [0, 4], [3, 0, 0], minN);
+  near(F.cornerAt(g, 0)[0], -0.1); near(F.cornerAt(g, 4)[0], 0.9);
+  // the deformed start is kept: delta adds to ffd0, ffd0 untouched
+  const f0 = F.moveCorner(null, 7, [1, 1, 1], minN), f1 = F.moveEdge(f0, [3, 7], [0, 0, 0.5], minN);
+  nearV(F.cornerAt(f1, 7), [1, 1, 1.5]); nearV(F.cornerAt(f0, 7), [1, 1, 1]);
+  nearV(F.cornerAt(f1, 3), [-0.5, 0.5, 1]);
+  // the midpoint handle
+  nearV(F.edgeMid(f1, [3, 7]), [0.25, 0.75, 1.25]);
+});
+
+test('face means, body centre and Shift', async () => {
+  const F = await load();
+  nearV(F.faceMean(null, 0, 1), [0.5, 0, 0]);
+  nearV(F.faceMean(null, 2, -1), [0, 0, -0.5]);
+  const f = F.moveCorner(null, 7, [0.9, 0.5, 0.5], null);   // corner 7 out in +x by 0.4
+  nearV(F.faceMean(f, 0, 1), [0.6, 0, 0]);
+  nearV(F.faceMean(f, 0, -1), [-0.5, 0, 0]);
+  nearV(F.bodyCentre(f), [0.05, 0, 0]);
+  assert.deepEqual(F.dominantOnly([0.1, -0.3, 0.2]), [0, -0.3, 0]);
+  // a scaled size keeps the bend: ffd is normalised, so the bent corners
+  // scale with the size (what the face handles rely on)
+  const size = 10, k = 2;
+  nearV(F.cornerAt(f, 7).map(v => v * size * k), F.cornerAt(f, 7).map(v => v * size).map(v => v * k));
 });
