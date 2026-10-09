@@ -1791,8 +1791,19 @@ result while the workflow moves on.
     back under that id (`PUT …/notes/{id}` → `api.add_note(note_id=)` →
     `store.save_gen_note`, which keeps `created`, sets `updated`, deletes the
     pictures the rewrite no longer names and REOPENS a note the agent had
-    closed, its reply kept in `reopened`), and taking everything back (↶,
-    Pulisci) DELETEs it. It compares a signature of the content, computed with
+    closed, its reply kept in `reopened`). **The undo history rides along**
+    (quill: «salva la history nel file così si può annullare anche se
+    ricarico»): `historyOut()` names items by their `k` (unique, ++seq) —
+    `live` = the k of each item of the note in its own order, `pool` = every
+    item an action still points at that is off the part, in full, plus
+    `actions`/`redone` by k — and the server keeps it as `aK.history.json`
+    beside the note (never in the note, never shown to the agent); `resumeNote`
+    reads it back (`historyIn`), so ↶ ↷ survive a reload. 🗑 Pulisci
+    (`clearAll`, also visible next to ↷) is an erase of everything, so ↶ undoes
+    it and it no longer asks. A note with nothing on it but something to bring
+    back is KEPT with `empty: true` — hidden from `list_notes`, the open-note
+    counts and the /view list, resumed by its page; with no history either, or
+    on «Fatto», it is DELETEd. It compares a signature of the content, computed with
     every view at its own index — tied to the camera, orbiting after a stroke
     re-saved the note. A failed save shows `⚠ non salvata, riprovo` in the
     `#d-save` chip and retries every 4s; `visibilitychange` (a phone
