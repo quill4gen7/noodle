@@ -1989,6 +1989,30 @@ result while the workflow moves on.
   anything that changes the scene from outside the viewer must ask for a frame.
   `/view` does it in `poseTrack()` (every timeline pose) and `apply()` (hidden
   pieces); without it the ▶ player moves the meshes and the canvas stays still.
+- **Plates step aside when you zoom into them** (`webui/view-plates.js`,
+  PLAN_VIEW_TOOLS §3). ONE builder for the three plates of /view —
+  `makePlate()` (dot + stem + plate: the user's ⚑ targhetta via `tagObject`,
+  the agent's tags) and `plateSprites()` (the bare plate: the ↔ metro's value,
+  whose side of the line is its `place(cam)` callback). They stay what they
+  were — mm-sized sprites, solid + 0.35 ghost — until the plate on screen is
+  too big to read as a word: ≥ 92% of the viewport wide, letters ≥ 56 px
+  (`letter` = letter height / plate height, from the canvas builder), or a big
+  plate cut by the screen edge. Hysteresis 1.0 / 0.8. Then it SLIDES away
+  from the zoom point (last wheel cursor, pinch centre, else the middle; a
+  mouse orbit/pan resets it), preferring its stem's direction on screen, and
+  never onto its own anchor (`keep`) — or, with no room, FADES to 0.15 (down
+  to 0.06 the more oversized it is), stem included, dot never. ~150 ms. The
+  plan's "60% of the viewport" was tuned up by eye on creepyfinger-v4 g51/g64:
+  an 84%-wide agent tag still reads at a glance. Hover holds a stepped-aside
+  plate at full opacity only when the pointer ENTERS it (zooming at the cursor
+  puts the cursor on it already, and a wheel lets go); on touch, a TAP decided
+  on lift (the first finger of a pinch lands on it too). It all runs in
+  `scene.onBeforeRender` (main frame only, not the bloom target), so only
+  when a frame is drawn. **Trap, paid for:** an `invalidate()` from inside a
+  frame is eaten — `_tick` clears `_dirty` after rendering — so the transition
+  asks for its next frame in a `queueMicrotask`; without it a plate froze half
+  faded. No registry: plates are found by `traverseVisible` each frame.
+  Tests: `tests/ui/plates.test.cjs`.
 
 
 ## 9d. Exports — the bake bundle and the per-workflow index
