@@ -150,7 +150,12 @@ More detail on demand — `cad_help(topic=...)` / `GET /api/agent/help?topic=...
    leaning post), the trilinear blend between them is the body. A mark with
    `height_mm` is a HEAP the user built with the pen by circling one spot
    (✎ as a 3D pen: its strokes carry `lifts`, mm above the part per point) —
-   read it as «add material here, about this tall», a bump, a boss, a blob. A label's `style` says how it was drawn: `paint` (the letters are
+   read it as «add material here, about this tall», a bump, a boss, a blob.
+   A mark with `kind: "plane"` was drawn (at least partly) IN THE VOID, on a
+   working plane (⊞ Piano: XY / XZ / YZ / view) — its `plane` {origin, normal}
+   and `near_piece` {node, title, distance_mm} = the piece of the gen it is
+   nearest to: a stroke that starts on an arm and runs on into the air is
+   «extend this up to here», and `on` still names the arm. A label's `style` says how it was drawn: `paint` (the letters are
    pen strokes on the surface — they are NOT in `marks`; with `points=True`
    they show up as strokes with `kind: "text"`), `tag` (a plate on a stem) or
    `decal`. Pictures the user PLACED on the part (a PNG/JPEG — a sketch, a

@@ -1828,11 +1828,113 @@ def _marks(strokes: list[dict]) -> list[dict]:
         h = max((s.get("height_mm", 0) for s in ss), default=0)
         if h:
             m["height_mm"] = h
+        # ⊞ drawn (at least partly) on a working plane, in the void: the plane,
+        # and the piece it is nearest to — «this arm goes on up to HERE»
+        flat = [s for s in ss if s.get("plane")]
+        if flat:
+            m["kind"] = "plane"
+            m["plane"] = flat[0]["plane"]
+            near = [s["near_piece"] for s in flat if s.get("near_piece")]
+            if near:
+                m["near_piece"] = min(near, key=lambda x: x["distance_mm"])
         # the picture this mark is in: the view its strokes were drawn from
         # (0 = the note's main picture, the final view)
         m["view"] = next((s["view"] for s in ss if s.get("view")), 0)
         out.append(m)
     return out
+
+
+def _point_tri_dist(P, A, B, C):
+    """Distances (len(P) × len(A)) from points to triangles — the closest point
+    by Voronoi region of the triangle (Ericson, Real-Time Collision Detection
+    5.1.5), vectorised. P: (n,3); A, B, C: (m,3)."""
+    import numpy as np
+    P = P[:, None, :]
+    ab, ac, ap = B - A, C - A, P - A
+    d1, d2 = (ab * ap).sum(-1), (ac * ap).sum(-1)
+    bp = P - B
+    d3, d4 = (ab * bp).sum(-1), (ac * bp).sum(-1)
+    cp = P - C
+    d5, d6 = (ab * cp).sum(-1), (ac * cp).sum(-1)
+    va, vb, vc = d3 * d6 - d5 * d4, d5 * d2 - d1 * d6, d1 * d4 - d3 * d2
+    with np.errstate(divide="ignore", invalid="ignore"):
+        den = va + vb + vc
+        v, w = np.where(den != 0, vb / den, 0), np.where(den != 0, vc / den, 0)
+        q = A + ab * v[..., None] + ac * w[..., None]                 # inside the face
+        # the edges and vertices, where the projection falls outside
+        t_ab = np.clip(np.where(d1 - d3 != 0, d1 / (d1 - d3), 0), 0, 1)
+        e_ab = A + ab * t_ab[..., None]
+        t_ac = np.clip(np.where(d2 - d6 != 0, d2 / (d2 - d6), 0), 0, 1)
+        e_ac = A + ac * t_ac[..., None]
+        bc = C - B
+        t_bc = np.clip(np.where((d4 - d3) + (d5 - d6) != 0, (d4 - d3) / ((d4 - d3) + (d5 - d6)), 0), 0, 1)
+        e_bc = B + bc * t_bc[..., None]
+    out = np.linalg.norm(P - q, axis=-1)
+    inside = (va > 0) & (vb > 0) & (vc > 0)
+    edge = np.minimum(np.minimum(np.linalg.norm(P - e_ab, axis=-1), np.linalg.norm(P - e_ac, axis=-1)),
+                      np.linalg.norm(P - e_bc, axis=-1))
+    return np.where(inside, out, edge)
+
+
+def _gen_piece_meshes(view: dict) -> dict:
+    """{node id: [(vertices, triangles), …]} of a frozen gen's previews — the
+    plain meshes, scene bodies at rest; dots and lines are not a surface."""
+    out = {}
+    for nid, pv in (view.get("previews") or {}).items():
+        if not isinstance(pv, dict):
+            continue
+        for g in [pv] + list(pv.get("bodies") or []):
+            m = g.get("mesh") if isinstance(g, dict) else None
+            if isinstance(m, dict) and m.get("vertices") and m.get("triangles"):
+                out.setdefault(nid, []).append((m["vertices"], m["triangles"]))
+    return out
+
+
+def _nearest_piece(points: list, meshes: dict, titles: dict, cap: int = 24) -> Optional[dict]:
+    """The piece nearest to a polyline: {node, title, type, distance_mm} — the
+    smallest point-to-triangle distance over up to `cap` samples of it."""
+    import numpy as np
+    if not points or not meshes:
+        return None
+    step = max(1, len(points) // cap)
+    P = np.asarray(points[::step] + [points[-1]], float)
+    best = None
+    for nid, parts in meshes.items():
+        for verts, tris in parts:
+            V, T = np.asarray(verts, float), np.asarray(tris, int)
+            if V.ndim != 2 or T.ndim != 2 or not len(T):
+                continue
+            # a cheap bound first: a box farther than the best cannot win
+            lo, hi = V.min(0), V.max(0)
+            box = np.linalg.norm(np.maximum(np.maximum(lo - P, P - hi), 0), axis=1).min()
+            if best is not None and box >= best[0]:
+                continue
+            d = float(_point_tri_dist(P, V[T[:, 0]], V[T[:, 1]], V[T[:, 2]]).min())
+            if best is None or d < best[0]:
+                best = (d, nid)
+    if best is None:
+        return None
+    t = titles.get(best[1]) or {}
+    o = {"node": best[1], "distance_mm": round(best[0], 2)}
+    if t.get("title"):
+        o["title"] = t["title"]
+    if t.get("type"):
+        o["type"] = t["type"]
+    return o
+
+
+def _near_pieces(store: GraphStore, graph_id: str, gen: str, strokes: list, titles: dict) -> None:
+    """A stroke drawn on a ⊞ plane touches no piece: it gets the NEAREST one
+    (`near_piece`), measured on the gen's frozen meshes."""
+    try:
+        meshes = _gen_piece_meshes(store.load_gen(graph_id, gen, "view"))
+    except (KeyError, ValueError, OSError):
+        return
+    for s in strokes:
+        if s.get("plane"):
+            near = _nearest_piece(s["points"], meshes, titles)
+            if near:
+                s["near_piece"] = near
 
 
 _NOTE_MAX_VIEWS = 24
@@ -2225,6 +2327,7 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
     [{color, width, points:[[x,y,z]…], normals?, piece?}], camera?, t?, hide?}.
     With `note_id` it REPLACES that note (same id): /view saves as you draw."""
     import datetime
+    import math
     if not isinstance(payload, dict):
         raise ValueError("note: expected a JSON object")
     text = payload.get("text") or ""
@@ -2302,6 +2405,19 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
             if max(lifts) > 0:
                 out["lifts"] = lifts
                 out["height_mm"] = round(max(lifts) + width, 3)
+        # ⊞ drawn on a working PLANE, in the void (PLAN_VIEW_TOOLS §4): no
+        # piece, and the plane it lies on
+        if s.get("plane") is not None:
+            pl = s["plane"]
+            if not isinstance(pl, dict):
+                raise ValueError(f"note: stroke {i} plane must be {{origin, normal}}")
+            nv = _vec(pl.get("normal"), f"stroke {i} plane normal")
+            nn = math.hypot(*nv)
+            if nn < 1e-6:
+                raise ValueError(f"note: stroke {i} plane normal must not be zero")
+            out["plane"] = {"origin": _vec(pl.get("origin"), f"stroke {i} plane origin"),
+                            "normal": [round(c / nn, 4) for c in nv]}
+            node = piece = None
         if node:
             out["piece"] = piece
             out["node"] = node
@@ -2310,6 +2426,8 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
                 out["type"] = titles[node].get("type")
         out.update(_stroke_summary(pts, width))
         strokes.append(out)
+    if any("plane" in s for s in strokes):
+        _near_pieces(store, graph_id, gen, strokes, titles)
     labels = _labels(labels_in, len(views), titles)
     # a placed image is placed exactly like a label: same frame, same checks
     images = []
