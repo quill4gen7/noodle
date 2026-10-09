@@ -1985,6 +1985,36 @@ result while the workflow moves on.
   «· deformato» becomes an amber ≈. A click in the bar's first 400ms is the
   placing tap's ghost and is ignored (`sBarGhost`).
   Screens: `docs/asset/view-shapes-*.png`.
+- **⊞ Piano — the pencil draws in the void too** (`webui/view-plane.js`,
+  PLAN_VIEW_TOOLS §4; quill: «disegni sui piani anche se non c'è un pezzo, tipo
+  ZBrush»). In ✎ Matita, ⊞ + a menu: Superficie (default, as before) / XY / XZ /
+  YZ / Vista (perpendicular to the camera, FIXED when picked). For ✎ ✎³ and T
+  vernice only: `inkHit()` = `surfaceHit()` first, then `VP.planeHit()` — over
+  the part you still draw ON it, in the void on the plane, and with a plane in
+  use a drag in the void DRAWS instead of orbiting (right button, wheel, two
+  fingers, ✋ Muovi still move the view; the hint says so). The plane goes
+  through the point a stroke began on the part (Alt+click on the part puts it
+  there without drawing), else the centre of the visible pieces;
+  **Shift+wheel** moves it along the normal in round 1-2-5 mm steps (~8 px of
+  screen, `mmPerPx`), a phone gets a vertical slider at the side. It is a veil
+  ruled 1 / 10 mm (the ▣ Forme paper, own ShaderMaterial) over a rectangle
+  round the pieces AND what was drawn on it; its position is in the bar beside
+  ⊞ and on the slider — NOT in 3D: a label there sat on the very stroke and
+  went into the view photo with it. Mixed strokes: leaving the part's edge
+  starts a new stroke (same gesture) that begins at the last point ON the part
+  — and the plane is re-anchored right there first, or a Vista plane through
+  the start of the stroke put the void part 7 mm behind the silhouette
+  (measured on `creepyfinger-v4/g64`; near_piece read 3.08 mm instead of 0); a
+  jump > max(pen rule, 4 mm) still breaks it. Data: a sample on the plane has
+  normal = the plane's, the stroke no `piece` and `plane: {origin, normal}`
+  (a painted label keeps its plane, `L.plane`, for re-lettering). Server
+  (`api.add_note` / `_marks`): such a gesture is a mark of `kind: "plane"` with
+  its `plane` and `near_piece` {node, title, distance_mm} — point-to-TRIANGLE
+  distance (`_point_tri_dist`, numpy) on the gen's FROZEN view.json meshes,
+  computed once at save and stored on the stroke. The ⌫ eraser finds void ink
+  on SCREEN (`planeInkNear`, segment by segment). Not built: the line where the
+  plane cuts the part — it waits for ✂'s CPU contour (`SECTION_HOOK` in
+  view-plane.js). Tests: `tests/test_view_plane.py`.
 - **The viewer draws on demand** (`CadViewer.invalidate()`, no continuous loop):
   anything that changes the scene from outside the viewer must ask for a frame.
   `/view` does it in `poseTrack()` (every timeline pose) and `apply()` (hidden
