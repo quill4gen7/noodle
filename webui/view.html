@@ -499,6 +499,7 @@ import * as MS from '/static/measure.js';
 import * as FFD from '/static/ffd.js';
 import * as P3 from '/static/pen3d.js';
 import * as TOOLS from '/static/view-tools.js';
+import * as VP from '/static/view-plane.js';
 
 const $ = id => document.getElementById(id);
 const seg = location.pathname.split('/').filter(Boolean);     // ['view', name, gen?]
@@ -1160,6 +1161,11 @@ function surfaceHit(x, y) {
   if (n.dot(ray.ray.direction) > 0) n.negate(); // the side you are looking at
   return { p: f.h.point.clone(), n, key: f.key, mesh: f.h.object, tri: f.h.faceIndex };
 }
+// ⊞ where the ink goes: on the part when the ray meets it, else — with a working
+// plane chosen for this tool (webui/view-plane.js) — on the plane, in the void
+function inkHit(x, y) {
+  return surfaceHit(x, y) || (VP.on(toolDef) ? VP.planeHit(x, y) : null);
+}
 function strokeMat(color) {
   return new THREE.MeshBasicMaterial({ color, toneMapped: false,
     polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
@@ -1209,6 +1215,7 @@ function startStroke(hit, g) {
   const width = pen.size * mmPerPx(hit.p);
   const s = { color: pen.color, width, g, k: ++seq, piece: hit.key,
               pts: [hit.p], nrm: [hit.n], lift: [penLift(hit.p, width, null)], obj: null };
+  if (hit.plane) s.plane = hit.plane;          // ⊞ drawn in the void: no piece, the plane
   draft.push(s); redrawStroke(s); syncDraw();
   return s;
 }
@@ -1230,7 +1237,18 @@ function penDown(e) {
     return;
   }
   if (tool === 'hand' || tool === 'measure' || tool === 'shape' || e.button !== 0 || !e.isPrimary) return;
-  const hit = surfaceHit(e.clientX, e.clientY);
+  // ⊞ Alt+click on the part: the working plane goes through that point, nothing is drawn
+  if (e.altKey && VP.on(toolDef)) {
+    const at = surfaceHit(e.clientX, e.clientY);
+    if (at) { e.stopPropagation(); e.preventDefault(); VP.anchor(at.p); syncDraw(); }
+    return;
+  }
+  let hit = surfaceHit(e.clientX, e.clientY);
+  // the plane follows the last point a stroke began on, ON the part; in the
+  // void, with a plane in use, the press draws on it instead of orbiting
+  if (hit && (tool === 'pen' || tool === 'text') && VP.on(toolDef)) VP.anchor(hit.p);
+  if (!hit && (tool === 'pen' || tool === 'text')) hit = inkHit(e.clientX, e.clientY);
+  if (!hit && tool === 'erase') hit = planeInkNear(e.clientX, e.clientY);
   let onLabel = tool === 'text' || tool === 'erase' ? labelAt(e.clientX, e.clientY) : null;
   if (onLabel && onLabel.img && tool === 'text') onLabel = null;   // T edits words, not pictures
   if (!hit && !onLabel) return;                // the background still orbits
@@ -1257,7 +1275,15 @@ function penMove(e) {
   if (painting.mode === 'text' || painting.mode === 'image') { showBox(boxRect(painting, e.clientX, e.clientY)); return; }
   const d = Math.hypot(e.clientX - painting.x, e.clientY - painting.y);
   if (d < 3) return;
-  const hit = surfaceHit(e.clientX, e.clientY);
+  let hit = painting.mode === 'erase' ? surfaceHit(e.clientX, e.clientY) || planeInkNear(e.clientX, e.clientY)
+    : inkHit(e.clientX, e.clientY);
+  // ⊞ leaving the part's edge: the plane moves to the last point touched ON the
+  // part, so the line runs on from there in the air instead of jumping to the
+  // depth where the stroke began (on a finger seen from above, 7 mm behind)
+  if (hit && hit.plane && painting.s && !painting.s.plane && painting.mode === 'pen') {
+    VP.anchor(painting.s.pts[painting.s.pts.length - 1]);
+    hit = inkHit(e.clientX, e.clientY);
+  }
   if (painting.mode === 'erase') {
     eraseAt(hit, e.clientX, e.clientY);
     painting.x = e.clientX; painting.y = e.clientY;
@@ -1267,8 +1293,20 @@ function penMove(e) {
   const s = painting.s, last = s && s.pts[s.pts.length - 1];
   // a jump in depth (across the silhouette onto a face behind) breaks it too,
   // or the tube would cut through the part
-  if (!s || last.distanceTo(hit.p) > 4 * d * mmPerPx(hit.p) + s.width || s.pts.length > 1500) {
+  // (off the edge onto the ⊞ plane, «a few mm» are allowed: the first sample in
+  // the air is a pointer step past the silhouette)
+  const jump = !s || last.distanceTo(hit.p) > Math.max(4 * d * mmPerPx(hit.p) + s.width,
+    !!s.plane !== !!hit.plane ? 4 : 0);
+  if (jump || s.pts.length > 1500) {
     painting.s = startStroke(hit, painting.g);
+  } else if (!!s.plane !== !!hit.plane) {
+    // ⊞ off the edge of the part onto the plane (or back): a new stroke — one
+    // has a piece, the other a plane — that begins where the last one ended,
+    // so the line runs on unbroken. A jump in depth broke it just above.
+    const n = startStroke({ ...hit, p: last.clone(), n: hit.plane ? hit.n : s.nrm[s.nrm.length - 1] }, painting.g);
+    n.pts.push(hit.p); n.nrm.push(hit.n); n.lift.push(penLift(hit.p, n.width, n)); n.width = s.width;
+    redrawStroke(n);
+    painting.s = n;
   } else {
     const lift = penLift(hit.p, s.width, s);
     s.pts.push(hit.p); s.nrm.push(hit.n); s.lift.push(lift); redrawStroke(s);
@@ -1322,6 +1360,30 @@ function strokeDist(s, p) {
   let d = Infinity;
   for (let i = 1; i < s.pts.length; i++) d = Math.min(d, segDist(p, s.pts[i - 1], s.pts[i]));
   return d;
+}
+// ⊞ ink drawn in the void has no surface under it to aim at: the eraser takes
+// the nearest point of a plane stroke within its radius ON SCREEN (segment by
+// segment, interpolated back into 3D) as the point it rubs at
+function planeInkNear(x, y) {
+  const r = $('c').getBoundingClientRect(), R = ERASE_PX();
+  const scr = p => { const q = p.clone().project(viewer.camera);
+    return q.z > 1 ? null : [r.left + (q.x + 1) / 2 * r.width, r.top + (1 - q.y) / 2 * r.height]; };
+  let best = null, bd = R;
+  for (const s of draft) {
+    if (!s.plane) continue;
+    let a = scr(s.pts[0]);
+    for (let i = 0; i < s.pts.length; i++) {
+      const b = i ? scr(s.pts[i]) : a;
+      if (a && b) {
+        const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy;
+        const t = l2 ? THREE.MathUtils.clamp(((x - a[0]) * dx + (y - a[1]) * dy) / l2, 0, 1) : 0;
+        const d = Math.hypot(a[0] + t * dx - x, a[1] + t * dy - y);
+        if (d <= bd) { bd = d; best = s.pts[Math.max(0, i - 1)].clone().lerp(s.pts[i], t); }
+      }
+      a = b;
+    }
+  }
+  return best ? { p: best, n: null, key: null } : null;
 }
 function eraseAt(hit, x, y) {
   const er = painting.erased, over = labelAt(x, y);
@@ -2521,7 +2583,10 @@ function makeLabel(p, r, style) {
   const L = { text: '', color: pen.color, style, at: c.p.clone(), n, up, w, h,
               k: ++seq, piece: c.key, mesh: c.mesh, view: null, obj: null };
   if (style === 'decal') Object.assign(L, fitSurface(r, c, reach, L));
-  else if (style === 'paint') { L.surface = 'paint'; L.obj = new THREE.Group(); }
+  else if (style === 'paint') {
+    L.surface = 'paint'; L.obj = new THREE.Group();
+    if (VP.on(toolDef)) L.plane = VP.current();  // ⊞ letters off the part go on THIS plane
+  }
   else L.surface = 'tag';
   return L;
 }
@@ -3192,13 +3257,16 @@ function syncDraw() {
   if (any || save.id) scheduleSave();
   $('d-undo').disabled = !actions.length; $('d-redo').disabled = !redone.length;
   $('d-clear').disabled = $('d-clear2').disabled = !any;
-  const h = toolDef && toolDef.hint;
-  $('d-hint').textContent = (typeof h === 'function' ? h() : h || '') + (h ? ' · ' : '') + DRAW_HINT;
+  const h = toolDef && toolDef.hint, ph = VP.hint(toolDef);
+  // ⊞ with a working plane in use the void draws: its own line replaces «fuori dal pezzo: muovi»
+  $('d-hint').textContent = ph ? (typeof h === 'function' ? h() : h || '') + (h ? ' · ' : '') + ph
+    : (typeof h === 'function' ? h() : h || '') + (h ? ' · ' : '') + DRAW_HINT;
   vp.dataset.tool = drawing ? tool : '';
   $('c').style.cursor = drawing && toolDef && toolDef.cursor ? toolDef.cursor : '';
   TOOLS.sync();
   for (const b of $('d-colors').children) b.classList.toggle('on', b.dataset.c === pen.color);
   for (const b of $('d-sizes').children) b.classList.toggle('on', +b.dataset.s === pen.size);
+  VP.refresh();                                // ⊞ the working plane: shown with an ink tool in hand
 }
 function setDrawing(on) {
   drawing = on;
@@ -3271,6 +3339,7 @@ TOOLS.registerTool({ id: 'paint', tab: 'pencil', key: 't', mode: 'text', style: 
 TOOLS.registerTool({ id: 'decal', tab: 'pencil', key: 't', mode: 'text', style: 'decal', icon: '▭', label: 'Decal', cursor: 'text',
   title: 'Decal: il testo incollato alla superficie (piano, cilindro, sfera) — trascina un riquadro e scrivi',
   hint: 'Decal: ' + TEXT_HINT, select: () => useLabelStyle('decal'), deselect: closeText, ...PEN_GESTURE });
+VP.install();                                  // ⊞ Piano: the pencil's working plane (webui/view-plane.js)
 TOOLS.registerTool({ id: 'tag', tab: 'tag', key: 't', mode: 'text', style: 'tag', icon: '⚑', label: 'Targhetta', cursor: 'text',
   title: 'Targhetta: un cartellino con uno stelo che indica il punto e si legge da ogni lato — trascina un riquadro e scrivi',
   hint: 'Targhetta: ' + TEXT_HINT, select: () => useLabelStyle('tag'), deselect: closeText, ...PEN_GESTURE });
@@ -3295,7 +3364,8 @@ TOOLS.registerTool({ id: 'hand', tab: 'common', mode: 'hand', icon: '✋', label
   hint: 'Muovi: trascina per ruotare la vista' });
 TOOLS.preferKey('t', labelStyle);              // T goes back to the text style used last
 Object.assign(TOOLS.ctx, { THREE, viewer, vp, $, surfaceHit, firstHit, mmPerPx, annoGroup, pen, pushAction,
-  syncDraw, setTool, toast, takeView, refreshViews, disposeObj, isDrawing: () => drawing });
+  syncDraw, setTool, toast, takeView, refreshViews, disposeObj, isDrawing: () => drawing,
+  toolDef: () => toolDef, visibleBox, planeInk: () => draft.filter(s => s.plane) });
 TOOLS.mount({ tabs: $('d-tabs'), rows: $('d-rows'), common: $('d-ctools'), onChange: onToolChange, active: () => drawing });
 TOOLS.attach(vp);
 onToolChange(TOOLS.current());
@@ -3367,6 +3437,7 @@ function noteBody(withPictures) {
     strokes: draft.map(s => ({ color: s.color, width: s.width, piece: s.piece, g: s.g,
       ...(s.label && words.includes(s.label) ? { label: words.indexOf(s.label) } : {}),
       view: s.view == null ? null : remap.get(s.view),
+      ...(s.plane ? { plane: s.plane } : {}),     // ⊞ drawn in the void, on this plane
       points: s.pts.map(p => [r4(p.x), r4(p.y), r4(p.z)]),
       normals: s.nrm.map(n => [+n.x.toFixed(3), +n.y.toFixed(3), +n.z.toFixed(3)]),
       // the 3D pen: how far each sample sits above the part, only when it piled up
@@ -3546,7 +3617,7 @@ async function resumeNote(n) {
     const nrm = (s.normals || []).length === pts.length ? s.normals.map(V) : pts.map(() => new THREE.Vector3());
     const d = { color: s.color, width: s.width_mm || 1, g: s.g ?? 0, k: ++seq, piece: s.piece || null, pts, nrm,
       lift: s.lifts && s.lifts.length === pts.length ? s.lifts.slice() : pts.map(() => 0),
-      view: viewOf(s.view), obj: null };
+      view: viewOf(s.view), obj: null, ...(s.plane ? { plane: s.plane } : {}) };
     if (s.kind === 'text' && words[s.label - 1]) d.label = words[s.label - 1];
     g0 = Math.max(g0, d.g);
     draft.push(d); redrawStroke(d);
@@ -3841,14 +3912,16 @@ function paintText(L, r) {
           const n = i === 0 ? 1 : Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 2.5));
           for (let k = i === 0 ? 0 : 1; k <= n; k++) {
             const sx = i === 0 ? bx : ax + (bx - ax) * k / n, sy = i === 0 ? by : ay + (by - ay) * k / n;
-            const hit = surfaceHit(sx, sy);
+            // ⊞ off the part: on the plane the label was written on, if any
+            const hit = surfaceHit(sx, sy) || (L.plane ? VP.planeHit(sx, sy, L.plane) : null);
             if (!hit) { cur = null; lastXY = null; continue; }        // off the part: the line breaks
             if (width == null) width = px * mmPerPx(hit.p);
             const last = cur && cur.pts[cur.pts.length - 1];
             const d = lastXY ? Math.hypot(sx - lastXY[0], sy - lastXY[1]) : 0;
-            if (!cur || last.distanceTo(hit.p) > 4 * Math.max(d, 1) * mmPerPx(hit.p) + width) {
+            if (!cur || last.distanceTo(hit.p) > 4 * Math.max(d, 1) * mmPerPx(hit.p) + width
+                || !!cur.plane !== !!hit.plane) {
               cur = { color: L.color, width, g, k: ++seq, piece: hit.key, pts: [hit.p], nrm: [hit.n],
-                      obj: null, label: L };
+                      obj: null, label: L, ...(hit.plane ? { plane: hit.plane } : {}) };
               draft.push(cur); out.push(cur);
             } else { cur.pts.push(hit.p); cur.nrm.push(hit.n); }
             lastXY = [sx, sy];
