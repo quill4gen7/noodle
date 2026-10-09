@@ -1951,11 +1951,13 @@ result while the workflow moves on.
   delta, clamped once for both (`FFD.moveEdge`), so the side stays parallel;
   Shift keeps only the dominant axis of the move (in mm). The six **face**
   handles (±X red, ±Y green, ±Z blue) stretch ONE axis with the opposite face
-  fixed (a cylinder keeps round, a sphere scales whole), the small violet
-  **centre** dot scales the whole about its base. Precedence: the handle
-  nearest the pointer on screen wins, and the centre NEVER wins by default — it
-  is dropped whenever any other handle is under the pointer, and both its mark
-  and its grab are small (quill: «si prende spesso sempre quello»). **Scale
+  fixed (a cylinder keeps round, a sphere scales whole), the violet
+  **centre** dot scales the whole about its base. Precedence: whatever pick
+  volume is hit, the handle nearest the pointer on screen wins — the centre
+  included, at its old size and grab (mark min(1.4·grab, 0.15·side), grab
+  1.4·grab). Shrinking it and letting every handle beat it (edaaf40) answered
+  the wrong complaint: what took «every press» was the BODY moving the shape.
+  **Scale
   after a bend** (quill: «si scala con la deformazione applicata»): `ffd` is
   normalised, so a face / the centre scales `size` and the bend grows with it;
   the face handles sit on the BENT face (`FFD.faceMean`, the mean of its 4
@@ -1968,7 +1970,8 @@ result while the workflow moves on.
   position, `restPos`); corners keep their octant and the minimum apart. The
   note carries `ffd` (8 offsets in the shape's frame, 1 = its size) AND
   `corners` (the 8 in world mm, for a text-only reader); `cad_notes` says
-  «deformed». **◌ Nascondi** = no handles; the body still slides. A pen
+  «deformed». **◌ Nascondi** = no handles; the right button / double tap
+  still slides the body. A pen
   colour clicked with a shape selected RECOLOURS it (one undo step; the pen
   takes it too). Standard sizes next to the label: **1mm** / **10mm** (every
   side, Ø and height) and **½ vol** (same shape, scaled until it is half the
@@ -1978,9 +1981,18 @@ result while the workflow moves on.
   the cage and KEEP the deformation (`ffd` is normalised, so the bend scales
   with it); ½ vol counts the nominal box, not the bend. A drag that changes
   nothing is not an undo step. MOVING IS
-  NOT FREE: dragging the body re-anchors it on the surface hit under the
+  NOT FREE: a slide re-anchors the body on the surface hit under the
   pointer (`stickAt`) or does nothing — quill: «si clicca e appiccica sui
-  pezzi». The body is GRAPH PAPER in the shape's colour (`mmGridMaterial`, a
+  pezzi». **The slide is the RIGHT button dragged on a shape** (mouse; off the
+  shapes the right button is still the pan, and no context menu opens over a
+  shape) **or a double tap and drag** (finger: the second press ≤ 300 ms and
+  ≤ 20 px from a tap on a shape, `DTAP_MS`/`DTAP_PX`; it wins over the handles
+  a small cage spreads under the finger). The LEFT button / one finger on the
+  body does not move it (quill: «se premi su un punto qualsiasi della
+  superficie sposta il pezzo»): a tap selects the shape, a drag orbits like
+  anywhere else; handles still take the left button. A second finger during a
+  slide puts the shape back and re-dispatches the first finger to
+  OrbitControls, like ✎'s pinch. The body is GRAPH PAPER in the shape's colour (`mmGridMaterial`, a
   shader injected into the standard material): 1 / 5 / 10 mm rules in the
   shape's own millimetres (local position × size, triplanar per face), the
   1 mm rule fading where it would be denser than a few px. The minimum side

@@ -461,7 +461,7 @@
             <button class="btn gm" id="s-gm-move" data-gm="move" role="radio" title="Sposta: solo le frecce X/Y/Z (G)">✥<span>Sposta</span></button>
             <button class="btn gm" id="s-gm-rotate" data-gm="rotate" role="radio" title="Ruota: solo gli anelli, Shift a 15° (R)">⟳<span>Ruota</span></button>
             <button class="btn gm" id="s-gm-cage" data-gm="cage" role="radio" title="Gabbia, tutto in uno (C): vertici e spigoli (ambra) piegano la forma · maniglie X/Y/Z colorate = scala per asse · pallino al centro = scala tutta · Shift = solo sull'asse dominante">▣<span>Gabbia</span></button>
-            <button class="btn gm" id="s-gm-none" data-gm="none" role="radio" title="Nascondi le maniglie: resta la forma, che si sposta ancora trascinandola sul pezzo">◌<span>Nascondi</span></button>
+            <button class="btn gm" id="s-gm-none" data-gm="none" role="radio" title="Nascondi le maniglie: resta la forma, che si sposta ancora sul pezzo col tasto destro trascinato (dito: doppio tocco e trascina)">◌<span>Nascondi</span></button>
           </div>
         </div>
       </div>
@@ -1866,13 +1866,16 @@ function lensOff() { const l = $('m-lens'); if (l) l.style.display = 'none'; }
 // Selected, it wears a CAGE: vertices and edges bend it, the X/Y/Z face handles
 // stretch one axis, the dot at the centre scales the whole (drag up = bigger,
 // the base stays on the surface); three rings turn it (Shift: 15° steps). Moving is not free:
-// drag the shape itself and it SLIDES ON the parts, stuck to the surface under
-// the pointer and turned with its normal — it never floats in the air.
-// A drag that does not start on the selected shape or a handle still orbits.
+// it SLIDES ON the parts, stuck to the surface under the pointer and turned with
+// its normal — it never floats in the air — and that is the RIGHT button dragged
+// on the shape (a finger: double tap and drag). The left button / one finger on
+// the body only selects it: quill, «se premi su un punto qualsiasi della
+// superficie sposta il pezzo» — every press near the centre dot moved the shape
+// instead of scaling it. A left drag that does not start on a handle orbits.
 // Part of the draft like a stroke: ↶, ⌫, the view pictures, Canc / «Togli».
 const SHAPE_KINDS = ['box', 'cylinder', 'sphere'];
 const SHAPE_NAME = { box: 'cubo', cylinder: 'cilindro', sphere: 'sfera' };
-const SHAPE_HINT = 'Forme: tocca il pezzo per posare la forma · trascinala per farla scorrere SUL pezzo · maniglie a scelta: ✥ Sposta = frecce X/Y/Z (G) · ⟳ Ruota = anelli, Shift 15° (R) · ▣ Gabbia (C) = tutto in uno: vertici e spigoli ambra piegano la forma, maniglie X/Y/Z colorate la scalano per asse, il pallino al centro la scala tutta (Shift = solo sull\'asse dominante) · ◌ Nascondi · Canc / «Togli» per toglierla';
+const SHAPE_HINT = 'Forme: tocca il pezzo per posare la forma, tocca una forma per sceglierla · tasto DESTRO trascinato sulla forma (dito: doppio tocco e trascina) = la fa scorrere SUL pezzo · maniglie a scelta: ✥ Sposta = frecce X/Y/Z (G) · ⟳ Ruota = anelli, Shift 15° (R) · ▣ Gabbia (C) = tutto in uno: vertici e spigoli ambra piegano la forma, maniglie X/Y/Z colorate la scalano per asse, il pallino al centro la scala tutta (Shift = solo sull\'asse dominante) · ◌ Nascondi · Canc / «Togli» per toglierla';
 let shapeKind = 'box';
 try { const v = localStorage.getItem('noodle:view:shapeKind'); if (SHAPE_KINDS.includes(v)) shapeKind = v; } catch {}
 $('d-shapekind').value = shapeKind;
@@ -1884,8 +1887,8 @@ $('d-shapekind').addEventListener('change', e => {
 // Which handles the selected shape wears — ONE set at a time, the user picks
 // (quill: «metti i bottoni … invece di averli sempre entrambi»): ✥ move = the
 // X/Y/Z arrows, ⟳ rotate = the rings, ▣ cage = corners + centre, ◌ none = the
-// bare shape (dragging its body still slides it on the parts — that is not a
-// handle). refreshCage() builds only the active set; handleAt finds what is there.
+// bare shape (the right button / a double tap on its body still slides it on
+// the parts — that is not a handle). refreshCage() builds only the active set; handleAt finds what is there.
 // ▣ Gabbia is ONE set that does everything at once (quill: «fai valere gli
 // spigoli della gabbia per deform, e un po' c'è tutto in uno»): the 8 vertices
 // and the 12 edges BEND the shape (webui/ffd.js), the six X/Y/Z face handles
@@ -2214,16 +2217,17 @@ function cageEdges({ S, q, grab, hs }) {
     cageGroup.add(d, pk);
   });
 }
-// ▣ the dot at the centre scales the whole about its base — SMALL, and its
-// grab small too (quill: «rendi il pallino viola al centro più piccolo perché
-// si prende spesso sempre quello»); handleAt lets it win only when nothing
-// else is under the pointer. It sits at the centre of the BENT body.
-function cageCentre({ S, q, grab, side }) {
-  const at = shapeLocal(S, FFD.bodyCentre(S.ffd), q);
-  const ctr = new THREE.Mesh(new THREE.SphereGeometry(Math.min(grab * 0.6, 0.08 * side), 16, 10), handleMat(MEASURE_INK));
-  const ctrPick = new THREE.Mesh(new THREE.SphereGeometry(grab * 0.6, 12, 8), handleMat(MEASURE_INK, 0));
+// ▣ the dot at the centre scales the whole about its base. Its size and grab
+// are the ones it had before the all-in-one cage: shrinking it (and letting
+// every other handle beat it) answered the wrong complaint — what took «every
+// press» was the BODY moving the shape, and the body no longer does on the
+// left button. It sits at the centre of the BENT body; nearest handle wins.
+function cageCentre({ S, q, grab, side, px }) {
+  const at = shapeLocal(S, FFD.bodyCentre(S.ffd), q), rDot = Math.min(grab * 1.4, 0.15 * side);
+  const ctr = new THREE.Mesh(new THREE.SphereGeometry(rDot, 16, 10), handleMat(MEASURE_INK));
+  const ctrPick = new THREE.Mesh(new THREE.SphereGeometry(grab * 1.4, 12, 8), handleMat(MEASURE_INK, 0));
   ctrPick.visible = false;
-  for (const m of [ctr, ctrPick]) { m.position.copy(at); m.renderOrder = 23; m.userData.handle = { type: 'center' }; }
+  for (const m of [ctr, ctrPick]) { m.position.copy(at); m.renderOrder = 23; m.userData.handle = { type: 'center' }; m.userData.dotPx = rDot / px; }
   cageGroup.add(ctr, ctrPick);
 }
 // ✥ move: the classic X/Y/Z arrows, past the rings: drag one to slide the
@@ -2282,10 +2286,12 @@ function handleAt(x, y) {
     const t = L2 > 1e-9 ? Math.min(Math.max(((x - ax) * dx + (y - ay) * dy) / L2, 0), 1) : 0;
     return (ax + t * dx - x) ** 2 + (ay + t * dy - y) ** 2;
   };
-  let pts = hs.filter(h => !['ring', 'arrow'].includes(h.object.userData.handle.type)).sort((a, b) => dist2(a.object) - dist2(b.object));
-  // the centre never wins by default: it sits in the middle of everything, and
-  // took every press near a small shape — any other handle under the pointer beats it
-  if (pts.some(h => h.object.userData.handle.type !== 'center')) pts = pts.filter(h => h.object.userData.handle.type !== 'center');
+  const pts = hs.filter(h => !['ring', 'arrow'].includes(h.object.userData.handle.type)).sort((a, b) => dist2(a.object) - dist2(b.object));
+  // …except that a press ON the violet dot as drawn is a press on the dot: an
+  // edge seen end-on, or a back one crossing the middle in projection, may pass
+  // a hair nearer, and the dot is what the eye aimed at
+  const dot = pts.find(h => h.object.userData.handle.type === 'center');
+  if (dot && Math.sqrt(dist2(dot.object)) <= dot.object.userData.dotPx) pts.unshift(...pts.splice(pts.indexOf(dot), 1));
   const arrow = hs.find(h => h.object.userData.handle.type === 'arrow');
   if (!pts.length && arrow) return { ...arrow.object.userData.handle, px: 0 };
   const pick = pts[0] || hs[0];
@@ -2307,25 +2313,49 @@ function onViewPlane(x, y, p) {
 // a surface hit that is NOT on one of the shapes (the shapes live in annoGroup,
 // surfaceHit looks at the parts only — so a shape can be slid across itself)
 function stickAt(x, y) { return surfaceHit(x, y); }
-// ▣'s gesture: registered as the shape tool's down/move/up below
+// ▣'s gesture: registered as the shape tool's down/move/up below.
+// Who does what on a press:
+//  · a HANDLE (left button / one finger) → that handle;
+//  · the RIGHT button on a shape's body, or a finger's SECOND tap on it (≤
+//    DTAP_MS after a tap on a shape, ≤ DTAP_PX from it, then dragged) → the
+//    shape slides ON the parts. The right button off the shapes is the view's
+//    pan, as always; a double tap's slide wins over the handles that a small
+//    shape's cage spreads under the finger, since it can only be meant;
+//  · the left button / one finger on the body → nothing here: a tap selects it
+//    (endShapeDrag), a drag orbits like anywhere else;
+//  · a second finger while a slide/handle is under way → it was a pinch: the
+//    shape goes back and the first finger is handed to OrbitControls.
+const DTAP_MS = 300, DTAP_PX = 20;
+let shapeTap = null;                           // the last finger tap on a shape: {S, x, y, t}
 function shapeDown(e) {
-  if (!drawing || tool !== 'shape' || e.target !== $('c') || e.button !== 0 || !e.isPrimary) return;
-  let h = handleAt(e.clientX, e.clientY);
-  const onBody = shapeAt(e.clientX, e.clientY);
-  // on the body of the selected shape a corner / the centre wins only when the
-  // pointer is right on it — on a small shape (or under a finger) the grab
-  // volumes cover the body, and grabbing the shape must still MOVE it
-  const grabPx = e.pointerType === 'mouse' ? 6 : 9;
-  // (a FACE handle sits ON the body by construction: it gets its whole grab radius)
-  if (h && onBody === selShape && !['ring', 'arrow'].includes(h.type) && h.px > (h.type === 'face' ? 1 : 0.5) * grabPx) h = null;
-  const body = !h && onBody;
-  if (h || body) {
+  if (redispatch || !drawing || tool !== 'shape' || e.target !== $('c')) return;
+  if (sDrag && e.pointerType === 'touch' && e.pointerId !== sDrag.id) {
+    const d = sDrag; sDrag = null;
+    setShapeState(d.S, d.before); drawShape(d.S); refreshCage();
+    redispatch = true;
+    try { $('c').dispatchEvent(new PointerEvent('pointerdown', d.down)); } finally { redispatch = false; }
+    return;
+  }
+  const right = e.pointerType === 'mouse' && e.button === 2;
+  if ((e.button !== 0 && !right) || !e.isPrimary) return;
+  // the event's own time, not the handler's: on a slow phone (or SwiftShader) a
+  // frame drawn between the two taps would otherwise eat the whole window
+  const onBody = shapeAt(e.clientX, e.clientY), now = e.timeStamp;
+  const t1 = shapeTap; shapeTap = null;
+  const dtap = !right && e.pointerType !== 'mouse' && t1 && now - t1.t <= DTAP_MS
+    && Math.hypot(e.clientX - t1.x, e.clientY - t1.y) <= DTAP_PX && shapes.includes(t1.S);
+  const slide = right ? onBody : dtap ? (onBody || t1.S) : null;
+  if (right && !slide) return;                 // off the shapes the right button pans
+  const h = slide ? null : handleAt(e.clientX, e.clientY);
+  if (h || slide) {
     e.stopPropagation(); e.preventDefault();
     try { $('c').setPointerCapture(e.pointerId); } catch {}
-    if (body && body !== selShape) selectShape(body);
+    if (slide && slide !== selShape) selectShape(slide);
     const S = selShape;
     sDrag = { id: e.pointerId, x: e.clientX, y: e.clientY, h: h || { type: 'move' }, S, before: shapeState(S),
-              q0: shapeQuat(S), center0: S.center.clone(), size0: S.size.clone(), moved: false };
+              q0: shapeQuat(S), center0: S.center.clone(), size0: S.size.clone(), moved: false,
+              down: { pointerId: e.pointerId, pointerType: e.pointerType, isPrimary: true, button: 0, buttons: 1,
+                      clientX: e.clientX, clientY: e.clientY, bubbles: true, cancelable: true } };
     if (h && h.type === 'face') {              // along the face's own outward axis
       // on the shape AS SEEN: the opposite (bent) face stays put, and the
       // length is the one between the two faces' centres (= the size, unbent)
@@ -2359,8 +2389,14 @@ function shapeDown(e) {
     }
     return;
   }
-  sDown = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() };   // maybe a tap, maybe an orbit
+  // maybe a tap (on a body: select it), maybe an orbit
+  sDown = { id: e.pointerId, x: e.clientX, y: e.clientY, t: now, body: onBody };
 }
+// the right button on a shape slides it: no menu there (OrbitControls already
+// eats the canvas's menu; this keeps it so whatever the controls do)
+vp.addEventListener('contextmenu', e => {
+  if (drawing && tool === 'shape' && (sDrag || shapeAt(e.clientX, e.clientY))) e.preventDefault();
+}, true);
 function shapeMove(e) {
   if (!sDrag || e.pointerId !== sDrag.id) return;
   e.stopPropagation(); e.preventDefault();
@@ -2450,7 +2486,12 @@ const endShapeDrag = e => {
   }
   if (!sDown || e.pointerId !== sDown.id || !drawing || tool !== 'shape') { sDown = null; return; }
   const d = sDown; sDown = null;
-  if (e.type !== 'pointerup' || Math.hypot(e.clientX - d.x, e.clientY - d.y) > TAP_PX(e) || performance.now() - d.t > 600) return;
+  if (e.type !== 'pointerup' || Math.hypot(e.clientX - d.x, e.clientY - d.y) > TAP_PX(e) || e.timeStamp - d.t > 600) return;
+  if (d.body) {                                // a tap on a shape picks it, and only that
+    if (d.body !== selShape) selectShape(d.body);
+    if (e.pointerType !== 'mouse') shapeTap = { S: d.body, x: e.clientX, y: e.clientY, t: e.timeStamp };
+    return;
+  }
   if (selShape) { selectShape(null); return; }  // a tap away lets go; the next one sets a shape down
   const hit = surfaceHit(e.clientX, e.clientY);
   if (hit) { if (clock.playing) setPlaying(false); addShape(hit); }
@@ -3387,7 +3428,7 @@ TOOLS.registerTool({ id: 'image', tab: 'tag', mode: 'image', icon: '🖼', label
   title: 'Immagine: scegli un PNG/JPEG (o una foto), poi trascina un riquadro sul pezzo',
   hint: 'Img: trascina un riquadro sul pezzo per posare l\'immagine · il bottone ne sceglie un\'altra', ...PEN_GESTURE });
 TOOLS.registerTool({ id: 'shape', tab: 'blocky', key: 'f', icon: '▣', label: 'Forma', cursor: 'copy', ownsTaps: true,
-  title: 'Forme: tocca il pezzo per posarci un cubo, un cilindro o una sfera — trascinala per spostarla SUL pezzo; le maniglie a destra: ✥ sposta (G), ⟳ ruota (R), ▣ gabbia (C), ◌ nessuna',
+  title: 'Forme: tocca il pezzo per posarci un cubo, un cilindro o una sfera — tasto destro trascinato sulla forma (dito: doppio tocco e trascina) per spostarla SUL pezzo; le maniglie a destra: ✥ sposta (G), ⟳ ruota (R), ▣ gabbia (C), ◌ nessuna',
   options: () => [$('d-shapekind'), $('s-modes')], hint: SHAPE_HINT, deselect: () => selectShape(null),
   down: shapeDown, move: shapeMove, up: endShapeDrag, cancel: endShapeDrag });
 TOOLS.registerTool({ id: 'measure', tab: 'tool', key: 'm', icon: '↔', label: 'Metro', cursor: 'crosshair', ownsTaps: true,

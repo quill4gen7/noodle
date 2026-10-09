@@ -615,8 +615,9 @@ def test_scale_mode_has_six_face_handles_in_the_axis_colours():
     assert "for (let a = 0; a < 3; a++) {" in fc and "for (const sg of [-1, 1]) {" in fc
     assert "const handle = { type: 'face', axis: a, s };" in fc
     assert "handleMat(RING_INK[a])" in fc
-    # a face sits ON the body: it is grabbed in its whole radius there
-    assert "h.px > (h.type === 'face' ? 1 : 0.5) * grabPx" in VIEW
+    # the body no longer moves the shape on the left button, so no handle has
+    # to give way to it any more: whatever pick volume is hit, nearest wins
+    assert "grabPx" not in VIEW
     # the drag: along the face's outward axis, opposite face fixed, signed min
     assert "if (h && h.type === 'face') {" in VIEW
     br = VIEW[VIEW.index("} else if (d.h.type === 'face') {"):]
@@ -941,12 +942,49 @@ def test_the_cage_is_all_in_one():
     br = br[:br.index("} else if", 1)]
     assert ": FFD.moveEdge(d.ffd0, d.h.e, l, minN);" in br
     assert "if (e.shiftKey) l = FFD.dominantOnly(l);" in br
-    # the centre: small, and never the default winner
+    # the centre: back to its size and grab of before (quill: «il pallino viola
+    # era per lo scale intero»), chosen by proximity like every other handle
     cc = VIEW[VIEW.index("function cageCentre("):]
     cc = cc[:cc.index("\n}\n")]
-    assert "new THREE.SphereGeometry(grab * 0.6, 12, 8)" in cc
+    assert "rDot = Math.min(grab * 1.4, 0.15 * side)" in cc and "new THREE.SphereGeometry(rDot, 16, 10)" in cc
+    assert "new THREE.SphereGeometry(grab * 1.4, 12, 8)" in cc
     ha = VIEW[VIEW.index("function handleAt(x, y) {"):]
     ha = ha[:ha.index("\n}\n")]
-    assert "pts = pts.filter(h => h.object.userData.handle.type !== 'center')" in ha
+    assert "type !== 'center'" not in ha
+    # …and a press on the dot AS DRAWN takes the dot, even if an edge seen
+    # end-on passes a hair nearer in projection
+    assert "m.userData.dotPx = rDot / px;" in cc
+    assert "Math.sqrt(dist2(dot.object)) <= dot.object.userData.dotPx" in ha
     # the face handles sit on the BENT face; the scale keeps the bend
     assert "shapeLocal(S, FFD.faceMean(S.ffd, a, sg), q)" in VIEW
+
+
+def test_the_shape_slides_on_the_right_button_or_a_double_tap():
+    # quill: «se premi su un punto qualsiasi della superficie sposta il pezzo […]
+    # usa il click destro per spostarlo invece, o il doppio tap e trascina»
+    sd = VIEW[VIEW.index("function shapeDown(e) {"):]
+    sd = sd[:sd.index("\n}\n")]
+    # the right button (mouse) or a second tap close in time and place
+    assert "const right = e.pointerType === 'mouse' && e.button === 2;" in sd
+    assert "const DTAP_MS = 300, DTAP_PX = 20;" in VIEW
+    assert "now - t1.t <= DTAP_MS" in sd and "<= DTAP_PX" in sd
+    assert "const slide = right ? onBody : dtap ? (onBody || t1.S) : null;" in sd
+    # off the shapes the right button is the view's pan: not taken
+    assert "if (right && !slide) return;" in sd
+    # the left button on the body is NOT a move: only a handle or a slide starts a drag
+    assert "h: h || { type: 'move' }" in sd and "if (h || slide) {" in sd
+    assert "const body = !h && onBody;" not in sd
+    # …it is a tap that selects (and arms the double tap), or an orbit
+    assert "sDown = { id: e.pointerId, x: e.clientX, y: e.clientY, t: now, body: onBody };" in sd
+    up = VIEW[VIEW.index("const endShapeDrag = e => {"):]
+    up = up[:up.index("\n};\n")]
+    assert "if (d.body !== selShape) selectShape(d.body);" in up
+    assert "shapeTap = { S: d.body, x: e.clientX, y: e.clientY, t: e.timeStamp };" in up
+    assert "now = e.timeStamp;" in sd
+    # a second finger cancels the slide and hands the first one to the view
+    assert "setShapeState(d.S, d.before); drawShape(d.S); refreshCage();" in sd
+    assert "dispatchEvent(new PointerEvent('pointerdown', d.down))" in sd
+    # no context menu over a shape
+    assert "vp.addEventListener('contextmenu'" in VIEW
+    # the hint and the ◌ button say how
+    assert "tasto DESTRO trascinato sulla forma (dito: doppio tocco e trascina)" in VIEW
