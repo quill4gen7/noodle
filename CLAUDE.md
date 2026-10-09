@@ -1989,6 +1989,32 @@ result while the workflow moves on.
   anything that changes the scene from outside the viewer must ask for a frame.
   `/view` does it in `poseTrack()` (every timeline pose) and `apply()` (hidden
   pieces); without it the ▶ player moves the meshes and the canvas stays still.
+- **🔍 Aspetto — glass, glow or ghost, for THIS view only** (`webui/view-look.js`,
+  PLAN_VIEW_SECTION §2): 🎨 on every row of the piece list (a node row = all its
+  leaves), on the selection bar, or `G`; the gen stays immutable, the look lives
+  in the hash — `#look=n3:glass,n7.2:emissive:#ffcc00,n5:ghost,n9:#ff0000`
+  (finish and/or colour, a bare node id = all its leaves), read once at boot,
+  written on every change. Per LEAF, like visibility: a whole object swaps its
+  material; one piece of a fan-out gets a PROXY mesh (shared buffers, a group
+  of its own) and its group material hidden — swapping the group in place
+  would make one emissive piece light the whole buffer, because the glow pass
+  renders whole objects. `markGlow` + `viewer.syncGlow()` after each change.
+  - **👻 fantasma** is a finish of `makeMaterial` (editor too, 🎨 modal):
+    alpha 0.15, `depthWrite:false`, plus opaque sharp edges (`ghostEdges`,
+    EdgesGeometry 30°, never pickable). Ghost in ghost shows (glass in glass
+    does not — §0 of the plan), and it is the same on a phone. A pick goes
+    THROUGH a ghost (`firstHit` → `hitOf(hits, skipGhost)`): click the servo
+    inside the ghost shell and you get the servo, and the pen draws on it.
+  - **«Guarda dentro»** (in the menu): the piece stays, everything that COVERS
+    it goes all-glass or all-ghost, never a mix; again = back. «Covers» is
+    rays, not boxes (`coverOf`: 60 surface points × 26 directions, first other
+    piece hit, ≥10% of rays): measured on `creepyfinger-v4/g64`, the
+    electronics sit in a shell cut in two halves and neither half's bbox holds
+    60% of theirs (0.40 / 0.55) — the plan's «bbox che lo contiene» found
+    nothing. Rays give the two shells + the phalanx in front of the servo.
+  - Not verified: a real Android phone (glass there loses the inner glass
+    entirely, `WEBGL_multisampled_render_to_texture`, plan §0.2). A big
+    emissive body floods the frame with bloom (existing glow pass, not new).
 
 
 ## 9d. Exports — the bake bundle and the per-workflow index
