@@ -1876,18 +1876,47 @@ def _point_tri_dist(P, A, B, C):
     return np.where(inside, out, edge)
 
 
-def _gen_piece_meshes(view: dict) -> dict:
+def _gen_piece_meshes(view: dict, hidden: frozenset = frozenset()) -> dict:
     """{node id: [(vertices, triangles), …]} of a frozen gen's previews — the
-    plain meshes, scene bodies at rest; dots and lines are not a surface."""
+    plain meshes, scene bodies at rest; dots and lines are not a surface.
+    `hidden` = the piece keys the user had hidden in /view (`hide=`, a bare
+    node id or `<id>.<k>`): a piece they could not see is not «nearest»."""
     out = {}
     for nid, pv in (view.get("previews") or {}).items():
-        if not isinstance(pv, dict):
+        if not isinstance(pv, dict) or nid in hidden:
             continue
-        for g in [pv] + list(pv.get("bodies") or []):
+        bodies = list(pv.get("bodies") or [])
+        for b, g in enumerate([pv] + bodies):
+            if b and f"{nid}.{b - 1}" in hidden:
+                continue
             m = g.get("mesh") if isinstance(g, dict) else None
-            if isinstance(m, dict) and m.get("vertices") and m.get("triangles"):
-                out.setdefault(nid, []).append((m["vertices"], m["triangles"]))
+            if not (isinstance(m, dict) and m.get("vertices") and m.get("triangles")):
+                continue
+            tris = m["triangles"]
+            parts = g.get("parts") if not b else None
+            # a fan-out in ONE buffer: `parts` = triangles per piece, in order
+            if (isinstance(parts, list) and len(parts) > 1 and len(tris) == sum(parts)
+                    and any(f"{nid}.{i}" in hidden for i in range(len(parts)))):
+                keep, at = [], 0
+                for i, c in enumerate(parts):
+                    if f"{nid}.{i}" not in hidden:
+                        keep.extend(tris[at:at + c])
+                    at += c
+                tris = keep
+            if tris:
+                out.setdefault(nid, []).append((m["vertices"], tris))
     return out
+
+
+def _hidden_keys(hash_str) -> frozenset:
+    """The `hide=` of a /view hash ("hide=n3,n7.2&look=…") as a set of keys."""
+    if not isinstance(hash_str, str):
+        return frozenset()
+    from urllib.parse import unquote
+    for part in hash_str.lstrip("#").split("&"):
+        if part.startswith("hide="):
+            return frozenset(unquote(k) for k in part[5:].split(",") if k)
+    return frozenset()
 
 
 def _nearest_piece(points: list, meshes: dict, titles: dict, cap: int = 24) -> Optional[dict]:
@@ -1923,11 +1952,12 @@ def _nearest_piece(points: list, meshes: dict, titles: dict, cap: int = 24) -> O
     return o
 
 
-def _near_pieces(store: GraphStore, graph_id: str, gen: str, strokes: list, titles: dict) -> None:
+def _near_pieces(store: GraphStore, graph_id: str, gen: str, strokes: list, titles: dict,
+                 hidden: frozenset = frozenset()) -> None:
     """A stroke drawn on a ⊞ plane touches no piece: it gets the NEAREST one
-    (`near_piece`), measured on the gen's frozen meshes."""
+    (`near_piece`), measured on the gen's frozen meshes — the SHOWN ones."""
     try:
-        meshes = _gen_piece_meshes(store.load_gen(graph_id, gen, "view"))
+        meshes = _gen_piece_meshes(store.load_gen(graph_id, gen, "view"), hidden)
     except (KeyError, ValueError, OSError):
         return
     for s in strokes:
@@ -2427,7 +2457,7 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
         out.update(_stroke_summary(pts, width))
         strokes.append(out)
     if any("plane" in s for s in strokes):
-        _near_pieces(store, graph_id, gen, strokes, titles)
+        _near_pieces(store, graph_id, gen, strokes, titles, _hidden_keys(payload.get("hide")))
     labels = _labels(labels_in, len(views), titles)
     # a placed image is placed exactly like a label: same frame, same checks
     images = []

@@ -156,3 +156,19 @@ def test_the_viewer_has_the_plane_selector_and_draws_off_the_part():
 def test_the_agent_is_told_about_plane_marks():
     assert "near_piece" in MCP and '"plane"' in MCP
     assert "near_piece" in HELP and "kind" in HELP
+
+
+def test_a_hidden_piece_is_never_the_nearest(store):
+    # the base is nearer (5 mm), but the user had it hidden: the arm it is
+    pts = [[0, 20, -5]]
+    plane = {"origin": [0, 0, -5], "normal": [0, 0, 1]}
+    note = api.add_note(store, "demo", "g1", {"hide": "hide=n2&cut=z:3",
+                                              "strokes": [{"g": 1, "points": pts, "plane": plane}]})
+    assert note["marks"][0]["near_piece"]["node"] == "n1"
+    # one piece of a fan-out, hidden by its leaf key: the others still count
+    meshes = api._gen_piece_meshes({"previews": {"n5": {
+        "mesh": {"vertices": [[0, 0, 0], [1, 0, 0], [0, 1, 0]], "triangles": [[0, 1, 2], [0, 2, 1], [1, 2, 0]]},
+        "parts": [1, 2]}}}, frozenset({"n5.0"}))
+    assert meshes["n5"][0][1] == [[0, 2, 1], [1, 2, 0]]
+    assert api._hidden_keys("look=n1:glass&hide=n3,n7.2") == {"n3", "n7.2"}
+    assert api._hidden_keys(None) == frozenset()
