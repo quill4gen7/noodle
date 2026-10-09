@@ -21,10 +21,12 @@
 // and its stroke carries `plane: {origin, normal}`; the server makes the
 // gesture a mark of kind "plane" with the nearest piece (api._marks).
 //
-// Not here, on purpose: the line where the plane cuts the part. It needs the
-// CPU section contour of ✂ (task A, in parallel) — see SECTION_HOOK below.
+// Where the plane cuts the part it is drawn as a line (✂'s CPU slice,
+// section-core.js): computed once per plane position, never while a pointer is
+// down — a stroke never waits for it.
 
 import { registerTool, byKey, ctx as C } from '/static/view-tools.js';
+import { sliceTriangles } from '/static/section-core.js';
 
 export const MODES = ['surface', 'xy', 'xz', 'yz', 'view'];
 const LABEL = { surface: 'Superficie', xy: 'XY', xz: 'XZ', yz: 'YZ', view: 'Vista' };
@@ -153,10 +155,13 @@ float rule(vec2 uv, float s, float w) {
 }
 void main() {
   float r = max(rule(vUV, 1.0, 1.0) * 0.4, rule(vUV, 10.0, 1.3));
-  vec2 e = min(vUV - uLo, uHi - vUV) / max(fwidth(vUV), vec2(1e-6));
-  float edge = 1.0 - min(min(e.x, e.y) / 1.5, 1.0);
-  // a veil, not a wall: the part behind must stay readable through it
-  gl_FragColor = vec4(uInk, max(0.06, max(r * 0.26, edge * 0.6)));
+  // a veil, not a wall: the part behind must stay readable through it — faint,
+  // and fading out towards the border (a rounded square, |x|^4 + |y|^4), so it
+  // says WHERE the plane is without papering over the view
+  vec2 q = (vUV - 0.5 * (uLo + uHi)) / (0.5 * (uHi - uLo));
+  float d = pow(pow(abs(q.x), 4.0) + pow(abs(q.y), 4.0), 0.25);
+  float fade = 1.0 - smoothstep(0.45, 1.0, d);
+  gl_FragColor = vec4(uInk, max(0.025, r * 0.17) * fade);
 }`;
 function sheet() {
   const T = C.THREE, n = st.normal, u = st.u, v = st.v, o = st.origin;
@@ -170,7 +175,7 @@ function sheet() {
     add(new T.Vector3(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z));
   add(o);
   for (const p of inkOnPlane()) add(p);          // the paper grows under what was drawn on it
-  const span = Math.max(hi[0] - lo[0], hi[1] - lo[1], 10), m = 0.15 * span + 5;
+  const span = Math.max(hi[0] - lo[0], hi[1] - lo[1], 10), m = 0.06 * span + 3;
   lo = [Math.floor((lo[0] - m) / 10) * 10, Math.floor((lo[1] - m) / 10) * 10];
   hi = [Math.ceil((hi[0] + m) / 10) * 10, Math.ceil((hi[1] + m) / 10) * 10];
   const W = hi[0] - lo[0], H = hi[1] - lo[1], d = o.dot(n);
@@ -191,9 +196,85 @@ function sheet() {
     new T.MeshBasicMaterial({ color: INK_COLOR, depthTest: false, transparent: true, opacity: 0.9, toneMapped: false }));
   dot.position.copy(o); dot.scale.setScalar(3 * C.mmPerPx(o)); dot.renderOrder = 6;
   g.add(dot);
-  // SECTION_HOOK: the line where the plane cuts the part — reuse ✂'s CPU
-  // contour (webui/section.js, task A) when it is in: g.add(sectionLine(o, n))
+  // where the plane cuts the part: computed later (cutLater), kept per plane
+  if (cut.sig === planeSig() && cut.geo) g.add(cutLine(cut.geo));
   return g;
+}
+// ── the line where the plane meets the part (✂'s slice, section-core.js) ──
+const cut = { sig: '', geo: null, timer: 0 };
+let pressed = 0;                                // buttons down: never slice under a stroke
+const planeSig = () => [st.mode, ...st.origin.toArray(), ...st.normal.toArray()].map(r4).join()
+  + '|' + (window.__noodleSection && window.__noodleSection.on ? JSON.stringify(window.__noodleSection.toJSON()) : '');
+function cutLine(geo) {
+  const out = new C.THREE.Group();
+  // twice, like the plates: depth-tested, and faint through the part
+  for (const ghost of [false, true]) {
+    const l = new C.THREE.LineSegments(geo, new C.THREE.LineBasicMaterial({ color: INK_COLOR, toneMapped: false,
+      transparent: true, opacity: ghost ? 0.3 : 0.95, depthTest: !ghost, depthWrite: false }));
+    l.renderOrder = ghost ? 7 : 5; l.raycast = () => {};
+    out.add(l);
+  }
+  out.userData.keepGeo = true;
+  return out;
+}
+function sliceShown() {
+  const T = C.THREE, n = st.normal, pl = { n: [n.x, n.y, n.z], c: -n.dot(st.origin) };
+  const P = new T.Plane(n.clone(), pl.c), segs = [];
+  const root = C.viewer.previewGroup;
+  root.updateMatrixWorld(true);
+  const shown = o => { for (let p = o; p && p !== root; p = p.parent) if (!p.visible) return false; return true; };
+  root.traverse(o => {
+    if (!o.isMesh || o.isInstancedMesh || !o.geometry || !o.geometry.attributes.position || !shown(o)) return;
+    if (o.userData.lookProxy != null) return;   // 🔍 a proxy repeats its group's triangles
+    const g = o.geometry;
+    if (!g.boundingBox) g.computeBoundingBox();
+    if (!P.intersectsBox(g.boundingBox.clone().applyMatrix4(o.matrixWorld))) return;
+    const pos = g.attributes.position.array, idx = g.index ? g.index.array : null;
+    const ranges = Array.isArray(o.material) && g.groups.length
+      ? g.groups.filter(gr => o.material[gr.materialIndex] && (o.material[gr.materialIndex].visible
+          || o.children.some(c => c.userData.lookProxy === gr.materialIndex && c.visible)))
+      : [{ start: 0, count: idx ? idx.length : pos.length / 3 }];
+    for (const gr of ranges) {
+      const sg = sliceTriangles(pos, idx, gr.start, gr.count, o.matrixWorld.elements, pl);
+      // ✂ a piece cut by the section: only what is left of it (its material
+      // carries the cut — section.js sets clippingPlanes per draw)
+      const px = gr.materialIndex == null ? null : o.children.find(c => c.userData.lookProxy === gr.materialIndex);
+      const m = px ? [].concat(px.material)[0] : Array.isArray(o.material) ? o.material[gr.materialIndex] : o.material;
+      const cuts = m && m.clippingPlanes && m.clippingPlanes.length ? m.clippingPlanes : null;
+      if (!cuts) { for (let i = 0; i < sg.length; i++) segs.push(sg[i]); continue; }
+      for (let i = 0; i < sg.length; i += 6) {
+        let a = new T.Vector3(sg[i], sg[i + 1], sg[i + 2]), c = new T.Vector3(sg[i + 3], sg[i + 4], sg[i + 5]);
+        for (const k of cuts) {
+          const da = k.distanceToPoint(a), dc = k.distanceToPoint(c);
+          if (da < 0 && dc < 0) { a = null; break; }
+          if (da < 0) a.lerp(c, da / (da - dc)); else if (dc < 0) c.lerp(a, dc / (dc - da));
+        }
+        if (a) segs.push(a.x, a.y, a.z, c.x, c.y, c.z);
+      }
+    }
+  });
+  if (!segs.length) return null;
+  const geo = new T.BufferGeometry();
+  geo.setAttribute('position', new T.Float32BufferAttribute(segs, 3));
+  return geo;
+}
+function cutLater() {
+  clearTimeout(cut.timer);
+  if (st.mode === 'surface' || !st.shown || cut.sig === planeSig()) return;
+  cut.timer = setTimeout(() => {
+    if (pressed) return cutLater();             // a stroke in progress: after it
+    if (st.mode === 'surface' || !st.shown) return;
+    if (cut.geo) cut.geo.dispose();
+    cut.sig = planeSig(); cut.geo = sliceShown();
+    if (st.obj && cut.geo) { st.obj.add(cutLine(cut.geo)); C.viewer.invalidate(); }
+  }, 150);
+}
+// the sheet goes, the cached cut line's geometry stays (its materials go)
+function dropSheet(g) {
+  for (const k of [...g.children]) if (k.userData.keepGeo) {
+    g.remove(k); k.traverse(x => { if (x.material) x.material.dispose(); });
+  }
+  C.disposeObj(g);
 }
 // the samples of the draft that lie on THIS plane (a stroke off the paper looks lost)
 function inkOnPlane() {
@@ -206,13 +287,13 @@ function inkOnPlane() {
 export function refresh() {
   if (!C.viewer) return;
   const want = st.mode !== 'surface' && C.isDrawing() && on(C.toolDef());
-  const sig = want ? [st.mode, ...st.origin.toArray(), ...st.normal.toArray()].map(r4).join()
-    + '|' + (C.planeInk ? C.planeInk().length : 0) : '';
+  const sig = want ? planeSig() + '|' + (C.planeInk ? C.planeInk().length : 0) : '';
   if (sig !== st.sig || want !== st.shown) {
-    if (st.obj) { C.disposeObj(st.obj); st.obj = null; }
+    if (st.obj) { dropSheet(st.obj); st.obj = null; }
     if (want) { st.obj = sheet(); C.viewer.scene.add(st.obj); }
     st.sig = sig; st.shown = want;
     C.viewer.invalidate();
+    cutLater();
   }
   syncUI(want);
 }
@@ -272,6 +353,10 @@ export function install() {
   vp.appendChild(slider);
   st.el = { sel, depth, slider, sdepth: slider.lastChild };
   vp.addEventListener('wheel', onWheel, { capture: true, passive: false });
+  // the buttons held, as the last pointer event saw them (a lost pointerup
+  // cannot leave it stuck: the next move says 0)
+  for (const t of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel'])
+    addEventListener(t, e => { pressed = t === 'pointercancel' ? 0 : e.buttons; }, true);
   return registerTool({ id: 'plane', tab: 'pencil', icon: '⊞', label: 'Piano',
     title: 'Piano: disegna anche nel vuoto, su un piano XY / XZ / YZ o perpendicolare alla vista — sopra il pezzo resta sul pezzo; Shift+rotella lo sposta, Alt+clic sul pezzo lo fa passare lì',
     // the button turns the plane on (the one used last) and off; the menu picks which
