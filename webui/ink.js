@@ -36,6 +36,26 @@ export const SPRAY = {
   grain: 1,         // speckle in the fading band (0 = none)
   grainThin: 0.35,
 };
+// ALPHAS — the brush's tip, as in ZBrush: the same stroke stamped three ways,
+// for both pens. `soft` (sfumato, the default — the spray that evens out),
+// `normal` (a marker: solid core, a crisp antialiased edge), `star` (a row of
+// little stars along the stroke on ✎; on ✎³ the tube is pushed through a star
+// nozzle, like icing). Stored per stroke as `alpha`; absent (a note saved
+// before alphas) = what that pen drew then: soft spray, round filament.
+export const ALPHAS = ['soft', 'normal', 'star'];
+export const alphaOf = (s, dflt = 'soft') => (ALPHAS.includes(s && s.alpha) ? s.alpha : dflt);
+const SPRAY_ALPHA = {
+  normal: { spread: 1.0, soft: 0.12, grain: 0 },
+  star: { spread: 1.35, soft: 0.1, grain: 0 },   // a star's points reach the band's edge
+};
+export const STAR = {
+  spacing: 2.3,     // centre to centre, in band radii (a star is ~2 radii across)
+  points: 5,
+  sharp: 2.6,       // ✎: iq's star `m` — 2 = needle points, 5 = a pentagon
+  nozzle: 0.3,      // ✎³: how deep the star nozzle's grooves are (× r)
+  taper: 2.5,       // ✎³ sfumato: each end tapers over 2.5 widths
+};
+
 export const FILAMENT = {
   radial: 16,       // ring segments: round at any zoom a person draws at
   capRings: 5,      // rings in each hemispherical end
@@ -47,13 +67,17 @@ export const FILAMENT = {
   layerTone: 0.16,  // alternate layers ±8%
 };
 
-// s = { pts: [[x,y,z]…], nrm: [[x,y,z]…], width, label? } → arrays for one
-// BufferGeometry: position (3), normal (3: the SURFACE normal, for shading),
-// ink (4: x, y, L, soft), grain (1), index.
+// s = { pts: [[x,y,z]…], nrm: [[x,y,z]…], width, label?, alpha? } → arrays for
+// one BufferGeometry: position (3), normal (3: the SURFACE normal, for shading),
+// ink (4: x, y, L, soft), grain (1), stamp (2: the segment's start along the
+// whole stroke in radii, 1 = stars), index.
 export function sprayArrays(s, o = SPRAY) {
-  const r0 = s.width / 2, thin = s.label != null;
-  const r = r0 * (thin ? 1.1 : o.spread);    // the band's half width (ink units are radii of THIS)
-  const soft = thin ? o.softThin : o.soft, grain = thin ? o.grainThin : o.grain;
+  const r0 = s.width / 2, thin = s.label != null, al = thin ? 'soft' : alphaOf(s);
+  const A = SPRAY_ALPHA[al] || o;
+  const r = r0 * (thin ? 1.1 : A.spread);    // the band's half width (ink units are radii of THIS)
+  const soft = thin ? o.softThin : A.soft, grain = thin ? o.grainThin : A.grain;
+  const star = al === 'star' ? 1 : 0, stamp = [];
+  let s0 = 0;                                // arc length so far, in radii: the stars keep their pace across segments
   const P = s.pts.map((p, i) => add(p, mul(norm(s.nrm[i] || [0, 0, 1]), r0 * o.lift)));
   const N = s.pts.map((_, i) => norm(s.nrm[i] || [0, 0, 1]));
   const pos = [], nrm = [], ink = [], gr = [], idx = [];
@@ -70,20 +94,34 @@ export function sprayArrays(s, o = SPRAY) {
       const along = x < 0 ? -r : (x > Lr ? r : 0);
       const q = add(add(p, mul(t, along)), mul(side, y * r));
       pos.push(q[0], q[1], q[2]); nrm.push(n[0], n[1], n[2]);
-      ink.push(x, y, Lr, soft); gr.push(grain);
+      ink.push(x, y, Lr, soft); gr.push(grain); stamp.push(s0, star);
     }
     idx.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+    s0 += Lr;
   };
   if (P.length === 1) quad(P[0], P[0], N[0], N[0]);
   for (let i = 1; i < P.length; i++) quad(P[i - 1], P[i], N[i - 1], N[i]);
   return { position: new Float32Array(pos), normal: new Float32Array(nrm), ink: new Float32Array(ink),
-           grain: new Float32Array(gr), index: idx, r: r0 };
+           grain: new Float32Array(gr), stamp: new Float32Array(stamp), index: idx, r: r0 };
 }
 
 // s = { pts, nrm, width, lift: [mm…] } → { position, normal, shade, index }:
 // a closed tube (rings + hemispherical caps), `shade` = per-vertex brightness.
+// The tube's cross-section by alpha: `normal` round; `star` the star nozzle
+// (STAR.points ridges); `soft` round too, but the stroke TAPERS to a point at
+// both ends and the profile is a melted bead (wider than tall) — a soft stroke.
+function profile(al, o) {
+  if (al === 'star') {
+    const P = STAR.points, g = STAR.nozzle;
+    // ρ(a): 1 on a ridge, 1 − g between two — smooth enough for the light to roll
+    return { R: P * 8, rho: a => 1 - g * Math.pow(Math.abs(Math.sin(a * P / 2)), 1.5), sx: 1, sy: 1 };
+  }
+  if (al === 'soft') return { R: o.radial, rho: () => 1, sx: 0.8, sy: 1.15 };   // x = up the normal, y = across
+  return { R: o.radial, rho: () => 1, sx: 1, sy: 1 };
+}
 export function filamentArrays(s, o = FILAMENT) {
-  const r = s.width / 2, R = o.radial, lift = s.lift || [];
+  const al = alphaOf(s, 'normal'), pr = profile(al, o);
+  const r = s.width / 2, R = pr.R, lift = s.lift || [];
   const N0 = s.pts.map((_, i) => norm(s.nrm[i] || [0, 0, 1]));
   const C0 = s.pts.map((p, i) => add(p, mul(N0[i], r * o.sit + (lift[i] || 0))));
   // smooth centre line: Catmull-Rom through the samples, normals and lifts lerped
@@ -101,6 +139,17 @@ export function filamentArrays(s, o = FILAMENT) {
     }
   }
   const n = C.length;
+  // ✎³ sfumato: the radius ramps up from each end (smoothstep over STAR.taper widths)
+  const arc = [0];
+  for (let i = 1; i < n; i++) arc.push(arc[i - 1] + len(sub(C[i], C[i - 1])));
+  const tot = arc[n - 1], ramp = STAR.taper * s.width;
+  const taper = i => {
+    if (al !== 'soft' || tot <= 0) return 1;
+    const e = Math.min(arc[i], tot - arc[i]) / Math.min(ramp, tot / 2), t = Math.max(0, Math.min(1, e));
+    return 0.25 + 0.75 * t * t * (3 - 2 * t);
+  };
+  // a thinner ring sits lower, so a tapered end still rests on the part
+  const sink = i => sub(C[i], mul(N[i], r * o.sit * (1 - taper(i))));
   // tangent per ring (central difference), and the frame from the surface normal
   const T = C.map((_, i) => {
     const a = C[Math.max(0, i - 1)], b = C[Math.min(n - 1, i + 1)];
@@ -120,9 +169,16 @@ export function filamentArrays(s, o = FILAMENT) {
     const v = cross(t, u);
     for (let j = 0; j < R; j++) {
       const a = (j / R) * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
-      const d = add(mul(u, ca), mul(v, sa));
+      // the section's outline: ρ(a)·(sx cos, sy sin) in the (u, v) frame, and
+      // its 2D normal from the outline's tangent (rotated −90°)
+      const h = 1e-3, q = b => [pr.rho(b) * pr.sx * Math.cos(b), pr.rho(b) * pr.sy * Math.sin(b)];
+      const q0 = q(a), qa = q(a - h), qb = q(a + h);
+      const tq = [qb[0] - qa[0], qb[1] - qa[1]], tl = Math.hypot(tq[0], tq[1]) || 1;
+      const n2 = [tq[1] / tl, -tq[0] / tl];
+      const d = add(mul(u, q0[0]), mul(v, q0[1]));
+      const dn = add(mul(u, n2[0]), mul(v, n2[1]));
       const p = add(add(c, mul(t, dt)), mul(d, r * k));
-      const nv = norm(add(mul(d, k), mul(t, tw)));
+      const nv = norm(add(mul(dn, k), mul(t, tw)));
       pos.push(p[0], p[1], p[2]); nrm.push(nv[0], nv[1], nv[2]);
       // a baked occlusion round the section: full tone on top (d·u = 1), the
       // flanks a step darker, the underside — where it rests on the part or on
@@ -137,18 +193,18 @@ export function filamentArrays(s, o = FILAMENT) {
     for (let q = 0; q < K; q++) {
       const phi = (Math.PI / 2) * (1 - q / K);   // 90° (pole) → just before the equator
       rings.push(pos.length / 3);
-      ring(C[0], T[0], N[0], Math.max(Math.cos(phi), 0.02), -r * Math.sin(phi), -Math.sin(phi), tone(0));
+      ring(sink(0), T[0], N[0], Math.max(Math.cos(phi), 0.02) * taper(0), -r * taper(0) * Math.sin(phi), -Math.sin(phi), tone(0));
     }
   };
   const capEnd = () => {
     for (let q = 1; q <= K; q++) {
       const phi = (Math.PI / 2) * (q / K);
       rings.push(pos.length / 3);
-      ring(C[n - 1], T[n - 1], N[n - 1], Math.max(Math.cos(phi), 0.02), r * Math.sin(phi), Math.sin(phi), tone(n - 1));
+      ring(sink(n - 1), T[n - 1], N[n - 1], Math.max(Math.cos(phi), 0.02) * taper(n - 1), r * taper(n - 1) * Math.sin(phi), Math.sin(phi), tone(n - 1));
     }
   };
   capStart();
-  for (let i = 0; i < n; i++) { rings.push(pos.length / 3); ring(C[i], T[i], N[i], 1, 0, 0, tone(i)); }
+  for (let i = 0; i < n; i++) { rings.push(pos.length / 3); ring(sink(i), T[i], N[i], taper(i), 0, 0, tone(i)); }
   capEnd();
   for (let q = 1; q < rings.length; q++) {
     const a = rings[q - 1], b = rings[q];

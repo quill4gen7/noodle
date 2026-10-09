@@ -1809,6 +1809,17 @@ result while the workflow moves on.
     holds the note) and resumes it on load unless it is done; any note has a
     ✎ in the list to continue it. The undo history is not rebuilt: ↶ starts
     from the note as saved (⌫ still rubs anything out).
+  - **The brush: alpha + width, for ✎ and ✎³ alike** (common row). Three
+    ALPHAS (`webui/ink.js`): *sfumato* `soft` (the spray that evens out; ✎³ a
+    tapered, matte bead), *normale* `normal` (a marker's crisp edge; ✎³ the
+    round tube), *stellina* `star` (stars stamped along the stroke at a fixed
+    pace — `stamp` = arc length so far, each star drawn by the segment its
+    centre falls in; ✎³ the tube through a star nozzle). Width = a slider
+    1…80 px on a square law. Both remembered (`noodle:view:penAlpha|penSize`).
+    Each stroke saves `pen` (spray|3d) and `alpha`, so a reloaded ✎³ line stays
+    filament even when it never piled up; absent = what the pen drew before
+    alphas (soft spray, round tube). The toast steps past every visible bar
+    (`placeToast`): it used to cover the folded ✎ row and the shape's bar.
   - **⌫ eraser**: any object of the note, whole — a stroke (the pen already
     splits them where it leaves the surface), a painted word, a targhetta, a
     decal, a picture, a dimension (along its line), a shape — hit-tested in 3D — the point on the PART vs each stroke's

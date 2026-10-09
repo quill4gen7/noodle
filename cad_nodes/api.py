@@ -2435,6 +2435,16 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
             if max(lifts) > 0:
                 out["lifts"] = lifts
                 out["height_mm"] = round(max(lifts) + width, 3)
+        # the pen that drew it (✎ spray / ✎³ filament) and its tip — only the
+        # viewer reads them, so it redraws the stroke as it was drawn
+        if s.get("pen") is not None:
+            if s["pen"] not in ("spray", "3d"):
+                raise ValueError(f"note: stroke {i} pen must be spray|3d")
+            out["pen"] = s["pen"]
+        if s.get("alpha") is not None:
+            if s["alpha"] not in ("soft", "normal", "star"):
+                raise ValueError(f"note: stroke {i} alpha must be soft|normal|star")
+            out["alpha"] = s["alpha"]
         # ⊞ drawn on a working PLANE, in the void (PLAN_VIEW_TOOLS §4): no
         # piece, and the plane it lies on
         if s.get("plane") is not None:

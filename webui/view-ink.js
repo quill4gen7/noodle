@@ -24,11 +24,12 @@
 // FILAMENT: a lit MeshStandardMaterial (scene lights + the RoomEnvironment
 // IBL, tone mapped like the part) on ink.js's tube with a per-vertex shade.
 import * as THREE from 'three';
-import { sprayArrays, filamentArrays, nextRun } from './ink.js';
+import { sprayArrays, filamentArrays, nextRun, ALPHAS, alphaOf, STAR } from './ink.js';
 
-export { nextRun };
+export { nextRun, ALPHAS, alphaOf };
 export const RUN_MAX = 4;
 const runStep = { value: 0.5 };             // mm; ≥ the largest coverage pull (see bump())
+const starU = { value: new THREE.Vector3(STAR.spacing, STAR.points, STAR.sharp) };
 let rMax = 0;
 function bump(r) {
   if (r <= rMax) return;
@@ -40,7 +41,9 @@ attribute vec4 ink;
 attribute float grain;
 attribute vec3 inkColor;
 attribute vec2 inkRR;           // r (mm), run
+attribute vec2 stamp;           // the segment's start along the stroke (radii), 1 = stars
 varying vec4 vInk;
+varying vec2 vStamp;
 varying float vGrain;
 varying vec3 vColor;
 varying vec2 vRR;
@@ -48,7 +51,7 @@ varying float vViewZ;
 varying vec3 vWorld;
 varying float vNdv;
 void main() {
-  vInk = ink; vGrain = grain; vColor = inkColor; vRR = inkRR;
+  vInk = ink; vStamp = stamp; vGrain = grain; vColor = inkColor; vRR = inkRR;
   vec4 w = modelMatrix * vec4(position, 1.0);
   vWorld = w.xyz;
   vec4 mv = viewMatrix * w;
@@ -62,16 +65,44 @@ const FS = /* glsl */`
 uniform float runStep;
 uniform mat4 projectionMatrix;   // three declares it for the vertex stage only
 varying vec4 vInk;
+varying vec2 vStamp;
 varying float vGrain;
 varying vec3 vColor;
 varying vec2 vRR;
 varying float vViewZ;
 varying vec3 vWorld;
 varying float vNdv;
+uniform vec3 star;               // spacing (radii), points, sharpness
+// an n-point star's signed distance (iq), outer radius 1; m in 2…n: 2 = sharpest
+float sdStar(vec2 p, float n, float m) {
+  float an = 3.141593 / n, en = 3.141593 / m;
+  vec2 acs = vec2(cos(an), sin(an)), ecs = vec2(cos(en), sin(en));
+  float bn = mod(atan(p.x, p.y), 2.0 * an) - an;
+  p = length(p) * vec2(cos(bn), abs(sin(bn)));
+  p -= acs;
+  p += ecs * clamp(-dot(p, ecs), 0.0, acs.y / ecs.y);
+  return length(p) * sign(p.x);
+}
 float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
 void main() {
   float x = vInk.x, L = vInk.z;
   float d = length(vec2(x - clamp(x, 0.0, L), vInk.y));
+  if (vStamp.y > 0.5) {
+    // ★ stars stamped along the stroke at a fixed pace; each one is drawn by the
+    // segment its centre falls in (the quad reaches 1 radius past both ends)
+    float sp = star.x, s = vStamp.x + x;
+    float k0 = ceil(vStamp.x / sp - 1e-4), k1 = floor((vStamp.x + L) / sp + 1e-4);
+    float best = 1e3;
+    for (int i = -1; i <= 1; i++) {
+      float k = floor(s / sp + 0.5) + float(i);
+      if (k < k0 || k > k1) continue;
+      float a = hash(vec3(k, k * 1.7, 3.1)) * 6.2832;     // each star turned its own way
+      vec2 q = vec2(x - (k * sp - vStamp.x), vInk.y);
+      q = mat2(cos(a), -sin(a), sin(a), cos(a)) * q;
+      best = min(best, sdStar(q / 0.95, star.y, star.z) * 0.95);
+    }
+    d = 1.0 + best;              // the star's edge plays the capsule's edge (d = 1)
+  }
   float fw = fwidth(d);
   // the fade band: the stroke's own softness, but never so wide that a thin
   // line loses its core (≥ ~1 px solid), never narrower than the antialiasing
@@ -96,7 +127,7 @@ void main() {
 let mats = null;
 function sprayMats() {
   if (mats) return mats;
-  const base = { vertexShader: VS, fragmentShader: FS, uniforms: { runStep }, toneMapped: false, side: THREE.DoubleSide };
+  const base = { vertexShader: VS, fragmentShader: FS, uniforms: { runStep, star: starU }, toneMapped: false, side: THREE.DoubleSide };
   const depth = new THREE.ShaderMaterial({ ...base, colorWrite: false, depthWrite: true,
     depthFunc: THREE.LessEqualDepth });
   const color = new THREE.ShaderMaterial({ ...base, depthWrite: false, depthFunc: THREE.LessEqualDepth,
@@ -114,7 +145,7 @@ function sprayMats() {
 export function inkObject(s) {
   const p3 = v => [v.x, v.y, v.z];
   const data = { pts: s.pts.map(p3), nrm: s.nrm.map(n => (n ? p3(n) : [0, 0, 1])), width: s.width,
-                 lift: s.lift, label: s.label };
+                 lift: s.lift, label: s.label, alpha: s.alpha };
   const g = new THREE.Group();
   g.renderOrder = 2;
   if (s.pen3d) {
@@ -129,8 +160,9 @@ export function inkObject(s) {
     // not tone mapped: ACES turns a saturated green into a pastel one, and the
     // ink's colour is its meaning (red = wrong). Lit values stay under ~1 with
     // these settings, so nothing clips but the specular glint.
-    const m = new THREE.MeshPhysicalMaterial({ color: c, vertexColors: true, roughness: 0.5, metalness: 0,
-      clearcoat: 0.7, clearcoatRoughness: 0.28,       // the glossy skin of extruded PLA: one soft highlight
+    const soft = alphaOf(s, 'normal') === 'soft';        // sfumato: a matte, melted bead
+    const m = new THREE.MeshPhysicalMaterial({ color: c, vertexColors: true, roughness: soft ? 0.75 : 0.5, metalness: 0,
+      clearcoat: soft ? 0.25 : 0.7, clearcoatRoughness: soft ? 0.6 : 0.28,       // the glossy skin of extruded PLA: one soft highlight
       envMapIntensity: 0.35, toneMapped: false,
       polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
     const mesh = new THREE.Mesh(geo, m); mesh.renderOrder = 2;
@@ -144,6 +176,7 @@ export function inkObject(s) {
   geo.setAttribute('normal', new THREE.BufferAttribute(A.normal, 3));
   geo.setAttribute('ink', new THREE.BufferAttribute(A.ink, 4));
   geo.setAttribute('grain', new THREE.BufferAttribute(A.grain, 1));
+  geo.setAttribute('stamp', new THREE.BufferAttribute(A.stamp, 2));
   const n = A.position.length / 3, c = new THREE.Color(s.color);
   const col = new Float32Array(n * 3), rr = new Float32Array(n * 2), run = Math.min(s.run || 0, RUN_MAX);
   for (let i = 0; i < n; i++) { col[3 * i] = c.r; col[3 * i + 1] = c.g; col[3 * i + 2] = c.b; rr[2 * i] = A.r; rr[2 * i + 1] = run; }

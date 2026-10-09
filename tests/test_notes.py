@@ -880,9 +880,9 @@ def test_the_draw_bar_is_four_tabs_and_a_common_row():
               "{ id: 'blocky', icon: '▣', label: 'Blocky', key: '3'", "{ id: 'tool', icon: '🔧', label: 'Tool', key: '4'"):
         assert t in TOOLS_JS, t
     assert 'id="d-tabs" role="tablist"' in VIEW and 'id="d-common"' in VIEW and 'id="d-rows"' in VIEW
-    # the common row: ↶ ↷ ⌫ (and Muovi), colours, sizes
+    # the common row: ↶ ↷ ⌫ (and Muovi), colours, the brush's tip and width
     common = VIEW[VIEW.index('<div id="d-common">'):VIEW.index('<div id="d-rows">')]
-    for el in ('id="d-undo"', 'id="d-redo"', 'id="d-ctools"', 'id="d-colors"', 'id="d-sizes"'):
+    for el in ('id="d-undo"', 'id="d-redo"', 'id="d-ctools"', 'id="d-colors"', 'id="d-alphas"', 'id="d-size"'):
         assert el in common, el
     assert "TOOLS.registerTool({ id: 'hand', tab: 'common'" in VIEW
     # every tool of today, in its tab
@@ -1020,3 +1020,20 @@ def test_hiding_the_draw_bar_keeps_its_top_row_and_the_tool():
     # H stays «hide the selected piece»
     assert "if (k === 'h' && selected)" in VIEW
     assert "@media (pointer:coarse){ #d-end .btn,#d-cur{min-height:44px;min-width:44px;} }" in VIEW
+
+
+def test_a_stroke_keeps_its_pen_and_its_tip(store):
+    # ✎ / ✎³ and the alpha (sfumato / normale / stellina) ride the stroke, so a
+    # saved note redraws a flat ✎³ line as filament and stars as stars
+    note = api.add_note(store, "demo", "g1", {"strokes": [
+        {"points": _circle(), "pen": "3d", "alpha": "star"},
+        {"points": _circle(cx=0), "pen": "spray", "alpha": "normal"},
+        {"points": _circle(cx=5)}]})
+    a, b, c = note["strokes"]
+    assert (a["pen"], a["alpha"]) == ("3d", "star") and (b["pen"], b["alpha"]) == ("spray", "normal")
+    assert "pen" not in c and "alpha" not in c
+    for bad in ({"pen": "brush"}, {"alpha": "heart"}):
+        with pytest.raises(ValueError):
+            api.add_note(store, "demo", "g1", {"strokes": [{"points": _circle(), **bad}]})
+    assert "pen: s.pen3d ? '3d' : 'spray', alpha: INK.alphaOf(" in VIEW
+    assert VIEW.count("...(s.pen ? { pen3d: s.pen === '3d' } : {})") == 2   # the draft and a saved note

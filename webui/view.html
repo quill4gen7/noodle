@@ -306,6 +306,13 @@
   .sz{width:var(--tap);padding:0;}
   .sz i{display:block;border-radius:50%;background:var(--text);}
   .sz.on,.tool.on{border-color:var(--accent);background:var(--bg-2);}
+  .al i{width:16px;height:16px;}
+  .al[data-a="soft"] i{background:radial-gradient(circle,var(--text) 0,var(--text) 25%,transparent 72%);}
+  .al b{font-size:17px;line-height:1;color:var(--text);}
+  #d-sizebox{gap:6px;cursor:pointer;}
+  #d-size{width:110px;accent-color:var(--accent);}
+  #d-sizev{display:inline-flex;align-items:center;justify-content:center;min-width:34px;font:11px var(--mono);color:var(--text-dim);}
+  #d-sizev::before{content:'';width:var(--dot,6px);height:var(--dot,6px);border-radius:50%;background:var(--text);margin-right:4px;flex:0 0 auto;}
   #d-send{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;}
   #d-send:disabled{opacity:.4;cursor:default;}
   #d-save{font-size:12px;color:var(--text);white-space:nowrap;cursor:pointer;min-width:0;overflow:hidden;text-overflow:ellipsis;}
@@ -347,6 +354,8 @@
     #dbar{top:auto;bottom:6px;left:6px;right:6px;transform:none;width:auto;max-width:none;gap:5px;padding:5px;}
     #dbar .btn{min-height:36px;padding:4px 8px;}
     #dbar .sz{width:36px;}
+    #d-size{width:74px;}
+    #d-sizev{min-width:0;font-size:10px;}
     #dbar .sep,#d-hint{display:none;}
     #dbar .tool{min-width:36px;padding:4px 6px;}
     /* the top row comes first: name + Fatto ⋯ ▾ ✕, then the tabs under it;
@@ -455,7 +464,12 @@
           <div class="grp" id="d-colors"></div>
           <input type="color" id="d-custom" title="Altro colore" value="#d946ef">
           <span class="sep"></span>
-          <div class="grp" id="d-sizes"></div>
+          <!-- the brush: its tip (alpha) and its width — for ✎ and ✎³ alike -->
+          <div class="grp" id="d-alphas" role="radiogroup" aria-label="Punta"></div>
+          <label class="grp" id="d-sizebox" title="Spessore del tratto (anche il raggio della gomma)">
+            <input type="range" id="d-size" min="0" max="100" step="1" aria-label="Spessore">
+            <span id="d-sizev"></span>
+          </label>
         </div>
         <div id="d-rows"></div>
         <div id="d-hint"></div>
@@ -1183,8 +1197,16 @@ new ResizeObserver(() => viewer.resize()).observe($('vp'));
 const annoGroup = new THREE.Group(); annoGroup.name = 'notes';
 viewer.scene.add(annoGroup);
 const PEN_COLORS = ['#ef4444', '#f59e0b', '#facc15', '#22c55e', '#3b82f6', '#ffffff', '#111827'];
-const PEN_SIZES = [3, 6, 12];                  // px on screen at the stroke's start
-const pen = { color: PEN_COLORS[0], size: PEN_SIZES[1] };
+// the width in px on screen at the stroke's start: a slider 0…100 on a square
+// law, so the thin end (where notes are written) gets most of the travel
+const SIZE_MIN = 1, SIZE_MAX = 80;
+const sizeOfSlider = v => Math.round(SIZE_MIN + (SIZE_MAX - SIZE_MIN) * (v / 100) ** 2);
+const sliderOfSize = z => Math.round(100 * Math.sqrt(Math.max(0, z - SIZE_MIN) / (SIZE_MAX - SIZE_MIN)));
+const pen = { color: PEN_COLORS[0], size: 6, alpha: 'soft' };
+try {                                          // the brush is remembered, like T's style
+  const z = +localStorage.getItem('noodle:view:penSize'); if (z >= SIZE_MIN && z <= SIZE_MAX) pen.size = z;
+  const a = localStorage.getItem('noodle:view:penAlpha'); if (INK.ALPHAS.includes(a)) pen.alpha = a;
+} catch {}
 // the tool in hand: `toolDef` is its registerTool entry (webui/view-tools.js),
 // `tool` its gesture family — pen | text | image | erase | hand | measure | shape
 // (✎ and ✎³ are both 'pen'; vernice, decal and targhetta are all 'text')
@@ -1274,7 +1296,7 @@ function penLift(p, w, cur) {
 }
 function startStroke(hit, g) {
   const width = pen.size * mmPerPx(hit.p);
-  const s = { color: pen.color, width, g, k: ++seq, piece: hit.key, pen3d: !!(toolDef && toolDef.pen3d),
+  const s = { color: pen.color, width, g, k: ++seq, piece: hit.key, pen3d: !!(toolDef && toolDef.pen3d), alpha: pen.alpha,
               pts: [hit.p], nrm: [hit.n], lift: [penLift(hit.p, width, null)], obj: null };
   if (hit.plane) s.plane = hit.plane;          // ⊞ drawn in the void: no piece, the plane
   draft.push(s); redrawStroke(s); syncDraw();
@@ -1411,7 +1433,7 @@ vp.addEventListener('pointerleave', () => { $('d-ring').style.display = 'none'; 
 // buttons) and turned into mm right there. Picking the thin tubes themselves
 // would miss a 3px line and catch strokes on the far side of the part.
 // Only the unsent draft is erasable: a sent note is immutable, deleted whole.
-const ERASE_PX = () => 6 + pen.size * 1.5;   // radius: 10.5 / 15 / 24 px
+const ERASE_PX = () => Math.min(120, 6 + pen.size * 1.5);   // radius: 15 px at a 6 px pen
 function segDist(p, a, b) {
   const ab = b.clone().sub(a), l2 = ab.lengthSq();
   const t = l2 ? THREE.MathUtils.clamp(p.clone().sub(a).dot(ab) / l2, 0, 1) : 0;
@@ -3360,8 +3382,11 @@ function syncDraw() {
   $('c').style.cursor = drawing && toolDef && toolDef.cursor ? toolDef.cursor : '';
   TOOLS.sync();
   for (const b of $('d-colors').children) b.classList.toggle('on', b.dataset.c === pen.color);
-  for (const b of $('d-sizes').children) b.classList.toggle('on', +b.dataset.s === pen.size);
+  for (const b of $('d-alphas').children) { const on = b.dataset.a === pen.alpha; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); }
+  $('d-size').value = sliderOfSize(pen.size); $('d-sizev').textContent = pen.size + 'px';
+  $('d-sizebox').style.setProperty('--dot', Math.min(22, 3 + pen.size / 2) + 'px');
   VP.refresh();                                // ⊞ the working plane: shown with an ink tool in hand
+  requestAnimationFrame(placeToast);           // the bar may have grown, folded or moved
 }
 function setDrawing(on) {
   drawing = on;
@@ -3396,14 +3421,32 @@ for (const c of PEN_COLORS) {
   $('d-colors').appendChild(b);
 }
 $('d-custom').addEventListener('input', e => { if (recolorShape(e.target.value, true)) return; pen.color = e.target.value; if (tool !== 'pen' && tool !== 'text') setTool(penTool()); else syncDraw(); });
-PEN_SIZES.forEach(sz => {
+// ── the brush: alpha (the tip, as in ZBrush) + width ────────────────────
+// sfumato = the spray that evens out (✎³: a tapered, matte bead) · normale =
+// a marker with a crisp edge (✎³: the round tube) · stellina = little stars
+// stamped along the stroke (✎³: the tube through a star nozzle). Picking one
+// with ⌫ or ✋ in hand goes back to the pen; a width keeps the eraser (it is
+// also its radius).
+const ALPHA_UI = { soft: ['Sfumato', 'Sfumato: spray morbido che si uniforma (✎³: perlina affusolata)'],
+                   normal: ['Normale', 'Normale: pennarello dal bordo netto (✎³: tubo tondo)'],
+                   star: ['Stellina', 'Stellina: una fila di stelline (✎³: tubo da bocchetta a stella)'] };
+for (const a of INK.ALPHAS) {
   const b = document.createElement('button');
-  b.className = 'btn sz'; b.dataset.s = sz; b.title = `Tratto ${sz}px`;
-  b.innerHTML = `<i style="width:${4 + sz}px;height:${4 + sz}px"></i>`;
-  // a size is also the eraser's radius: picking one keeps the eraser in hand
-  b.onclick = () => { pen.size = sz; if (tool === 'hand') setTool(penTool()); else syncDraw(); };
-  $('d-sizes').appendChild(b);
+  b.className = 'btn sz al'; b.dataset.a = a; b.setAttribute('role', 'radio');
+  b.title = ALPHA_UI[a][1]; b.setAttribute('aria-label', ALPHA_UI[a][0]);
+  b.innerHTML = a === 'star' ? '<b>★</b>' : '<i></i>';
+  b.onclick = () => {
+    pen.alpha = a; try { localStorage.setItem('noodle:view:penAlpha', a); } catch {}
+    if (tool !== 'pen') setTool(penTool()); else syncDraw();
+  };
+  $('d-alphas').appendChild(b);
+}
+$('d-size').addEventListener('input', e => {
+  pen.size = sizeOfSlider(+e.target.value);
+  try { localStorage.setItem('noodle:view:penSize', pen.size); } catch {}
+  syncDraw();
 });
+$('d-size').addEventListener('change', () => { if (tool === 'hand') setTool(penTool()); });
 $('d-open').onclick = () => setDrawing(true);
 $('d-x').onclick = () => setDrawing(false);
 // ▾ hide the bar while you work: only its top row stays (the tool in hand,
@@ -3412,6 +3455,7 @@ $('d-x').onclick = () => setDrawing(false);
 // ✎ again always opens it whole. Key B (H already hides the selected piece)
 
 function syncHide() {
+  requestAnimationFrame(placeToast);
   vp.classList.toggle('dhide', drawing && dHidden);
   const h = $('d-hide');
   h.textContent = dHidden ? '▴' : '▾';
@@ -3509,8 +3553,33 @@ addEventListener('keydown', e => {
 
 function toast(html, ms = 6000) {
   $('toast').innerHTML = html; $('toast').classList.add('open');
+  placeToast();
   clearTimeout(toast.t); toast.t = setTimeout(() => $('toast').classList.remove('open'), ms);
 }
+// The toast must never sit on a bar you are using — paid for twice: «nota
+// salvata» covered the folded ✎ row on a desktop and the shape's bar on a
+// phone. Start where the CSS puts it and step past every visible bar it meets
+// (below one in the top half, above one in the bottom half).
+const TOAST_AVOID = ['dbar', 's-bar', 'cutbar', 'selbar', 'tl'];
+function placeToast() {
+  const t = $('toast');
+  if (!t.classList.contains('open')) return;
+  t.style.top = ''; t.style.bottom = '';
+  const V = vp.getBoundingClientRect();
+  const bars = TOAST_AVOID.map(id => $(id)).filter(e => e && e.getClientRects().length)
+    .map(e => e.getBoundingClientRect()).filter(r => r.width && r.height);
+  const hits = (r, T) => r.left < T.right && r.right > T.left && r.top < T.bottom && r.bottom > T.top;
+  for (let k = 0; k < 6; k++) {
+    const T = t.getBoundingClientRect(), b = bars.find(r => hits(r, T));
+    if (!b) return;
+    if (b.top + b.height / 2 < V.top + V.height / 2 && b.bottom + 8 + T.height < V.bottom) {
+      t.style.bottom = ''; t.style.top = (b.bottom - V.top + 8) + 'px';
+    } else {
+      t.style.top = 'auto'; t.style.bottom = (V.bottom - b.top + 8) + 'px';
+    }
+  }
+}
+new ResizeObserver(placeToast).observe($('vp'));
 const r4 = v => +v.toFixed(4);
 const v3 = n => [+n.x.toFixed(4), +n.y.toFixed(4), +n.z.toFixed(4)];
 const fitOut = f => f ? { centre: [r4(f.centre.x), r4(f.centre.y), r4(f.centre.z)], radius: r4(f.radius),
@@ -3551,6 +3620,7 @@ function noteBody(withPictures) {
   const body = {
     text,
     strokes: draft.map(s => ({ color: s.color, width: s.width, piece: s.piece, g: s.g,
+      ...(s.label ? {} : { pen: s.pen3d ? '3d' : 'spray', alpha: INK.alphaOf(s, s.pen3d ? 'normal' : 'soft') }),
       ...(s.label && words.includes(s.label) ? { label: words.indexOf(s.label) } : {}),
       view: s.view == null ? null : remap.get(s.view),
       ...(s.plane ? { plane: s.plane } : {}),     // ⊞ drawn in the void, on this plane
@@ -3741,7 +3811,8 @@ async function resumeNote(n) {
     const nrm = (s.normals || []).length === pts.length ? s.normals.map(V) : pts.map(() => new THREE.Vector3());
     const d = { color: s.color, width: s.width_mm || 1, g: s.g ?? 0, k: ++seq, piece: s.piece || null, pts, nrm,
       lift: s.lifts && s.lifts.length === pts.length ? s.lifts.slice() : pts.map(() => 0),
-      view: viewOf(s.view), obj: null, ...(s.plane ? { plane: s.plane } : {}) };
+      view: viewOf(s.view), obj: null, ...(s.plane ? { plane: s.plane } : {}),
+      ...(s.pen ? { pen3d: s.pen === '3d' } : {}), ...(s.alpha ? { alpha: s.alpha } : {}) };
     if (s.kind === 'text' && words[s.label - 1]) d.label = words[s.label - 1];
     g0 = Math.max(g0, d.g);
     draft.push(d); redrawStroke(d);
@@ -3806,7 +3877,8 @@ function noteObject(n) {
     const nrm = (s.normals || []).map(p => new THREE.Vector3(...p));
     const lift = s.lifts && s.lifts.length === pts.length ? s.lifts : null;
     if (!pts.length) continue;
-    const o = { color: s.color, width: s.width_mm || 1, pts, nrm, lift, ...(s.kind === 'text' ? { label: true } : {}) };
+    const o = { color: s.color, width: s.width_mm || 1, pts, nrm, lift, ...(s.kind === 'text' ? { label: true } : {}),
+      ...(s.pen ? { pen3d: s.pen === '3d' } : {}), ...(s.alpha ? { alpha: s.alpha } : {}) };
     g.add(strokeObject(o, prev));
     if (!o.pen3d) prev = o;
   }

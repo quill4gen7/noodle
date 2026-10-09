@@ -96,3 +96,25 @@ test('filament: a heap stands on its lifts, layers alternate in tone, the line i
   const ring = i => (F.capRings + i * F.sub) * F.radial;     // first vertex = top (cos 0)
   assert.notEqual(A.shade[ring(0)], A.shade[ring(2)]);
 });
+
+test('alphas: soft / normal / star on both pens; absent = what the pen drew before', async () => {
+  const I = await load();
+  assert.deepEqual(I.ALPHAS, ['soft', 'normal', 'star']);
+  const S = a => I.sprayArrays({ pts: line(6), nrm: up(6), width: 2, alpha: a });
+  const soft = S(undefined), normal = S('normal'), star = S('star');
+  assert.ok(normal.ink[3] < soft.ink[3]);                 // the marker's edge is crisper
+  assert.equal(normal.grain[0], 0);
+  assert.ok(star.stamp.every((v, i) => i % 2 === 0 || v === 1));   // stars flagged
+  assert.ok(soft.stamp.every((v, i) => i % 2 === 0 || v === 0));
+  // the stars keep their pace across segments: start of each segment = arc so far
+  const L = star.ink[2];
+  assert.ok(Math.abs(star.stamp[4 * 2 * 3] - 3 * L) < 1e-6);  // 4th segment's first corner
+  // ✎³: the star nozzle's outline has ridges; sfumato tapers at the ends
+  const F = a => I.filamentArrays({ pts: line(12, 1), nrm: up(12), width: 2, alpha: a });
+  const fn = F('normal'), fs = F('star'), fo = F('soft');
+  assert.ok(fs.position.length > fn.position.length);    // more segments round the star
+  const ext = A => { let y = 0; for (let i = 1; i < A.position.length; i += 3) y = Math.max(y, Math.abs(A.position[i])); return y; };
+  assert.ok(ext(fo) > ext(fn));                           // the melted bead is wider
+  const endZ = A => A.position[3 * (A.position.length / 3 - 1) + 2];
+  assert.ok(endZ(fo) < endZ(fn));                         // the tapered tip sits low
+});
