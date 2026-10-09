@@ -1691,8 +1691,8 @@ result while the workflow moves on.
   master `t`), `tracks=1` (panel open). Framing restores every track's own `t`.
   Example project: `projects/cassone-demo` (a chest whose lid opens on a hinge).
 - **✎ Disegna — the user draws FOR the agent.** In /view (button, or `D`) the
-  user paints on the part — circles a hole in red, marks a fillet — picks
-  colour/size and writes a sentence; it is stored AS THEY DRAW as a NOTE beside
+  user paints on the part — circles a hole in red, marks a fillet, writes ON
+  it — picks colour/size; it is stored AS THEY DRAW as a NOTE beside
   the gen (`gens/gN/notes/aK.{json,jpg}` — the gen's own files stay immutable;
   `aK.claim` is kept so an id is never reused, like a gen number). Strokes are
   paint ON THE SURFACE, not on the screen: each pointer sample is a raycast
@@ -1711,6 +1711,31 @@ result while the workflow moves on.
   graph. Agent side: `cad_notes` / `GET /api/notes`, `cad_note_image`,
   `cad_note_done` (reply shown under the note); `recent_gens` counts open
   `notes`; `#note=aK` opens the viewer on one. Tests: `tests/test_notes.py`.
+  - **The bar is four tabs + one common row** (`PLAN_VIEW_TOOLS.md` §1):
+    ✎ Matita (✎ penna — flat —, ✎³ penna 3D, T vernice, ▭ decal) · ◆ Tag (⚑
+    targhetta, 🖼 Img) · ▣ Blocky (▣ forma + its kind, the gizmo modes ✥ ⟳ ▣
+    ◌) · 🔧 Tool (↔ metro + modes, ✂ sezione — a disabled placeholder until
+    task A). Keys `1-4`; P/T/E/M/F as before, a key shared by several tools
+    (P, T) takes the one used last; tab + tool per tab remembered in
+    localStorage `noodle:view:drawTools`. Common row, every tab: ↶ ↷ ⌫ Muovi,
+    colours, sizes, save state, Pulisci (in ⋯ on a phone), Fatto ✓, ✕. On a
+    phone: tabs as segments on top, the tool row scrolls sideways, the common
+    row stays. There is **no note text field** any more: a note is what is
+    drawn and written on the part; `text` stays in the data ('' for new notes,
+    an old note's sentence is kept when it is resumed).
+    **A tool is one `registerTool({id, tab, key, icon, label, title, mode,
+    cursor, hint, options, select, deselect, down/move/up/cancel, click,
+    ownsTaps, disabled})`** — `webui/view-tools.js`, a table + a dispatcher
+    that calls the active tool's handlers in the CAPTURE phase on `#vp` (a
+    gesture stays with the tool that got its pointerdown); `ctx` carries
+    what view.html shares with a tool module. Tests:
+    `tests/ui/view-tools.test.cjs`.
+  - **↷ redo**: the action stack has two sides (`actions` / `redone`); ↶
+    steps back, ↷ steps forward, a new action (`pushAction`) empties the redo
+    side; Ctrl+Shift+Z / Ctrl+Y. Every step goes through the autosave (PUT;
+    DELETE when nothing is left — a ↷ after that is a new note, new id) and
+    re-shoots the view pictures it touched (`refreshViews`), both ways. A
+    module's action may carry its own `undo()` / `redo()`.
   - **One picture per VIEW, not per note** — paid for on the first real note:
     the main JPEG is the LAST view, and a cross drawn under a bolt head from
     below was simply not in it (nor a line along the thread); the agent found
@@ -1761,7 +1786,7 @@ result while the workflow moves on.
     re-saved the note. A failed save shows `⚠ non salvata, riprovo` in the
     `#d-save` chip and retries every 4s; `visibilitychange` (a phone
     backgrounding the page) saves at once, `beforeunload` with a change still
-    unsent saves AND asks. «Fatto ✓» (or Enter in the text) closes the note:
+    unsent saves AND asks. «Fatto ✓» closes the note:
     the next mark starts a new one. The live note is drawn by the draft, not
     by `noteObject` (it would show twice), and is «✎ in corso» in the list.
     **…and it comes BACK into the draft** (`resumeNote`): strokes (painted
@@ -1774,14 +1799,16 @@ result while the workflow moves on.
     holds the note) and resumes it on load unless it is done; any note has a
     ✎ in the list to continue it. The undo history is not rebuilt: ↶ starts
     from the note as saved (⌫ still rubs anything out).
-  - **⌫ eraser**: whole strokes (the pen already splits them where it leaves
-    the surface), hit-tested in 3D — the point on the PART vs each stroke's
+  - **⌫ eraser**: any object of the note, whole — a stroke (the pen already
+    splits them where it leaves the surface), a painted word, a targhetta, a
+    decal, a picture, a dimension (along its line), a shape — hit-tested in 3D — the point on the PART vs each stroke's
     polyline, radius from the size buttons in px → mm (`ERASE_PX`). Picking
     the tubes would miss 3px lines and catch strokes on the far side. Draft
     only; sent notes stay immutable.
   - **T — text ON the part, and it is DATA.** Drag a box (a tap = default box,
     smaller on a phone), type, Enter; tap a label with T to edit; ⌫ rubs it
-    out. Three STYLES, picked next to T and remembered (`noodle:view:labelStyle`),
+    out. Three STYLES = three tools (T vernice and ▭ decal in ✎ Matita, ⚑
+    targhetta in ◆ Tag), the last one remembered (`noodle:view:labelStyle`),
     stored per label as `style` ("tag" when absent, for old notes):
     **✎ vernice** (`paint`, the default) — quill: «come disegna già a mano può
     stampare testo?». The words are laid out in the box in SCREEN space with a
@@ -1909,7 +1936,7 @@ result while the workflow moves on.
   `center`, `quat`, `anchor`/`normal` of the surface, the piece; `cad_notes`
   adds a `summary` and `near_marks`). A tap on the part sets one down SITTING
   on the surface (local Z = the normal). Selected, it wears ONE set of handles
-  at a time, picked in a modes row of `#s-bar` (`gizmoMode`, `cageMode`,
+  at a time, picked in ▣ Blocky's tool row (`#s-modes`; `gizmoMode`, `cageMode`,
   remembered in localStorage `noodle:view:gizmoMode|cageMode`; `refreshCage`
   builds only the active set, one function per set, and `handleAt` finds what
   is there): **✥ Sposta** = three arrows along its own X/Y/Z, on a LEASH (the
