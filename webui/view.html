@@ -242,8 +242,18 @@
     backdrop-filter:blur(4px);}
   #vp.drawing #dbar{display:flex;}
   #vp.drawing #d-open,#vp.drawing #stats{display:none;}
-  /* tabs | the row every tab shares (↶ ↷ ⌫ colours sizes state ✕) / the tab's tools */
-  #d-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  /* tabs · the note's name, Fatto ✓ ⋯ ▾ ✕ / the row every tab shares (↶ ↷ ⌫ ✋ colours sizes) / the tab's tools */
+  #d-head{display:flex;align-items:center;gap:10px;}
+  #d-end{display:flex;align-items:center;gap:6px;margin-left:auto;position:relative;min-width:0;}
+  #d-cur{display:none;gap:4px;}
+  #d-cur .lb{font-size:12px;}
+  /* ▾ hidden: only the top row is left — the tool in hand, the name, Fatto ⋯ ▴ ✕ */
+  #vp.dhide #d-tabs,#vp.dhide #d-common,#vp.dhide #d-rows,#vp.dhide #d-hint{display:none;}
+  #vp.dhide #d-cur{display:inline-flex;}
+  #vp.dhide #dbar{padding:4px 6px;}
+  #vp.dhide #d-head{gap:6px;}
+  /* the ✂ cut's controls live in the tool row: with the bar hidden its own bar comes back */
+  #vp.drawing.dhide #cutbar.open{display:flex;top:58px;}
   #d-tabs{display:flex;gap:2px;background:var(--bg-0);border:1px solid var(--border);border-radius:10px;padding:2px;}
   #d-tabs .dtab{border:0;background:none;min-height:30px;padding:3px 10px;color:var(--text-dim);}
   #d-tabs .dtab.on{background:var(--bg-3);color:#fff;box-shadow:inset 0 -2px 0 var(--accent);}
@@ -254,7 +264,6 @@
   .titem{display:inline-flex;align-items:center;gap:4px;}
   .titem .tool .lb{font-size:11px;}
   .tool:disabled{opacity:.4;cursor:default;}
-  .narrow{display:none !important;}
   #d-menu{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:9;flex-direction:column;gap:4px;
     background:var(--bg-2);border:1px solid var(--border);border-radius:10px;padding:6px;box-shadow:0 10px 30px rgba(0,0,0,.5);}
   #d-menu.open{display:flex;}
@@ -299,10 +308,12 @@
   .sz.on,.tool.on{border-color:var(--accent);background:var(--bg-2);}
   #d-send{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;}
   #d-send:disabled{opacity:.4;cursor:default;}
-  #d-save{font-size:12px;color:var(--muted,#9ca3af);white-space:nowrap;cursor:pointer;}
+  #d-save{font-size:12px;color:var(--text);white-space:nowrap;cursor:pointer;min-width:0;overflow:hidden;text-overflow:ellipsis;}
   #d-save:empty{display:none;}
-  #d-save[data-state="error"]{color:#f59e0b;}
-  #d-save[data-state="saved"]{color:#22c55e;}
+  #d-save b{font:600 12px var(--mono);}
+  #d-save .dot{font-style:normal;margin-right:4px;color:#22c55e;}
+  #d-save[data-state="saving"] .dot{color:var(--text-dim);}
+  #d-save[data-state="error"],#d-save[data-state="error"] .dot{color:#f59e0b;}
   #d-hint{flex-basis:100%;color:var(--text-dim);font-size:11px;padding:0 2px;}
   #toast{position:absolute;left:50%;top:64px;transform:translateX(-50%);z-index:8;display:none;
     background:var(--bg-2);border:1px solid var(--green);color:var(--text);border-radius:10px;padding:8px 12px;
@@ -338,8 +349,15 @@
     #dbar .sz{width:36px;}
     #dbar .sep,#d-hint{display:none;}
     #dbar .tool{min-width:36px;padding:4px 6px;}
-    #d-head{display:contents;}
-    #d-tabs{order:1;}
+    /* the top row comes first: name + Fatto ⋯ ▾ ✕, then the tabs under it;
+       hidden, it is the whole bar, at the bottom where the bar was */
+    #d-head{order:1;flex-wrap:wrap;gap:5px;}
+    #d-end{order:-1;flex:1 1 100%;gap:4px;justify-content:flex-end;}
+    #d-save{flex:1 1 auto;font-size:11px;}
+    #d-tabs{flex:1 1 100%;}
+    #d-cur{order:-2;}
+    #vp.dhide #d-end{flex:1 1 0;}
+    #vp.drawing.dhide #cutbar.open{top:auto;bottom:calc(var(--dbh,60px) + 12px);}
     #d-tabs .dtab{flex:1;min-height:36px;padding:2px 4px;gap:4px;font-size:12px;}
     #d-rows{order:2;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;
       scrollbar-width:none;}
@@ -348,10 +366,7 @@
     #d-common .grp{flex-wrap:nowrap;gap:3px;}
     #d-common .sw-btn{width:20px;height:20px;}
     #d-common .tool .lb{display:none;}       /* ⌫ ✋: icons only, the row has to fit in two lines */
-    #d-save{max-width:84px;overflow:hidden;text-overflow:ellipsis;font-size:11px;}
     #d-menu{top:auto;bottom:calc(100% + 6px);}
-    .wide{display:none !important;}
-    .narrow{display:inline-flex !important;}
     #s-bar{top:8px;bottom:auto;}          /* the draw bar owns the bottom on a phone */
     /* the modes row stays ONE row in 390px: short labels, tight padding */
     #s-modes .btn{min-height:36px;padding:3px 6px;font-size:12px;gap:3px;}
@@ -369,6 +384,7 @@
     #s-del,#s-done{padding:4px 8px;min-width:0;}
     #toast{top:8px;}
   }
+  @media (pointer:coarse){ #d-end .btn,#d-cur{min-height:44px;min-width:44px;} }
 </style>
 </head>
 <body>
@@ -419,24 +435,27 @@
         <!-- the tabs + the row every tab shares; the tools themselves are put in
              their tab rows by webui/view-tools.js (registerTool), not written here -->
         <div id="d-head">
+          <button class="btn" id="d-cur" title="Riapri la barra (B)"></button>
           <div id="d-tabs" role="tablist" aria-label="Strumenti di disegno"></div>
-          <div id="d-common">
-            <button class="btn" id="d-undo" title="Annulla l'ultima azione: tratto, testo, cancellatura, quota, forma (Ctrl+Z)">↶</button>
-            <button class="btn" id="d-redo" title="Ripeti l'azione annullata (Ctrl+Shift+Z, Ctrl+Y)">↷</button>
-            <span class="grp" id="d-ctools"></span>
-            <span class="sep"></span>
-            <div class="grp" id="d-colors"></div>
-            <input type="color" id="d-custom" title="Altro colore" value="#d946ef">
-            <span class="sep"></span>
-            <div class="grp" id="d-sizes"></div>
-            <span class="sep"></span>
+          <!-- the note's name + Fatto · ⋯ · hide · ✕: the row that stays when the bar is hidden -->
+          <div id="d-end">
             <span id="d-save" role="status" aria-live="polite"></span>
-            <button class="btn wide" id="d-clear" title="Togli tutto dalla nota">Pulisci</button>
             <button class="btn" id="d-send" title="La nota si salva da sola mentre disegni e l'agente la vede già. Fatto la chiude: i prossimi segni fanno una nota nuova">Fatto ✓</button>
-            <button class="btn narrow" id="d-more" aria-label="Altro" title="Altro">⋯</button>
+            <button class="btn" id="d-more" aria-label="Altro" title="Altro">⋯</button>
+            <button class="btn" id="d-hide" aria-label="Nascondi la barra" title="Nascondi la barra: lo strumento resta attivo (B)">▾</button>
             <button class="btn" id="d-x" aria-label="Chiudi" title="Esci dal disegno (Esc)">✕</button>
-            <div id="d-menu" role="menu"><button class="btn" id="d-clear2">Pulisci: togli tutto dalla nota</button></div>
+            <div id="d-menu" role="menu"><button class="btn" id="d-clear" title="Togli tutto dalla nota">Pulisci: togli tutto dalla nota</button></div>
           </div>
+        </div>
+        <div id="d-common">
+          <button class="btn" id="d-undo" title="Annulla l'ultima azione: tratto, testo, cancellatura, quota, forma (Ctrl+Z)">↶</button>
+          <button class="btn" id="d-redo" title="Ripeti l'azione annullata (Ctrl+Shift+Z, Ctrl+Y)">↷</button>
+          <span class="grp" id="d-ctools"></span>
+          <span class="sep"></span>
+          <div class="grp" id="d-colors"></div>
+          <input type="color" id="d-custom" title="Altro colore" value="#d946ef">
+          <span class="sep"></span>
+          <div class="grp" id="d-sizes"></div>
         </div>
         <div id="d-rows"></div>
         <div id="d-hint"></div>
@@ -1177,7 +1196,7 @@ const labels = [];
 // `redone` is its other side: ↶ moves an action there, ↷ moves it back, and a
 // NEW action empties it (pushAction).
 const actions = [], redone = [];
-let gesture = 0, seq = 0, painting = null, drawing = false;
+let gesture = 0, seq = 0, painting = null, drawing = false, dHidden = false;   // dHidden: ▾ the draw bar folded to its top row
 let notesData = [];                            // this gen's notes, as stored
 // A note has no text field any more — it is what is drawn and written ON the
 // part. An OLD note resumed into the draft keeps its sentence here, so a PUT
@@ -3337,7 +3356,8 @@ function syncDraw() {
   $('d-send').disabled = !any && !save.id;
   if (any || save.id) scheduleSave();
   $('d-undo').disabled = !actions.length; $('d-redo').disabled = !redone.length;
-  $('d-clear').disabled = $('d-clear2').disabled = !any;
+  $('d-clear').disabled = !any;
+  syncHide();
   const h = toolDef && toolDef.hint, ph = VP.hint(toolDef);
   // ⊞ with a working plane in use the void draws: its own line replaces «fuori dal pezzo: muovi»
   $('d-hint').textContent = ph ? (typeof h === 'function' ? h() : h || '') + (h ? ' · ' : '') + ph
@@ -3351,6 +3371,7 @@ function syncDraw() {
 }
 function setDrawing(on) {
   drawing = on;
+  if (on) dHidden = false;                     // re-entering ✎ always opens the whole bar
   vp.classList.toggle('drawing', on);
   if (on && clock.playing) setPlaying(false);
   if (!on) { cancelGesture(); cancelMeasure(); selectShape(null); closeEditor(true); $('d-ring').style.display = 'none'; $('d-menu').classList.remove('open'); }
@@ -3391,11 +3412,28 @@ PEN_SIZES.forEach(sz => {
 });
 $('d-open').onclick = () => setDrawing(true);
 $('d-x').onclick = () => setDrawing(false);
+// ▾ hide the bar while you work: only its top row stays (the tool in hand,
+// the note's name, Fatto ✓ · ⋯ · ▴ · ✕) and the tool keeps working — the
+// shape's own bar, the ✂ cut's controls stay too. Not remembered: entering
+// ✎ again always opens it whole. Key B (H already hides the selected piece)
+
+function syncHide() {
+  vp.classList.toggle('dhide', drawing && dHidden);
+  const h = $('d-hide');
+  h.textContent = dHidden ? '▴' : '▾';
+  h.title = dHidden ? 'Riapri la barra (B)' : 'Nascondi la barra: lo strumento resta attivo (B)';
+  h.setAttribute('aria-label', dHidden ? 'Riapri la barra' : 'Nascondi la barra');
+  const d = toolDef;
+  $('d-cur').innerHTML = d ? `<span class="ic">${d.icon}</span>${d.label ? `<span class="lb">${esc(d.label)}</span>` : ''}` : '';
+}
+function setHidden(on) { dHidden = on; $('d-menu').classList.remove('open'); syncHide(); viewer.invalidate(); }
+$('d-hide').onclick = () => setHidden(!dHidden);
+$('d-cur').onclick = () => setHidden(false);
 $('d-undo').onclick = undo;
 $('d-redo').onclick = redo;
 const askClear = () => { $('d-menu').classList.remove('open'); if (draft.length < 4 || confirm('Togliere tutto dalla nota?')) clearDraft(); };
-$('d-clear').onclick = $('d-clear2').onclick = askClear;
-// ⋯ (a phone has no room for Pulisci in the common row)
+$('d-clear').onclick = askClear;
+// ⋯ the secondary things (Pulisci), on every screen
 $('d-more').onclick = e => { e.stopPropagation(); $('d-menu').classList.toggle('open'); };
 document.addEventListener('pointerdown', e => {
   if (!$('d-menu').contains(e.target) && e.target !== $('d-more')) $('d-menu').classList.remove('open');
@@ -3464,6 +3502,7 @@ addEventListener('keydown', e => {
   else if (e.key === 'Enter' && tool === 'measure' && mPending) { e.stopImmediatePropagation(); finishSingle(); }
   else if (e.key === 'Escape') { e.stopImmediatePropagation(); setDrawing(false); }
   else if (e.ctrlKey || e.metaKey || e.altKey) return;
+  else if (k === 'b') { e.stopImmediatePropagation(); setHidden(!dHidden); }
   else if (tab) { e.stopImmediatePropagation(); TOOLS.setTab(tab.id); }
   // the shape's handles: G move · R rotate · C cage (bend + scale, all in one).
   // No H for «hide the gizmo»: H already hides the selected PIECE
@@ -3615,10 +3654,14 @@ function setSaveState(st) {
   save.state = st;
   const el = $('d-save'), ref = save.id ? `${GEN}#${save.id}` : '';
   el.dataset.state = st;
-  el.textContent = st === 'saving' ? '… salvo' : st === 'error' ? '⚠ non salvata, riprovo'
-    : st === 'static' ? 'anteprima: non salvata' : save.id ? `● ${ref} salvata` : '';
+  // the NAME of the note, in the bar's top row: a dot says its state (green
+  // = on the server, amber = not saved, grey = saving), the ref is what you copy
+  const dot = st === 'error' ? '⚠' : st === 'saving' ? '◌' : '●';
+  el.innerHTML = st === 'static' ? 'anteprima: non salvata'
+    : ref ? `<i class="dot">${dot}</i><b>${esc(ref)}</b>${st === 'error' ? ' non salvata' : ''}`
+    : st === 'saving' ? '◌ salvo…' : st === 'error' ? '⚠ non salvata, riprovo' : '';
   el.title = st === 'error' ? `Il server non risponde (${save.err}): riprovo da solo, il disegno resta qui`
-    : save.id ? `La nota ${NAME}/${ref} è sul server e segue quello che disegni. Clic: copia il riferimento` : '';
+    : save.id ? `La nota ${NAME}/${ref} ${st === 'saving' ? 'si sta salvando' : 'è sul server'} e segue quello che disegni. Clic: copia il riferimento` : '';
   syncDraw();
 }
 $('d-save').onclick = async () => {
