@@ -468,6 +468,9 @@
         <div id="d-common">
           <button class="btn" id="d-undo" title="Annulla l'ultima azione: tratto, testo, cancellatura, quota, forma (Ctrl+Z)">↶</button>
           <button class="btn" id="d-redo" title="Ripeti l'azione annullata (Ctrl+Shift+Z, Ctrl+Y)">↷</button>
+          <!-- 🗑 in sight: ↶ one at a time is slow and ⌫ catches what lies near — quill:
+               «metti un bottone clear all … perché non sempre undo leva tutto o la gomma prende le cose» -->
+          <button class="btn" id="d-clearall" aria-label="Pulisci tutto" title="Pulisci: togli tutto dalla nota (anche dal menu ⋯)">🗑</button>
           <span class="grp" id="d-ctools"></span>
           <span class="sep"></span>
           <div class="grp" id="d-colors"></div>
@@ -3399,7 +3402,7 @@ function syncDraw() {
   $('d-send').disabled = !any && !save.id;
   if (any || save.id) scheduleSave();
   $('d-undo').disabled = !actions.length; $('d-redo').disabled = !redone.length;
-  $('d-clear').disabled = !any;
+  $('d-clear').disabled = $('d-clearall').disabled = !any;
   syncHide();
   const h = toolDef && toolDef.hint, ph = VP.hint(toolDef);
   // ⊞ with a working plane in use the void draws: its own line replaces «fuori dal pezzo: muovi»
@@ -3564,7 +3567,7 @@ $('d-cur').onclick = () => setHidden(false);
 $('d-undo').onclick = undo;
 $('d-redo').onclick = redo;
 const askClear = () => { $('d-menu').classList.remove('open'); if (draft.length < 4 || confirm('Togliere tutto dalla nota?')) clearDraft(); };
-$('d-clear').onclick = askClear;
+$('d-clear').onclick = $('d-clearall').onclick = askClear;
 // ⋯ the secondary things (Pulisci), on every screen
 $('d-more').onclick = e => { e.stopPropagation(); $('d-menu').classList.toggle('open'); };
 document.addEventListener('pointerdown', e => {

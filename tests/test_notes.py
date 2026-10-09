@@ -1007,6 +1007,15 @@ def test_the_tab_row_carries_the_name_fatto_menu_hide_and_close():
     assert 'class="btn narrow" id="d-more"' not in VIEW and ".narrow{" not in VIEW
 
 
+def test_clear_all_is_in_sight_next_to_undo():
+    # quill: «metti un bottone clear all nel disegna perché non sempre undo
+    # leva tutto o la gomma prende le cose» — Pulisci in ⋯ was not found
+    common = VIEW[VIEW.index('<div id="d-common">'):VIEW.index('<div id="d-rows">')]
+    assert common.index('id="d-redo"') < common.index('id="d-clearall"')
+    assert "$('d-clear').onclick = $('d-clearall').onclick = askClear;" in VIEW
+    assert "$('d-clearall').disabled = !any" in VIEW
+
+
 def test_hiding_the_draw_bar_keeps_its_top_row_and_the_tool():
     # ▾ folds the bar to its top row; the tool in hand keeps working (no
     # deselect), the ✂ cut's own bar comes back, entering ✎ opens it whole

@@ -1717,10 +1717,11 @@ result while the workflow moves on.
     ◌) · 🔧 Tool (↔ metro + modes, ✂ sezione — a disabled placeholder until
     task A). Keys `1-4`; P/T/E/M/F as before, a key shared by several tools
     (P, T) takes the one used last; tab + tool per tab remembered in
-    localStorage `noodle:view:drawTools`. Common row, every tab: ↶ ↷ ⌫ Muovi,
+    localStorage `noodle:view:drawTools`. Common row, every tab: ↶ ↷ 🗑 ⌫ Muovi,
     colours, sizes. The TAB row ends with the note's name + state (`#d-save`:
     ● g4#a1, green saved / ◌ saving / ⚠ not saved — click copies the ref),
-    Fatto ✓ · ⋯ (Pulisci, on every screen) · ▾ · ✕. On a phone that end
+    Fatto ✓ · ⋯ (Pulisci, on every screen — and 🗑 next to ↷ is the same
+    Pulisci in sight, since nobody found it in the menu) · ▾ · ✕. On a phone that end
     sits on its own line above the tabs, the tool row scrolls sideways, the
     common row stays; on `pointer:coarse` those buttons are ≥ 44px.
     **▾ hides the bar while you work** (quill: «nascondere la tab disegna
