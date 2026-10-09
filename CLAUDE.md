@@ -2012,13 +2012,21 @@ result while the workflow moves on.
   its `plane` and `near_piece` {node, title, distance_mm} — point-to-TRIANGLE
   distance (`_point_tri_dist`, numpy) on the gen's FROZEN view.json meshes,
   computed once at save and stored on the stroke. The ⌫ eraser finds void ink
-  on SCREEN (`planeInkNear`, segment by segment). Not built: the line where the
-  plane cuts the part — it waits for ✂'s CPU contour (`SECTION_HOOK` in
-  view-plane.js). Tests: `tests/test_view_plane.py`.
+  on SCREEN (`planeInkNear`, segment by segment). `near_piece` skips the
+  pieces the note's `hide=` had hidden (a node, a scene body, or one piece of
+  a fan-out buffer by its `parts` counts). The sheet is a faint veil fading to
+  a rounded-square border (it used to cover most of g64's view), and the line
+  where the plane meets the shown pieces is drawn on it — ✂'s CPU slice
+  (`sliceTriangles`), solid + faint through the part, computed 150 ms after
+  the plane moves and never while a pointer button is down, cached per plane
+  (+ section state), the removed side of a ✂ cut dropped. Tests:
+  `tests/test_view_plane.py`.
 - **The viewer draws on demand** (`CadViewer.invalidate()`, no continuous loop):
   anything that changes the scene from outside the viewer must ask for a frame.
   `/view` does it in `poseTrack()` (every timeline pose) and `apply()` (hidden
   pieces); without it the ▶ player moves the meshes and the canvas stays still.
+  `_tick` clears the dirty flag BEFORE it draws, so a hook that runs inside the
+  frame (`scene.onBeforeRender`) and asks for another one gets it.
 - **✂ Sezione — one plane, the cut face hatched** (`PLAN_VIEW_SECTION.md` §1
   phase 1). ONE state, two ways in: ✂ beside Tutti/Inverti/Inquadra (key X,
   floating X/Y/Z · slider · ⇄ · ✕ bar) and the `section` tool in ✎ Disegna's
@@ -2097,10 +2105,23 @@ result while the workflow moves on.
   on lift (the first finger of a pinch lands on it too). It all runs in
   `scene.onBeforeRender` (main frame only, not the bloom target), so only
   when a frame is drawn. **Trap, paid for:** an `invalidate()` from inside a
-  frame is eaten — `_tick` clears `_dirty` after rendering — so the transition
-  asks for its next frame in a `queueMicrotask`; without it a plate froze half
-  faded. No registry: plates are found by `traverseVisible` each frame.
+  frame used to be eaten (`_tick` cleared `_dirty` AFTER rendering) and a
+  plate froze half faded; `_tick` now clears it before drawing, so the
+  transition asks for its next frame with a plain `invalidate()`. No
+  registry: plates are found by `traverseVisible` each frame.
   Tests: `tests/ui/plates.test.cjs`.
+- **✂ × 🔍 × ⊞ — where the four tools meet** (`tests/test_view_int.py`).
+  ONE `firstHit` → `hitOf(hits, skipGhost)`: the first pass looks through
+  ghosts, the second takes them; inside each pass a hit on the side the cut
+  removed is air and the cap parity is counted on the hits that pass may take
+  — so a ghost's cap is looked through with the ghost. section.js re-hooks
+  the cut EVERY frame (a flag per object), because Aspetto adds children after
+  bind: a fan-out piece's proxy (`userData.lookProxy`, its own group 0) and a
+  ghost's edges were drawn whole on a cut view; the cap reads colour and
+  visibility from the proxy, and a ghost's cap is hatched at 0.3 alpha with
+  no depth (CustomBlending, so it stays in the opaque list and in stencil
+  order). One stencil count per LEAF, not per drawn object: no double cap.
+  In the piece list ✂ and 🎨 are 24 px (36 on touch) before ◎.
 
 
 ## 9d. Exports — the bake bundle and the per-workflow index
