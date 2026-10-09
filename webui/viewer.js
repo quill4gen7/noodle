@@ -378,7 +378,9 @@ export class CadViewer {
     camera.up.set(0, 0, 1);                 // Z is up
     camera.position.set(60, -60, 45);
 
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    // stencil: the ✂ section caps count faces in it (webui/section.js); three
+    // r163+ no longer asks for one by default
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, stencil: true });
   // Filmic tone mapping + an image-based environment. This is the whole
   // difference between "shaded triangles" and "a render": specular highlights
   // that wrap, and a sky/floor gradient reflected in every curved face.

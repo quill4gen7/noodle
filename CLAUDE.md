@@ -1989,6 +1989,38 @@ result while the workflow moves on.
   anything that changes the scene from outside the viewer must ask for a frame.
   `/view` does it in `poseTrack()` (every timeline pose) and `apply()` (hidden
   pieces); without it the ▶ player moves the meshes and the canvas stays still.
+- **✂ Sezione — one plane, the cut face hatched** (`PLAN_VIEW_SECTION.md` §1
+  phase 1). ONE state, two ways in: ✂ beside Tutti/Inverti/Inquadra (key X,
+  floating X/Y/Z · slider · ⇄ · ✕ bar) and the `section` tool in ✎ Disegna's
+  🔧 Tool tab (key X there too) — `webui/view-section.js` builds the controls
+  twice from one function. ✂ in a list row leaves that piece WHOLE (the bolt
+  intact in the cut nut). Hash `cut=z:12.5&cutflip=1&nocut=n3,n7.2` (nocut
+  encoded like `hide=`); a new plane takes the half facing the camera off;
+  the slider spans the box of the SHOWN pieces. Rendering in
+  `webui/section.js` (for the editor later), pure geometry in
+  `section-core.js` (`tests/ui/section.test.cjs`):
+  - the cut is `material.clippingPlanes` set in each piece's `onBeforeRender`,
+    on whatever material it wears at draw time — never `renderer.
+    clippingPlanes` (it would cut grid, notes, tags) — so a restyle (🔍 Aspetto)
+    keeps the cut with no call to remember;
+  - the cap is the stencil trick PER PIECE (back faces +1, front −1, a quad on
+    the plane where ≠ 0, `clearStencil` after each): one stencil for all could
+    not tell nested pieces apart. It needs `stencil: true` on the renderer
+    (three ≥ r163 no longer asks for one). Caps are opaque, so the
+    transmission target (which has a stencil too) draws them behind glass;
+  - only CLOSED pieces get a cap (`closedRange`: every welded edge used an even
+    number of times); lines, dots and open shells are cut and not capped;
+  - hatch in the plane's own axes in mm (pitch ≈ 9 px snapped to 1/2/5, so it
+    neither swims nor crawls), 45°/135° chosen greedily between pieces whose
+    boxes overlap; the dark contour is the CPU triangle/plane slice, hidden
+    while ▶ plays and redrawn when the pieces stop (`setMoving` / `posed`);
+  - `firstHit` (the ONE raycast: pen, metro, forme, targhette, selection)
+    skips hits on the removed side and returns the CAP when the ray is inside
+    a cut piece at the plane (odd number of that piece's surfaces crossed —
+    the stencil's parity); `h.cap` → the metro takes a free point there;
+  - a note drawn on a sectioned view saves `cut: {axis, pos, flip, nocut?}`
+    and the server adds `keeps: "y >= 0"`; `cad_notes` shows it
+    (`tests/test_view_section.py`).
 
 
 ## 9d. Exports — the bake bundle and the per-workflow index
