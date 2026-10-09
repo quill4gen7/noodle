@@ -1,6 +1,7 @@
 # PLAN_CABLES — cavi dentro il pezzo: quanto spazio prendono, e se sono troppo pressati
 
-Stato: **indagine + prototipo misurato, nessun nodo**. 2026-10-09.
+Stato: **indagine + prototipo misurato, provato su creepyFinger v4, nessun nodo**. 2026-10-09/10.
+Prima prova (scatola con feritoia, XPBD) nei §2–4; la prova sul pezzo vero, che ha cambiato motore, nel §10.
 Prototipo: `scripts/proto_cables_xpbd.py` (gira nel container, numpy + scipy +
 manifold3d, niente dipendenze nuove). Risultato da guardare:
 `/view/zz-cavi-probe/g1` (tre scatole, cavi rilassati, tagliate a metà).
@@ -174,10 +175,93 @@ Una sola risoluzione per due uscite: `_emit_cablesim`, modellato su
 - **Compressione vera della guaina** (FEM): la sovrapposizione residua ne fa
   da indicatore.
 
-## 9. Domande per quill
+## 9. Domande per quill (prima tornata)
 
 - **Quali cavi**: alimentazione tondi, servo (tre fili affiancati: quasi
   piatti), corrugati?
 - **Verdetto**: basta ok / al limite / troppo pressati, o servono newton veri?
 - **Pezzo di prova**: c'è un pezzo reale su cui tarare le soglie? Per esempio
   tars-pet / sg92r, che ha servo e cavi.
+
+## 10. Prova su creepyFinger v4 (2026-10-10) — e il motore cambia
+
+quill: «provalo con il creepy finger; accoppiare i cavi per le piattine; la forza vera non importa: una
+**lunghezza utile** e sapere **quando si schiacceranno e come si piegheranno** chiusi dentro l'oggetto».
+Codice: `scripts/cavi/` (`run_dito.py` esegue il CodeBlock e esporta le mesh, `cavi2.py` scena/geodetica,
+`cavi3.py` energia, `dito3.py` chiusura, `dito_chiuso.py` lunghezze a guscio chiuso). Gen sul gpunix:
+`zz-cavi-creepyfinger/g1` (a libro), `g2`/`g3` (dall'alto, due lunghezze), `g4` (chiuso, cavi stesi).
+
+**Ipotesi** (da confermare): servo = piattina di 4 fili Ø0,9 che esce dal lato corto a x = sx1, larga
+lungo z (il «3 + il blu, 3,5 × 1,5» del codice); batteria = rosso/nero Ø1,2 accoppiati, sale nella
+camera davanti alla batteria e va al JST; GY-521 = piattina di 4 fili Ø1,0 dai pin −y verso il basso;
+servo e GY-521 arrivano su piazzole sotto la scheda a y = ∓9,5, x −24…−31,6 (ai bordi c'è la guida:
+la fila di pin vera a ±11,4 è dentro il pieno). EI 1e7 g·mm³/s² (= 1e-5 N·m², filo in PVC).
+
+### Cosa ha imparato il prototipo (e perché XPBD è uscito)
+
+1. **XPBD non regge un filo vero.** Un filo da 26 AWG si regge da solo per ~10 cm: la flessione è
+   rigida rispetto al peso, e con i vincoli quasi rigidi il Jacobi non converge. Misurato, senza
+   ostacoli: un filo di 40 mm fra estremi a 30 mm restava stirato del 19 %. Non è taratura.
+2. **Ci interessa l'equilibrio, non la dinamica.** `cavi3.py` minimizza l'energia (flessione
+   (EI/s)(1 − cos θ), molla di lunghezza, legami di piattina, gravità, penalità di contatto su SDF e
+   fra sfere) con L-BFGS; la chiusura è quasi-statica, a passi. Gradiente verificato (errore 2e-8);
+   filo singolo e piattina a vuoto: stiramento 0,003 %.
+3. **La partenza conta:** dritta e compressa è un punto di sella (resta lì); serve una gobba col lasco
+   PERPENDICOLARE alla piattina (dove piega facile), scelta fra lobi e direzioni quella che tocca meno.
+4. **Piattina sfilata ai capi:** se i fili vanno a pin a 2,54, i tratti sfilati sono più lunghi del
+   tratto incollato (fanno la diagonale). Senza, il filo esterno risultava stirato del 17 %.
+5. **Passo della chiusura < diametro del filo.** A 6° per passo il bordo del coperchio si sposta di 4 mm,
+   il filo passa da una parete di 1,8 mm e la penalità lo spinge FUORI dal lato sbagliato. Passi di
+   0,4 mm (o 1,5°) e partenza calda: le particelle vicine al coperchio si muovono con lui.
+6. **Il verso della cerniera** si controlla a 90°, non a 180° (a 180° i due versi coincidono): il primo
+   giro apriva il coperchio attraverso il corpo.
+7. **Gli attacchi falsano le misure** (la particella d'estremo tocca la faccia del JST/servo): penetrazione
+   e stiramento si misurano lontano 3 particelle dagli attacchi.
+
+### Risultati (con le ipotesi sopra)
+
+**Lunghezza minima** = percorso più corto nello spazio libero (BFS 26-connesso su griglia 0,4 mm, poi
+accorciato), per posa:
+
+| posa | servo | batteria | GY-521 |
+|---|---|---|---|
+| chiuso | 43,4 | 39,1 | 31,8 |
+| aperto a libro (cerniera sullo spigolo −y del taglio) 90° | 48,0 | 53,4 | 28,6 |
+| a libro 180° | 49,5 | 63,8 | 28,6 |
+| coperchio alzato dritto 20 mm | 52,2 | 47,9 | 28,6 |
+| alzato 30 mm | 56,9 | 55,9 | 28,6 |
+
+**Quanta ne sta, chiuso, col cavo steso nel suo percorso** (`dito_chiuso.py`, +mm sul minimo):
+batteria **ci sta fino a +30 (69 mm)**, l'avanzo si ripiega nella gabbia, R min 4–6 mm; GY-521 ci sta a
++5 (37 mm), da +10 l'avanzo non ha posto sotto il modulo; servo **non conclusivo** (schiacciato a ogni
+lunghezza: la piattina deve girarsi di taglio per entrare nel passaggio −y largo 3,0 mm, e il modello
+non ha rigidezza a torsione).
+
+**Chiusura** (quando si schiaccia):
+- **a libro, senza infilare**: la piattina del servo resta FUORI, pizzicata sul bordo −y (si schiaccia
+  da 16°); è un risultato vero sul gesto, non sulla lunghezza.
+- **dall'alto 30 mm**: batteria 59 mm chiude pulita (mai schiacciata); a 66 e 76 mm il lasco penzola e
+  resta preso a 3° dalla chiusura → l'avanzo va STESO nella gabbia prima di chiudere, da solo non ci va.
+  Servo e GY-521 schiacciati a ogni lunghezza: un cavo sollevato fuori dal suo canale non ci ricade da
+  solo, il guscio è pieno con vuoti stretti.
+
+**Quindi la lunghezza utile della batteria** (aprendo di 30 mm dall'alto) è **56–69 mm**, a patto di
+stenderla nella gabbia; aprendo a libro fino a 90° servono ≥ 54 mm.
+
+### Cosa cambia nel piano
+
+- Il Tier 1 è **minimizzazione d'energia quasi-statica**, non XPBD. Il prototipo XPBD (`proto_cables_xpbd.py`)
+  resta per la scatola con feritoia, dove funzionava perché i cavi erano morbidi e lo spazio largo.
+- Il numero più utile è la **geodetica**, ed è economico (~8 s di griglia per tre cavi): «lunghezza
+  minima per aprire così» non chiede nessuna simulazione. Va nel Tier 0.
+- La chiusura simulata dice **dove** un cavo viene pizzicato se lo lasci dov'è; quello che ci sta va
+  chiesto a guscio chiuso col cavo già steso (`dito_chiuso.py`). Sono due nodi/due domande diverse.
+- Manca: **torsione** nella piattina (senza, una piattina che deve girarsi di taglio non converge);
+  attacchi con la loro direzione e una piccola zona libera garantita; percorso guidato da punti `via`
+  (i canali del progetto) invece della sola geodetica.
+
+### Domande (seconda tornata)
+
+- Dove arrivano davvero servo e GY-521 sulla scheda (pin, lato, da sopra o da sotto)?
+- Il GY-521 ha i pin verso il servo (giù)? Sopra il servo restano 3 mm: è lì che si schiaccia.
+- Come chiudi davvero: dall'alto, a libro, o la scheda entra da dietro col coperchio già chiuso?
