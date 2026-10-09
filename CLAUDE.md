@@ -1718,9 +1718,19 @@ result while the workflow moves on.
     task A). Keys `1-4`; P/T/E/M/F as before, a key shared by several tools
     (P, T) takes the one used last; tab + tool per tab remembered in
     localStorage `noodle:view:drawTools`. Common row, every tab: ↶ ↷ ⌫ Muovi,
-    colours, sizes, save state, Pulisci (in ⋯ on a phone), Fatto ✓, ✕. On a
-    phone: tabs as segments on top, the tool row scrolls sideways, the common
-    row stays. There is **no note text field** any more: a note is what is
+    colours, sizes. The TAB row ends with the note's name + state (`#d-save`:
+    ● g4#a1, green saved / ◌ saving / ⚠ not saved — click copies the ref),
+    Fatto ✓ · ⋯ (Pulisci, on every screen) · ▾ · ✕. On a phone that end
+    sits on its own line above the tabs, the tool row scrolls sideways, the
+    common row stays; on `pointer:coarse` those buttons are ≥ 44px.
+    **▾ hides the bar while you work** (quill: «nascondere la tab disegna
+    mentre si fa un'operazione»; key **B** — H already hides a piece): only
+    the top row is left (`#vp.dhide`: the tool in hand as a chip that
+    reopens it, the name, Fatto ⋯ ▴ ✕), at the top on a desktop and at the
+    bottom on a phone, where the bar was. The tool is NOT deselected — you
+    keep drawing, placing/scaling shapes (their own `#s-bar` stays), measuring;
+    the ✂ cut's controls live in the tool row, so with the bar hidden its own
+    `#cutbar` comes back. Not remembered: entering ✎ always opens it whole. There is **no note text field** any more: a note is what is
     drawn and written on the part; `text` stays in the data ('' for new notes,
     an old note's sentence is kept when it is resumed).
     **A tool is one `registerTool({id, tab, key, icon, label, title, mode,

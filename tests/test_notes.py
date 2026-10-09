@@ -880,10 +880,9 @@ def test_the_draw_bar_is_four_tabs_and_a_common_row():
               "{ id: 'blocky', icon: '▣', label: 'Blocky', key: '3'", "{ id: 'tool', icon: '🔧', label: 'Tool', key: '4'"):
         assert t in TOOLS_JS, t
     assert 'id="d-tabs" role="tablist"' in VIEW and 'id="d-common"' in VIEW and 'id="d-rows"' in VIEW
-    # the common row: ↶ ↷ ⌫ (and Muovi), colours, sizes, state, Fatto, ✕
+    # the common row: ↶ ↷ ⌫ (and Muovi), colours, sizes
     common = VIEW[VIEW.index('<div id="d-common">'):VIEW.index('<div id="d-rows">')]
-    for el in ('id="d-undo"', 'id="d-redo"', 'id="d-ctools"', 'id="d-colors"', 'id="d-sizes"',
-               'id="d-save"', 'id="d-send"', 'id="d-x"'):
+    for el in ('id="d-undo"', 'id="d-redo"', 'id="d-ctools"', 'id="d-colors"', 'id="d-sizes"'):
         assert el in common, el
     assert "TOOLS.registerTool({ id: 'hand', tab: 'common'" in VIEW
     # every tool of today, in its tab
@@ -991,3 +990,33 @@ def test_the_shape_slides_on_the_right_button_or_a_double_tap():
     assert "vp.addEventListener('contextmenu'" in VIEW
     # the hint and the ◌ button say how
     assert "tasto DESTRO trascinato sulla forma (dito: doppio tocco e trascina)" in VIEW
+
+
+def test_the_tab_row_carries_the_name_fatto_menu_hide_and_close():
+    # quill: «metti un hide accanto alla X e metti Fatto e il menu a tre
+    # pallini lì in quella riga» + «anche il nome mettilo lì»
+    head = VIEW[VIEW.index('<div id="d-head">'):VIEW.index('<div id="d-common">')]
+    common = VIEW[VIEW.index('<div id="d-common">'):VIEW.index('<div id="d-rows">')]
+    order = ['id="d-tabs"', 'id="d-save"', 'id="d-send"', 'id="d-more"', 'id="d-hide"', 'id="d-x"']
+    pos = [head.index(el) for el in order]
+    assert pos == sorted(pos), order
+    assert 'id="d-menu"' in head and 'id="d-clear"' in head          # Pulisci lives in ⋯
+    for el in ('id="d-send"', 'id="d-more"', 'id="d-save"', 'id="d-x"', 'id="d-clear"', 'id="d-hide"'):
+        assert el not in common, el
+    # ⋯ on every screen, not only a phone's
+    assert 'class="btn narrow" id="d-more"' not in VIEW and ".narrow{" not in VIEW
+
+
+def test_hiding_the_draw_bar_keeps_its_top_row_and_the_tool():
+    # ▾ folds the bar to its top row; the tool in hand keeps working (no
+    # deselect), the ✂ cut's own bar comes back, entering ✎ opens it whole
+    assert "#vp.dhide #d-tabs,#vp.dhide #d-common,#vp.dhide #d-rows,#vp.dhide #d-hint{display:none;}" in VIEW
+    assert "#vp.drawing.dhide #cutbar.open{display:flex;" in VIEW
+    assert "if (on) dHidden = false;" in VIEW
+    assert "else if (k === 'b') { e.stopImmediatePropagation(); setHidden(!dHidden); }" in VIEW
+    sh = VIEW[VIEW.index("function setHidden("):]
+    sh = sh[:sh.index("\n")]
+    assert "setTool" not in sh and "TOOLS.select" not in sh
+    # H stays «hide the selected piece»
+    assert "if (k === 'h' && selected)" in VIEW
+    assert "@media (pointer:coarse){ #d-end .btn,#d-cur{min-height:44px;min-width:44px;} }" in VIEW
