@@ -2408,8 +2408,12 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
     brushes = _brushes(payload.get("brushes"))
     measures_in = payload.get("measures") or []
     shapes_in = payload.get("shapes") or []
-    if (not strokes_in and not labels_in and not images_in and not measures_in and not shapes_in
-            and not text.strip()):
+    history = _note_history_in(payload.get("history"))
+    empty = (not strokes_in and not labels_in and not images_in and not measures_in and not shapes_in
+             and not text.strip())
+    # ↶ an EMPTY note is kept only while its history can bring something back
+    # (Pulisci, or every mark undone): hidden from the agent, resumable by /view
+    if empty and not history:
         raise ValueError("note: nothing drawn and nothing written")
     views_in = payload.get("views") or []
     if not isinstance(views_in, list) or len(views_in) > _NOTE_MAX_VIEWS:
@@ -2542,8 +2546,38 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
     cut = _note_cut(payload.get("cut"))
     if cut:
         note["cut"] = cut
+    if empty:
+        note["empty"] = True
     return store.save_gen_note(graph_id, gen, note, jpeg, view_jpegs,
-                               list(zip(kinds, image_blobs, strict=True)), note_id=note_id)
+                               list(zip(kinds, image_blobs, strict=True)), note_id=note_id,
+                               history=history)
+
+
+_NOTE_HISTORY_BYTES = 24 * 1024 * 1024
+
+
+def _note_history_in(h) -> Optional[dict]:
+    """↶ ↷ the undo history of a note, as /view keeps it (feature: «salva la
+    history nel file così si può annullare anche se ricarico»). It is the
+    page's own data — items by `k`, actions that point at them — and only the
+    page reads it back, so the server checks its size and shape, not its
+    meaning. Stored beside the note (aK.history.json), never shown to the agent."""
+    if h is None:
+        return None
+    if not isinstance(h, dict) or not isinstance(h.get("actions", []), list) \
+            or not isinstance(h.get("redone", []), list):
+        raise ValueError("note: history must be {actions: [...], redone: [...], ...}")
+    if not h.get("actions") and not h.get("redone"):
+        return None
+    import json
+    if len(json.dumps(h)) > _NOTE_HISTORY_BYTES:
+        raise ValueError(f"note: history over {_NOTE_HISTORY_BYTES // (1024 * 1024)} MB")
+    return h
+
+
+def note_history(store: GraphStore, graph_id: str, gen: str, note_id: str) -> dict:
+    """What /view needs to rebuild ↶ ↷ after a reload ({} = none kept)."""
+    return store.gen_note_history(graph_id, gen, note_id)
 
 
 def _note_cut(cut) -> Optional[dict]:
@@ -2569,7 +2603,7 @@ def _note_cut(cut) -> Optional[dict]:
 
 def _open_notes(store: GraphStore, graph_id: str, gen: str) -> int:
     try:
-        return sum(1 for n in store.list_gen_notes(graph_id, gen) if not n.get("done"))
+        return sum(1 for n in store.list_gen_notes(graph_id, gen) if not n.get("done") and not n.get("empty"))
     except (KeyError, ValueError):
         return 0
 
@@ -2651,6 +2685,8 @@ def list_notes(store: GraphStore, graph_id: str = "", gen: str = "", limit: int 
                     raise
                 continue
             for n in notes:
+                if n.get("empty"):                 # cleared, kept only for its ↶
+                    continue
                 if include_done or not n.get("done"):
                     out.append(_note_for_agent(n, base_url, points))
     out.sort(key=lambda e: (e["created"] or "", int(e["gen"][1:]), int(e["id"][1:])),

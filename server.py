@@ -834,6 +834,13 @@ async def get_generation_note_asset(name: str, gen: str, note_id: str, k: int):
     return Response(data, media_type=mime, headers={"Cache-Control": "max-age=31536000, immutable"})
 
 
+@app.get("/api/graph/{name}/gens/{gen}/notes/{note_id}/history")
+async def get_generation_note_history(name: str, gen: str, note_id: str):
+    """↶ ↷ the undo history /view keeps beside the note ({} when none)."""
+    require_project(name)
+    return _gen_http(api.note_history, GraphStore(PROJECTS_DIR), name, gen, note_id)
+
+
 @app.get("/api/graph/{name}/gens/{gen}/notes/{note_id}.jpg")
 async def get_generation_note_image(name: str, gen: str, note_id: str, view: int = 0):
     """The note's picture; `view=k` (1-based) = the k-th other view it was drawn from."""

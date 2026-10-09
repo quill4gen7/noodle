@@ -1076,3 +1076,56 @@ def test_a_picture_brush_travels_inside_the_note(store):
             api.add_note(store, "demo", "g1", p)
     assert "import * as BIMG from '/static/brush-img.js';" in VIEW
     assert 'id="d-tex"' in VIEW and "b.id = 'd-alphaimg'" in VIEW
+
+
+# ── ↶ ↷ the history travels with the note ────────────────────────────────
+# quill: «fammi annullare anche il pulisci con ↶ e salva la history nel file
+# così si può annullare anche se ricarico».
+HIST = {"v": 1, "live": {"strokes": [], "words": [], "images": [], "measures": [], "shapes": []},
+        "pool": [{"kind": "stroke", "k": 1, "g": 0, "pts": [[0, 0, 0]], "nrm": [[0, 0, 1]]}],
+        "actions": [{"type": "pen", "g": 0}, {"type": "erase", "clear": True, "strokes": [1],
+                                                "labels": [], "measures": [], "shapes": []}], "redone": []}
+
+
+def test_the_history_is_kept_beside_the_note_and_read_back(store):
+    api.add_note(store, "demo", "g1", {"strokes": [{"points": _circle()}], "history": HIST})
+    d = store.gen_dir("demo", "g1") / "notes"
+    assert (d / "a1.history.json").exists()
+    assert api.note_history(store, "demo", "g1", "a1") == HIST
+    # the agent never sees it, nor does the note file carry it
+    assert "history" not in api.list_notes(store)[0] and "history" not in json.loads((d / "a1.json").read_text())
+    # a rewrite without one drops it; the delete takes it too
+    api.add_note(store, "demo", "g1", {"strokes": [{"points": _circle()}]}, note_id="a1")
+    assert api.note_history(store, "demo", "g1", "a1") == {}
+    api.add_note(store, "demo", "g1", {"strokes": [{"points": _circle()}], "history": HIST}, note_id="a1")
+    store.delete_gen_note("demo", "g1", "a1")
+    assert not (d / "a1.history.json").exists()
+
+
+def test_a_cleared_note_is_kept_for_its_undo_but_hidden(store):
+    api.add_note(store, "demo", "g1", {"strokes": [{"points": _circle()}]})
+    # 🗑 Pulisci: nothing on the part, but ↶ can bring it back
+    n = api.add_note(store, "demo", "g1", {"history": HIST}, note_id="a1")
+    assert n["empty"] is True
+    assert api.list_notes(store) == [] and api._open_notes(store, "demo", "g1") == 0
+    assert [x["id"] for x in api.gen_notes_raw(store, "demo", "g1")] == ["a1"]    # /view resumes it
+    # ↶: it is a note again
+    assert "empty" not in api.add_note(store, "demo", "g1", {"strokes": [{"points": _circle()}], "history": HIST},
+                                       note_id="a1")
+    assert [x["id"] for x in api.list_notes(store)] == ["a1"]
+    # with nothing to bring back, empty is still refused
+    with pytest.raises(ValueError):
+        api.add_note(store, "demo", "g1", {"history": {"actions": [], "redone": []}}, note_id="a1")
+    with pytest.raises(ValueError):
+        api.add_note(store, "demo", "g1", {"history": "x"}, note_id="a1")
+
+
+def test_pulisci_is_an_undoable_action_and_the_viewer_saves_the_history():
+    assert "function clearAll()" in VIEW and "confirm('Togliere tutto" not in VIEW
+    body = VIEW[VIEW.index("function clearAll()"):VIEW.index("const askClear")]
+    assert "pushAction(a); takeAway(a);" in body
+    assert "if (history) body.history = history;" in VIEW
+    assert "fetch(`${base}/history`)" in VIEW and "await historyIn(hist)" in VIEW
+    assert '@app.get("/api/graph/{name}/gens/{gen}/notes/{note_id}/history")' in SERVER
+    # the list and the count skip a note kept only for its ↶
+    assert "const listed = notesData.filter(n => !n.empty);" in VIEW

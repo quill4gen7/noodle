@@ -3566,7 +3566,19 @@ $('d-hide').onclick = () => setHidden(!dHidden);
 $('d-cur').onclick = () => setHidden(false);
 $('d-undo').onclick = undo;
 $('d-redo').onclick = redo;
-const askClear = () => { $('d-menu').classList.remove('open'); if (draft.length < 4 || confirm('Togliere tutto dalla nota?')) clearDraft(); };
+// 🗑 Pulisci is an ACTION, an erase of everything: ↶ puts it all back (and,
+// since the history is saved with the note, even after a reload) — so it no
+// longer asks. clearDraft() stays the hard reset of Fatto / resume.
+function clearAll() {
+  closeEditor(false); cancelMeasure(); selectShape(null);
+  const a = { type: 'erase', clear: true, strokes: [...draft], labels: [...labels], measures: [...dmeasures], shapes: [...shapes] };
+  if (!allItems(a).length) return;
+  pushAction(a); takeAway(a);
+  refreshViews(viewsOf(allItems(a)));
+  viewer.invalidate(); syncDraw();
+  toast('🗑 Tolto tutto dalla nota — ↶ lo rimette', 2500);
+}
+const askClear = () => { $('d-menu').classList.remove('open'); clearAll(); };
 $('d-clear').onclick = $('d-clearall').onclick = askClear;
 // ⋯ the secondary things (Pulisci), on every screen
 $('d-more').onclick = e => { e.stopPropagation(); $('d-menu').classList.toggle('open'); };
@@ -3694,9 +3706,153 @@ const fitIn = f => f ? { centre: new THREE.Vector3(...f.centre), radius: f.radiu
 // Pulisci) deletes it. "Fatto" closes it: the next mark starts a new note.
 // Saving is serial (one request in flight) and compares a signature of the
 // content, so orbiting the view or switching tool sends nothing.
+// ── ↶ ↷ the history travels WITH the note ─────────────────────────────────
+// quill: «salva la history nel file così si può annullare anche se ricarico».
+// Every item already has a unique `k` (++seq, also its order), so the history
+// names items by k: `live` = the k of each item of the note, in the note's own
+// order; `pool` = every item an action still points at that is NOT on the
+// part (undone, rubbed out, cleared), in full; `actions` / `redone` = the two
+// sides of the stack, by k. The server keeps it as aK.history.json and only
+// this page reads it. Pool items lose their view (its picture was not sent):
+// put back, they fall to the note's main picture.
+const HIST_MAX = 12e6;                         // chars; the oldest steps go first
+const xyz4 = v => [r4(v.x), r4(v.y), r4(v.z)];
+const ksOf = xs => (xs || []).map(x => x.k);
+const stOut = st => ({ anchor: xyz4(st.anchor), n: xyz4(st.n), rot: [st.rot.x, st.rot.y, st.rot.z, st.rot.w],
+  size: xyz4(st.size), piece: st.piece, color: st.color, ffd: st.ffd });
+const stIn = o => ({ anchor: new THREE.Vector3(...o.anchor), n: new THREE.Vector3(...o.n),
+  rot: new THREE.Quaternion(...o.rot), size: new THREE.Vector3(...o.size), piece: o.piece, color: o.color,
+  ffd: FFD.copyFfd(o.ffd) });
+// one action → plain data (null: a module's own undo()/redo(), which cannot travel)
+function actOut(a) {
+  if (a.undo || a.redo) return null;
+  const t = { type: a.type };
+  if (a.type === 'pen') return { ...t, g: a.g, ...(a.strokes ? { strokes: ksOf(a.strokes) } : {}) };
+  if (a.type === 'erase') return { ...t, ...(a.clear ? { clear: true } : {}), strokes: ksOf(a.strokes), labels: ksOf(a.labels),
+    measures: ksOf(a.measures), shapes: ksOf(a.shapes) };
+  if (a.type === 'label') return { ...t, L: a.L.k, ...(a.strokes ? { strokes: ksOf(a.strokes) } : {}) };
+  if (a.type === 'edit') return { ...t, L: a.L.k, before: a.before, ...('after' in a ? { after: a.after } : {}),
+    ...(a.oldStrokes ? { oldStrokes: ksOf(a.oldStrokes) } : {}), ...(a.newStrokes ? { newStrokes: ksOf(a.newStrokes) } : {}) };
+  if (a.type === 'shape') return { ...t, S: a.S.k, before: a.before ? stOut(a.before) : null,
+    ...(a.after ? { after: stOut(a.after) } : {}), ...(a.recolor ? { recolor: true } : {}) };
+  if (a.type === 'measure') return { ...t, M: a.M.k };
+  return null;
+}
+function actItems(a) {
+  return [...(a.strokes || []), ...(a.labels || []), ...(a.measures || []), ...(a.shapes || []),
+    ...(a.oldStrokes || []), ...(a.newStrokes || []), ...[a.L, a.S, a.M].filter(Boolean)];
+}
+// the items, in full (the page's own format, not the note's)
+function itemOut(x, B) {
+  if (x.pts) return { kind: 'stroke', k: x.k, g: x.g, color: x.color, width: x.width, piece: x.piece,
+    pts: x.pts.map(xyz4), nrm: x.nrm.map(n => [+n.x.toFixed(3), +n.y.toFixed(3), +n.z.toFixed(3)]),
+    ...(x.lift && x.lift.some(v => v > 0) ? { lift: x.lift.map(r4) } : {}),
+    ...(x.pen3d ? { pen3d: true } : {}), ...(x.alpha ? { alpha: x.alpha } : {}),
+    ...(x.brushA ? { brushA: B(x.brushA) } : {}), ...(x.brushT ? { brushT: B(x.brushT) } : {}),
+    ...(x.label && x.label.k != null ? { label: x.label.k } : {}), ...(x.plane ? { plane: x.plane } : {}) };
+  if (x.at && x.up) return { kind: 'label', k: x.k, text: x.text, color: x.color, style: x.style, at: xyz4(x.at), n: xyz4(x.n),
+    up: xyz4(x.up), w: x.w, h: x.h, surface: x.surface || null, fit: fitOut(x.fit), piece: x.piece,
+    ...(x.plane ? { plane: x.plane } : {}), ...(x.img ? { img: x.img.data } : {}) };
+  if (x.aEnd) return { kind: 'measure', k: x.k, m: { kind: x.kind, a: x.aEnd, b: x.bEnd, value: x.value, approx: !!x.approx,
+    ...(x.axis ? { axis: x.axis } : {}), ...(x.text ? { text: x.text } : {}), ...(x.exact ? { exact: true } : {}) } };
+  if (x.anchor) return { kind: 'shape', k: x.k, shape: x.kind, ...stOut(shapeState(x)) };
+  return null;
+}
+function historyOut(skip = 0) {
+  // only what lies ABOVE an action that cannot travel survives; `skip` drops
+  // the oldest steps (undone ones last) when the whole would be too big
+  const tail = list => { const out = []; for (let i = list.length - 1; i >= 0; i--) { if (!actOut(list[i])) break; out.unshift(list[i]); } return out; };
+  const A0 = tail(actions), R0 = tail(redone);
+  const A = A0.slice(Math.min(skip, A0.length)), R = R0.slice(Math.max(0, skip - A0.length));
+  if (!A.length && !R.length) return null;
+  const live = new Set([...draft, ...labels, ...dmeasures, ...shapes]);
+  const pool = new Set();
+  for (const a of [...A, ...R]) for (const x of actItems(a)) if (!live.has(x)) pool.add(x);
+  for (const x of [...pool]) if (x.label && x.label.k != null && !live.has(x.label)) pool.add(x.label);
+  const bs = {};
+  const B = b => { bs[b.id] = { id: b.id, kind: b.kind, data: b.data }; return b.id; };
+  const h = {
+    v: 1, gesture, seq,
+    live: { strokes: ksOf(draft), words: ksOf(labels.filter(L => !L.img)), images: ksOf(labels.filter(L => L.img)),
+      measures: ksOf(dmeasures), shapes: ksOf(shapes) },
+    pool: [...pool].map(x => itemOut(x, B)).filter(Boolean),
+    actions: A.map(actOut), redone: R.map(actOut),
+  };
+  h.brushes = Object.values(bs);
+  if (JSON.stringify(h).length > HIST_MAX && A.length + R.length > 1) return historyOut(skip + 1);
+  return h;
+}
+const histSig = h => h && JSON.stringify({ ...h, pool: h.pool.map(x => x.img ? { ...x, img: x.img.length } : x),
+  brushes: h.brushes.map(b => b.id) });
+async function canvasOfData(data) {
+  const el = new Image();
+  await new Promise((ok, ko) => { el.onload = ok; el.onerror = ko; el.src = data; }).catch(() => null);
+  const cv = document.createElement('canvas');
+  cv.width = el.naturalWidth || 1; cv.height = el.naturalHeight || 1;
+  cv.getContext('2d').drawImage(el, 0, 0);
+  return cv;
+}
+// pool item → the in-memory item, NOT drawn (it is off the part until ↶ / ↷)
+async function itemIn(r) {
+  const V = a => new THREE.Vector3(...a);
+  if (r.kind === 'stroke') return { color: r.color, width: r.width, g: r.g, k: r.k, piece: r.piece || null,
+    pts: r.pts.map(V), nrm: r.nrm.map(V), lift: r.lift || r.pts.map(() => 0), view: null, obj: null,
+    ...(r.pen3d ? { pen3d: true } : {}), ...(r.alpha ? { alpha: r.alpha } : {}), ...(r.plane ? { plane: r.plane } : {}),
+    brushA: r.brushA ? brushes.get(r.brushA) || null : null, brushT: r.brushT ? brushes.get(r.brushT) || null : null,
+    _labelK: r.label };
+  if (r.kind === 'label') {
+    const L = { text: r.text, color: r.color, style: r.style, at: V(r.at), n: V(r.n), up: V(r.up), w: r.w, h: r.h,
+      surface: r.surface, fit: fitIn(r.fit), k: r.k, piece: r.piece || null, mesh: null, view: null, obj: null,
+      ...(r.plane ? { plane: r.plane } : {}) };
+    if (r.img) { const cv = await canvasOfData(r.img); L.img = { canvas: cv, data: r.img, aspect: cv.width / cv.height }; }
+    return L;
+  }
+  if (r.kind === 'measure') { const M = measureFrom(r.m); M.aEnd = r.m.a; M.bEnd = r.m.b; M.k = r.k; M.view = null; M.obj = null; return M; }
+  if (r.kind === 'shape') { const S = { kind: r.shape, k: r.k, view: null, obj: null }; setShapeState(S, stIn(r)); return S; }
+  return null;
+}
+// after resumeNote rebuilt the note's own items (with their k from `live`)
+async function historyIn(h) {
+  const byK = new Map();
+  for (const x of [...draft, ...labels, ...dmeasures, ...shapes]) byK.set(x.k, x);
+  for (const b of h.brushes || []) {
+    if (b && !brushes.has(b.id)) { try { brushes.set(b.id, await BIMG.brushFromData(b)); } catch {} }
+  }
+  for (const r of h.pool || []) { const x = await itemIn(r); if (x) byK.set(r.k, x); }
+  for (const x of byK.values()) if ('_labelK' in x) { if (x._labelK != null) x.label = byK.get(x._labelK); delete x._labelK; }
+  const ref = k => { const x = byK.get(k); if (!x) throw new Error(`history: no item ${k}`); return x; };
+  const refs = ks => (ks || []).map(ref);
+  const actIn = r => {
+    const a = { type: r.type };
+    if (r.type === 'pen') { a.g = r.g; if (r.strokes) a.strokes = refs(r.strokes); }
+    else if (r.type === 'erase') Object.assign(a, { clear: !!r.clear, strokes: refs(r.strokes), labels: refs(r.labels),
+      measures: refs(r.measures), shapes: refs(r.shapes) });
+    else if (r.type === 'label') { a.L = ref(r.L); if (r.strokes) a.strokes = refs(r.strokes); }
+    else if (r.type === 'edit') {
+      Object.assign(a, { L: ref(r.L), before: r.before });
+      if ('after' in r) a.after = r.after;
+      if (r.oldStrokes) a.oldStrokes = refs(r.oldStrokes);
+      if (r.newStrokes) a.newStrokes = refs(r.newStrokes);
+    } else if (r.type === 'shape') Object.assign(a, { S: ref(r.S), before: r.before ? stIn(r.before) : null,
+      ...(r.after ? { after: stIn(r.after) } : {}), ...(r.recolor ? { recolor: true } : {}) });
+    else if (r.type === 'measure') a.M = ref(r.M);
+    else throw new Error(`history: unknown action ${r.type}`);
+    return a;
+  };
+  try {
+    const A = (h.actions || []).map(actIn), R = (h.redone || []).map(actIn);
+    actions.length = 0; redone.length = 0; actions.push(...A); redone.push(...R);
+  } catch (e) { console.warn(e); actions.length = 0; redone.length = 0; }
+  let gMax = 0;
+  for (const x of byK.values()) if (x.g != null) gMax = Math.max(gMax, x.g);
+  seq = Math.max(seq, h.seq || 0, ...byK.keys());
+  gesture = Math.max(gesture, h.gesture || 0, gMax + 1);
+}
 function noteBody(withPictures) {
   const text = noteText;                       // '' for a new note; an old one keeps its sentence
-  if (!draft.length && !labels.length && !dmeasures.length && !shapes.length && !text) return null;
+  const history = historyOut();
+  // nothing on the part and nothing to bring back with ↶ / ↷: no note at all
+  if (!draft.length && !labels.length && !dmeasures.length && !shapes.length && !text && !history) return null;
   const camera = camState();
   // the views strokes were drawn from, minus the final one (that IS `image`)
   // and minus any whose strokes were all undone
@@ -3753,7 +3909,8 @@ function noteBody(withPictures) {
   // the signature: the content, not the pictures (a placed image by its size)
   if (used.length) body.brushes = used.map(B => ({ id: B.id, kind: B.kind, data: B.data }));
   body.sig = JSON.stringify({ ...body, images: body.images.map(im => ({ ...im, data: im.data.length })),
-    brushes: used.map(B => B.id) });
+    brushes: used.map(B => B.id), history: histSig(history) });
+  if (history) body.history = history;
   if (withPictures) {
     // the picture is the user's own view, strokes and all: the agent sees what
     // they saw, at their zoom (frame:false keeps the camera where it is)
@@ -3843,6 +4000,8 @@ async function finishNote() {
   closeEditor(true);
   cancelMeasure(); selectShape(null);
   $('d-send').disabled = true;
+  // closing a note with nothing on it (all cleared / undone): it goes, history and all
+  if (!draft.length && !labels.length && !dmeasures.length && !shapes.length && !noteText) { actions.length = 0; redone.length = 0; }
   try {
     await flushSave();
     if (save.busy) await save.busy;            // a save that was already running
@@ -3871,8 +4030,9 @@ $('d-send').onclick = finishNote;
 // the same id. The page that last drew a note remembers it per gen in
 // localStorage (a per-viewer convenience — the server holds the note) and
 // picks it up on load; any note can be resumed with its ✎ in the list.
-// What it cannot rebuild is the undo history: ↶ starts from the note as it
-// was saved, ⌫ still rubs out anything in it.
+// The undo history comes back too (aK.history.json, see «the history travels
+// WITH the note»): ↶ / ↷ go on where they were, Pulisci included. A note saved
+// before that, or a history that does not match it, starts ↶ from the note.
 const LIVE_KEY = `noodle:view:live:${NAME}/${GEN}`;
 function rememberLive(id) {
   try { id ? localStorage.setItem(LIVE_KEY, id) : localStorage.removeItem(LIVE_KEY); } catch {}
@@ -3906,6 +4066,14 @@ async function resumeNote(n) {
   }
   const base = `/api/graph/${encodeURIComponent(NAME)}/gens/${GEN}/notes/${n.id}`;
   const pic = async url => { try { return await dataUrlOf(url); } catch { return null; } };
+  let hist = null;
+  try { const r = await fetch(`${base}/history`); if (r.ok) hist = await r.json(); } catch {}
+  const L0 = hist && hist.v === 1 && hist.live;
+  // the history names the note's items by k: it must describe THIS note
+  if (!L0 || (L0.strokes || []).length !== (n.strokes || []).length || (L0.words || []).length !== (n.labels || []).length
+      || (L0.images || []).length !== (n.images || []).length || (L0.measures || []).length !== (n.measures || []).length
+      || (L0.shapes || []).length !== (n.shapes || []).length) hist = null;
+  const kOf = (list, i) => (hist ? hist.live[list][i] : ++seq);
   // views: k ≥ 1 = the note's own other views, the main picture is its camera
   const vmap = new Map();
   (n.views || []).forEach((v, i) => { if (v && v.camera) { views.push({ image: null, cam: v.camera }); vmap.set(i + 1, views.length - 1); } });
@@ -3916,18 +4084,18 @@ async function resumeNote(n) {
   let g0 = 0;
   // labels first: painted strokes point at their words
   const words = [];
-  for (const l of n.labels || []) {
+  for (const [li, l] of (n.labels || []).entries()) {
     const L = { text: l.text, color: l.color, style: l.style || 'tag', at: V(l.at), n: V(l.normal), up: V(l.up),
-      w: l.size_mm[0], h: l.size_mm[1], surface: l.surface, fit: fitIn(l.fit), k: ++seq, piece: l.piece || null,
+      w: l.size_mm[0], h: l.size_mm[1], surface: l.surface, fit: fitIn(l.fit), k: kOf('words', li), piece: l.piece || null,
       mesh: null, view: viewOf(l.view), obj: null };
     words.push(L); labels.push(L);
     try { drawLabel(L); } catch {}
   }
-  for (const s of n.strokes || []) {
+  for (const [si, s] of (n.strokes || []).entries()) {
     const pts = (s.points || []).map(V);
     if (!pts.length) continue;
     const nrm = (s.normals || []).length === pts.length ? s.normals.map(V) : pts.map(() => new THREE.Vector3());
-    const d = { color: s.color, width: s.width_mm || 1, g: s.g ?? 0, k: ++seq, piece: s.piece || null, pts, nrm,
+    const d = { color: s.color, width: s.width_mm || 1, g: s.g ?? 0, k: kOf('strokes', si), piece: s.piece || null, pts, nrm,
       lift: s.lifts && s.lifts.length === pts.length ? s.lifts.slice() : pts.map(() => 0),
       view: viewOf(s.view), obj: null, ...(s.plane ? { plane: s.plane } : {}),
       ...(s.pen ? { pen3d: s.pen === '3d' } : {}), ...(s.alpha ? { alpha: s.alpha } : {}), ...brushesOf(n, s) };
@@ -3936,36 +4104,36 @@ async function resumeNote(n) {
     draft.push(d); redrawStroke(d);
   }
   gesture = Math.max(gesture, g0 + 1);
-  await Promise.all((n.images || []).map(async im => {
+  const imgK = (n.images || []).map((_, i) => kOf('images', i));
+  await Promise.all((n.images || []).map(async (im, ii) => {
     const data = await pic(`${base}/img/${im.image}`);
     if (!data) return;
-    const el = new Image();
-    await new Promise((ok, ko) => { el.onload = ok; el.onerror = ko; el.src = data; }).catch(() => null);
-    const cv = document.createElement('canvas');
-    cv.width = el.naturalWidth || 1; cv.height = el.naturalHeight || 1;
-    cv.getContext('2d').drawImage(el, 0, 0);
+    const cv = await canvasOfData(data);
     const L = { text: '', color: '#ffffff', style: 'decal', at: V(im.at), n: V(im.normal), up: V(im.up),
-      w: im.size_mm[0], h: im.size_mm[1], surface: im.surface, fit: fitIn(im.fit), k: ++seq, piece: im.piece || null,
+      w: im.size_mm[0], h: im.size_mm[1], surface: im.surface, fit: fitIn(im.fit), k: imgK[ii], piece: im.piece || null,
       mesh: null, view: viewOf(im.view), obj: null, img: { canvas: cv, data, aspect: cv.width / cv.height } };
     labels.push(L);
     try { drawLabel(L); } catch {}
   }));
-  for (const m of n.measures || []) {
+  for (const [mi, m] of (n.measures || []).entries()) {
     const M = measureFrom(m);
-    M.aEnd = m.a; M.bEnd = m.b; M.k = ++seq; M.view = viewOf(m.view);
+    M.aEnd = m.a; M.bEnd = m.b; M.k = kOf('measures', mi); M.view = viewOf(m.view);
     dmeasures.push(M);
     try { drawDraftMeasure(M); } catch {}
   }
-  for (const sh of n.shapes || []) {
+  for (const [hi, sh] of (n.shapes || []).entries()) {
     const q = new THREE.Quaternion(...sh.quat), axis = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
     const size = V(sh.size);
     const nn = sh.normal ? V(sh.normal).normalize() : axis.clone();
-    const S = { kind: sh.kind, color: sh.color || MEASURE_INK, size, piece: sh.piece || null, k: ++seq,
+    const S = { kind: sh.kind, color: sh.color || MEASURE_INK, size, piece: sh.piece || null, k: kOf('shapes', hi),
       anchor: sh.anchor ? V(sh.anchor) : V(sh.center).addScaledVector(axis, -size.z / 2), n: nn,
       rot: surfQuat(nn).invert().multiply(q), ffd: Array.isArray(sh.ffd) && sh.ffd.length === 8 ? FFD.copyFfd(sh.ffd) : null,
       view: viewOf(sh.view), obj: null };
     shapes.push(S); drawShape(S);
   }
+  // labels came back in arrival order (pictures load async): the note's order is k's
+  labels.sort((a, b) => a.k - b.k);
+  if (hist) await historyIn(hist);
   noteText = n.text || '';                     // shown in the list, kept on every PUT
   // the note is now the draft: drawn once (not also as a saved note), saved under its id
   save.id = n.id; save.note = n; save.err = '';
@@ -4071,7 +4239,7 @@ async function loadNotes() {
   noteObjs.clear();
   viewer.scene.updateMatrixWorld();            // labels find their mesh by raycast
   for (const n of notesData) {
-    if (n.id === save.id) continue;            // the draft draws the note being drawn
+    if (n.id === save.id || n.empty) continue; // the draft draws the note being drawn
     const o = noteObject(n); o.visible = shownNotes.has(n.id);
     noteObjs.set(n.id, o); annoGroup.add(o);
   }
@@ -4079,9 +4247,11 @@ async function loadNotes() {
 }
 function renderNotes() {
   const box = $('nlist'); box.innerHTML = '';
-  $('notes').hidden = !notesData.length;
-  $('d-count').textContent = notesData.filter(n => !n.done).length || '';
-  for (const n of [...notesData].reverse()) {
+  // an EMPTY note is kept only for its ↶ (Pulisci, all undone): not a note to list
+  const listed = notesData.filter(n => !n.empty);
+  $('notes').hidden = !listed.length;
+  $('d-count').textContent = listed.filter(n => !n.done).length || '';
+  for (const n of [...listed].reverse()) {
     const on = shownNotes.has(n.id);
     const row = document.createElement('div');
     const live = n.id === save.id;

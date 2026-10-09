@@ -541,7 +541,8 @@ class GraphStore:
                       jpeg: bytes | None = None,
                       view_jpegs: list[bytes | None] | None = None,
                       images: list[tuple[str, bytes]] | None = None,
-                      note_id: str | None = None) -> dict:
+                      note_id: str | None = None,
+                      history: dict | None = None) -> dict:
         """Store a note; returns it with its id. Image first, JSON last and
         atomic, so a listed note always has its picture.
 
@@ -586,9 +587,13 @@ class GraphStore:
         for k, (ext, data) in enumerate(images or [], 1):
             (d / f"{nid}.img{k}.{ext}").write_bytes(data)
             note["images"][k - 1]["file"] = f"{nid}.img{k}.{ext}"
+        # ↶ ↷ the page's undo history, beside the note: it outlives a reload
+        if history:
+            atomic_write(d / f"{nid}.history.json", json.dumps(history))
         atomic_write(d / f"{nid}.json", json.dumps(note, indent=1))
         if note_id is not None:                # what the rewrite no longer names
             keep = {f"{nid}.json", f"{nid}.claim"} | ({f"{nid}.jpg"} if jpeg else set())
+            keep |= {f"{nid}.history.json"} if history else set()
             keep |= {f"{nid}.v{k}.jpg" for k, data in enumerate(view_jpegs or [], 1) if data}
             keep |= {f"{nid}.img{k}.{ext}" for k, (ext, _) in enumerate(images or [], 1)}
             for f in d.glob(f"{nid}.*"):
@@ -611,10 +616,23 @@ class GraphStore:
             raise KeyError(f"No note {note_id!r} on {graph_id}/{gen}")
         p.unlink()
         (d / f"{note_id}.jpg").unlink(missing_ok=True)
+        (d / f"{note_id}.history.json").unlink(missing_ok=True)
         for v in d.glob(f"{note_id}.v*.jpg"):
             v.unlink()
         for v in d.glob(f"{note_id}.img*"):
             v.unlink()
+
+    def gen_note_history(self, graph_id: str, gen: str, note_id: str) -> dict:
+        """The undo history /view keeps beside a note; {} when there is none."""
+        d = self.gen_notes_dir(graph_id, gen)
+        nid = validate_note_id(note_id)
+        if not (d / f"{nid}.json").exists():
+            raise KeyError(f"No note {note_id!r} on {graph_id}/{gen}")
+        p = d / f"{nid}.history.json"
+        try:
+            return json.loads(p.read_text()) if p.exists() else {}
+        except ValueError:
+            return {}
 
     def gen_note_asset(self, graph_id: str, gen: str, note_id: str, k: int) -> Path:
         """The k-th picture placed on the part with note `note_id` (1-based)."""
