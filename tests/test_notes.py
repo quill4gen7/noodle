@@ -1037,3 +1037,33 @@ def test_a_stroke_keeps_its_pen_and_its_tip(store):
             api.add_note(store, "demo", "g1", {"strokes": [{"points": _circle(), **bad}]})
     assert "pen: s.pen3d ? '3d' : 'spray', alpha: INK.alphaOf(" in VIEW
     assert VIEW.count("...(s.pen ? { pen3d: s.pen === '3d' } : {})") == 2   # the draft and a saved note
+
+
+_JPG = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgK"
+
+
+def test_a_picture_brush_travels_inside_the_note(store):
+    # 🖼 the alpha square and the texture square: the pictures go in `brushes`
+    # (small data URLs, only /view reads them) and a stroke names them by index
+    note = api.add_note(store, "demo", "g1", {
+        "brushes": [{"id": "afoo1", "kind": "alpha", "data": _JPG}, {"id": "tbar2", "kind": "tex", "data": _JPG}],
+        "strokes": [{"points": _circle(), "pen": "3d", "alpha": "img", "brush": 0, "tex": 1},
+                    {"points": _circle(cx=0), "alpha": "soft", "tex": 1}]})
+    assert [b["kind"] for b in note["brushes"]] == ["alpha", "tex"]
+    a, b = note["strokes"]
+    assert (a["alpha"], a["brush"], a["tex"]) == ("img", 0, 1) and b["tex"] == 1 and "brush" not in b
+    assert note["brushes"] == api.gen_notes_raw(store, "demo", "g1")[-1]["brushes"]
+    # the agent's view does not carry the pictures
+    assert "brushes" not in api.list_notes(store, "demo", "g1", points=True)[0]
+    bad = [
+        {"brushes": [{"id": "a1", "kind": "alpha", "data": "javascript:alert(1)"}], "strokes": [{"points": _circle()}]},
+        {"brushes": [{"id": "a1", "kind": "paint", "data": _JPG}], "strokes": [{"points": _circle()}]},
+        {"brushes": [{"id": "a1", "kind": "alpha", "data": _JPG}], "strokes": [{"points": _circle(), "tex": 0}]},
+        {"strokes": [{"points": _circle(), "brush": 0}]},
+        {"brushes": [{"id": "A/../x", "kind": "alpha", "data": _JPG}], "strokes": [{"points": _circle()}]},
+    ]
+    for p in bad:
+        with pytest.raises(ValueError):
+            api.add_note(store, "demo", "g1", p)
+    assert "import * as BIMG from '/static/brush-img.js';" in VIEW
+    assert 'id="d-tex"' in VIEW and "b.id = 'd-alphaimg'" in VIEW

@@ -42,12 +42,30 @@ export const SPRAY = {
 // little stars along the stroke on ✎; on ✎³ the tube is pushed through a star
 // nozzle, like icing). Stored per stroke as `alpha`; absent (a note saved
 // before alphas) = what that pen drew then: soft spray, round filament.
+// `img` = a picture of the user's (webui/brush-img.js): stamped like the stars
+// on ✎, a RELIEF on the tube of ✎³ (s.relief = its grey N×N).
 export const ALPHAS = ['soft', 'normal', 'star'];
-export const alphaOf = (s, dflt = 'soft') => (ALPHAS.includes(s && s.alpha) ? s.alpha : dflt);
+const KNOWN = [...ALPHAS, 'img'];
+export const alphaOf = (s, dflt = 'soft') => (KNOWN.includes(s && s.alpha) ? s.alpha : dflt);
 const SPRAY_ALPHA = {
   normal: { spread: 1.0, soft: 0.12, grain: 0 },
   star: { spread: 1.35, soft: 0.1, grain: 0 },   // a star's points reach the band's edge
+  img: { spread: 1.0, soft: 0.1, grain: 0 },      // the stamp = the stroke's width
 };
+export const IMG = {
+  spacing: 1.6,     // ✎ picture stamps, centre to centre in radii: just overlapping
+  relief: 0.45,     // ✎³ picture relief: ±22% of the radius
+  ring: 6,          // ✎³ with a relief: a ring at least every width/6
+};
+// a grey N×N (Uint8, 255 = high) sampled bilinear with mirrored repeat — the
+// relief's u, v run past 1 along a stroke and must not show a seam
+export function sampleMirror(g, N, u, v) {
+  const m = t => { t = Math.abs(t) % 2; return t > 1 ? 2 - t : t; };
+  const x = m(u) * (N - 1), y = m(v) * (N - 1);
+  const x0 = Math.floor(x), y0 = Math.floor(y), x1 = Math.min(N - 1, x0 + 1), y1 = Math.min(N - 1, y0 + 1);
+  const fx = x - x0, fy = y - y0, G = (i, j) => g[j * N + i] / 255;
+  return (G(x0, y0) * (1 - fx) + G(x1, y0) * fx) * (1 - fy) + (G(x0, y1) * (1 - fx) + G(x1, y1) * fx) * fy;
+}
 export const STAR = {
   spacing: 2.3,     // centre to centre, in band radii (a star is ~2 radii across)
   points: 5,
@@ -76,7 +94,7 @@ export function sprayArrays(s, o = SPRAY) {
   const A = SPRAY_ALPHA[al] || o;
   const r = r0 * (thin ? 1.1 : A.spread);    // the band's half width (ink units are radii of THIS)
   const soft = thin ? o.softThin : A.soft, grain = thin ? o.grainThin : A.grain;
-  const star = al === 'star' ? 1 : 0, stamp = [];
+  const star = al === 'star' ? 1 : al === 'img' ? 2 : 0, stamp = [];
   let s0 = 0;                                // arc length so far, in radii: the stars keep their pace across segments
   const P = s.pts.map((p, i) => add(p, mul(norm(s.nrm[i] || [0, 0, 1]), r0 * o.lift)));
   const N = s.pts.map((_, i) => norm(s.nrm[i] || [0, 0, 1]));
@@ -117,6 +135,7 @@ function profile(al, o) {
     return { R: P * 8, rho: a => 1 - g * Math.pow(Math.abs(Math.sin(a * P / 2)), 1.5), sx: 1, sy: 1 };
   }
   if (al === 'soft') return { R: o.radial, rho: () => 1, sx: 0.8, sy: 1.15 };   // x = up the normal, y = across
+  if (al === 'img') return { R: 32, rho: () => 1, sx: 1, sy: 1 };              // round, the relief does the rest
   return { R: o.radial, rho: () => 1, sx: 1, sy: 1 };
 }
 export function filamentArrays(s, o = FILAMENT) {
@@ -126,8 +145,15 @@ export function filamentArrays(s, o = FILAMENT) {
   const C0 = s.pts.map((p, i) => add(p, mul(N0[i], r * o.sit + (lift[i] || 0))));
   // smooth centre line: Catmull-Rom through the samples, normals and lifts lerped
   const C = [], N = [], LI = [];
-  const K0 = C0.length > 2 ? Math.max(1, o.sub | 0) : 1;
+  const relief = al === 'img' && s.relief ? s.relief : null;
+  const kOf = i => {
+    let k = C0.length > 2 ? Math.max(1, o.sub | 0) : 1;
+    if (relief && i < C0.length - 1)            // a relief needs rings close enough to show it
+      k = Math.max(k, Math.min(24, Math.ceil(len(sub(C0[i + 1], C0[i])) / (s.width / IMG.ring))));
+    return k;
+  };
   for (let i = 0; i < C0.length; i++) {
+    const K0 = kOf(i);
     if (i === C0.length - 1 || K0 === 1) { C.push(C0[i]); N.push(N0[i]); LI.push(lift[i] || 0); if (i === C0.length - 1) break; if (K0 === 1) continue; }
     const p0 = C0[Math.max(0, i - 1)], p1 = C0[i], p2 = C0[i + 1], p3 = C0[Math.min(C0.length - 1, i + 2)];
     for (let q = 0; q < K0; q++) {
@@ -142,7 +168,7 @@ export function filamentArrays(s, o = FILAMENT) {
   // ✎³ sfumato: the radius ramps up from each end (smoothstep over STAR.taper widths)
   const arc = [0];
   for (let i = 1; i < n; i++) arc.push(arc[i - 1] + len(sub(C[i], C[i - 1])));
-  const tot = arc[n - 1], ramp = STAR.taper * s.width;
+  const tot = arc[n - 1], ramp = STAR.taper * s.width, tile = Math.PI * s.width;
   const taper = i => {
     if (al !== 'soft' || tot <= 0) return 1;
     const e = Math.min(arc[i], tot - arc[i]) / Math.min(ramp, tot / 2), t = Math.max(0, Math.min(1, e));
@@ -157,17 +183,20 @@ export function filamentArrays(s, o = FILAMENT) {
   });
   if (n > 1) for (let i = 0; i < n; i++) if (len(sub(C[Math.min(n - 1, i + 1)], C[Math.max(0, i - 1)])) < 1e-9)
     T[i] = T[i > 0 ? i - 1 : Math.min(i + 1, n - 1)];
-  const pos = [], nrm = [], shade = [], idx = [];
+  const pos = [], nrm = [], shade = [], uv = [], idx = [];
   const tone = i => {
     const L = Math.round(LI[i] / (o.layer * s.width));
     return 1 + (L % 2 ? -o.layerTone / 2 : o.layerTone / 2) * (L > 0 ? 1 : 0);
   };
   // one ring: centre c, frame (u up = surface normal ⟂ t, v = t × u), radius k·r,
-  // pushed `dt` along t; the ring's normals blend toward ±t on the caps
-  const ring = (c, t, nn, k, dt, tw, tn) => {
+  // pushed `dt` along t; the ring's normals blend toward ±t on the caps.
+  // R + 1 vertices: the last repeats the first with v = 1, so a texture wraps
+  // round the tube without a seam running backwards across it. `ua` = the
+  // ring's place along the stroke in TEXTURE units (one tile per circumference).
+  const ring = (c, t, nn, k, dt, tw, tn, ua) => {
     let u = sub(nn, mul(t, dot(nn, t))); u = norm(u, perp(t));
     const v = cross(t, u);
-    for (let j = 0; j < R; j++) {
+    for (let j = 0; j <= R; j++) {
       const a = (j / R) * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
       // the section's outline: ρ(a)·(sx cos, sy sin) in the (u, v) frame, and
       // its 2D normal from the outline's tangent (rotated −90°)
@@ -177,7 +206,9 @@ export function filamentArrays(s, o = FILAMENT) {
       const n2 = [tq[1] / tl, -tq[0] / tl];
       const d = add(mul(u, q0[0]), mul(v, q0[1]));
       const dn = add(mul(u, n2[0]), mul(v, n2[1]));
-      const p = add(add(c, mul(t, dt)), mul(d, r * k));
+      // ✎³ picture alpha: the grey pushes the skin out (light) or in (dark)
+      const rel = relief ? 1 + IMG.relief * (sampleMirror(relief.g, relief.n, ua, j / R) - 0.5) : 1;
+      const p = add(add(c, mul(t, dt)), mul(d, r * k * rel));
       const nv = norm(add(mul(dn, k), mul(t, tw)));
       pos.push(p[0], p[1], p[2]); nrm.push(nv[0], nv[1], nv[2]);
       // a baked occlusion round the section: full tone on top (d·u = 1), the
@@ -185,6 +216,7 @@ export function filamentArrays(s, o = FILAMENT) {
       // the layer below — in the contact shadow. The scene's lights then add
       // the real shading and the highlight on top of it.
       shade.push(tn * (1 - o.contact * Math.pow((1 - ca) / 2, 1.2)));
+      uv.push(ua, j / R);
     }
   };
   const rings = [];                              // [first vertex of ring]
@@ -193,27 +225,30 @@ export function filamentArrays(s, o = FILAMENT) {
     for (let q = 0; q < K; q++) {
       const phi = (Math.PI / 2) * (1 - q / K);   // 90° (pole) → just before the equator
       rings.push(pos.length / 3);
-      ring(sink(0), T[0], N[0], Math.max(Math.cos(phi), 0.02) * taper(0), -r * taper(0) * Math.sin(phi), -Math.sin(phi), tone(0));
+      ring(sink(0), T[0], N[0], Math.max(Math.cos(phi), 0.02) * taper(0), -r * taper(0) * Math.sin(phi), -Math.sin(phi), tone(0),
+        -r * Math.sin(phi) / tile);
     }
   };
   const capEnd = () => {
     for (let q = 1; q <= K; q++) {
       const phi = (Math.PI / 2) * (q / K);
       rings.push(pos.length / 3);
-      ring(sink(n - 1), T[n - 1], N[n - 1], Math.max(Math.cos(phi), 0.02) * taper(n - 1), r * taper(n - 1) * Math.sin(phi), Math.sin(phi), tone(n - 1));
+      ring(sink(n - 1), T[n - 1], N[n - 1], Math.max(Math.cos(phi), 0.02) * taper(n - 1), r * taper(n - 1) * Math.sin(phi), Math.sin(phi), tone(n - 1),
+        (tot + r * Math.sin(phi)) / tile);
     }
   };
   capStart();
-  for (let i = 0; i < n; i++) { rings.push(pos.length / 3); ring(sink(i), T[i], N[i], taper(i), 0, 0, tone(i)); }
+  for (let i = 0; i < n; i++) { rings.push(pos.length / 3); ring(sink(i), T[i], N[i], taper(i), 0, 0, tone(i), arc[i] / tile); }
   capEnd();
   for (let q = 1; q < rings.length; q++) {
     const a = rings[q - 1], b = rings[q];
     for (let j = 0; j < R; j++) {
-      const j1 = (j + 1) % R;
+      const j1 = j + 1;
       idx.push(a + j, a + j1, b + j, a + j1, b + j1, b + j);   // outward (CCW seen from outside)
     }
   }
-  return { position: new Float32Array(pos), normal: new Float32Array(nrm), shade: new Float32Array(shade), index: idx, r };
+  return { position: new Float32Array(pos), normal: new Float32Array(nrm), shade: new Float32Array(shade),
+           uv: new Float32Array(uv), index: idx, r, stride: R + 1, relief: !!relief };
 }
 
 // Colour runs: consecutive spray strokes of one colour are ONE coat (they merge

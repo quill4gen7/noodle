@@ -1818,7 +1818,17 @@ result while the workflow moves on.
     1…80 px on a square law. Both remembered (`noodle:view:penAlpha|penSize`).
     Each stroke saves `pen` (spray|3d) and `alpha`, so a reloaded ✎³ line stays
     filament even when it never piled up; absent = what the pen drew before
-    alphas (soft spray, round tube). The toast steps past every visible bar
+    alphas (soft spray, round tube). 🖼 Two picture squares: one among the
+    tips (a photo as the ALPHA — stamped on ✎, a relief on ✎³) and one among
+    the colours (a photo as the colour TEXTURE — along the stroke, per stamp,
+    wrapped round the tube). `webui/brush-img.js` prepares any photo with no
+    question asked: ground read on a ring 4–8% inside the border (the outer
+    band is often a frame — taken for the ground it turned a leaf inside out),
+    crop to the subject, polarity, levels with a floor over the ground's
+    grain, round feather; the texture is cropped by covering and sampled
+    mirrored (no seam). The pictures travel INSIDE the note as small JPEG
+    data URLs (`brushes`, strokes name them by `brush`/`tex` index; the agent's
+    listing leaves them out). The toast steps past every visible bar
     (`placeToast`): it used to cover the folded ✎ row and the shape's bar.
   - **⌫ eraser**: any object of the note, whole — a stroke (the pen already
     splits them where it leaves the surface), a painted word, a targhetta, a

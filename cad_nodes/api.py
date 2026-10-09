@@ -2348,6 +2348,33 @@ def _image_kind(data: bytes) -> str:
     raise ValueError("note: a placed image must be a PNG or a JPEG")
 
 
+_NOTE_MAX_BRUSHES = 8
+_BRUSH_DATA_CHARS = 200_000
+
+
+def _brushes(raw) -> list:
+    """The pictures a note's strokes are drawn WITH (✎ alpha / colour texture):
+    small JPEG/PNG data URLs, kept inside the note — only /view reads them."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list) or len(raw) > _NOTE_MAX_BRUSHES:
+        raise ValueError(f"note: brushes must be a list of at most {_NOTE_MAX_BRUSHES}")
+    out = []
+    for i, b in enumerate(raw):
+        if not isinstance(b, dict):
+            raise ValueError(f"note: brush {i} must be an object")
+        kind, data, bid = b.get("kind"), b.get("data"), str(b.get("id") or "")
+        if kind not in ("alpha", "tex"):
+            raise ValueError(f"note: brush {i} kind must be alpha|tex")
+        if (not isinstance(data, str) or len(data) > _BRUSH_DATA_CHARS
+                or not re.match(r"data:image/(jpeg|png);base64,[A-Za-z0-9+/=]+$", data)):
+            raise ValueError(f"note: brush {i} must be a JPEG/PNG data URL under {_BRUSH_DATA_CHARS} chars")
+        if not re.fullmatch(r"[a-z0-9]{1,16}", bid):
+            raise ValueError(f"note: brush {i} id must be short [a-z0-9]")
+        out.append({"id": bid, "kind": kind, "data": data})
+    return out
+
+
 def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
              jpeg: Optional[bytes] = None,
              view_jpegs: Optional[list] = None,
@@ -2378,6 +2405,7 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
         if len(b) > _NOTE_IMAGE_BYTES:
             raise ValueError(f"note: a placed image is over {_NOTE_IMAGE_BYTES // (1024 * 1024)} MB")
     kinds = [_image_kind(b) for b in image_blobs]
+    brushes = _brushes(payload.get("brushes"))
     measures_in = payload.get("measures") or []
     shapes_in = payload.get("shapes") or []
     if (not strokes_in and not labels_in and not images_in and not measures_in and not shapes_in
@@ -2442,9 +2470,17 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
                 raise ValueError(f"note: stroke {i} pen must be spray|3d")
             out["pen"] = s["pen"]
         if s.get("alpha") is not None:
-            if s["alpha"] not in ("soft", "normal", "star"):
-                raise ValueError(f"note: stroke {i} alpha must be soft|normal|star")
+            if s["alpha"] not in ("soft", "normal", "star", "img"):
+                raise ValueError(f"note: stroke {i} alpha must be soft|normal|star|img")
             out["alpha"] = s["alpha"]
+        # 🖼 a picture brush: `brush` = the alpha picture, `tex` = the colour
+        # texture, both indices into the note's `brushes`
+        for k, kind in (("brush", "alpha"), ("tex", "tex")):
+            if s.get(k) is not None:
+                j = int(_num(s[k], f"stroke {i} {k}"))
+                if not 0 <= j < len(brushes) or brushes[j]["kind"] != kind:
+                    raise ValueError(f"note: stroke {i} {k} {j} is not a {kind} picture of the note")
+                out[k] = j
         # ⊞ drawn on a working PLANE, in the void (PLAN_VIEW_TOOLS §4): no
         # piece, and the plane it lies on
         if s.get("plane") is not None:
@@ -2488,6 +2524,8 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
         note["labels"] = _link_labels(marks, strokes, labels)
     if images:
         note["images"] = _link_labels(marks, strokes, images)
+    if brushes:
+        note["brushes"] = brushes
     if measures:
         note["measures"] = measures
     if shapes:

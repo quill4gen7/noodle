@@ -309,6 +309,14 @@
   .al i{width:16px;height:16px;}
   .al[data-a="soft"] i{background:radial-gradient(circle,var(--text) 0,var(--text) 25%,transparent 72%);}
   .al b{font-size:17px;line-height:1;color:var(--text);}
+  /* 🖼 the two picture squares: the alpha (among the tips) and the texture
+     (among the colours) — empty = a dashed square, loaded = its thumbnail */
+  .sq{width:var(--tap);padding:3px;}
+  .sq::before{content:'';display:block;width:22px;height:22px;border-radius:4px;border:1.5px dashed var(--text-dim);
+    background:var(--img,none) center/cover;}
+  .sq.has::before{border:1px solid rgba(255,255,255,.35);}
+  .sq.busy::before{opacity:.4;}
+  #d-tex.on{border-color:var(--accent);background:var(--bg-2);}
   #d-sizebox{gap:6px;cursor:pointer;}
   #d-size{width:110px;accent-color:var(--accent);}
   #d-sizev{display:inline-flex;align-items:center;justify-content:center;min-width:34px;font:11px var(--mono);color:var(--text-dim);}
@@ -374,6 +382,7 @@
     #d-common{order:3;gap:4px;justify-content:space-between;}
     #d-common .grp{flex-wrap:nowrap;gap:3px;}
     #d-common .sw-btn{width:20px;height:20px;}
+    #d-common .sq{width:36px;}
     #d-common .tool .lb{display:none;}       /* ⌫ ✋: icons only, the row has to fit in two lines */
     #d-menu{top:auto;bottom:calc(100% + 6px);}
     #s-bar{top:8px;bottom:auto;}          /* the draw bar owns the bottom on a phone */
@@ -463,6 +472,9 @@
           <span class="sep"></span>
           <div class="grp" id="d-colors"></div>
           <input type="color" id="d-custom" title="Altro colore" value="#d946ef">
+          <button class="btn sq" id="d-tex" aria-label="Texture da immagine" title="Texture: colora il tratto con una foto (la prima volta la scegli; clic di nuovo per cambiarla)"></button>
+          <input type="file" id="d-texfile" accept="image/*" hidden>
+          <input type="file" id="d-alphafile" accept="image/*" hidden>
           <span class="sep"></span>
           <!-- the brush: its tip (alpha) and its width — for ✎ and ✎³ alike -->
           <div class="grp" id="d-alphas" role="radiogroup" aria-label="Punta"></div>
@@ -540,6 +552,7 @@ import * as MS from '/static/measure.js';
 import * as FFD from '/static/ffd.js';
 import * as P3 from '/static/pen3d.js';
 import * as INK from '/static/view-ink.js';
+import * as BIMG from '/static/brush-img.js';
 import * as TOOLS from '/static/view-tools.js';
 import { initSection } from '/static/view-section.js';
 import * as LOOK from '/static/view-look.js';
@@ -1202,10 +1215,15 @@ const PEN_COLORS = ['#ef4444', '#f59e0b', '#facc15', '#22c55e', '#3b82f6', '#fff
 const SIZE_MIN = 1, SIZE_MAX = 80;
 const sizeOfSlider = v => Math.round(SIZE_MIN + (SIZE_MAX - SIZE_MIN) * (v / 100) ** 2);
 const sliderOfSize = z => Math.round(100 * Math.sqrt(Math.max(0, z - SIZE_MIN) / (SIZE_MAX - SIZE_MIN)));
-const pen = { color: PEN_COLORS[0], size: 6, alpha: 'soft' };
+// alphaImg / texImg: ids of the user's pictures (brushes); tex = the colour
+// texture is in use instead of the colour
+const pen = { color: PEN_COLORS[0], size: 6, alpha: 'soft', alphaImg: null, texImg: null, tex: false };
+// 🖼 the pictures made into brushes (webui/brush-img.js): id → {id, kind, data, canvas}
+const brushes = new Map();
 try {                                          // the brush is remembered, like T's style
   const z = +localStorage.getItem('noodle:view:penSize'); if (z >= SIZE_MIN && z <= SIZE_MAX) pen.size = z;
-  const a = localStorage.getItem('noodle:view:penAlpha'); if (INK.ALPHAS.includes(a)) pen.alpha = a;
+  const a = localStorage.getItem('noodle:view:penAlpha'); if (INK.ALPHAS.includes(a) || a === 'img') pen.alpha = a;
+  pen.tex = localStorage.getItem('noodle:view:penTex') === '1';
 } catch {}
 // the tool in hand: `toolDef` is its registerTool entry (webui/view-tools.js),
 // `tool` its gesture family — pen | text | image | erase | hand | measure | shape
@@ -1263,6 +1281,9 @@ function inkHit(x, y) {
 // A stroke that does not say which pen drew it (a saved note) is filament if
 // it piled up (`lift` > 0), spray otherwise. `prev` = the spray stroke before
 // it (its colour run); by default, the one before it in the draft.
+// a spray coat is one colour — or one colour TEXTURE: strokes of the same
+// picture merge like strokes of the same colour
+const inkKey = s => (s.brushT ? 'tex:' + s.brushT.id : s.color);
 function strokeObject(s, prev) {
   if (s.pen3d == null) s.pen3d = !!(s.lift && s.lift.some(v => v > 0));
   if (!s.pen3d && s.run == null) {
@@ -1270,14 +1291,18 @@ function strokeObject(s, prev) {
       prev = null;
       for (const o of draft) { if (o === s) break; if (!o.pen3d && o.run != null) prev = o; }
     }
-    s.run = INK.nextRun(prev, s.color);
+    s.run = INK.nextRun(prev && { color: inkKey(prev), run: prev.run }, inkKey(s));
   }
   return INK.inkObject(s);
 }
 function disposeObj(o) {
   const mats = new Set();
   o.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) mats.add(c.material); });
-  mats.forEach(m => { if (INK.isShared(m)) return; if (m.map) m.map.dispose(); m.dispose(); });   // a label's text is a texture
+  mats.forEach(m => {
+    if (INK.isShared(m)) return;
+    if (m.map && !m.map.userData.shared) m.map.dispose();   // a label's text is a texture; a brush picture is shared
+    m.dispose();
+  });
   if (o.parent) o.parent.remove(o);
 }
 function redrawStroke(s) {
@@ -1297,6 +1322,8 @@ function penLift(p, w, cur) {
 function startStroke(hit, g) {
   const width = pen.size * mmPerPx(hit.p);
   const s = { color: pen.color, width, g, k: ++seq, piece: hit.key, pen3d: !!(toolDef && toolDef.pen3d), alpha: pen.alpha,
+              brushA: pen.alpha === 'img' ? brushes.get(pen.alphaImg) || null : null,
+              brushT: pen.tex ? brushes.get(pen.texImg) || null : null,
               pts: [hit.p], nrm: [hit.n], lift: [penLift(hit.p, width, null)], obj: null };
   if (hit.plane) s.plane = hit.plane;          // ⊞ drawn in the void: no piece, the plane
   draft.push(s); redrawStroke(s); syncDraw();
@@ -3383,6 +3410,12 @@ function syncDraw() {
   TOOLS.sync();
   for (const b of $('d-colors').children) b.classList.toggle('on', b.dataset.c === pen.color);
   for (const b of $('d-alphas').children) { const on = b.dataset.a === pen.alpha; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); }
+  for (const [el, id] of [[$('d-alphaimg'), pen.alphaImg], [$('d-tex'), pen.texImg]]) {
+    const B = id && brushes.get(id);
+    el.classList.toggle('has', !!B); el.style.setProperty('--img', B ? `url(${B.data})` : 'none');
+  }
+  $('d-tex').classList.toggle('on', pen.tex);
+  for (const b of $('d-colors').children) if (pen.tex) b.classList.remove('on');
   $('d-size').value = sliderOfSize(pen.size); $('d-sizev').textContent = pen.size + 'px';
   $('d-sizebox').style.setProperty('--dot', Math.min(22, 3 + pen.size / 2) + 'px');
   VP.refresh();                                // ⊞ the working plane: shown with an ink tool in hand
@@ -3417,10 +3450,10 @@ function recolorShape(c, merge) {
 for (const c of PEN_COLORS) {
   const b = document.createElement('button');
   b.className = 'sw-btn'; b.dataset.c = c; b.style.background = c; b.title = c;
-  b.onclick = () => { if (recolorShape(c, false)) return; pen.color = c; if (tool !== 'pen' && tool !== 'text') setTool(penTool()); else syncDraw(); };
+  b.onclick = () => { if (recolorShape(c, false)) return; pen.color = c; setTex(false); if (tool !== 'pen' && tool !== 'text') setTool(penTool()); else syncDraw(); };
   $('d-colors').appendChild(b);
 }
-$('d-custom').addEventListener('input', e => { if (recolorShape(e.target.value, true)) return; pen.color = e.target.value; if (tool !== 'pen' && tool !== 'text') setTool(penTool()); else syncDraw(); });
+$('d-custom').addEventListener('input', e => { if (recolorShape(e.target.value, true)) return; pen.color = e.target.value; setTex(false); if (tool !== 'pen' && tool !== 'text') setTool(penTool()); else syncDraw(); });
 // ── the brush: alpha (the tip, as in ZBrush) + width ────────────────────
 // sfumato = the spray that evens out (✎³: a tapered, matte bead) · normale =
 // a marker with a crisp edge (✎³: the round tube) · stellina = little stars
@@ -3441,6 +3474,67 @@ for (const a of INK.ALPHAS) {
   };
   $('d-alphas').appendChild(b);
 }
+// 🖼 the two picture squares. Empty: a click picks a picture. Loaded: a click
+// uses it, a click while in use picks another. The picture is prepared
+// automatically (webui/brush-img.js: crop, grey, polarity, levels, feather)
+// and remembered for the next visit.
+{
+  const b = document.createElement('button');
+  b.className = 'btn sq al'; b.id = 'd-alphaimg'; b.dataset.a = 'img'; b.setAttribute('role', 'radio');
+  b.title = 'Alpha da immagine: la forma del tratto la dà una foto, in scala di grigi (la prima volta la scegli; clic di nuovo per cambiarla) · ✎³: diventa un rilievo sul tubo';
+  b.setAttribute('aria-label', 'Alpha da immagine');
+  b.onclick = () => {
+    if (!pen.alphaImg || pen.alpha === 'img') { $('d-alphafile').click(); return; }
+    useAlphaImg();
+  };
+  $('d-alphas').appendChild(b);
+}
+function useAlphaImg() {
+  pen.alpha = 'img'; try { localStorage.setItem('noodle:view:penAlpha', 'img'); } catch {}
+  if (tool !== 'pen') setTool(penTool()); else syncDraw();
+}
+function setTex(on) {
+  pen.tex = !!(on && pen.texImg);
+  try { localStorage.setItem('noodle:view:penTex', pen.tex ? '1' : '0'); } catch {}
+}
+$('d-tex').onclick = () => {
+  if (!pen.texImg || pen.tex) { $('d-texfile').click(); return; }
+  setTex(true); if (tool !== 'pen') setTool(penTool()); else syncDraw();
+};
+async function takeBrushFile(input, kind) {
+  const f = input.files && input.files[0]; input.value = '';
+  if (!f) return;
+  const el = kind === 'alpha' ? $('d-alphaimg') : $('d-tex');
+  el.classList.add('busy');
+  try {
+    const B = await BIMG.loadBrushImage(f, kind);
+    brushes.set(B.id, B);
+    try { localStorage.setItem(kind === 'alpha' ? 'noodle:view:brushA' : 'noodle:view:brushT',
+      JSON.stringify({ id: B.id, kind, data: B.data })); } catch {}
+    if (kind === 'alpha') { pen.alphaImg = B.id; useAlphaImg(); }
+    else { pen.texImg = B.id; setTex(true); if (tool !== 'pen') setTool(penTool()); else syncDraw(); }
+  } catch (err) {
+    console.warn('brush', err);
+    toast('⚠ Questa immagine non si legge: prova un JPEG o un PNG.', 3500);
+  } finally { el.classList.remove('busy'); }
+}
+$('d-alphafile').addEventListener('change', e => takeBrushFile(e.target, 'alpha'));
+$('d-texfile').addEventListener('change', e => takeBrushFile(e.target, 'tex'));
+// the pictures of the last visit
+(async () => {
+  for (const [key, kind] of [['noodle:view:brushA', 'alpha'], ['noodle:view:brushT', 'tex']]) {
+    try {
+      const j = JSON.parse(localStorage.getItem(key) || 'null');
+      if (!j || !/^data:image\/(jpeg|png);base64,/.test(j.data)) continue;
+      const B = await BIMG.brushFromData({ ...j, kind });
+      brushes.set(B.id, B);
+      if (kind === 'alpha') pen.alphaImg = B.id; else pen.texImg = B.id;
+    } catch {}
+  }
+  if (pen.alpha === 'img' && !pen.alphaImg) pen.alpha = 'soft';
+  if (!pen.texImg) pen.tex = false;
+  syncDraw();
+})();
 $('d-size').addEventListener('input', e => {
   pen.size = sizeOfSlider(+e.target.value);
   try { localStorage.setItem('noodle:view:penSize', pen.size); } catch {}
@@ -3617,10 +3711,16 @@ function noteBody(withPictures) {
   const placed = L => ({ at: [r4(L.at.x), r4(L.at.y), r4(L.at.z)], normal: v3(L.n), up: v3(L.up),
     size_mm: [r4(L.w), r4(L.h)], surface: L.surface || null, fit: fitOut(L.fit),
     view: L.view == null ? null : remap.get(L.view) });
+  // 🖼 the pictures the strokes are made with travel INSIDE the note (small
+  // JPEG data URLs, ~10 KB): a stroke names them by index
+  const used = [];
+  const bi = B => { if (!B) return undefined; let k = used.indexOf(B); if (k < 0) { used.push(B); k = used.length - 1; } return k; };
   const body = {
     text,
     strokes: draft.map(s => ({ color: s.color, width: s.width, piece: s.piece, g: s.g,
       ...(s.label ? {} : { pen: s.pen3d ? '3d' : 'spray', alpha: INK.alphaOf(s, s.pen3d ? 'normal' : 'soft') }),
+      ...(!s.label && s.alpha === 'img' && s.brushA ? { brush: bi(s.brushA) } : {}),
+      ...(!s.label && s.brushT ? { tex: bi(s.brushT) } : {}),
       ...(s.label && words.includes(s.label) ? { label: words.indexOf(s.label) } : {}),
       view: s.view == null ? null : remap.get(s.view),
       ...(s.plane ? { plane: s.plane } : {}),     // ⊞ drawn in the void, on this plane
@@ -3648,7 +3748,9 @@ function noteBody(withPictures) {
   if (cut) body.cut = cut;
   if (anims.length) body.t = clock.t;
   // the signature: the content, not the pictures (a placed image by its size)
-  body.sig = JSON.stringify({ ...body, images: body.images.map(im => ({ ...im, data: im.data.length })) });
+  if (used.length) body.brushes = used.map(B => ({ id: B.id, kind: B.kind, data: B.data }));
+  body.sig = JSON.stringify({ ...body, images: body.images.map(im => ({ ...im, data: im.data.length })),
+    brushes: used.map(B => B.id) });
   if (withPictures) {
     // the picture is the user's own view, strokes and all: the agent sees what
     // they saw, at their zoom (frame:false keeps the camera where it is)
@@ -3779,8 +3881,21 @@ async function dataUrlOf(url) {
   const b = await r.blob();
   return await new Promise((ok, ko) => { const f = new FileReader(); f.onload = () => ok(f.result); f.onerror = ko; f.readAsDataURL(b); });
 }
+// 🖼 a saved note's pictures → brush records (decoded once, by id); a stroke's
+// `brush` / `tex` index into them
+async function loadBrushes(n) {
+  await Promise.all((n.brushes || []).map(async b => {
+    if (!b || brushes.has(b.id) || !/^data:image\/(jpeg|png);base64,/.test(b.data || '')) return;
+    try { brushes.set(b.id, await BIMG.brushFromData(b)); } catch {}
+  }));
+}
+function brushesOf(n, s) {
+  const B = k => (k != null && n.brushes && n.brushes[k] ? brushes.get(n.brushes[k].id) || null : null);
+  return { brushA: B(s.brush), brushT: B(s.tex) };
+}
 async function resumeNote(n) {
   if (save.id === n.id) return;
+  await loadBrushes(n);
   if (save.id || draft.length || labels.length || dmeasures.length || shapes.length || noteText) {
     await flushSave(); if (save.busy) await save.busy;
     if (save.state === 'error') { toast(`⚠ La nota in corso non è salvata: riprova tra poco.`); return; }
@@ -3812,7 +3927,7 @@ async function resumeNote(n) {
     const d = { color: s.color, width: s.width_mm || 1, g: s.g ?? 0, k: ++seq, piece: s.piece || null, pts, nrm,
       lift: s.lifts && s.lifts.length === pts.length ? s.lifts.slice() : pts.map(() => 0),
       view: viewOf(s.view), obj: null, ...(s.plane ? { plane: s.plane } : {}),
-      ...(s.pen ? { pen3d: s.pen === '3d' } : {}), ...(s.alpha ? { alpha: s.alpha } : {}) };
+      ...(s.pen ? { pen3d: s.pen === '3d' } : {}), ...(s.alpha ? { alpha: s.alpha } : {}), ...brushesOf(n, s) };
     if (s.kind === 'text' && words[s.label - 1]) d.label = words[s.label - 1];
     g0 = Math.max(g0, d.g);
     draft.push(d); redrawStroke(d);
@@ -3878,7 +3993,7 @@ function noteObject(n) {
     const lift = s.lifts && s.lifts.length === pts.length ? s.lifts : null;
     if (!pts.length) continue;
     const o = { color: s.color, width: s.width_mm || 1, pts, nrm, lift, ...(s.kind === 'text' ? { label: true } : {}),
-      ...(s.pen ? { pen3d: s.pen === '3d' } : {}), ...(s.alpha ? { alpha: s.alpha } : {}) };
+      ...(s.pen ? { pen3d: s.pen === '3d' } : {}), ...(s.alpha ? { alpha: s.alpha } : {}), ...brushesOf(n, s) };
     g.add(strokeObject(o, prev));
     if (!o.pen3d) prev = o;
   }
@@ -3948,6 +4063,7 @@ function goToNote(n) {
 async function loadNotes() {
   try { notesData = (await getJSON(`/api/graph/${encodeURIComponent(NAME)}/gens/${GEN}/notes`)).notes || []; }
   catch { notesData = []; }
+  await Promise.all(notesData.map(loadBrushes));
   for (const o of noteObjs.values()) disposeObj(o);
   noteObjs.clear();
   viewer.scene.updateMatrixWorld();            // labels find their mesh by raycast
