@@ -3718,9 +3718,10 @@ function applyDropAnim(node, tNew){
 }
 
 // The nodes that ship a scrubbable timeline with their preview: Drop (a fall it
-// simulated) and Animate (a movement you dictated). One `t` slider commonly
-// drives several of both, and they replay through the same two plan kinds.
-const TIMELINE_NODES = new Set(['Drop', 'Animate']);
+// simulated), Animate (a movement you dictated) and Mechanism (bodies that follow
+// a driver through gears — PLAN_MECHANISM.md). One `t` slider commonly drives
+// several of them, and they replay through the same two plan kinds.
+const TIMELINE_NODES = new Set(['Drop', 'Animate', 'Mechanism']);
 
 // A dragged value node (Number Slider…) wired straight into a timeline node's
 // `t` socket: replay each connected one live instead of waiting for the engine.

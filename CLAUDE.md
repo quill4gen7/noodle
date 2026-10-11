@@ -957,6 +957,39 @@ quality, and the memo cache pays for it once. Full notes and every measurement i
   `examples/wind-tunnel.json`. Tests: `tests/test_fluid.py`. Agent-facing
   usage: AGENT_HELP topic `fluid`.
 
+## 5i. Mechanisms (category `mechanism`) — move one part, the connected ones follow
+
+`SpurGear`, `Keyframes` (`KeyframeMotion`), `Joint`, `Mechanism` (catalog.py §12e,
+runtime in the PREAMBLE: `_spur_gear`, `_keyframes`, `_joint`, `_mechanism`). Full
+notes and measurements in **`PLAN_MECHANISM.md`**; it came from feedback
+`20261011-180120-creepyfinger-v4` (Animate cannot show coupled joints).
+
+- **Kinematics, checked by collisions — not dynamics.** Drivers (`turn`/`slide`/
+  `rpm` on a Joint) dictate degrees of freedom on a clock; a BFS per frame carries
+  them through the couplings live at that frame; a body nothing reaches keeps its
+  angle (neutral). Collisions are a manifold3d CHECK over sampled frames, reported
+  and output as `clash` — never a force. Pairs whose relative pose never changes
+  (a shaft through its own gear) are skipped.
+- **Gears find each other from the geometry, every frame**: parallel axes, centre
+  distance m(z1+z2)/2, faces overlapping along the axis. That is why a sliding-mesh
+  gearbox shifts with no special case (`examples/gearbox-2-speed.json`). Phase:
+  a tooth faces a space on the line of centres; `engage=clash` (default, quill's
+  choice) recovers the phase error of a pair entering mesh WHILE TURNING in
+  proportion to the axial overlap — the teeth grind during the entry and the check
+  shows it; `snap` jumps. The frame-0 alignment is assembly and always snaps.
+- **The gear's data rides on the shape** (`_noodle_gear`, world terms + the
+  Location it was built with; placement now = L_now · L_built⁻¹). Move/Rotate keep
+  it, a boolean does not — two gears on one shaft go into ONE Joint, not a Union.
+  Hence `at`, not `origin`, on SpurGear.
+- **A Joint's output is `data` that CARRIES geometry**: `_GEOMETRY_CARRIERS` in the
+  transpiler keeps its inputs out of the auto-preview, or every body is drawn twice
+  (at rest + posed — paid for: the shifted cluster showed up twice at t=0.9).
+- Replay is the existing `keys` plan per body (a list → `Scene`, owner per shape),
+  so the frontend change was one entry in `TIMELINE_NODES`. `_mechanism` also
+  returns `trace` (seconds / degrees / mm per body) — the kinematic table.
+- Tests: `tests/test_mechanism.py` (pure-Python, stand-in shapes carrying
+  `_noodle_gear`, collision check off).
+
 ## 5b. Lists & fan-out (Grasshopper-style)
 
 Inputs have a data-access mode (`Socket.list_access`):
