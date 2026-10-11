@@ -2253,6 +2253,146 @@ register(NodeDef("Thread", "fastener", "Thread",
 
 
 # ===========================================================================
+# 12e. Mechanisms — move one part and the ones connected to it follow
+# ===========================================================================
+# Kinematics, not dynamics: drivers dictate a few degrees of freedom on a clock,
+# a propagation step carries them through the couplings (gears in mesh, shafts
+# that turn together), and collisions VERIFY the result instead of producing it.
+# Gears find each other from the geometry — parallel axes, centre distance
+# m(z1+z2)/2, faces overlapping along the axis — re-checked every frame, which is
+# what makes a sliding-mesh gearbox shift with no special case. Runtime in the
+# PREAMBLE (_spur_gear, _joint, _keyframes, _mechanism); the replay is the
+# existing `keys` plan, so the browser scrubs it at 60fps. See PLAN_MECHANISM.md.
+
+register(NodeDef("SpurGear", "mechanism", "Spur Gear",
+    aliases=["ingranaggio", "ruota dentata", "gear", "cog", "involute",
+             "evolvente", "pinion", "pignone"],
+    # `at`, not `origin` (same reason as Thread): the gear's data rides on the
+    # shape's location, so the node places it itself.
+    inputs=[Socket("at", WIRE_VECTOR, required=False)]
+           + _pin("teeth", "module", "width"),
+    params=[_i("teeth", 20, 6, 200, label="teeth", soft_max=80),
+            _f("module", 2.0, 0.2, 20.0, step=0.1, label="module (mm)"),
+            _f("width", 8.0, 0.5, 200.0, step=0.5, label="face width (mm)",
+               soft_max=50),
+            _f("bore", 6.0, 0.0, 200.0, step=0.5, label="bore Ø (mm)",
+               soft_max=50),
+            _choice("axis", "z", ["x", "y", "z"], label="axis"),
+            _f("pressure_angle", 20.0, 14.5, 30.0, step=0.5,
+               label="pressure angle (°)"),
+            _f("backlash", 0.1, 0.0, 1.0, step=0.01, label="backlash (mm)"),
+            _f("phase", 0.0, -180.0, 180.0, step=0.5, label="phase (°)")],
+    outputs=_geo(),
+    code_template={"algebra": "_spur_gear({teeth}, {module}, {width}, {bore}, "
+                              "{axis}, {pressure_angle}, {backlash}, {phase}, {at})"},
+    description="A real involute spur gear, centred on `at` with its face width "
+                "centred there too, turning about `axis`. Two gears mesh when their "
+                "axes are parallel, their centres are m·(z1+z2)/2 apart and their "
+                "faces overlap — put them there and a Mechanism finds the pair by "
+                "itself, with the right ratio and the teeth interleaved. Same module "
+                "on both, or they do not mesh. Pitch Ø = module × teeth; outside Ø = "
+                "module × (teeth + 2). `backlash` is the play taken off each tooth at "
+                "the pitch circle: 0.1 is a sane print default, 0 is a line-to-line "
+                "fit that binds. The gear carries its tooth data on the shape, and "
+                "Move / Rotate keep it — a Union does NOT (the result is a new shape): "
+                "to put two gears on one shaft, wire them both into the same Joint "
+                "instead of fusing them."))
+
+register(NodeDef("KeyframeMotion", "mechanism", "Keyframes",
+    aliases=["keyframe", "keyframes", "chiavi", "profilo di moto", "cam profile",
+             "motion profile", "timeline", "sequenza", "programma"],
+    inputs=[Socket("times", WIRE_DATA, required=False, list_access=True),
+            Socket("values", WIRE_DATA, required=False, list_access=True)],
+    params=[Param("keys", "str", "keys  t:value, …", "0:0, 1:360", widget="input"),
+            _choice("interp", "linear", ["linear", "smooth", "step"],
+                    label="interpolation")],
+    outputs=_data("motion"),
+    code_template={"algebra": "_keyframes({keys}, {times}, {values}, {interp})"},
+    description="One number over time, as a list of keys: `0:0, 1:360, 2:360, "
+                "3:0` = turn a full revolution in the first second, hold, come back. "
+                "Times in seconds; the value is whatever the socket it feeds means — "
+                "DEGREES into a Joint's `turn`, MILLIMETRES into its `slide`. Between "
+                "keys it is `linear`, `smooth` (eased at every key) or `step` (jumps). "
+                "Before the first key it holds the first value, after the last the "
+                "last. Wire `times` and `values` (two lists, e.g. computed by a "
+                "CodeBlock from a real kinematic table) to replace the text."))
+
+register(NodeDef("Joint", "mechanism", "Joint",
+    aliases=["giunto", "albero", "shaft", "axle", "asse", "perno", "pivot",
+             "hinge", "cerniera", "revolute", "prismatic", "slider", "spline",
+             "scanalato", "body", "corpo"],
+    inputs=[Socket("shape", WIRE_SOLID, multiple=True, list_access=True,
+                   accepts=[WIRE_MESH, WIRE_SURFACE]),
+            Socket("pivot", WIRE_VECTOR, required=False),
+            Socket("turn", WIRE_DATA, required=False),
+            Socket("slide", WIRE_DATA, required=False),
+            Socket("follows", WIRE_DATA, required=False)],
+    params=[_choice("axis", "auto", ["auto", "x", "y", "z"], label="axis"),
+            _choice("kind", "free", ["free", "fixed"], label="kind"),
+            _f("rpm", 0.0, -3000.0, 3000.0, step=1, label="rpm (no turn wired)",
+               soft_max=120),
+            _f("ratio", 1.0, -20.0, 20.0, step=0.05, label="follow ratio")],
+    outputs=_data("joint"),
+    code_template={"algebra": "_joint([{shape}], {pivot}, {turn}, {slide}, "
+                              "{follows}, {axis}, {kind}, {rpm}, {ratio}, "
+                              "{shape_ids}, {node_id!r}, {joint_name})"},
+    description="One RIGID body of a mechanism and how it may move: it turns about "
+                "`axis` through `pivot` and may slide along that same axis. Every "
+                "shape wired into `shape` moves as one piece — a shaft with its "
+                "gears, a sliding cluster, a crank. `axis auto` takes the axis and "
+                "the pivot from the first gear in the body (so a Spur Gear needs no "
+                "setting at all), else z through the body's centre. What MOVES it: "
+                "wire a motion into `turn` (degrees: a Keyframes node, or a Motion "
+                "whose rotation about this axis is used) or set `rpm`, and the body "
+                "is a DRIVER; wire one into `slide` (mm) and it shifts along its axis "
+                "— a gear-change fork. With neither, it is DRIVEN: it turns only "
+                "because a gear in mesh or `follows` makes it, and when nothing does "
+                "(neutral) it stays where it was. `follows` ties this body's turn to "
+                "another Joint's × `ratio` — a splined cluster on its shaft (1), a "
+                "belt or a chain (driver Ø / driven Ø), a reversal (−1). `kind fixed` "
+                "is the frame: it never moves, but it is checked for collisions."))
+
+register(NodeDef("Mechanism", "mechanism", "Mechanism",
+    aliases=["meccanismo", "cinematismo", "kinematics", "cinematica",
+             "gear train", "treno di ingranaggi", "gearbox", "cambio",
+             "trasmissione", "transmission", "assembly motion", "linkage"],
+    inputs=[Socket("joints", WIRE_DATA, multiple=True)] + _pin("t"),
+    params=[_f("t", 1.0, 0.0, 1.0, step=0.01, label="timeline"),
+            _f("duration", 0.0, 0.0, 600.0, step=0.5,
+               label="duration (s, 0 = from the drivers)", soft_max=30),
+            _f("hold", 0.0, 0.0, 60.0, step=0.1, label="hold after (s)"),
+            _choice("engage", "clash", ["clash", "snap"],
+                    label="engaging while moving"),
+            _i("check", 120, 0, 1000, label="collision frames (0 = off)",
+               soft_max=300)],
+    outputs=[Socket("result", WIRE_SOLID), Socket("report", WIRE_DATA),
+             Socket("clash", WIRE_MESH)],
+    gizmo={"kind": "timeline", "binds": ["t"], "anchor": "preview", "lock": ["t"]},
+    code_template={"algebra": ""},   # handled by the transpiler (_emit_mechanism)
+    description="Make the Joints wired in move TOGETHER: the drivers turn and slide "
+                "on their clock, and every body connected to them follows — through "
+                "gears in mesh (found from the geometry, ratio −z1/z2, teeth "
+                "interleaved), shafts that `follow` each other, chains of both. "
+                "Meshing is re-checked every frame, so a gear slid out of mesh lets "
+                "its shaft stop and a gear slid into mesh picks it up: a sliding-mesh "
+                "GEARBOX shifts with no special case. `timeline` scrubs it (60fps "
+                "replay, one exact bake when you let go); `result` is every body "
+                "posed at that moment. `engage` decides what a pair coming into mesh "
+                "WHILE TURNING does with its phase error: `clash` keeps the driven "
+                "gear continuous and recovers the error as the faces slide together, "
+                "so the teeth grind during the entry exactly as a gearbox with no "
+                "synchromesh does — and the collision check shows it; `snap` jumps "
+                "into phase. Collisions are a CHECK, not a force: over `collision "
+                "frames` samples every pair of bodies that moves relative to each "
+                "other is intersected, and `report` says which pairs touch, when and "
+                "how much (wire it into a Panel); `clash` is the overlap at the "
+                "current t, as a mesh to preview in red. Pairs that never move "
+                "relative to each other (a shaft through its own gear) are skipped. "
+                "This is kinematics: no inertia, no friction, no torque — what "
+                "follows is decided by the couplings, never by contact."))
+
+
+# ===========================================================================
 # 12d. Fluids — moving air and water, and what they do to a part
 # ===========================================================================
 # Two nodes and one shared idea (PLAN_FLUID.md). `Wind` is a plan, not geometry:

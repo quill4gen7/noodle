@@ -1,0 +1,453 @@
+{
+ "name": "gearbox-2-speed",
+ "nodes": [
+  {
+   "id": "p_in20",
+   "type": "ConstructPoint",
+   "params": {
+    "x": 0,
+    "y": 0,
+    "z": 0
+   },
+   "position": [
+    470.0,
+    370.07369250225554
+   ],
+   "parent": null
+  },
+  {
+   "id": "p_in30",
+   "type": "ConstructPoint",
+   "params": {
+    "x": 0,
+    "y": 0,
+    "z": 30
+   },
+   "position": [
+    470.0,
+    1019.0736925022557
+   ],
+   "parent": null
+  },
+  {
+   "id": "in20",
+   "type": "SpurGear",
+   "params": {
+    "teeth": 20,
+    "module": 2.0,
+    "width": 8.0,
+    "bore": 6.0,
+    "axis": "z",
+    "backlash": 0.1
+   },
+   "position": [
+    800.0,
+    150.0
+   ],
+   "parent": null,
+   "title": "Primario 20"
+  },
+  {
+   "id": "in30",
+   "type": "SpurGear",
+   "params": {
+    "teeth": 30,
+    "module": 2.0,
+    "width": 8.0,
+    "bore": 6.0,
+    "axis": "z",
+    "backlash": 0.1
+   },
+   "position": [
+    800.0,
+    799.0
+   ],
+   "parent": null,
+   "title": "Primario 30"
+  },
+  {
+   "id": "p_sh_in",
+   "type": "ConstructPoint",
+   "params": {
+    "x": 0,
+    "y": 0,
+    "z": 15
+   },
+   "position": [
+    470.0,
+    1469.2403591689222
+   ],
+   "parent": null
+  },
+  {
+   "id": "sh_in",
+   "type": "Cylinder",
+   "params": {
+    "radius": 2.9,
+    "height": 60
+   },
+   "position": [
+    800.0,
+    1448.0
+   ],
+   "parent": null,
+   "title": "Albero primario"
+  },
+  {
+   "id": "p_o40",
+   "type": "ConstructPoint",
+   "params": {
+    "x": 60,
+    "y": 0,
+    "z": 0
+   },
+   "position": [
+    470.0,
+    1963.2403591689222
+   ],
+   "parent": null
+  },
+  {
+   "id": "p_o30",
+   "type": "ConstructPoint",
+   "params": {
+    "x": 60,
+    "y": 0,
+    "z": 12
+   },
+   "position": [
+    470.0,
+    2280.240359168922
+   ],
+   "parent": null
+  },
+  {
+   "id": "out40",
+   "type": "SpurGear",
+   "params": {
+    "teeth": 40,
+    "module": 2.0,
+    "width": 8.0,
+    "bore": 6.0,
+    "axis": "z",
+    "backlash": 0.1
+   },
+   "position": [
+    800.0,
+    1861.0
+   ],
+   "parent": null,
+   "title": "Scorrevole 40"
+  },
+  {
+   "id": "out30",
+   "type": "SpurGear",
+   "params": {
+    "teeth": 30,
+    "module": 2.0,
+    "width": 8.0,
+    "bore": 6.0,
+    "axis": "z",
+    "backlash": 0.1
+   },
+   "position": [
+    800.0,
+    2510.0
+   ],
+   "parent": null,
+   "title": "Scorrevole 30"
+  },
+  {
+   "id": "p_sh_out",
+   "type": "ConstructPoint",
+   "params": {
+    "x": 60,
+    "y": 0,
+    "z": 15
+   },
+   "position": [
+    470.0,
+    3260.6893824751896
+   ],
+   "parent": null
+  },
+  {
+   "id": "sh_out",
+   "type": "Cylinder",
+   "params": {
+    "radius": 2.9,
+    "height": 60
+   },
+   "position": [
+    800.0,
+    3159.0
+   ],
+   "parent": null,
+   "title": "Albero secondario"
+  },
+  {
+   "id": "k_in",
+   "type": "KeyframeMotion",
+   "params": {
+    "keys": "0:0, 8:720",
+    "interp": "linear"
+   },
+   "position": [
+    470.0,
+    1786.2403591689222
+   ],
+   "parent": null,
+   "title": "Giri motore"
+  },
+  {
+   "id": "k_fork",
+   "type": "KeyframeMotion",
+   "params": {
+    "keys": "0:0, 2.8:0, 3.6:9, 4.4:9, 5.2:18, 8:18",
+    "interp": "smooth"
+   },
+   "position": [
+    470.0,
+    2597.240359168922
+   ],
+   "parent": null,
+   "title": "Forcella (1ª → N → 2ª)"
+  },
+  {
+   "id": "j_in",
+   "type": "Joint",
+   "params": {},
+   "position": [
+    1100.0,
+    1212.796143667569
+   ],
+   "parent": null,
+   "title": "Primario"
+  },
+  {
+   "id": "j_out",
+   "type": "Joint",
+   "params": {
+    "axis": "z"
+   },
+   "position": [
+    1100.0,
+    2490.870179584461
+   ],
+   "parent": null,
+   "title": "Secondario"
+  },
+  {
+   "id": "j_clu",
+   "type": "Joint",
+   "params": {},
+   "position": [
+    1400.0,
+    2247.6479573622387
+   ],
+   "parent": null,
+   "title": "Gruppo scorrevole"
+  },
+  {
+   "id": "t",
+   "type": "NumberSlider",
+   "params": {
+    "value": 0.25,
+    "_ui": {
+     "value": {
+      "min": 0,
+      "max": 1,
+      "step": 0.005
+     }
+    }
+   },
+   "position": [
+    80.0,
+    150.0
+   ],
+   "parent": null,
+   "title": "Tempo"
+  },
+  {
+   "id": "mech",
+   "type": "Mechanism",
+   "params": {
+    "t": 0.25,
+    "engage": "clash",
+    "check": 160
+   },
+   "position": [
+    1700.0,
+    1867.0341571402744
+   ],
+   "parent": null,
+   "preview": true,
+   "title": "Cambio"
+  },
+  {
+   "id": "rep",
+   "type": "Display",
+   "params": {},
+   "position": [
+    2000.0,
+    2000.0341571402744
+   ],
+   "parent": null,
+   "title": "Report"
+  },
+  {
+   "id": "note",
+   "type": "Note",
+   "params": {
+    "text": "Cambio a ingranaggi scorrevoli, 2 marce (PLAN_MECHANISM.md)\n\nTrascina Tempo: il primario gira (Giri motore), la Forcella fa scorrere il gruppo 40/30 sul secondario: 1ª (rapporto 0,5) → folle (il secondario si ferma) → 2ª (1:1). Nessuno dichiara quali ruote ingranano: il Mechanism lo ricava dalla geometria a ogni fotogramma.\n\nengage = clash: la 2ª entra sfasata e i denti sbattono per la corsa d'innesto — il Report dice quando e quanto; l'uscita `clash` è la compenetrazione al tempo corrente, da vedere in rosso."
+   },
+   "position": [
+    470.0,
+    3577.6893824751896
+   ],
+   "parent": null
+  }
+ ],
+ "connections": [
+  {
+   "id": "l1",
+   "from_node": "p_in20",
+   "from_socket": "point",
+   "to_node": "in20",
+   "to_socket": "at"
+  },
+  {
+   "id": "l2",
+   "from_node": "p_in30",
+   "from_socket": "point",
+   "to_node": "in30",
+   "to_socket": "at"
+  },
+  {
+   "id": "l3",
+   "from_node": "p_sh_in",
+   "from_socket": "point",
+   "to_node": "sh_in",
+   "to_socket": "origin"
+  },
+  {
+   "id": "l4",
+   "from_node": "p_o40",
+   "from_socket": "point",
+   "to_node": "out40",
+   "to_socket": "at"
+  },
+  {
+   "id": "l5",
+   "from_node": "p_o30",
+   "from_socket": "point",
+   "to_node": "out30",
+   "to_socket": "at"
+  },
+  {
+   "id": "l6",
+   "from_node": "p_sh_out",
+   "from_socket": "point",
+   "to_node": "sh_out",
+   "to_socket": "origin"
+  },
+  {
+   "id": "l7",
+   "from_node": "in20",
+   "from_socket": "result",
+   "to_node": "j_in",
+   "to_socket": "shape"
+  },
+  {
+   "id": "l8",
+   "from_node": "in30",
+   "from_socket": "result",
+   "to_node": "j_in",
+   "to_socket": "shape"
+  },
+  {
+   "id": "l9",
+   "from_node": "sh_in",
+   "from_socket": "result",
+   "to_node": "j_in",
+   "to_socket": "shape"
+  },
+  {
+   "id": "l10",
+   "from_node": "k_in",
+   "from_socket": "motion",
+   "to_node": "j_in",
+   "to_socket": "turn"
+  },
+  {
+   "id": "l11",
+   "from_node": "sh_out",
+   "from_socket": "result",
+   "to_node": "j_out",
+   "to_socket": "shape"
+  },
+  {
+   "id": "l12",
+   "from_node": "out40",
+   "from_socket": "result",
+   "to_node": "j_clu",
+   "to_socket": "shape"
+  },
+  {
+   "id": "l13",
+   "from_node": "out30",
+   "from_socket": "result",
+   "to_node": "j_clu",
+   "to_socket": "shape"
+  },
+  {
+   "id": "l14",
+   "from_node": "k_fork",
+   "from_socket": "motion",
+   "to_node": "j_clu",
+   "to_socket": "slide"
+  },
+  {
+   "id": "l15",
+   "from_node": "j_out",
+   "from_socket": "joint",
+   "to_node": "j_clu",
+   "to_socket": "follows"
+  },
+  {
+   "id": "l16",
+   "from_node": "j_in",
+   "from_socket": "joint",
+   "to_node": "mech",
+   "to_socket": "joints"
+  },
+  {
+   "id": "l17",
+   "from_node": "j_clu",
+   "from_socket": "joint",
+   "to_node": "mech",
+   "to_socket": "joints"
+  },
+  {
+   "id": "l18",
+   "from_node": "j_out",
+   "from_socket": "joint",
+   "to_node": "mech",
+   "to_socket": "joints"
+  },
+  {
+   "id": "l19",
+   "from_node": "t",
+   "from_socket": "result",
+   "to_node": "mech",
+   "to_socket": "t"
+  },
+  {
+   "id": "l20",
+   "from_node": "mech",
+   "from_socket": "report",
+   "to_node": "rep",
+   "to_socket": "value"
+  }
+ ]
+}

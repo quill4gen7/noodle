@@ -781,7 +781,8 @@ def test_the_editor_replays_both_timeline_nodes():
     'Drop' in either place leaves Animate correct but silently un-scrubbable."""
     import pathlib
     js = (pathlib.Path(__file__).parent.parent / "webui" / "nodes.html").read_text()
-    assert "const TIMELINE_NODES = new Set(['Drop', 'Animate']);" in js
+    line = next(l for l in js.splitlines() if "const TIMELINE_NODES = new Set(" in l)
+    assert "'Drop'" in line and "'Animate'" in line     # (+ Mechanism, PLAN_MECHANISM)
     assert "if (TIMELINE_NODES.has(node.cadType)) return applyDropAnim(" in js
     assert "if (!tn || !TIMELINE_NODES.has(tn.cadType)) continue;" in js
 
