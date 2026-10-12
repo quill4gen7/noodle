@@ -6062,6 +6062,11 @@ def format_param(pdef: catalog.Param, value) -> str:
         return "True" if value else "False"
     if pdef.type == "str":
         return repr(value)
+    if isinstance(value, (list, tuple)) and pdef.type in ("int", "float"):
+        # a domain/vector stored in a numeric param (a .gh's persistent [a, b]):
+        # every item goes through int()/float(), so nothing but numbers is emitted
+        conv = int if pdef.type == "int" else float
+        return repr([conv(v) for v in value])
     if pdef.type == "int":
         return str(int(value))
     return repr(float(value))
