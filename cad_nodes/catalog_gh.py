@@ -251,6 +251,16 @@ _gh("GhBoundarySurfaces", "Boundary Surfaces", [_in("edges", list_access=True)],
                 "on the same plane becomes a HOLE in it.")
 _lists("GhBoundarySurfaces")
 
+for _p in ("Surface", "Brep"):
+    _gh(f"Gh{_p}Param", f"{_p} (param)", [_in("value", list_access=True)],
+        [Socket("value", WIRE_SURFACE if _p == "Surface" else WIRE_SOLID)],
+        "_gh_to_surface({value})",
+        description=f"A GH {_p} parameter that CASTS what it receives: a closed "
+                    "planar curve becomes the planar surface it bounds; faces and "
+                    "breps pass through. The importer keeps one only where curves "
+                    "flow in — elsewhere the parameter just disappears.")
+    _lists(f"Gh{_p}Param")
+
 _gh("GhExtrude", "Extrude", [_in("base"), _in("direction")],
     [Socket("extrusion", WIRE_SOLID)], "_gh_extrude({base}, {direction})",
     description="Extrude along a vector — its length is the distance. A curve "
