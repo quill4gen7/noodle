@@ -28,7 +28,7 @@ several connections (noodle's multi-connect = GH's fan-in).
 
 Flags on an input: `flatten` -> a ListFlatten in between, `reverse` -> a
 ListReverse, `degrees` -> the node's `degrees` param, `reparameterize` -> its
-`reparameterize` param. `graft` is noodle's default fan-out and adds nothing;
+`reparameterize` param, `graft` -> a GhGraftTree (one branch per item);
 anything with no counterpart is reported.
 
 Ids: GH object #k becomes node `n<k>` (the `#k` of gh_report), inserted helper
@@ -470,33 +470,44 @@ class _Importer:
         plain list_access input reads its first wire and drops the rest
         silently. So those get a ListCreate collecting every source."""
         hid = f"{nid}_{sock}_merge"
-        self.node(hid, "ListCreate", None)
         x, y = self.nodes[nid]["position"]
+        if len(srcs) <= 6 and "GhMerge" in self.reg:
+            # GH merges several sources BRANCH BY BRANCH: GhMerge under the
+            # branch rules (the `_gh` mark switches them on) does exactly that
+            self.node(hid, "GhMerge", None, {"_gh": {"helper": "merge"}})
+            for i, s in enumerate(srcs, 1):
+                self.wire(s, (hid, f"data_{i}"))
+        else:
+            self.node(hid, "ListCreate", None)        # flat: loses the branches
+            for s in srcs:
+                self.wire(s, (hid, "items"))
         self.nodes[hid]["position"] = [x - 220, y + 40]
-        for s in srcs:
-            self.wire(s, (hid, "items"))
-        return [(hid, self.first_output("ListCreate"))]
+        return [(hid, self.first_output(self.nodes[hid]["type"]))]
 
     def _through_flags(self, o, nid, p, sock, srcs, nd):
         target = nd.input(sock)
         many = len(srcs) > 1
-        if many and (("flatten" in p.flags or "reverse" in p.flags)
+        if many and (any(f in p.flags for f in ("flatten", "graft", "reverse"))
                      or (target.list_access and not target.multiple)):
-            srcs = self._merge(nid, sock, srcs)       # ListCreate also flattens
+            srcs = self._merge(nid, sock, srcs)
         if "invert" in p.flags and srcs and "GhInvertBoolean" in self.reg:
             hid = f"{nid}_{sock}_invert"
-            self.node(hid, "GhInvertBoolean", None)
+            self.node(hid, "GhInvertBoolean", None, {"_gh": {"helper": "invert"}})
             x, y = self.nodes[nid]["position"]
             self.nodes[hid]["position"] = [x - 220, y - 40]
             for src in srcs:
                 self.wire(src, (hid, "boolean"))
             srcs = [(hid, "inverted")]
-        for flag, helper in (("flatten", "ListFlatten"), ("reverse", "ListReverse")):
-            if flag == "flatten" and many:
+        for flag, helper in (("flatten", "ListFlatten"), ("graft", "GhGraftTree"),
+                             ("reverse", "ListReverse")):
+            if helper not in self.reg:
                 continue
             if flag in p.flags and srcs:
                 hid = f"{nid}_{sock}_{flag}"
-                self.node(hid, helper, None)
+                # reverse / graft act per branch (branch rules on); flatten acts
+                # on the WHOLE tree, so it must stay outside them
+                self.node(hid, helper, None,
+                          None if flag == "flatten" else {"_gh": {"helper": flag}})
                 self.nodes[hid]["position"] = [self.nodes[nid]["position"][0] - 200,
                                                self.nodes[nid]["position"][1]]
                 hin = self.reg[helper].inputs[0].name
@@ -541,7 +552,7 @@ class _Importer:
 
     def _param_flags(self, o, n, p, nd):
         for flag in p.flags:
-            if flag in ("flatten", "reverse", "graft"):
+            if flag in ("flatten", "reverse") or (flag == "graft" and "GhGraftTree" in self.reg):
                 continue
             if flag in ("degrees", "reparameterize") and nd.param(flag) is not None:
                 n["params"][flag] = True
@@ -575,7 +586,7 @@ class _Importer:
             c, t, w = bad
             self.conns = [x for x in self.conns if x["id"] != c.id]
             src, dst = self.nodes[c.from_node], self.nodes[c.to_node]
-            k = lambda n: f"#{n['params']['_gh']['k']}" if "_gh" in n["params"] else n["id"]
+            k = lambda n: f"#{n['params']['_gh']['k']}" if "k" in n["params"].get("_gh", {}) else n["id"]
             self.issues.append(f"wire {k(src)} {src['type']}.{c.from_socket} ({t}) -> "
                                f"{k(dst)} {dst['type']}.{c.to_socket} ({w}): "
                                "types refused by noodle, dropped")
@@ -621,7 +632,7 @@ class _Importer:
         guid_node = {}
         for n in self.nodes.values():
             g = n["params"].get("_gh")
-            if g:
+            if g and "guid" in g:          # helpers carry _gh too, without a guid
                 guid_node[g["guid"]] = n
         out = []
         for o in self.d.objects:
