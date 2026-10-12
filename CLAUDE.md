@@ -354,6 +354,20 @@ cad_nodes/
                        the picture the user sees. Warm browser (the cost is the
                        launch, not the frame). Camera presets + azim/elev/zoom,
                        frame-one-node, ortho. NOT a second renderer, on purpose.
+  gh/                Grasshopper .gh reader, no Rhino needed (scripts/gh_report.py
+                       is the CLI): archive.py = GH_IO (raw deflate + chunk tree,
+                       no lengths, so an unknown type code is an error, never a
+                       desync); definition.py = components, values, wires (inputs
+                       of variable-parameter components live under ParameterData,
+                       a wire is stored on the RECEIVING side as Source[i]);
+                       geometry.py = the Rhino geometry the .gh caches as ON_Data
+                       (deflate + .NET BinaryFormatter -> rhino3dm, OPTIONAL and
+                       not in the image) and curve_code(), a CodeBlock rebuilding
+                       curves as exact OCCT B-splines. It READS a definition; the
+                       graph is rebuilt with catalog nodes, not translated 1:1 —
+                       GH semantics (planes+domains, data trees, surface splits)
+                       have no node-for-node twin. First case: ikeaLack.gh ->
+                       projects/ikea-lack-cassetto. tests/test_gh_import.py.
   slice_summary.py   retro-engineering perception (§7b): slice_summary
                        (symbolic cross-sections; STEP exact, STL arc-fitted)
                        + section_outline (one exact section, edge by edge).

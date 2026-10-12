@@ -410,11 +410,21 @@ def _preview_geom(value, linear_frac: float = 0.02, angular: float = 0.4) -> dic
         return entry
 
     # 2) meshable surface/solid
+    # The deflection scales with the part's DIAGONAL, so on a long thin part it
+    # can exceed a small curved face outright and BRepMesh leaves that face with
+    # no triangulation at all — tessellate() then raises and the solid used to
+    # fall through to (3) and be drawn as bare edges. Measured on a 300mm rail
+    # with a 15mm B-spline hook profile: 6.06mm fails, 1.0mm meshes. So a
+    # failure retries finer before giving up; a part that meshes pays nothing.
     verts, tris = [], []
-    try:
-        verts, tris = shape.tessellate(_deflection(shape, linear_frac), angular)
-    except Exception:
-        verts, tris = [], []
+    d = _deflection(shape, linear_frac)
+    for k in (1, 6, 36):
+        try:
+            verts, tris = shape.tessellate(max(d / k, 0.01), angular)
+        except Exception:
+            verts, tris = [], []
+        if verts and tris:
+            break
     if verts and tris:
         entry: dict = {"kind": type(shape).__name__,
                        "mesh": {"vertices": [[v.X, v.Y, v.Z] for v in verts],
