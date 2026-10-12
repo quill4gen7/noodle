@@ -54,6 +54,9 @@ class ImportResult:
     graph: dict
     issues: list[str] = field(default_factory=list)
     unmapped: dict[str, list[int]] = field(default_factory=dict)  # "Name guid" -> [k]
+    # "k:j" (GH object k, output j) -> [[node id, socket], …]: where each GH
+    # output landed, for comparing a run against Grasshopper's own (gh_compare)
+    outputs: dict[str, list] = field(default_factory=dict)
 
     def report(self) -> str:
         out = [f"{len(self.graph['nodes'])} nodes, {len(self.graph['connections'])} wires, "
@@ -260,7 +263,10 @@ class _Importer:
             graph={"name": self.d.name.rsplit(".", 1)[0] or "gh-import",
                    "nodes": list(self.nodes.values()), "connections": self.conns,
                    "groups": self._groups()},
-            issues=self.issues, unmapped=self.unmapped)
+            issues=self.issues, unmapped=self.unmapped,
+            outputs={f"{k}:{j}": [list(x) for x in srcs]
+                     for (k, j) in self.out_at
+                     if (srcs := self.sources_of(k, j))})
 
     _CURVE_WORDS = ("curve", "line", "polyline", "rectangle", "circle", "arc", "ellipse",
                     "polygon", "boundary", "outline", "edges", "segments", "offset", "joined")
