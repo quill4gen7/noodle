@@ -6089,7 +6089,7 @@ _MEMO_VAR = re.compile(r"__(?:out|codeblock|ctx)_\d+(?:_vol)?\b")
 # stays cacheable downstream) yet re-executed every run so the side effect
 # happens (_select_subshapes records "selection stale" re-pick warnings).
 _MEMO_SIDEFX = ("_panel(", "_probe(", "_gate(", "_out(", "export_", "_export",
-                "_select_subshapes(")
+                "_select_subshapes(", "_gh_bake_objects(")
 # Non-deterministic / reads external state: no key, poisons downstream too.
 # Nodes whose output is plain data that CARRIES the geometry wired into them on
 # to a node that draws it (see _previewed's auto rule). A Pin's point is in the

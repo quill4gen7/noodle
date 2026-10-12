@@ -337,6 +337,405 @@ _gh("GhSortList", "Sort List",
 _lists("GhSortList")
 
 
+# ===========================================================================
+# barattolo.gh — math, logic, lists, trees
+# ===========================================================================
+_gh("GhNegative", "Negative", [_in("value")], [Socket("result", WIRE_DATA)],
+    "_gh_negative({value})", params=[_num("value", 0.0)],
+    description="−x.")
+
+_gh("GhRadians", "Radians", [_in("degrees")], [Socket("radians", WIRE_DATA)],
+    "_gh_radians({degrees})", params=[_num("degrees", 0.0)],
+    description="Degrees to radians — GH angles are radians.")
+
+_gh("GhConcatenate", "Concatenate", [_in("fragment_a"), _in("fragment_b")],
+    [Socket("result", WIRE_DATA, subtype="text")],
+    "_gh_concatenate({fragment_a}, {fragment_b})",
+    description="Join two texts.")
+
+_gh("GhRepeatData", "Repeat Data", [_in("data", list_access=True), _in("length")],
+    [Socket("data", WIRE_DATA)], "_gh_repeat_data({data}, {length})",
+    params=[_int("length", 10)],
+    description="Repeat a list CYCLICALLY until it is `length` long (List Repeat "
+                "repeats a whole list n times instead).")
+_lists("GhRepeatData")
+
+_gh("GhListIndices", "List Indices", [_in("list", list_access=True)],
+    [Socket("indices", WIRE_DATA)], "_gh_list_indices({list})",
+    description="0, 1, … one index per item.")
+_lists("GhListIndices")
+
+_gh("GhMerge", "Merge", [_in(f"data_{i}", list_access=True) for i in range(1, 7)],
+    [Socket("result", WIRE_DATA)],
+    "_gh_merge(" + ", ".join(f"{{data_{i}}}" for i in range(1, 7)) + ")",
+    description="Merge streams into one list (up to six; unwired ones are skipped).")
+_lists("GhMerge")
+
+_gh("GhRange", "Range", [_in("domain", list_access=True), _in("steps")],
+    [Socket("range", WIRE_DATA)], "_gh_range({domain}, {steps})",
+    params=[_int("steps", 10)],
+    description="steps+1 numbers spanning a domain (a number n = 0..n), ends included.")
+_lists("GhRange")
+
+_gh("GhLargerThan", "Larger Than", [_in("first_number"), _in("second_number")],
+    [Socket("larger_than", WIRE_DATA), Socket("or_equal_to", WIRE_DATA)],
+    "_gh_larger({first_number}, {second_number})", multi=True,
+    params=[_num("first_number", 0.0), _num("second_number", 0.0)],
+    description="A > B, and A ≥ B.")
+
+_gh("GhSmallerThan", "Smaller Than", [_in("first_number"), _in("second_number")],
+    [Socket("smaller_than", WIRE_DATA), Socket("or_equal_to", WIRE_DATA)],
+    "_gh_smaller({first_number}, {second_number})", multi=True,
+    params=[_num("first_number", 0.0), _num("second_number", 0.0)],
+    description="A < B, and A ≤ B.")
+
+_gh("GhGateOr", "Gate Or", [_in("a"), _in("b")], [Socket("result", WIRE_DATA)],
+    "_gh_gate_or({a}, {b})", params=[_bool("a"), _bool("b")],
+    description="A or B.")
+
+_gh("GhInvertBoolean", "Invert Boolean", [_in("boolean")],
+    [Socket("inverted", WIRE_DATA), Socket("number", WIRE_DATA)],
+    "_gh_invert_boolean({boolean})", multi=True, params=[_bool("boolean")],
+    description="not B — also as a number (1/0).")
+
+_gh("GhWeave", "Weave",
+    [_in("pattern", list_access=True)] + [_in(f"stream_{i}", list_access=True) for i in range(4)],
+    [Socket("weave", WIRE_DATA)],
+    "_gh_weave({pattern}, " + ", ".join(f"{{stream_{i}}}" for i in range(4)) + ")",
+    description="Interleave streams by an index pattern (0,1,… by default), until "
+                "the stream the pattern asks for runs out.")
+_lists("GhWeave")
+
+_gh("GhSplitList", "Split List", [_in("list", list_access=True), _in("index")],
+    [Socket("list_a", WIRE_DATA), Socket("list_b", WIRE_DATA)],
+    "_gh_split_list({list}, {index})", multi=True, params=[_int("index", 0)],
+    description="The items before `index` and the rest.")
+_lists("GhSplitList")
+
+_gh("GhReplaceNulls", "Replace Nulls",
+    [_in("items", list_access=True), _in("replacements", list_access=True)],
+    [Socket("items", WIRE_DATA), Socket("count", WIRE_DATA)],
+    "_gh_replace_nulls({items}, {replacements})", multi=True,
+    description="Fill the empty items of a list.")
+_lists("GhReplaceNulls")
+
+_gh("GhCreateTree", "Create Tree", [_in("data", list_access=True), _in("path", list_access=True)],
+    [Socket("data", WIRE_DATA, subtype="tree")], "_gh_create_tree({data}, {path})",
+    description="A data tree: each item in the branch its path names ({0}, {1}… "
+                "or plain integers). It travels as ONE value — take a branch out "
+                "with Tree Branch.")
+
+_gh("GhTreeBranch", "Tree Branch", [_in("tree", list_access=True), _in("path")],
+    [Socket("branch", WIRE_DATA)], "_gh_tree_branch({tree}, {path})",
+    params=[Param("path", "str", "path", "{0}", widget="input")],
+    description="The items of one branch of a tree (several trees wired in are "
+                "merged first) — barattolo's way of choosing one profile of three.")
+_lists("GhTreeBranch")
+
+# ===========================================================================
+# barattolo.gh — curves
+# ===========================================================================
+_gh("GhBoundingRectangle", "Bounding Rectangle",
+    [_in("geometry", list_access=True),
+     Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR]), _in("union")],
+    [Socket("bounding", WIRE_CURVE), Socket("dimension_x", WIRE_DATA),
+     Socket("dimension_y", WIRE_DATA)],
+    "_gh_bounding_rectangle({geometry}, {plane}, {union})", multi=True,
+    params=[_bool("union", False)],
+    description="The rectangle aligned with a plane that holds the geometry, and "
+                "its sides. `union`: one for everything, else one per item.")
+_lists("GhBoundingRectangle")
+
+_gh("GhPolygon", "Polygon",
+    [Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR]),
+     _in("radius"), _in("segments"), _in("fillet_radius")],
+    [Socket("polygon", WIRE_CURVE), Socket("length", WIRE_DATA)],
+    "_gh_polygon({plane}, {radius}, {segments}, {fillet_radius})", multi=True,
+    params=[_num("radius", 1.0), _int("segments", 6), _num("fillet_radius", 0.0)],
+    description="A regular polygon inscribed in a circle, first corner on the "
+                "plane's x axis, corners optionally rounded.")
+
+_gh("GhInterpolate", "Interpolate",
+    [_in("vertices", list_access=True), _in("degree"), _in("periodic"), _in("knotstyle")],
+    [Socket("curve", WIRE_CURVE), Socket("length", WIRE_DATA),
+     Socket("domain", WIRE_DATA, subtype="domain")],
+    "_gh_interpolate({vertices}, {degree}, {periodic})", multi=True,
+    params=[_int("degree", 3), _bool("periodic", False), _int("knotstyle", 0)],
+    description="A smooth curve THROUGH the points (closed and smooth when "
+                "periodic). Degree and knot style are OCCT's choice.")
+
+_gh("GhRebuildCurve", "Rebuild Curve",
+    [_in("curve"), _in("degree"), _in("count"), _in("tangents")],
+    [Socket("curve", WIRE_CURVE)], "_gh_rebuild_curve({curve}, {degree}, {count})",
+    params=[_int("degree", 3), _int("count", 10)],
+    description="Refit a curve as a B-spline of `degree` with `count` control points.")
+
+_gh("GhSimplifyCurve", "Simplify Curve", [_in("curve"), _in("tolerance"), _in("angle_tolerance")],
+    [Socket("curve", WIRE_CURVE), Socket("simplified", WIRE_DATA)],
+    "_gh_simplify_curve({curve}, {tolerance}, {angle_tolerance})", multi=True,
+    description="Merge collinear segments; `simplified` says if anything changed.")
+
+_gh("GhIsArcCircleEllipse", "Is Arc/Circle/Ellipse", [_in("curve"), _in("tolerance")],
+    [Socket("arc", WIRE_DATA), Socket("circle", WIRE_DATA), Socket("ellipse", WIRE_DATA)],
+    "_gh_is_arc_circle_ellipse({curve}, {tolerance})", multi=True,
+    description="Whether a curve is an arc, a full circle or an ellipse.")
+
+_gh("GhArcCircleEllipse", "Arc/Circle/Ellipse", [_in("curve"), _in("get_type"), _in("tolerance")],
+    [Socket("arc_circle_ellipse", WIRE_CURVE)],
+    "_gh_arc_circle_ellipse({curve}, {get_type}, {tolerance})",
+    description="The curve if it is an arc/circle/ellipse, else nothing.")
+
+_gh("GhFilletCurve", "Fillet", [_in("curve"), _in("parameter"), _in("radius")],
+    [Socket("curve", WIRE_CURVE), Socket("parameter", WIRE_DATA)],
+    "_gh_fillet_curve({curve}, {parameter}, {radius})", multi=True,
+    params=[_num("parameter", 0.0), _num("radius", 1.0)],
+    description="Round the corner of a curve nearest a parameter (a polyline's "
+                "parameters are its vertex indices, as in Rhino).")
+
+_gh("GhProject", "Project",
+    [_in("geometry"), Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR])],
+    [Socket("geometry", WIRE_CURVE)], "_gh_project({geometry}, {plane})",
+    description="Flatten curves (or points) onto a plane along its normal.")
+
+_gh("GhRegionUnion", "Region Union",
+    [_in("curves", list_access=True),
+     Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR])],
+    [Socket("result", WIRE_CURVE)], "_gh_region_union({curves}, {plane})",
+    description="The outline of the union of closed planar regions.")
+_lists("GhRegionUnion")
+
+_gh("GhVectorStar", "Vector Star",
+    [Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR]),
+     _in("steps"), _in("subdivision_type"), _in("dimensionality")],
+    [Socket("vectors", WIRE_DATA), Socket("lines", WIRE_CURVE)],
+    "_gh_vector_star({plane}, {steps}, {subdivision_type}, {dimensionality})",
+    multi=True, params=[_int("steps", 4)],
+    description="Unit vectors fanned evenly round the plane's z axis (2D only).")
+_lists("GhVectorStar")
+
+# ===========================================================================
+# barattolo.gh — surfaces & breps
+# ===========================================================================
+_gh("GhRotate", "Rotate",
+    [_in("geometry"), _in("angle"), Socket("plane", WIRE_PLANE, required=False,
+                                            accepts=[WIRE_VECTOR])],
+    [Socket("geometry", WIRE_SOLID)],
+    "_gh_rotate({geometry}, {angle}, {plane}, {degrees})",
+    params=[_num("angle", 0.0), _bool("degrees", False)], follows="geometry",
+    description="Rotate about the plane's normal through its origin, in RADIANS "
+                "(set `degrees` for degrees).")
+
+_gh("GhMoveToPlane", "Move To Plane",
+    [_in("geometry"), Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR]),
+     _in("above"), _in("below")],
+    [Socket("geometry", WIRE_SOLID)],
+    "_gh_move_to_plane({geometry}, {plane}, {above}, {below})",
+    params=[_bool("above", True), _bool("below", True)], follows="geometry",
+    description="Slide geometry along the plane normal until it touches the plane "
+                "(from above and/or from below).")
+
+_gh("GhPlaneSurface", "Plane Surface",
+    [Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR]),
+     _in("x_size", list_access=True), _in("y_size", list_access=True)],
+    [Socket("plane", WIRE_SURFACE)], "_gh_plane_surface({plane}, {x_size}, {y_size})",
+    params=[_num("x_size", 10.0), _num("y_size", 10.0)],
+    description="A flat rectangular surface on a plane, sides as domains (n = 0..n).")
+
+_gh("GhBrepEdges", "Brep Edges", [_in("brep")],
+    [Socket("naked", WIRE_CURVE), Socket("interior", WIRE_CURVE),
+     Socket("non_manifold", WIRE_CURVE)],
+    "_gh_brep_edges({brep})", multi=True,
+    description="Edges by how many faces use them: naked (1), interior (2), "
+                "non-manifold (3+).")
+_lists("GhBrepEdges")
+
+_gh("GhFilletEdge", "Fillet Edge",
+    [_in("shape"), _in("blend"), _in("metric"), _in("edges", list_access=True),
+     _in("radii", list_access=True)],
+    [Socket("result", WIRE_SOLID)],
+    "_gh_fillet_edge({shape}, {edges}, {radii}, {blend}, {metric})",
+    description="Round the edges given BY INDEX. The index is into OCCT's edge "
+                "order, not Rhino's: a .gh index can land on another edge — "
+                "look at the result.")
+
+_gh("GhCapHoles", "Cap Holes", [_in("brep")], [Socket("brep", WIRE_SOLID)],
+    "_gh_cap_holes({brep})",
+    description="Close the planar openings of an open brep into a solid.")
+
+_gh("GhIsPlanar", "Is Planar", [_in("surface"), _in("interior")],
+    [Socket("planar", WIRE_DATA), Socket("plane", WIRE_PLANE)],
+    "_gh_is_planar({surface}, {interior})", multi=True,
+    description="Whether a surface is flat, and its plane.")
+
+_gh("GhIsSurfaceTrimmed", "Is Surface Trimmed", [_in("surface")],
+    [Socket("trimmed", WIRE_DATA)], "_gh_is_surface_trimmed({surface})",
+    description="Whether a face covers less than its whole underlying surface.")
+
+_gh("GhTrimWithPlane", "Trim With Plane",
+    [_in("brep"), Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR, WIRE_SURFACE]),
+     _in("plane_direction"), _in("cap"), _in("tolerance")],
+    [Socket("trimmed_breps", WIRE_SOLID)],
+    "_gh_trim_with_plane({brep}, {plane}, {plane_direction}, {cap})",
+    params=[_bool("plane_direction", True), _bool("cap", True)],
+    description="Cut a brep with a plane and keep the side the normal points to "
+                "(`plane_direction` off: the other side); `cap` closes the cut.")
+
+_gh("GhCollisionOneMany", "Collision One|Many",
+    [_in("collider"), _in("obstacles", list_access=True)],
+    [Socket("collision", WIRE_DATA), Socket("index", WIRE_DATA)],
+    "_gh_collision_one_many({collider}, {obstacles})", multi=True,
+    description="Does the collider touch or overlap any obstacle, and which one first.")
+
+_gh("GhExtrudeToPlane", "Extrude to Plane",
+    [_in("shape_to_extrude"), _in("direction"), _in("plane_1"), _in("plane_2"),
+     _in("tolerance")],
+    [Socket("extrusion", WIRE_SOLID)],
+    "_gh_extrude_to_plane({shape_to_extrude}, {direction}, {plane_1}, {plane_2})",
+    description="Extrude along a direction from plane 1 to plane 2 (planes or planar "
+                "faces). With one plane: from the shape up to it.")
+
+_gh("GhExtrudeTapered", "Extrude Tapered Polysurface",
+    [_in("profile"), _in("direction"), _in("angle"), _in("corner_type"), _in("face_merge")],
+    [Socket("extruded", WIRE_SOLID)],
+    "_gh_extrude_tapered({profile}, {direction}, {angle}, {corner_type}, {face_merge}, {degrees})",
+    params=[_num("angle", 0.0), _bool("degrees", False)],
+    description="Extrude a closed planar profile along a vector with the walls "
+                "drafted by `angle` (radians unless `degrees`).")
+
+_gh("GhBrepPlane", "Brep | Plane",
+    [_in("brep"), Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR])],
+    [Socket("curves", WIRE_CURVE), Socket("points", WIRE_VECTOR)],
+    "_gh_brep_plane({brep}, {plane})", multi=True,
+    description="The section curves of a brep cut by a plane, joined into loops.")
+_lists("GhBrepPlane")
+
+_gh("GhVolume", "Volume", [_in("geometry")],
+    [Socket("volume", WIRE_DATA), Socket("centroid", WIRE_VECTOR)],
+    "_gh_volume({geometry})", multi=True,
+    description="Volume and volume centroid of closed breps.")
+
+_gh("GhLoftOptions", "Loft Options",
+    [_in("closed"), _in("adjust"), _in("rebuild"), _in("refit"), _in("type")],
+    [Socket("options", WIRE_DATA)],
+    "_gh_loft_options({closed}, {adjust}, {rebuild}, {refit}, {type})",
+    params=[_bool("closed"), _int("type", 0)],
+    description="Loft settings: `closed` loops back to the first curve; type 2 "
+                "(Straight) gives a ruled loft. Adjust/Rebuild/Refit are not built.")
+
+_gh("GhLoft", "Loft", [_in("curves", list_access=True), _in("options")],
+    [Socket("loft", WIRE_SURFACE)], "_gh_loft({curves}, {options})",
+    description="A surface through section curves (noodle's Loft makes a solid "
+                "from profiles; this one is GH's, a skin).")
+
+_gh("GhSweep2", "Sweep2",
+    [_in("rail_1"), _in("rail_2"), _in("sections", list_access=True), _in("same_height")],
+    [Socket("brep", WIRE_SURFACE)],
+    "_gh_sweep2({rail_1}, {rail_2}, {sections}, {same_height})",
+    description="Sections swept along rail 1, rail 2 steering their twist.")
+
+_gh("GhUnrollPolysurface", "Unroll Polysurface",
+    [_in("polysurface"), Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR]),
+     _in("points", list_access=True), _in("curves", list_access=True)],
+    [Socket("unrolled", WIRE_SURFACE), Socket("unrolled_points", WIRE_VECTOR),
+     Socket("unrolled_curves", WIRE_CURVE)],
+    "_gh_unroll({polysurface}, {plane}, {points}, {curves})", multi=True,
+    description="Lay a developable face flat (plane, cylinder, cone), carrying "
+                "points and curves on it along. One face at a time.")
+
+_gh("GhSurfaceMorph", "Surface Morph",
+    [_in("geometry"), _in("reference"), _in("surface"), _in("u_domain", list_access=True),
+     _in("v_domain", list_access=True), _in("w_domain", list_access=True)],
+    [Socket("geometry", WIRE_DATA)],
+    "_gh_surface_morph({geometry}, {reference}, {surface}, {u_domain}, {v_domain}, {w_domain})",
+    description="Carry geometry from a reference box onto a surface (box x/y → "
+                "surface u/v, z → along the normal). Curves come back as splines, "
+                "faces and solids as a MESH: a bent B-Rep is not exact.")
+
+# ===========================================================================
+# Text — Squid (ShapeDiver edition): Font, Font List, Paragraph, Text Curves
+# ===========================================================================
+_gh("GhFont", "Font", [_in("family"), _in("size"), _in("bold"), _in("italic"), _in("underline")],
+    [Socket("font", WIRE_DATA)],
+    "_gh_font({family}, {size}, {bold}, {italic}, {underline})",
+    params=[Param("family", "str", "family", "Liberation Sans", widget="input"),
+            _num("size", 10.0), _bool("bold"), _bool("italic"), _bool("underline")],
+    description="A font: family, size (mm of text height), bold/italic.")
+
+_gh("GhFontList", "Font List", [], [Socket("families", WIRE_DATA)], "_gh_font_list()",
+    description="The font families installed where noodle runs.")
+_lists("GhFontList")
+
+_gh("GhParagraph", "Paragraph", [_in("halign"), _in("valign"), _in("rightleft")],
+    [Socket("paragraph", WIRE_DATA)], "_gh_paragraph({halign}, {valign}, {rightleft})",
+    params=[_int("halign", 0), _int("valign", 0), _bool("rightleft")],
+    description="Text alignment: h 0/1/2 = left/centre/right, v 0/1/2 = "
+                "top/middle/bottom.")
+
+_gh("GhTextCurves", "Text Curves",
+    [Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR]), _in("text"),
+     _in("font"), _in("paragraph")],
+    [Socket("curves", WIRE_CURVE)], "_gh_text_curves({plane}, {text}, {font}, {paragraph})",
+    params=[Param("text", "str", "text", "noodle", widget="input")],
+    description="The outlines of a text on a plane: each glyph's outer and inner "
+                "loops as closed curves (Boundary Surfaces fills them, holes kept).")
+_lists("GhTextCurves")
+
+# ===========================================================================
+# Export & bake — Pancake (Export As, STEP Export Option, Filepath Series),
+# eleFront (Attributes, Bake Objects)
+# ===========================================================================
+_gh("GhStepExportOption", "STEP Export Option",
+    [_in("schema"), _in("export_parameter_space_curves"), _in("split_closed_surfaces"),
+     _in("omit_colors_of_black_objects")],
+    [Socket("option", WIRE_DATA)], "_gh_step_export_option({schema})",
+    description="Tells Export As to write STEP. (Schema and the other switches are "
+                "OCCT's defaults.)")
+
+_gh("GhFilepathSeries", "Filepath Series",
+    [_in("pattern_of_filepath"), _in("starting_index"), _in("quantity_of_filenames"),
+     _in("generate_next"), _in("reset")],
+    [Socket("filepath", WIRE_DATA), Socket("list_of_filepath", WIRE_DATA),
+     Socket("counter_of_first_file", WIRE_DATA)],
+    "_gh_filepath_series({pattern_of_filepath}, {starting_index}, {quantity_of_filenames})",
+    multi=True,
+    params=[Param("pattern_of_filepath", "str", "pattern", "{0}.stp", widget="input"),
+            _int("starting_index", 0), _int("quantity_of_filenames", 1)],
+    description="File names from a pattern: '{0}.stp' → 0.stp, 1.stp…")
+
+_gh("GhExportAs", "Export As",
+    [_in("geometry"), _in("layer"), _in("object_attributes"), _in("file_location"),
+     _in("overwrite"), _in("options"), _in("pre_options"), _in("export")],
+    [Socket("ok", WIRE_DATA), Socket("export_command", WIRE_DATA)],
+    "_gh_export_as({geometry}, {file_location}, {overwrite}, {options}, {export}, "
+    "{node_id!r}, {object_attributes})",
+    multi=True,
+    params=[Param("file_location", "str", "file", "export.step", widget="input"),
+            _bool("overwrite", True), _bool("export", False)],
+    description="Write the geometry to the project's exports/ when `export` is on "
+                "(only the file NAME of a path is kept). STEP or STL, from the "
+                "options or the extension.")
+
+_gh("GhEleFrontAttributes", "EleFront Attributes",
+    [_in("attributes"), _in("keys"), _in("values"), _in("name"), _in("layer"),
+     _in("colour_source"), _in("object_colour"), _in("material_source"),
+     _in("material_name"), _in("linetype"), _in("print_colour"), _in("print_width")],
+    [Socket("attributes", WIRE_DATA), Socket("name", WIRE_DATA), Socket("layer", WIRE_DATA),
+     Socket("display_colour", WIRE_DATA), Socket("material_name", WIRE_DATA)],
+    "_gh_elefront_attributes({name}, {layer}, {object_colour}, {material_name})",
+    multi=True,
+    description="Object attributes (name, layer, colour, material) as one value for "
+                "Bake Objects / Export As. Keys/values, linetype and print settings "
+                "are not built.")
+
+_gh("GhBakeObjects", "Bake Objects",
+    [_in("geometry"), _in("attributes"), _in("bakename"), _in("bake_settings"), _in("bake")],
+    [Socket("message", WIRE_DATA), Socket("ghosts", WIRE_DATA)],
+    "_gh_bake_objects({geometry}, {attributes}, {bake}, {node_id!r})", multi=True,
+    params=[_bool("bake", False)],
+    description="noodle has no Rhino document: baking writes the geometry to "
+                "exports/ as STEP, named after the attributes' name, when `bake` "
+                "is on.")
+
 # ---------------------------------------------------------------------------
 # GH names on core noodle nodes that already do the same job
 # ---------------------------------------------------------------------------
@@ -363,6 +762,16 @@ ALIASES = {
     "Geometry": ["Brep", "Geometry"],
     "Input": ["Panel"],
     "Note": ["Scribble"],
+    # barattolo.gh
+    "Multiply": ["Multiplication"],
+    "ListLength": ["List Length"],
+    "Series": ["Series"],
+    "Max": ["Maximum"],
+    "Intersect": ["Solid Intersection"],
+    "BooleanToggle": ["Boolean Toggle"],
+    "ImportSVG": ["Import SVG"],
+    "NumberInput": ["Number"],
+    "StringInput": ["Text", "File Path"],
 }
 for _t, _names in ALIASES.items():
     _d = REGISTRY[_t]
