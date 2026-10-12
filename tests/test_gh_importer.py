@@ -183,3 +183,32 @@ def test_groups_frame_their_members_and_the_graph_loads():
         px, py = _by_id(res)[nid]["position"]
         assert x <= px <= x + w and y <= py <= y + h
     Graph.from_dict(res.graph).validate()
+
+
+def test_typename_is_never_the_value_and_values_are_typed():
+    from cad_nodes.gh.archive import Chunk
+    from cad_nodes.gh.definition import GhValue, _item_value
+    it = Chunk("Item", items=[("TypeName", -1, 10, "Grasshopper.Kernel.Types.GH_Integer"),
+                              ("number", -1, 3, -2)])
+    assert _item_value(it) == -2
+    dom = _item_value(Chunk("Item", items=[("Interval", -1, 60, [0.0, 1.0])]))
+    assert isinstance(dom, GhValue) and dom.kind == "domain"
+    assert importer._text_of(GhValue("domain", [0.0, 1.0])) == "[0.0, 1.0]"   # not a point
+    assert importer.world_plane(GhValue("plane", [0, 0, 0, 0, 1, 0, 0, 0, 1])) == "YZ"
+    assert importer.world_plane(GhValue("plane", [0, 5, 0, 1, 0, 0, 0, 1, 0])) is None
+
+
+def test_several_sources_into_a_list_input_are_collected_not_dropped():
+    # ListReverse.list is list_access and not `multiple`: noodle would read
+    # only the first wire, so both go through a ListCreate
+    table = dict(TABLE)
+    table[T["add"]] = {"kind": "alias", "noodle": "ListReverse",
+                       "inputs": {"A": "list"}, "outputs": {"Result": "result"}}
+    d = _definition()
+    d.objects[2].inputs[0].wires = [(0, 0), (0, 0)]
+    d.objects[2].inputs[0].flags = []
+    res = importer.import_definition(d, table, decode=lambda o, i, v: None)
+    wires = _wires(res)
+    assert _by_id(res)["n2_list_merge"]["type"] == "ListCreate"
+    assert ("n2_list_merge", "result", "n2", "list") in wires
+    assert sum(1 for w in wires if w[2] == "n2" and w[3] == "list") == 1
