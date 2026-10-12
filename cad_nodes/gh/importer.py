@@ -193,6 +193,8 @@ class _Importer:
         self.pending: list[tuple[GhObject, str]] = []   # (object, node id) to wire
         self.shown = d.shown()
         self.consumed = {a for o in d.objects for p in o.inputs for a, _b in p.wires}
+        self.maybe_cast: list[GhObject] = []
+        self.pending_map: dict[str, dict] = {}   # node id -> map overriding the table
         self.dead: list[int] = []
         self.claimed: dict[str, set[str]] = {}
         # (node id, GH input name) -> (node id, socket): where that input really goes
@@ -245,8 +247,9 @@ class _Importer:
                 self.unmapped.setdefault(f"{o.type} {o.type_guid}", []).append(o.k)
                 continue
             getattr(self, "_" + _get(m, "kind", "skip"), self._unknown_kind)(o, m)
+        self._casting_params()
         for o, nid in self.pending:
-            self._wire_inputs(o, nid, self.table[o.type_guid])
+            self._wire_inputs(o, nid, self.pending_map.get(nid) or self.table[o.type_guid])
         self._show_sources()
         self._custom_previews()
         self._check_wires()
@@ -258,6 +261,52 @@ class _Importer:
                    "nodes": list(self.nodes.values()), "connections": self.conns,
                    "groups": self._groups()},
             issues=self.issues, unmapped=self.unmapped)
+
+    _CURVE_WORDS = ("curve", "line", "polyline", "rectangle", "circle", "arc", "ellipse",
+                    "polygon", "boundary", "outline", "edges", "segments", "offset", "joined")
+
+    def _gh_upstream_outputs(self, o: GhObject, seen=()) -> list[tuple[GhObject, str]]:
+        """The GH outputs feeding a floating param, through other wired params."""
+        out = []
+        for a, b in (o.inputs[0].wires if o.inputs else []):
+            up = self.d.objects[a]
+            if a in seen:
+                continue
+            m = self.table.get(up.type_guid)
+            if m is not None and _get(m, "kind") == "container" and up.inputs and up.inputs[0].wires:
+                out += self._gh_upstream_outputs(up, seen + (o.k,))
+            else:
+                out.append((up, up.outputs[b].name if b < len(up.outputs) else ""))
+        return out
+
+    def _casting_params(self):
+        """A GH Surface / Brep param CASTS what it receives: a closed planar
+        curve becomes the surface it bounds. So it stays — as GhSurfaceParam /
+        GhBrepParam — when a curve flows in; otherwise it vanishes like any
+        wired param (barattolo #320: an Extrude got a wall, not a solid)."""
+        for o in self.maybe_cast:
+            ntype = f"Gh{o.type}Param"
+            if ntype not in self.reg:
+                continue
+            curvy = False
+            for up, name in self._gh_upstream_outputs(o):
+                if up.type == "Curve" or any(w in name.lower() for w in self._CURVE_WORDS):
+                    curvy = True
+                    break
+            if not curvy:
+                for nid, sock in self.sources_of(o.k, 0) or []:
+                    out = self.reg[self.nodes[nid]["type"]].output(sock)
+                    if out is not None and out.wire_type == "curve":
+                        curvy = True
+                        break
+            if not curvy:
+                continue
+            nid = f"n{o.k}"
+            self.node(nid, ntype, o, title=o.nick if o.nick and o.nick != o.type else None)
+            self._eye(o, self.nodes[nid])
+            self.out_at[(o.k, 0)] = [(nid, "value")]
+            self.pending.append((o, nid))
+            self.pending_map[nid] = {"kind": "alias", "inputs": {o.inputs[0].name: "value"}}
 
     def _unknown_kind(self, o, m):
         self.issue(o, f"unknown kind {_get(m, 'kind')!r} in the table")
@@ -297,6 +346,8 @@ class _Importer:
         if p is not None and p.wires:
             # resolved lazily: the sources may come later in the file
             self.out_at[(o.k, 0)] = [("@", f"{a}:{b}") for a, b in p.wires]
+            if o.type in ("Surface", "Brep"):
+                self.maybe_cast.append(o)      # decided once every node exists
             return
         if p is None or not p.data:
             self.issue(o, "empty parameter (no wire, no value)")
