@@ -181,9 +181,18 @@ def _bspline(deg, pts, w, knots, mults):
 CURVES = [
 @CURVES@
 ]
+def _wire(edges):
+    # a Rhino PolyCurve may leave gaps OCCT's 1e-7 does not close: sew within
+    # 1e-3, and if it still falls apart keep the pieces rather than nothing
+    try:
+        return Wire(edges)
+    except Exception:
+        ws = Wire.combine(edges, tol=1e-3)
+        return ws[0] if len(ws) == 1 else list(ws)
+
 shapes = []
 for segs in CURVES:
     edges = [_bspline(*s) for s in segs]
-    shapes.append(edges[0] if len(edges) == 1 else Wire(edges))
+    shapes.append(edges[0] if len(edges) == 1 else _wire(edges))
 result = shapes[0] if len(shapes) == 1 else shapes
 '''
