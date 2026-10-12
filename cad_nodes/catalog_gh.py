@@ -29,6 +29,13 @@ def _in(name, list_access=False, required=False, subtype=""):
                   subtype=subtype)
 
 
+def _plane_in(name="plane"):
+    """A GH plane input: a Plane, a point (the XY plane through it), or a closed
+    planar curve / planar face (the plane it lies in) — see _gh_plane. A `data`
+    wire, because GH casts all of those to a plane."""
+    return Socket(name, WIRE_DATA, required=False, subtype="plane")
+
+
 def _num(name, default=0.0):
     return Param(name, "float", name, default, widget="input")
 
@@ -72,8 +79,10 @@ for _ax in "XYZ":
 
 for _pl, _desc in (("XY", "normal +Z"), ("XZ", "x = X, y = Z, normal −Y"),
                    ("YZ", "x = Y, y = Z, normal +X")):
-    _gh(f"Gh{_pl}Plane", f"{_pl} Plane", [Socket("origin", WIRE_VECTOR, required=False)],
-        [Socket("plane", WIRE_PLANE)], f"_gh_world_plane('{_pl}', {{origin}})",
+    # NOT `origin`: the emitter wraps a socket of that name around the node's
+    # whole result (_at), and the plane would be moved by its origin twice.
+    _gh(f"Gh{_pl}Plane", f"{_pl} Plane", [Socket("origin_point", WIRE_VECTOR, required=False)],
+        [Socket("plane", WIRE_PLANE)], f"_gh_world_plane('{_pl}', {{origin_point}})",
         description=f"The world {_pl} plane ({_desc}, as in Rhino) through `origin` "
                     "(world origin when unwired).")
 
@@ -100,7 +109,8 @@ _gh("GhConstructDomain2", "Construct Domain²",
 _gh("GhDeconstructDomain2", "Deconstruct Domain²", [_in("domain")],
     [Socket("u_min", WIRE_DATA), Socket("u_max", WIRE_DATA),
      Socket("v_min", WIRE_DATA), Socket("v_max", WIRE_DATA)],
-    "_gh_deconstruct_domain2({domain})", multi=True,
+    "_gh_deconstruct_domain2({domain}, {reparameterize})", multi=True,
+    params=[_bool("reparameterize")],
     description="The four bounds of a 2D domain. Wire a SURFACE and you get its "
                 "own UV domain, as in GH — OCCT's parameters for that face, which "
                 "are not always Rhino's numbers for the same surface.")
@@ -109,7 +119,7 @@ _gh("GhDeconstructDomain2", "Deconstruct Domain²", [_in("domain")],
 # Curves
 # ---------------------------------------------------------------------------
 _gh("GhRectangle", "Rectangle",
-    [Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR]),
+    [_plane_in(),
      _in("x_size", list_access=True), _in("y_size", list_access=True), _in("radius")],
     [Socket("rectangle", WIRE_CURVE), Socket("length", WIRE_DATA)],
     "_gh_rectangle({plane}, {x_size}, {y_size}, {radius})",
@@ -120,14 +130,14 @@ _gh("GhRectangle", "Rectangle",
                 "centre it. Drawn counter-clockwise, as Rhino draws it.")
 
 _gh("GhCircle", "Circle",
-    [Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR]), _in("radius")],
+    [_plane_in(), _in("radius")],
     [Socket("circle", WIRE_CURVE)], "_gh_circle({plane}, {radius})",
     params=[_num("radius", 1.0)],
     description="A circle in a plane (a point gives the XY plane through it).")
 
 _gh("GhOffsetCurve", "Offset Curve",
     [_in("curve"), _in("distance"),
-     Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR]),
+     _plane_in(),
      _in("corners"), _in("both_sides")],
     [Socket("curve", WIRE_CURVE)],
     "_gh_offset_curve({curve}, {distance}, {plane}, {corners}, {both_sides})",
@@ -153,6 +163,19 @@ _gh("GhNurbsCurve", "Nurbs Curve",
     params=[_int("degree", 3), _bool("periodic", False)], multi=True,
     description="A NURBS curve FROM control points (it does not pass through "
                 "them): clamped uniform knots, or periodic (closed and smooth).")
+
+_gh("GhLength", "Length", [_in("curve")], [Socket("length", WIRE_DATA)],
+    "_gh_length_of({curve})",
+    description="Length of a curve — or the perimeter of a surface, which GH "
+                "reads as its boundary curve.")
+
+_gh("GhJoinCurves", "Join Curves", [_in("curves", list_access=True), _in("preserve")],
+    [Socket("curves", WIRE_CURVE)], "_gh_join_curves({curves}, {preserve})",
+    params=[_bool("preserve")],
+    description="Chain curves that touch end to end; every chain comes back, and "
+                "a curve touching nothing comes back alone (noodle's Join refuses "
+                "pieces that do not touch).")
+_lists("GhJoinCurves")
 
 _gh("GhCurveMiddle", "Curve Middle", [_in("curve")],
     [Socket("midpoint", WIRE_VECTOR)], "_gh_curve_middle({curve})",
@@ -204,7 +227,7 @@ _gh("GhScale", "Scale", [_in("geometry"), _in("center"), _in("factor")],
                 "Any factor, negative included.")
 
 _gh("GhScaleNU", "Scale NU",
-    [_in("geometry"), Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR]),
+    [_in("geometry"), _plane_in(),
      _in("scale_x"), _in("scale_y"), _in("scale_z")],
     [Socket("geometry", WIRE_SOLID)],
     "_gh_scale_nu({geometry}, {plane}, {scale_x}, {scale_y}, {scale_z})",
@@ -242,12 +265,14 @@ _gh("GhUnsplitRevolve", "Unsplit Revolve Surface",
                 "one surface, not split at the seam.")
 
 _gh("GhIsotrim", "Isotrim", [_in("surface"), _in("domain")],
-    [Socket("surface", WIRE_SURFACE)], "_gh_isotrim({surface}, {domain})",
+    [Socket("surface", WIRE_SURFACE)], "_gh_isotrim({surface}, {domain}, {reparameterize})",
+    params=[_bool("reparameterize")],
     description="The piece of a surface inside a 2D (UV) domain. The domain is in "
                 "the face's own parameters (read them with Deconstruct Domain²).")
 
 _gh("GhSurfaceSplit", "Surface Split", [_in("surface"), _in("curves", list_access=True)],
     [Socket("fragments", WIRE_SURFACE)], "_gh_surface_split({surface}, {curves})",
+    params=[_bool("reparameterize")],   # accepted from the .gh, changes nothing here
     description="Cut a surface into fragments along curves lying on it (Pull Curve "
                 "them first). The ORDER of the fragments is OCCT's, not Rhino's: "
                 "pick one by a measure (Sort List on area), not by an index.")
@@ -295,6 +320,12 @@ _gh("GhOffsetSurface", "Offset Surface",
             _bool("create_solid", False)],
     description="Offset a surface along its normals; `create_solid` closes the gap "
                 "into a solid wall.")
+
+_gh("GhBoundingBox", "Bounding Box",
+    [_in("content"), _plane_in()],
+    [Socket("box", WIRE_SOLID)], "_gh_bounding_box({content}, {plane})",
+    description="The box aligned with a plane (world XY by default) holding the "
+                "content. Flat content gives a flat box: the rectangle FACE.")
 
 _gh("GhArea", "Area", [_in("geometry")],
     [Socket("area", WIRE_DATA), Socket("centroid", WIRE_VECTOR)],
@@ -437,7 +468,7 @@ _lists("GhTreeBranch")
 # ===========================================================================
 _gh("GhBoundingRectangle", "Bounding Rectangle",
     [_in("geometry", list_access=True),
-     Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR]), _in("union")],
+     _plane_in(), _in("union")],
     [Socket("bounding", WIRE_CURVE), Socket("dimension_x", WIRE_DATA),
      Socket("dimension_y", WIRE_DATA)],
     "_gh_bounding_rectangle({geometry}, {plane}, {union})", multi=True,
@@ -447,7 +478,7 @@ _gh("GhBoundingRectangle", "Bounding Rectangle",
 _lists("GhBoundingRectangle")
 
 _gh("GhPolygon", "Polygon",
-    [Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR]),
+    [_plane_in(),
      _in("radius"), _in("segments"), _in("fillet_radius")],
     [Socket("polygon", WIRE_CURVE), Socket("length", WIRE_DATA)],
     "_gh_polygon({plane}, {radius}, {segments}, {fillet_radius})", multi=True,
@@ -493,19 +524,19 @@ _gh("GhFilletCurve", "Fillet", [_in("curve"), _in("parameter"), _in("radius")],
                 "parameters are its vertex indices, as in Rhino).")
 
 _gh("GhProject", "Project",
-    [_in("geometry"), Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR])],
+    [_in("geometry"), _plane_in()],
     [Socket("geometry", WIRE_CURVE)], "_gh_project({geometry}, {plane})",
     description="Flatten curves (or points) onto a plane along its normal.")
 
 _gh("GhRegionUnion", "Region Union",
     [_in("curves", list_access=True),
-     Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR])],
+     _plane_in()],
     [Socket("result", WIRE_CURVE)], "_gh_region_union({curves}, {plane})",
     description="The outline of the union of closed planar regions.")
 _lists("GhRegionUnion")
 
 _gh("GhVectorStar", "Vector Star",
-    [Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR]),
+    [_plane_in(),
      _in("steps"), _in("subdivision_type"), _in("dimensionality")],
     [Socket("vectors", WIRE_DATA), Socket("lines", WIRE_CURVE)],
     "_gh_vector_star({plane}, {steps}, {subdivision_type}, {dimensionality})",
@@ -526,7 +557,7 @@ _gh("GhRotate", "Rotate",
                 "(set `degrees` for degrees).")
 
 _gh("GhMoveToPlane", "Move To Plane",
-    [_in("geometry"), Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR]),
+    [_in("geometry"), _plane_in(),
      _in("above"), _in("below")],
     [Socket("geometry", WIRE_SOLID)],
     "_gh_move_to_plane({geometry}, {plane}, {above}, {below})",
@@ -535,7 +566,7 @@ _gh("GhMoveToPlane", "Move To Plane",
                 "(from above and/or from below).")
 
 _gh("GhPlaneSurface", "Plane Surface",
-    [Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR]),
+    [_plane_in(),
      _in("x_size", list_access=True), _in("y_size", list_access=True)],
     [Socket("plane", WIRE_SURFACE)], "_gh_plane_surface({plane}, {x_size}, {y_size})",
     params=[_num("x_size", 10.0), _num("y_size", 10.0)],
@@ -572,7 +603,7 @@ _gh("GhIsSurfaceTrimmed", "Is Surface Trimmed", [_in("surface")],
     description="Whether a face covers less than its whole underlying surface.")
 
 _gh("GhTrimWithPlane", "Trim With Plane",
-    [_in("brep"), Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR, WIRE_SURFACE]),
+    [_in("brep"), _plane_in(),
      _in("plane_direction"), _in("cap"), _in("tolerance")],
     [Socket("trimmed_breps", WIRE_SOLID)],
     "_gh_trim_with_plane({brep}, {plane}, {plane_direction}, {cap})",
@@ -603,7 +634,7 @@ _gh("GhExtrudeTapered", "Extrude Tapered Polysurface",
                 "drafted by `angle` (radians unless `degrees`).")
 
 _gh("GhBrepPlane", "Brep | Plane",
-    [_in("brep"), Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR])],
+    [_in("brep"), _plane_in()],
     [Socket("curves", WIRE_CURVE), Socket("points", WIRE_VECTOR)],
     "_gh_brep_plane({brep}, {plane})", multi=True,
     description="The section curves of a brep cut by a plane, joined into loops.")
@@ -634,7 +665,7 @@ _gh("GhSweep2", "Sweep2",
     description="Sections swept along rail 1, rail 2 steering their twist.")
 
 _gh("GhUnrollPolysurface", "Unroll Polysurface",
-    [_in("polysurface"), Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR]),
+    [_in("polysurface"), _plane_in(),
      _in("points", list_access=True), _in("curves", list_access=True)],
     [Socket("unrolled", WIRE_SURFACE), Socket("unrolled_points", WIRE_VECTOR),
      Socket("unrolled_curves", WIRE_CURVE)],
@@ -647,6 +678,7 @@ _gh("GhSurfaceMorph", "Surface Morph",
      _in("v_domain", list_access=True), _in("w_domain", list_access=True)],
     [Socket("geometry", WIRE_DATA)],
     "_gh_surface_morph({geometry}, {reference}, {surface}, {u_domain}, {v_domain}, {w_domain})",
+    params=[_bool("reparameterize")],   # U/V are read as 0..1 of the face already
     description="Carry geometry from a reference box onto a surface (box x/y → "
                 "surface u/v, z → along the normal). Curves come back as splines, "
                 "faces and solids as a MESH: a bent B-Rep is not exact.")
@@ -672,7 +704,7 @@ _gh("GhParagraph", "Paragraph", [_in("halign"), _in("valign"), _in("rightleft")]
                 "top/middle/bottom.")
 
 _gh("GhTextCurves", "Text Curves",
-    [Socket("plane", WIRE_PLANE, required=False, accepts=[WIRE_VECTOR]), _in("text"),
+    [_plane_in(), _in("text"),
      _in("font"), _in("paragraph")],
     [Socket("curves", WIRE_CURVE)], "_gh_text_curves({plane}, {text}, {font}, {paragraph})",
     params=[Param("text", "str", "text", "noodle", widget="input")],
@@ -749,13 +781,10 @@ ALIASES = {
     "Divide": ["Division"],
     "ConstructPoint": ["Construct Point"],
     "Line": ["Line"],
-    "CurveLength": ["Length"],
     "Union": ["Solid Union"],
     "Subtract": ["Solid Difference"],
-    "Join": ["Join Curves"],
     "ToMesh": ["Mesh Brep"],
     "PopulateGeometry": ["Populate Geometry"],
-    "BoundingBox": ["Bounding Box"],
     "Move": ["Move"],
     "Mirror": ["Mirror"],
     "GraphMapper": ["Rich Graph Mapper", "Graph Mapper"],
