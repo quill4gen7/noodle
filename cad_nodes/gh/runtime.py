@@ -22,6 +22,45 @@ GH_PREAMBLE = r'''
 # Grasshopper components (cad_nodes/gh/runtime.py)
 # ---------------------------------------------------------------------------
 
+def _gh_nested(_v):
+    """A list holding lists = a TREE: one branch per sub-list."""
+    return _is_seq(_v) and any(_is_seq(x) for x in _v)
+
+
+def _gh_fanout(_fn, _items, _lists):
+    """Grasshopper data matching, branch by branch. `_items` are the node's
+    item-access inputs, `_lists` its list-access ones. When any of them is a
+    tree (a list of lists) the node runs once per branch — a flat value or list
+    is ONE branch, reused for every branch (GH's longest-list on branches) —
+    and the result is a list of per-branch results. Without trees it is
+    noodle's ordinary item fan-out, the list inputs passed whole."""
+    tree_i = [k for k, v in _items.items() if _gh_nested(v)]
+    tree_l = [k for k, v in _lists.items() if _gh_nested(v)]
+    if not tree_i and not tree_l:
+        r = (_fanout(lambda **_kw: _fn(**_kw, **_lists), _items))
+        # ONE item fanned is one branch: its list output IS the flat list, not a
+        # tree of one branch (or every list in a GH graph would nest one level
+        # deeper at each step)
+        if isinstance(r, list) and len(r) == 1 and (_is_seq(r[0]) or isinstance(r[0], dict)) \
+                and any(_is_seq(v) for v in _items.values()):
+            return r[0]
+        return r
+    n = max([len(_items[k]) for k in tree_i] + [len(_lists[k]) for k in tree_l])
+    if n > _FANOUT_MAX:
+        raise ValueError(f"{n} branches exceed the {_FANOUT_MAX} limit")
+    pick = lambda v, i: list(v)[min(i, len(v) - 1)] if len(v) else None
+    out = []
+    for i in range(n):
+        it = {k: (pick(v, i) if k in tree_i else v) for k, v in _items.items()}
+        ls = {k: (pick(v, i) if k in tree_l else v) for k, v in _lists.items()}
+        r = _gh_fanout(_fn, it, ls)
+        # a branch that yields ONE value is still a branch: keep it a list, or
+        # the tree would flatten into a plain list and the next node would pair
+        # these values item by item instead of branch by branch
+        out.append(r if _is_seq(r) else [r])
+    return out
+
+
 def _gh_items(_v):
     """A wired value as a flat list (None -> [])."""
     if _v is None:
@@ -66,14 +105,41 @@ def _gh_vec(_v, _default=(0, 0, 1)):
 
 
 def _gh_plane(_v):
-    """GH's plane cast: a Plane as is, a point -> the XY plane through it,
-    nothing -> world XY."""
+    """GH's plane cast: a Plane as is, a point -> the XY plane through it, a
+    closed planar CURVE or a planar face -> the plane it lies in (origin at its
+    area centroid, x along its first segment — GH reads a Bounding Rectangle
+    straight into Move To Plane / Plane Surface that way), nothing -> world XY."""
     if _v is None:
         return Plane.XY
+    if _is_seq(_v):
+        it = _gh_items(_v)
+        _v = it[0] if it else None
+        if _v is None:
+            return Plane.XY
     if isinstance(_v, Plane):
         return _v
     if isinstance(_v, Location):
         return Plane(_v)
+    if isinstance(_v, (Wire, Edge, Face, Shell, Solid, Compound)) or hasattr(_v, "wires"):
+        f = None
+        if isinstance(_v, (Wire, Edge)):
+            w = _gh_curve(_v)
+            if w is not None and w.is_closed:
+                try:
+                    f = Face(w)
+                except Exception:
+                    f = None
+        else:
+            f = _gh_face(_v)
+        if f is not None and f.geom_type == GeomType.PLANE:
+            n = f.normal_at()
+            w = f.outer_wire()
+            x = w.edges()[0].tangent_at(0)
+            x = (x - n * x.dot(n)).normalized()
+            if isinstance(_v, (Wire, Edge)) and _gh_signed_area(_v, Plane(f.center(), x, n)) < 0:
+                n = -n                       # the curve's own sense of turning
+            return Plane(f.center(CenterOf.MASS), x, n)
+        raise ValueError("a curve or surface used as a plane must be planar (and a curve closed)")
     p = _gh_point(_v)
     return Plane.XY.move(Location(p)) if p is not None else Plane.XY
 
@@ -113,6 +179,17 @@ def _gh_shapes(_v):
             out.append(it)
     return out
 
+
+def _gh_list(_v):
+    """A LIST output as GH hands it on: always a list, a single item included.
+    Fanned over several inputs, these lists stack into a tree (one branch per
+    input) — unwrapping a lone item would flatten that tree and pair the next
+    node's data item by item instead of branch by branch."""
+    if _v is None:
+        return []
+    if isinstance(_v, (list, tuple, ShapeList)):
+        return list(_v)
+    return [_v]
 
 def _gh_curve(_v):
     """One curve as a Wire (an Edge is wrapped; a face gives its outer wire)."""
@@ -222,14 +299,15 @@ def _gh_face_uv(_f):
     return {"u": [u0, u1], "v": [v0, v1]}
 
 
-def _gh_deconstruct_domain2(_d):
+def _gh_deconstruct_domain2(_d, _reparameterize=False):
     if _d is None:
         return {"u_min": None, "u_max": None, "v_min": None, "v_max": None}
     if not isinstance(_d, dict):
         f = _gh_face(_d)
         if f is None:
             raise ValueError("Deconstruct Domain²: wire a 2D domain or a surface")
-        _d = _gh_face_uv(f)
+        # GH's Reparameterize flag on a surface input: its domain becomes 0..1
+        _d = {"u": [0.0, 1.0], "v": [0.0, 1.0]} if _reparameterize else _gh_face_uv(f)
     return {"u_min": _d["u"][0], "u_max": _d["u"][1],
             "v_min": _d["v"][0], "v_max": _d["v"][1]}
 
@@ -320,8 +398,25 @@ def _gh_offset_curve(_curve, _distance, _plane=None, _corners=1, _both=False):
             side = Side.RIGHT if dd > 0 else Side.LEFT
             r = flat.offset_2d(abs(dd), kind=kind, side=side, closed=False)
         out.append(pl.from_local_coords(r))
-    return out[0] if len(out) == 1 else out
+    return out                          # a list output in GH (may be several)
 
+
+def _gh_join_curves(_curves, _preserve=False):
+    """Join Curves: chain whatever touches end to end and hand back EVERY chain
+    — curves that touch nothing come back on their own. (noodle's Join refuses
+    pieces that do not touch; GH just returns several curves.)"""
+    es = []
+    for c in _gh_items(_curves):
+        w = _gh_curve(c)
+        if w is not None:
+            es += list(w.edges())
+    if not es:
+        return None
+    try:
+        ws = list(Wire.combine(es, tol=1e-4))
+    except Exception:
+        ws = [Wire([e]) for e in es]
+    return _gh_list(ws)
 
 def _gh_end_points(_curve):
     w = _gh_curve(_curve)
@@ -509,6 +604,52 @@ def _gh_length(_curve):
     return None if w is None else w.length
 
 
+def _gh_bounding_box(_content, _plane=None):
+    """Bounding Box aligned with a plane (world XY by default). GH's box may be
+    FLAT — the box of a planar curve — and a flat box is not a solid: it comes
+    back as the rectangle FACE, which is what Area/Voronoi 3D/Scale want of it."""
+    pl = _gh_plane(_plane)
+    s = _gh_shapes(_content)
+    pts = [_gh_point(x) for x in _gh_items(_content) if isinstance(x, Vector)]
+    if not s and not pts:
+        return None
+    lo, hi = [], []
+    for x in s:
+        bb = pl.to_local_coords(x).bounding_box()
+        lo.append(bb.min)
+        hi.append(bb.max)
+    for q in pts:
+        q = pl.to_local_coords(q)
+        lo.append(q)
+        hi.append(q)
+    a = Vector(min(v.X for v in lo), min(v.Y for v in lo), min(v.Z for v in lo))
+    b = Vector(max(v.X for v in hi), max(v.Y for v in hi), max(v.Z for v in hi))
+    d = b - a
+    dims = [d.X, d.Y, d.Z]
+    if min(dims) > 1e-9:
+        box = Box(d.X, d.Y, d.Z, align=(Align.MIN,) * 3).moved(Location(a.to_tuple()))
+        return pl.from_local_coords(box)
+    flat = [i for i in range(3) if dims[i] <= 1e-9]
+    if len(flat) > 1:
+        return pl.from_local_coords(Edge.make_line(a, b)) if d.length > 1e-9 else None
+    k = flat[0]
+    i, j = [x for x in range(3) if x != k]
+    def P(ui, uj):
+        c = [a.X, a.Y, a.Z]
+        c[i] = (a.to_tuple()[i], b.to_tuple()[i])[ui]
+        c[j] = (a.to_tuple()[j], b.to_tuple()[j])[uj]
+        return tuple(c)
+    face = Face(Polyline(P(0, 0), P(1, 0), P(1, 1), P(0, 1), close=True))
+    return pl.from_local_coords(face)
+
+
+def _gh_length_of(_curve):
+    """Length of a curve — and, as GH casts a one-face brep to its boundary, the
+    perimeter of a surface."""
+    w = _gh_curve(_curve)
+    return None if w is None else w.length
+
+
 # --- transforms --------------------------------------------------------------------
 
 def _gh_move_to_point(_geom, _a, _b):
@@ -600,13 +741,17 @@ def _gh_boundary_surfaces(_edges):
             try:
                 same = n0 is not None and abs(abs(n0.dot(g.normal_at())) - 1) < 1e-6 \
                     and abs((g.center() - f.center()).dot(n0)) < 1e-6
-                if same and f.is_inside(g.center()) and (g - f).area < 1e-6 * g.area + 1e-9:
+                # a hole is STRICTLY smaller: an identical copy (GH's closed
+                # polylines repeat their first point, so a list of corners can
+                # hold the same rectangle twice) is a second face, not a hole
+                if same and g.area < f.area * (1 - 1e-6) and f.is_inside(g.center()) \
+                        and (g - f).area < 1e-6 * g.area + 1e-9:
                     outer = outer - g
                     used[j] = True
             except Exception:
                 pass
         out.append(outer.faces()[0] if hasattr(outer, "faces") and len(outer.faces()) == 1 else outer)
-    return _gh_out(out)
+    return _gh_list(out)
 
 
 def _gh_extrude(_base, _direction):
@@ -624,6 +769,8 @@ def _gh_extrude(_base, _direction):
                 out.append(Solid.extrude(f, v))
         else:
             w = _gh_curve(s)
+            if w is None:
+                continue
             fs = [Face.extrude(e, v) for e in w.edges()]
             out.append(fs[0] if len(fs) == 1 else Shell(fs))
     return _gh_out(out)
@@ -646,9 +793,10 @@ def _gh_revolve_unsplit(_profile, _axis, _domain, _degrees=False):
     return fs[0] if len(fs) == 1 else Shell(fs)
 
 
-def _gh_isotrim(_surface, _domain):
+def _gh_isotrim(_surface, _domain, _reparameterize=False):
     """Isotrim: the part of a surface inside a UV domain (absolute parameters of
-    THIS face as OCCT parameterises it — see _gh_face_uv)."""
+    THIS face as OCCT parameterises it — see _gh_face_uv — or 0..1 of it when
+    the surface input is reparameterized)."""
     f = _gh_face(_surface)
     if f is None or _domain is None:
         return None
@@ -657,6 +805,11 @@ def _gh_isotrim(_surface, _domain):
     srf = BRep_Tool.Surface_s(f.wrapped)
     u0, u1 = sorted(_domain["u"])
     v0, v1 = sorted(_domain["v"])
+    if _reparameterize:
+        uv = _gh_face_uv(f)
+        su, sv = uv["u"][1] - uv["u"][0], uv["v"][1] - uv["v"][0]
+        u0, u1 = uv["u"][0] + su * u0, uv["u"][0] + su * u1
+        v0, v1 = uv["v"][0] + sv * v0, uv["v"][0] + sv * v1
     mk = BRepBuilderAPI_MakeFace(srf, u0, u1, v0, v1, 1e-6)
     if not mk.IsDone():
         raise ValueError("Isotrim: the domain is outside the surface")
@@ -684,12 +837,17 @@ def _gh_area(_geom):
     tot, acc = 0.0, Vector(0, 0, 0)
     for x in s:
         if isinstance(x, (Wire, Edge)):
-            x = Face(_gh_curve(x))
+            w = _gh_curve(x)
+            if not w.is_closed:          # GH: an open curve has no area
+                continue
+            x = Face(w)
         a = x.area
         c = x.center(CenterOf.MASS) if a > 0 else x.center()
         tot += a
         acc = acc + c * a
-    return {"area": tot, "centroid": acc / tot if tot else None}
+    if not tot:
+        return {"area": None, "centroid": None}
+    return {"area": tot, "centroid": acc / tot}
 
 
 def _gh_brep_join(_breps):
@@ -702,7 +860,7 @@ def _gh_brep_join(_breps):
     except Exception:
         r = Compound(s)
     rs = r if _is_seq(r) else [r]
-    return {"breps": _gh_out(rs),
+    return {"breps": _gh_list(rs),
             "closed": [isinstance(x, Solid) for x in rs]}
 
 
@@ -737,7 +895,7 @@ def _gh_brep_brep(_a, _b):
         ws = list(Wire.combine(edges, tol=1e-4))
     except Exception:
         ws = edges
-    return {"curves": _gh_out(ws), "points": None}
+    return {"curves": _gh_list(ws), "points": None}
 
 
 def _gh_split_by(_shape, _tools):
@@ -768,7 +926,7 @@ def _gh_surface_split(_surface, _curves):
     if not cs:
         return f
     r = _gh_split_by(f, cs)
-    return _gh_out(list(r.faces()))
+    return _gh_list(list(r.faces()))
 
 
 def _gh_trim_with_brep(_curve, _brep):
@@ -792,9 +950,9 @@ def _gh_trim_with_brep(_curve, _brep):
         if not es:
             return None
         try:
-            return _gh_out(list(Wire.combine(es, tol=1e-4)))
+            return _gh_list(list(Wire.combine(es, tol=1e-4)))
         except Exception:
-            return _gh_out(es)
+            return _gh_list(es)
     return {"inside": _j(ins), "outside": _j(outs)}
 
 
@@ -817,9 +975,9 @@ def _gh_pull_curve(_curve, _surface):
     if not es:
         return None
     try:
-        return _gh_out(list(Wire.combine(es, tol=1e-4)))
+        return _gh_list(list(Wire.combine(es, tol=1e-4)))
     except Exception:
-        return _gh_out(es)
+        return _gh_list(es)
 
 
 def _gh_pull_point(_point, _geom):
@@ -855,6 +1013,14 @@ def _gh_voronoi3d(_points, _box):
         bb = _gh_shapes(_box)[0].bounding_box()
         lo = _np.array([bb.min.X, bb.min.Y, bb.min.Z])
         hi = _np.array([bb.max.X, bb.max.Y, bb.max.Z])
+        # a FLAT box (Bounding Box of a planar curve, as ikeaLack does): give it
+        # a little depth so the cells close; they are meant to be cut by the
+        # surface lying in it (Brep | Brep), which then sees the 2D pattern
+        thin = (hi - lo) < 1e-6
+        if thin.any():
+            pad = max((hi - lo).max() * 0.01, 1e-3)
+            lo = _np.where(thin, lo - pad, lo)
+            hi = _np.where(thin, hi + pad, hi)
     else:
         lo, hi = P.min(0), P.max(0)
         pad = (hi - lo).max() * 0.1 + 1e-6
@@ -1305,7 +1471,7 @@ def _gh_region_union(_curves, _plane=None):
     for f in u.faces():
         ws.append(f.outer_wire())
         ws += list(f.inner_wires())
-    return _gh_out(ws)
+    return _gh_list(ws)
 
 
 def _gh_vector_star(_plane=None, _steps=4, _type=1, _dims=False):
@@ -1571,7 +1737,7 @@ def _gh_brep_plane(_brep, _plane):
         ws = list(Wire.combine(es, tol=1e-4))
     except Exception:
         ws = es
-    return {"curves": _gh_out(ws), "points": None}
+    return {"curves": _gh_list(ws), "points": None}
 
 
 def _gh_volume(_geometry):

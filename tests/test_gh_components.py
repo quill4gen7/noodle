@@ -106,3 +106,68 @@ def test_the_sample_files_are_fully_mapped(sample):
     d = definition.read(SAMPLES / sample)
     missing = {(o.type, o.type_guid) for o in d.objects if o.type_guid not in COMPONENTS}
     assert not missing, sorted(missing)
+
+
+def test_no_grasshopper_node_has_an_origin_socket():
+    """The emitter wraps a socket named `origin` around the node's WHOLE result
+    (_at): a GH node whose input is called Origin would be placed twice."""
+    for d in catalog.REGISTRY.values():
+        if d.category == "grasshopper":
+            assert d.input("origin") is None, d.type
+
+
+def test_grasshopper_list_inputs_go_through_the_branch_fanout():
+    g = Graph.from_dict({"name": "t", "nodes": [
+        {"id": "s", "type": "Series", "params": {}},
+        {"id": "a", "type": "GhAverage", "params": {}},
+    ], "connections": [
+        {"id": "w", "from_node": "s", "from_socket": "result", "to_node": "a", "to_socket": "input"},
+    ]})
+    src = transpile(g)
+    assert re.search(r"_gh_fanout\(lambda input: _gh_average\(input\), \{\}, \{'input': __out_\d+\}\)", src)
+
+
+def _fanout_fragment():
+    """_fanout + _gh_fanout lifted out of the PREAMBLE, run with no build123d."""
+    from cad_nodes.transpiler import PREAMBLE
+
+    def grab(name):
+        m = re.search(rf"\ndef {name}\(.*?(?=\n\S)", PREAMBLE, re.S)
+        return m.group(0)
+    ns = {"ShapeList": type("ShapeList", (list,), {}), "_FANOUT_MAX": 2000}
+    for name in ("_is_seq", "_fanout", "_gh_nested", "_gh_fanout"):
+        exec(grab(name), ns)
+    return ns
+
+
+def test_branch_fanout_runs_a_list_input_once_per_branch():
+    ns = _fanout_fragment()
+    mean = lambda input: sum(input) / len(input)
+    # a flat list: one call over the whole list
+    assert ns["_gh_fanout"](mean, {}, {"input": [1, 2, 3]}) == 2
+    # a tree (list of lists): one call per branch, as a grafted GH input
+    # a tree (list of lists): one call per branch, as a grafted GH input — and
+    # each branch's single result stays a branch
+    assert ns["_gh_fanout"](mean, {}, {"input": [[1, 3], [10, 20]]}) == [[2], [15]]
+
+
+def test_branch_fanout_pairs_items_with_their_branch():
+    ns = _fanout_fragment()
+    scale = lambda geometry, center: (geometry - center) * 2 + center
+    pts = [[1, 2], [10, 12]]            # two branches of points
+    centres = [[0], [10]]               # one centre per branch (a tree)
+    out = ns["_gh_fanout"](scale, {"geometry": pts, "center": centres}, {})
+    assert out == [[2, 4], [10, 14]]
+    # a flat list next to a tree is ONE branch reused for every branch
+    out = ns["_gh_fanout"](scale, {"geometry": pts, "center": 0}, {})
+    assert out == [[2, 4], [20, 24]]
+    # a FLAT list next to a tree is one branch too: matched item by item in each
+    out = ns["_gh_fanout"](scale, {"geometry": pts, "center": [0, 10]}, {})
+    assert out == [[2, -6], [20, 14]]
+
+
+def test_one_item_fanned_is_one_branch_not_a_tree():
+    ns = _fanout_fragment()
+    pts = lambda curve: [curve, curve + 1]           # a list output
+    assert ns["_gh_fanout"](pts, {"curve": [5]}, {}) == [5, 6]
+    assert ns["_gh_fanout"](pts, {"curve": [5, 7]}, {}) == [[5, 6], [7, 8]]

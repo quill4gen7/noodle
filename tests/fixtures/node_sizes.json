@@ -315,6 +315,10 @@
   210,
   106
  ],
+ "GhArcCircleEllipse": [
+  236.8000030517578,
+  170
+ ],
  "GhArea": [
   210,
   78
@@ -323,23 +327,55 @@
   178,
   26
  ],
+ "GhBakeObjects": [
+  210,
+  258
+ ],
  "GhBoundarySurfaces": [
   210,
   58
+ ],
+ "GhBoundingBox": [
+  210,
+  126
+ ],
+ "GhBoundingRectangle": [
+  210,
+  170
  ],
  "GhBrepBrep": [
   210,
   126
  ],
+ "GhBrepEdges": [
+  210,
+  122
+ ],
  "GhBrepJoin": [
   210,
   78
+ ],
+ "GhBrepPlane": [
+  210,
+  126
+ ],
+ "GhCapHoles": [
+  210,
+  82
  ],
  "GhCircle": [
   210,
   150
  ],
  "GhCloseCurve": [
+  210,
+  102
+ ],
+ "GhCollisionOneMany": [
+  210,
+  78
+ ],
+ "GhConcatenate": [
   210,
   102
  ],
@@ -350,6 +386,10 @@
  "GhControlPoints": [
   210,
   98
+ ],
+ "GhCreateTree": [
+  150,
+  46
  ],
  "GhCurveMiddle": [
   210,
@@ -365,7 +405,7 @@
  ],
  "GhDeconstructDomain2": [
   210,
-  118
+  142
  ],
  "GhDiscontinuity": [
   210,
@@ -379,9 +419,17 @@
   210,
   194
  ],
+ "GhEleFrontAttributes": [
+  253.60000610351562,
+  542
+ ],
  "GhEndPoints": [
   210,
   78
+ ],
+ "GhExportAs": [
+  270.3999938964844,
+  438
  ],
  "GhExtendCurve": [
   210,
@@ -391,17 +439,105 @@
   210,
   126
  ],
+ "GhExtrudeTapered": [
+  226.8000030517578,
+  306
+ ],
+ "GhExtrudeToPlane": [
+  220,
+  258
+ ],
+ "GhFilepathSeries": [
+  362.79998779296875,
+  306
+ ],
+ "GhFilletCurve": [
+  210,
+  218
+ ],
+ "GhFilletEdge": [
+  210,
+  210
+ ],
+ "GhFont": [
+  210,
+  354
+ ],
+ "GhFontList": [
+  150,
+  26
+ ],
+ "GhGateOr": [
+  210,
+  150
+ ],
+ "GhInterpolate": [
+  210,
+  262
+ ],
+ "GhInvertBoolean": [
+  210,
+  102
+ ],
+ "GhIsArcCircleEllipse": [
+  210,
+  122
+ ],
+ "GhIsPlanar": [
+  210,
+  102
+ ],
+ "GhIsSurfaceTrimmed": [
+  210,
+  58
+ ],
  "GhIsotrim": [
   210,
+  150
+ ],
+ "GhJoinCurves": [
+  210,
   126
+ ],
+ "GhLargerThan": [
+  211.60000610351562,
+  150
+ ],
+ "GhLength": [
+  210,
+  58
+ ],
+ "GhListIndices": [
+  150,
+  26
  ],
  "GhListItem": [
   210,
   170
  ],
+ "GhLoft": [
+  210,
+  102
+ ],
+ "GhLoftOptions": [
+  210,
+  282
+ ],
+ "GhMerge": [
+  150,
+  126
+ ],
+ "GhMoveToPlane": [
+  210,
+  262
+ ],
  "GhMoveToPoint": [
   210,
   170
+ ],
+ "GhNegative": [
+  210,
+  82
  ],
  "GhNurbsCurve": [
   210,
@@ -415,6 +551,22 @@
   210,
   286
  ],
+ "GhParagraph": [
+  210,
+  218
+ ],
+ "GhPlaneSurface": [
+  210,
+  170
+ ],
+ "GhPolygon": [
+  210,
+  286
+ ],
+ "GhProject": [
+  210,
+  126
+ ],
  "GhPullCurve": [
   210,
   126
@@ -423,9 +575,37 @@
   210,
   78
  ],
+ "GhRadians": [
+  210,
+  82
+ ],
+ "GhRange": [
+  210,
+  102
+ ],
+ "GhRebuildCurve": [
+  210,
+  262
+ ],
  "GhRectangle": [
   210,
   238
+ ],
+ "GhRegionUnion": [
+  210,
+  102
+ ],
+ "GhRepeatData": [
+  210,
+  102
+ ],
+ "GhReplaceNulls": [
+  152.8000030517578,
+  46
+ ],
+ "GhRotate": [
+  210,
+  218
  ],
  "GhScale": [
   210,
@@ -435,17 +615,53 @@
   210,
   330
  ],
+ "GhSimplifyCurve": [
+  220,
+  170
+ ],
+ "GhSmallerThan": [
+  220,
+  150
+ ],
  "GhSortList": [
   150,
   46
  ],
+ "GhSplitList": [
+  210,
+  102
+ ],
+ "GhStepExportOption": [
+  304,
+  190
+ ],
+ "GhSurfaceMorph": [
+  210,
+  230
+ ],
  "GhSurfaceSplit": [
+  210,
+  126
+ ],
+ "GhSweep2": [
+  210,
+  190
+ ],
+ "GhTextCurves": [
+  210,
+  238
+ ],
+ "GhTreeBranch": [
   210,
   102
  ],
  "GhTrimWithBrep": [
   210,
   126
+ ],
+ "GhTrimWithPlane": [
+  245.1999969482422,
+  306
  ],
  "GhUnitX": [
   210,
@@ -459,13 +675,29 @@
   210,
   82
  ],
+ "GhUnrollPolysurface": [
+  228.39999389648438,
+  166
+ ],
  "GhUnsplitRevolve": [
   210,
   170
  ],
+ "GhVectorStar": [
+  210,
+  214
+ ],
+ "GhVolume": [
+  210,
+  78
+ ],
  "GhVoronoi3D": [
   210,
   102
+ ],
+ "GhWeave": [
+  150,
+  106
  ],
  "GhXYPlane": [
   210,
