@@ -41,7 +41,9 @@ def _ns():
     def cut(a, b):
         return PREAMBLE[PREAMBLE.index(a):PREAMBLE.index(b)]
     src = cut("def _mat_quat(", "def _container_motion(") + \
-        cut("def _gear_profile(", "def _aero_dirs(")
+        cut("def _gear_profile(", "def _aero_dirs(") + \
+        cut("def _axis_angle(", "def " + PREAMBLE.split("def _axis_angle(")[1]
+            .split("\ndef ")[1].split("(")[0] + "(")
     ns = {"math": math,
           "_drop_apply": lambda s, B, o, ops: _Shape(),
           "_is_mesh": lambda s: False,
@@ -113,7 +115,7 @@ def test_example_transpiles_with_owners_and_one_solve():
     src = transpile(g)
     j_in = next(l for l in src.splitlines() if "@node:j_in " in l)
     # every shape of the body names the node that drew it, in wiring order
-    assert "['in20', 'in30', 'sh_in'], 'j_in', 'Primario')" in j_in
+    assert "['in20', 'in30', 'sh_in'], 'j_in', 'Primario', None)" in j_in
     calls = [l for l in src.splitlines() if "_mechanism(" in l and "def " not in l]
     assert len(calls) == 1                     # report and clash read the same plan
     assert "'clash'" in calls[0]
@@ -324,3 +326,100 @@ def test_shapes_wired_into_a_joint_are_not_auto_drawn_at_rest():
     drawn = {l.split("[")[1].split("]")[0].strip("'")
              for l in src.splitlines() if l.strip().startswith("__previews__[")}
     assert drawn == {"mech"}
+
+
+# --- closed loops (PLAN_MECHANISM.md point 4) ------------------------------
+# creepyfinger-v4's four-bar, from its cinematica.json: the middle phalanx turns
+# about J1, the distal one rides on it at J2 (parent), the rod is pinned to the
+# shell at A and to the distal phalanx at B.
+L1, ZJ, AX, AZ, BX, BZ = 55.0, 12.0, 2.0, 3.0, -12.0, 4.5
+
+
+def _finger(keys):
+    media = joint([_Shape()], "media", _axis="y", _pivot=(0, 0, ZJ),
+                  _turn=turns(keys))
+    dist = joint([_Shape()], "dist", _axis="y", _pivot=(L1, 0, ZJ), _parent=media)
+    rod = joint([_Shape()], "rod", _axis="y", _pivot=(AX, 0, AZ))
+    pin = NS["_pin"](rod, dist, (L1 + BX, 0, ZJ + BZ))
+    return [media, dist, rod, pin]
+
+
+def _closure(f):
+    """The distal angle that closes the loop at flex f, found by bisection on
+    the rod's length — an oracle that shares nothing with the solver."""
+    def b_of(g):
+        tt = -math.radians(f + g)
+        jx, jz = L1 * math.cos(math.radians(f)), ZJ - L1 * math.sin(math.radians(f))
+        return jx + BX * math.cos(tt) - BZ * math.sin(tt), jz + BX * math.sin(tt) + BZ * math.cos(tt)
+    rod = math.hypot(L1 + BX - AX, ZJ + BZ - AZ)
+    err = lambda g: math.hypot(b_of(g)[0] - AX, b_of(g)[1] - AZ) - rod
+    lo, hi = -10.0, 80.0           # the assembly branch brackets the root here
+    for _ in range(80):
+        mid = (lo + hi) / 2
+        if (err(lo) > 0) == (err(mid) > 0):
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+
+def test_a_pinned_loop_closes_like_the_real_four_bar():
+    tr = solve(_finger("0:0, 1:140"))["trace"]
+    f, d = tr["turn"][0], tr["turn"][tr["names"].index("dist")]
+    for i in range(0, len(f), 7):
+        assert d[i] == pytest.approx(_closure(f[i]), abs=1e-4), f[i]
+    # the numbers creepyfinger's own table gives (cinematica.json fl2)
+    assert at(tr, "dist", 1.0) == pytest.approx(32.887, abs=1e-3)       # f=140
+
+
+def test_the_loop_stays_on_its_branch_coming_back():
+    tr = solve(_finger("0:0, 1:140, 2:0"))["trace"]
+    k = tr["names"].index("dist")
+    assert at(tr, "dist", 2.0) == pytest.approx(0.0, abs=1e-6)
+    assert max(tr["turn"][k]) == pytest.approx(51.2, abs=0.3)            # peak ~f=90
+    assert not tr["open"]
+
+
+def test_past_the_dead_point_the_report_says_the_loop_is_open():
+    """Below about -13.9 deg of flex no distal angle brings the rod back to
+    its length: the four-bar is past its dead point. Say so — never draw a
+    rod that has silently come off its pin."""
+    out = solve(_finger("0:0, 1:-15"))
+    assert out["trace"]["open"]
+    assert "LOOP OPEN" in out["report"]
+    first_open = out["trace"]["open"][0][0]
+    assert -15 * first_open == pytest.approx(-13.9, abs=0.3)
+
+
+def test_parents_that_form_a_loop_are_an_error():
+    a = joint([_Shape()], "a", _axis="z", _pivot=(0, 0, 0))
+    b = joint([_Shape()], "b", _axis="z", _pivot=(1, 0, 0), _parent=a)
+    a["parent"] = b
+    with pytest.raises(ValueError, match="parents form a loop"):
+        solve([a, b])
+
+
+def test_a_pin_needs_its_point():
+    with pytest.raises(ValueError, match="needs `at`"):
+        NS["_pin"](joint([_Shape()], "a", _axis="z", _pivot=(0, 0, 0)), None, None)
+
+
+def test_a_planet_rides_its_carrier_and_rolls_on_a_fixed_sun():
+    """A gear on a MOVING body: the phase is measured on the real tooth
+    directions, so a planet on its carrier meshes with a fixed sun. Relative
+    to the carrier it turns by +zs/zp of the carrier's angle."""
+    zs, zp, m = 30, 15, 2.0
+    sun = joint([gear(zs)], "sun", _kind="fixed")
+    carrier = joint([_Shape()], "carrier", _axis="z", _pivot=(0, 0, 0),
+                    _turn=turns("0:0, 1:90"))
+    planet = joint([gear(zp, center=(m * (zs + zp) / 2, 0, 0))], "planet",
+                   _parent=carrier)
+    tr = solve([sun, carrier, planet])["trace"]
+    moved = at(tr, "planet", 1.0) - at(tr, "planet", 0.0)
+    assert moved == pytest.approx(90.0 * zs / zp, abs=1e-6)
+    assert not tr["conflicts"]
+
+
+def test_pins_join_the_ghost_rule_like_joints():
+    from cad_nodes.transpiler import _GEOMETRY_CARRIERS
+    assert {"Joint", "Pin"} <= _GEOMETRY_CARRIERS

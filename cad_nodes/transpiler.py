@@ -2999,10 +2999,12 @@ def _scalar_track(_plan, _axis, _which):
 
 def _joint(_shapes, _pivot=None, _turn=None, _slide=None, _follows=None,
            _axis="auto", _kind="free", _rpm=0.0, _ratio=1.0, _shape_ids=None,
-           _id=None, _name=None):
+           _id=None, _name=None, _parent=None):
     \"\"\"One rigid body of a Mechanism: what it is made of, the axis it turns
-    about (and slides along), and what drives it. Plain data — nothing moves
-    until a Mechanism solves the lot.\"\"\"
+    about (and slides along), and what drives it. Pivot and axis are given in
+    the REST pose, in world coordinates; with a `_parent` they ride on that
+    body (a knuckle on a finger, a planet on its carrier). Plain data —
+    nothing moves until a Mechanism solves the lot.\"\"\"
     import numpy as _np
 
     def flat(x):
@@ -3045,25 +3047,55 @@ def _joint(_shapes, _pivot=None, _turn=None, _slide=None, _follows=None,
                 or _np.linalg.norm(off - _np.dot(off, n) * n) > 1e-3):
             raise ValueError(
                 "%s: gear %d is not on the joint's axis — a gear turns WITH its "
-                "body only about its own axis. Give it its own Joint (and tie the "
-                "two with `follows` if they must turn together)." % (name, k + 1))
-    turn, slide = _turn, _slide
+                "body only about its own axis. Give it its own Joint (with this "
+                "one as its `parent` if it rides on it, like a planet on its "
+                "carrier)." % (name, k + 1))
+    if _parent is not None and not (isinstance(_parent, dict) and _parent.get("_noodle_joint")):
+        raise ValueError("%s: `parent` takes a Joint" % name)
     return {"_noodle_joint": True, "id": _id, "name": name, "shapes": shapes,
             "owners": owners, "axis": n.tolist(), "pivot": piv.tolist(),
-            "turn": turn, "slide": slide, "kind": str(_kind),
+            "turn": _turn, "slide": _slide, "kind": str(_kind),
             "rpm": float(_rpm or 0.0), "ratio": float(_ratio),
-            "follows": _follows, "gears": [g for _k, g in gears]}
+            "follows": _follows, "parent": _parent,
+            "gears": [g for _k, g in gears]}
+
+
+def _pin(_a, _b=None, _at=None, _id=None):
+    \"\"\"A point two bodies SHARE: a pin through both, a ball joint. Given in the
+    rest pose (world); unwired `_b` = the ground. It is what closes a loop — a
+    four-bar, a slider-crank, a finger driven through a link — and a Mechanism
+    solves the angles of the free bodies so that every pin stays shut.\"\"\"
+    p = _pt(_at)
+    if p is None:
+        raise ValueError("a Pin needs `at`: the point the two bodies share")
+    for j, w in ((_a, "a"), (_b, "b")):
+        if j is not None and not (isinstance(j, dict) and j.get("_noodle_joint")):
+            raise ValueError("Pin `%s` takes a Joint" % w)
+    if _a is None:
+        raise ValueError("a Pin needs at least the joint `a`")
+    return {"_noodle_pin": True, "id": _id, "a": _a, "b": _b,
+            "at": [float(p.X), float(p.Y), float(p.Z)]}
 
 
 def _mechanism(_joints, _t=1.0, _duration=0.0, _hold=0.0, _engage="clash",
                _check=120):
-    \"\"\"Solve a mechanism on a clock and bake it. Drivers dictate turn/slide; a
-    breadth-first propagation carries them through the couplings live at that
-    frame (gears in mesh — found from the geometry every frame — and `follows`);
-    a body nothing reaches keeps its angle. The run is SEQUENTIAL from tau=0 so
-    that an engagement's phase recovery (engage="clash") has a history.
-    Collisions are then a CHECK over sampled frames, never a force.
-    Returns {"bodies": [posed shapes with keys plans], "report", "clash"}.\"\"\"
+    \"\"\"Solve a mechanism on a clock and bake it.
+
+    Every body turns (and slides) about an axis given in the rest pose; a body
+    with a parent turns relative to it, so the world pose of a body is its
+    parent's composed with its own. Per frame, sequentially from tau=0 (an
+    engagement's phase recovery and a loop's warm start both need a history):
+      1. drivers dictate their turn/slide;
+      2. a breadth-first pass carries them through the couplings live at that
+         frame — gears in mesh, found from the geometry every frame, and
+         `follows`;
+      3. the bodies still free and tied to a Pin are solved together so every
+         pin stays shut (damped Gauss-Newton, warm-started from the frame
+         before — which is what keeps a linkage on its assembly branch);
+      4. a second pass carries the solved bodies through their gears.
+    A body nothing reaches keeps its angle. Collisions are then a CHECK over
+    sampled frames, never a force.
+    Returns {"bodies", "report", "clash", "trace"}.\"\"\"
     import numpy as _np
     import time as _time
     t_start = _time.perf_counter()
@@ -3074,25 +3106,51 @@ def _mechanism(_joints, _t=1.0, _duration=0.0, _hold=0.0, _engage="clash",
         if isinstance(x, (list, tuple)):
             return [y for v in x for y in flat(v)]
         return [x]
-    J, seen = [], set()
+    J, PINS, seen = [], [], set()
     stack = flat(_joints)
-    while stack:                       # a followed joint joins even if not wired
+    while stack:              # followed joints, parents and pinned bodies join
         j = stack.pop(0)
+        if isinstance(j, dict) and j.get("_noodle_pin"):
+            if id(j) not in seen:
+                seen.add(id(j))
+                PINS.append(j)
+                stack += [x for x in (j["a"], j["b"]) if x is not None]
+            continue
         if not (isinstance(j, dict) and j.get("_noodle_joint")):
-            raise ValueError("Mechanism takes Joint nodes (got %s)" % type(j).__name__)
+            raise ValueError("Mechanism takes Joint and Pin nodes (got %s)"
+                             % type(j).__name__)
         key = j.get("id") or id(j)
         if key in seen:
             continue
         seen.add(key)
         J.append(j)
-        if j.get("follows") is not None:
-            stack.append(j["follows"])
+        stack += [x for x in (j.get("follows"), j.get("parent")) if x is not None]
     if not J:
-        return {"bodies": [], "report": "Mechanism: no joints wired.", "clash": None}
+        return {"bodies": [], "report": "Mechanism: no joints wired.", "clash": None,
+                "trace": {}}
     nb = len(J)
     idx = {(j.get("id") or id(j)): k for k, j in enumerate(J)}
+
+    def ix(j):
+        return idx[j.get("id") or id(j)]
     N = [_np.asarray(j["axis"], dtype=float) for j in J]
     P = [_np.asarray(j["pivot"], dtype=float) for j in J]
+    PAR = [ix(j["parent"]) if j.get("parent") is not None else -1 for j in J]
+    order, state = [], [0] * nb          # parents before children; no cycles
+
+    def visit(k):
+        if state[k] == 2:
+            return
+        if state[k] == 1:
+            raise ValueError("%s: its parents form a loop — a body cannot ride on "
+                             "itself (close a loop with a Pin instead)" % J[k]["name"])
+        state[k] = 1
+        if PAR[k] >= 0:
+            visit(PAR[k])
+        state[k] = 2
+        order.append(k)
+    for k in range(nb):
+        visit(k)
 
     # tracks ------------------------------------------------------------------
     turn_f, slide_f, ends = [None] * nb, [None] * nb, [0.0]
@@ -3113,17 +3171,30 @@ def _mechanism(_joints, _t=1.0, _duration=0.0, _hold=0.0, _engage="clash",
     t = max(0.0, min(float(_t), 1.0))
     drivers = [k for k in range(nb) if turn_f[k] is not None or J[k]["kind"] == "fixed"]
 
-    # couplings that do not depend on the pose --------------------------------
     follow_edges = []
     for k, j in enumerate(J):
         if j.get("follows") is not None:
-            l = idx[j["follows"].get("id") or id(j["follows"])]
             if abs(j["ratio"]) < 1e-12:
                 raise ValueError("%s: follow ratio 0 would freeze it — use kind fixed"
                                  % j["name"])
-            follow_edges.append((l, k, j["ratio"]))   # theta_k = ratio * theta_l
+            follow_edges.append((ix(j["follows"]), k, j["ratio"]))
 
-    gears = [(k, g) for k in range(nb) for g in J[k]["gears"]]
+    def rot(n, th):
+        K = _np.array([[0, -n[2], n[1]], [n[2], 0, -n[0]], [-n[1], n[0], 0]])
+        return _np.eye(3) + math.sin(th) * K + (1 - math.cos(th)) * (K @ K)
+
+    def poses(TH, S):
+        \"\"\"World (R, t) of every body: x_world = R x_rest + t.\"\"\"
+        out = [None] * nb
+        for k in order:
+            Rr = rot(N[k], TH[k])
+            tr = P[k] - Rr @ P[k] + S[k] * N[k]
+            if PAR[k] >= 0:
+                Rp, tp = out[PAR[k]]
+                out[k] = (Rp @ Rr, Rp @ tr + tp)
+            else:
+                out[k] = (Rr, tr)
+        return out
 
     def basis(n):
         e1 = _np.cross(n, [1.0, 0, 0])
@@ -3132,91 +3203,81 @@ def _mechanism(_joints, _t=1.0, _duration=0.0, _hold=0.0, _engage="clash",
         e1 /= _np.linalg.norm(e1)
         return e1, _np.cross(n, e1)
 
-    def rot(n, th):
-        K = _np.array([[0, -n[2], n[1]], [n[2], 0, -n[0]], [-n[1], n[0], 0]])
-        return _np.eye(3) + math.sin(th) * K + (1 - math.cos(th)) * (K @ K)
-
-    def ang(v, n, e1, e2):
+    def ang(v, e1, e2):
         return math.atan2(float(_np.dot(v, e2)), float(_np.dot(v, e1)))
 
-    # every candidate gear pair, with what does not change ---------------------
-    cand = []
-    for a in range(len(gears)):
-        for b in range(a + 1, len(gears)):
-            ka, ga = gears[a]
-            kb, gb = gears[b]
-            if ka == kb or abs(ga["m"] - gb["m"]) > 1e-9:
-                continue
-            if _np.linalg.norm(_np.cross(ga["axis"], gb["axis"])) > 1e-3:
-                continue
-            n = ga["axis"]
-            e1, e2 = basis(n)
-            cand.append({"a": ka, "b": kb, "ga": ga, "gb": gb, "n": n, "e1": e1,
-                         "e2": e2, "dist": ga["m"] * (ga["z"] + gb["z"]) / 2.0,
-                         "sa": 1.0 if _np.dot(N[ka], n) > 0 else -1.0,
-                         "sb": 1.0 if _np.dot(N[kb], n) > 0 else -1.0,
-                         "psa0": ang(ga["xref"], n, e1, e2),
-                         "psb0": ang(gb["xref"], n, e1, e2)})
+    # gear pairs that could ever mesh: same module, different bodies ------------
+    gears = [(k, g) for k in range(nb) for g in J[k]["gears"]]
+    cand = [(gears[a], gears[b]) for a in range(len(gears))
+            for b in range(a + 1, len(gears))
+            if gears[a][0] != gears[b][0]
+            and abs(gears[a][1]["m"] - gears[b][1]["m"]) < 1e-9]
 
-    def live_pairs(S):
+    def gstate(k, g, PO):
+        R, tt = PO[k]
+        return R @ g["center"] + tt, R @ g["axis"], R @ g["xref"]
+
+    def live_pairs(PO):
         out = []
-        for c in cand:
-            ca = c["ga"]["center"] + S[c["a"]] * N[c["a"]]
-            cb = c["gb"]["center"] + S[c["b"]] * N[c["b"]]
-            v = cb - ca
-            along = float(_np.dot(v, c["n"]))
-            perp = v - along * c["n"]
-            if abs(_np.linalg.norm(perp) - c["dist"]) > max(0.05, 0.02 * c["ga"]["m"]):
+        for (ka, ga), (kb, gb) in cand:
+            ca, na, _xa = gstate(ka, ga, PO)
+            cb, nbx, _xb = gstate(kb, gb, PO)
+            if _np.linalg.norm(_np.cross(na, nbx)) > 1e-3:
                 continue
-            lo = max(-c["ga"]["width"] / 2, along - c["gb"]["width"] / 2)
-            hi = min(c["ga"]["width"] / 2, along + c["gb"]["width"] / 2)
+            v = cb - ca
+            along = float(_np.dot(v, na))
+            perp = v - along * na
+            dist = ga["m"] * (ga["z"] + gb["z"]) / 2.0
+            if abs(_np.linalg.norm(perp) - dist) > max(0.05, 0.02 * ga["m"]):
+                continue
+            lo = max(-ga["width"] / 2, along - gb["width"] / 2)
+            hi = min(ga["width"] / 2, along + gb["width"] / 2)
             if hi - lo > 1e-6:
-                full = min(c["ga"]["width"], c["gb"]["width"])
-                out.append((c, ang(perp, c["n"], c["e1"], c["e2"]),
-                            min(1.0, (hi - lo) / full)))
+                full = min(ga["width"], gb["width"])
+                out.append(((ka, ga), (kb, gb), min(1.0, (hi - lo) / full)))
         return out
 
-    def target(c, phi, th_from, from_a):
-        \"\"\"theta of the OTHER body that meshes, as (value, pitch).\"\"\"
-        ga, gb = c["ga"], c["gb"]
-        if from_a:
-            psa = c["psa0"] + c["sa"] * th_from
-            psb = phi + math.pi + math.pi / gb["z"] - (ga["z"] / gb["z"]) * (psa - phi)
-            return (psb - c["psb0"]) / c["sb"], 2 * math.pi / gb["z"]
-        psb = c["psb0"] + c["sb"] * th_from
-        # invert the same relation for a (phi measured from a to b)
-        psa = phi + (phi + math.pi + math.pi / gb["z"] - psb) * (gb["z"] / ga["z"])
-        return (psa - c["psa0"]) / c["sa"], 2 * math.pi / ga["z"]
+    def gear_delta(src, dst, TH, S):
+        \"\"\"How much body dst must turn (rad, its own joint angle) so that its
+        gear meshes with src's gear in the CURRENT poses, as (delta, pitch).
+        On the line of centres a tooth of one faces a space of the other; the
+        angles are measured on the actual tooth directions, so it holds for a
+        gear on a moving body too (a planet).\"\"\"
+        (ks, gs), (kd, gd) = src, dst
+        PO = poses(TH, S)
+        cs, ns, xs = gstate(ks, gs, PO)
+        cd, _nd, xd = gstate(kd, gd, PO)
+        e1, e2 = basis(ns)
+        v = cd - cs
+        perp = v - _np.dot(v, ns) * ns
+        phi = ang(perp, e1, e2)
+        ps, pd = ang(xs, e1, e2), ang(xd, e1, e2)
+        tgt = phi + math.pi + math.pi / gd["z"] - (gs["z"] / gd["z"]) * (ps - phi)
+        Rp = PO[PAR[kd]][0] if PAR[kd] >= 0 else _np.eye(3)
+        sg = 1.0 if _np.dot(Rp @ N[kd], ns) > 0 else -1.0
+        pitch = 2 * math.pi / gd["z"]
+        d = (tgt - pd) * sg
+        return d - round(d / pitch) * pitch, pitch
 
     TH = [0.0] * nb
     S = [0.0] * nb
-    engaging = {}               # pair id -> (k, err)
+    engaging = {}               # pair key -> phase error (rad) still to recover
     prev_keys = set()
-    events, conflicts = [], {}
-    mesh_log = []
+    events, conflicts, misses = [], {}, []
 
-    def step(tau, first):
-        nonlocal prev_keys
-        tc = min(tau, T)
-        for k in range(nb):
-            S[k] = float(slide_f[k](tc)) if slide_f[k] else 0.0
-        pairs = live_pairs(S)
-        keys = {id(c) for c, _phi, _f in pairs}
-        for gone in set(engaging) - keys:
-            engaging.pop(gone)
-        new = keys - prev_keys
+    def pkey(pr):
+        return (id(pr[0][1]), id(pr[1][1]))
+
+    def propagate(roots, pairs, done, new, first, tau):
         adj = {k: [] for k in range(nb)}
-        for c, phi, fr in pairs:
-            adj[c["a"]].append(("g", c, phi, fr, True))
-            adj[c["b"]].append(("g", c, phi, fr, False))
+        for pr in pairs:
+            (ka, ga), (kb, gb), fr = pr
+            adj[ka].append(("g", (ka, ga), (kb, gb), fr, pkey(pr)))
+            adj[kb].append(("g", (kb, gb), (ka, ga), fr, pkey(pr)))
         for (l, k, r) in follow_edges:
             adj[l].append(("f", k, r))
             adj[k].append(("f", l, 1.0 / r))
-        done, queue = set(), []
-        for k in drivers:
-            TH[k] = math.radians(float(turn_f[k](tc))) if turn_f[k] else 0.0
-            done.add(k)
-            queue.append(k)
+        queue = list(roots)
         while queue:
             i = queue.pop(0)
             for e in adj[i]:
@@ -3228,33 +3289,104 @@ def _mechanism(_joints, _t=1.0, _duration=0.0, _hold=0.0, _engage="clash",
                         continue
                     TH[j] = val
                 else:
-                    c, phi, fr, from_a = e[1], e[2], e[3], e[4]
-                    j = c["b"] if from_a else c["a"]
-                    tgt, pitch = target(c, phi, TH[i], from_a)
+                    src, dst, fr, key = e[1], e[2], e[3], e[4]
+                    j = dst[0]
+                    d, pitch = gear_delta(src, dst, TH, S)
                     if j in done:
-                        if id(c) not in engaging:
-                            r = (TH[j] - tgt) / pitch
-                            if abs(r - round(r)) * pitch > 1e-6:
-                                conflicts.setdefault((J[i]["name"], J[j]["name"]), tau)
+                        if key not in engaging and abs(d) > 1e-6:
+                            conflicts.setdefault((J[i]["name"], J[j]["name"]), tau)
                         continue
-                    key = id(c)
-                    if key in new:
-                        kk = round((TH[j] - tgt) / pitch)
-                        err = TH[j] - (tgt + kk * pitch)
-                        if abs(err) > 1e-6 and not first:
-                            events.append((tau, J[i]["name"], J[j]["name"],
-                                           math.degrees(-err)))
-                            if str(_engage) == "clash":
-                                engaging[key] = (kk, err)
+                    if key in new and abs(d) > 1e-6 and not first:
+                        events.append((tau, J[i]["name"], J[j]["name"], math.degrees(d)))
+                        if str(_engage) == "clash":
+                            engaging[key] = -d          # j is BEHIND by d
                     if key in engaging:
-                        kk, err = engaging[key]
-                        TH[j] = tgt + kk * pitch + err * (1.0 - fr)
+                        err = engaging[key]
+                        TH[j] = TH[j] + d + err * (1.0 - fr)
                         if fr >= 1.0:
                             engaging.pop(key)
                     else:
-                        TH[j] = tgt + round((TH[j] - tgt) / pitch) * pitch
+                        TH[j] = TH[j] + d
                 done.add(j)
                 queue.append(j)
+
+    def close_loops(done, tau):
+        \"\"\"Solve the free bodies tied to pins so every pin stays shut.\"\"\"
+        if not PINS:
+            return set()
+        U = set()
+        for pn in PINS:
+            for j in (pn["a"], pn["b"]):
+                k = ix(j) if j is not None else -1
+                while k >= 0:
+                    if k not in done:
+                        U.add(k)
+                    k = PAR[k]
+        U = sorted(U)
+        if not U:
+            return set()
+        at = [_np.asarray(pn["at"], dtype=float) for pn in PINS]
+        ka = [ix(pn["a"]) for pn in PINS]
+        kb = [ix(pn["b"]) if pn["b"] is not None else -1 for pn in PINS]
+
+        def resid(x):
+            th = list(TH)
+            for u, v in zip(U, x):
+                th[u] = v
+            PO = poses(th, S)
+            r = []
+            for p, a, b in zip(at, ka, kb):
+                pa = PO[a][0] @ p + PO[a][1]
+                pb = (PO[b][0] @ p + PO[b][1]) if b >= 0 else p
+                r.extend(pa - pb)
+            return _np.asarray(r)
+        x = _np.asarray([TH[u] for u in U], dtype=float)
+        lam = 1e-6
+        r = resid(x)
+        for _it in range(60):
+            if float(_np.abs(r).max()) < 1e-10:
+                break
+            Jm = _np.empty((len(r), len(x)))
+            for c in range(len(x)):
+                dx = _np.zeros_like(x)
+                dx[c] = 1e-7
+                Jm[:, c] = (resid(x + dx) - r) / 1e-7
+            A = Jm.T @ Jm
+            step = _np.linalg.solve(A + lam * (_np.diag(_np.diag(A)) + 1e-12 * _np.eye(len(x))),
+                                    -Jm.T @ r)
+            step = _np.clip(step, -0.5, 0.5)          # never jump branches
+            r2 = resid(x + step)
+            if float(r2 @ r2) < float(r @ r):
+                x, r, lam = x + step, r2, max(lam / 10, 1e-12)
+            else:
+                lam *= 10
+                if lam > 1e8:
+                    break
+        for u, v in zip(U, x):
+            TH[u] = float(v)
+        gap = float(_np.abs(r).max()) if len(r) else 0.0
+        if gap > 1e-3:
+            misses.append((tau, gap))
+        return set(U)
+
+    def step(tau, first):
+        nonlocal prev_keys
+        tc = min(tau, T)
+        for k in range(nb):
+            S[k] = float(slide_f[k](tc)) if slide_f[k] else 0.0
+        for k in drivers:
+            TH[k] = math.radians(float(turn_f[k](tc))) if turn_f[k] else 0.0
+        pairs = live_pairs(poses(TH, S))
+        keys = {pkey(pr) for pr in pairs}
+        for gone in set(engaging) - keys:
+            engaging.pop(gone)
+        new = keys - prev_keys
+        done = set(drivers)
+        propagate(list(drivers), pairs, done, new, first, tau)
+        solved = close_loops(done, tau)
+        if solved:
+            done |= solved
+            propagate(sorted(solved), pairs, done, new, first, tau)
         prev_keys = keys
         return pairs
 
@@ -3269,27 +3401,23 @@ def _mechanism(_joints, _t=1.0, _duration=0.0, _hold=0.0, _engage="clash",
         rec[tau] = snap
         if tau == tau_b:
             baked, pairs_b = snap, pairs
-
-    def pose(k, th, s):
-        R = rot(N[k], th)
-        return R, P[k] - R @ P[k] + s * N[k]
+    POS = {tau: poses(*rec[tau]) for tau in times}
+    PO_b = poses(*baked)
 
     # bake ----------------------------------------------------------------------
-    bodies, owners_of = [], []
+    bodies = []
     for k, j in enumerate(J):
-        poss, quats = [], []
-        for tau in times:
-            R, pos = pose(k, rec[tau][0][k], rec[tau][1][k])
-            poss.append([float(v) for v in pos])
-            quats.append([float(v) for v in _mat_quat(R)])
         plan = {"kind": "keys", "t": float(t), "T": float(Ttot),
-                "c0": [0.0, 0.0, 0.0], "times": times, "pos": poss, "quat": quats}
-        th, s = baked[0][k], baked[1][k]
+                "c0": [0.0, 0.0, 0.0], "times": times,
+                "pos": [[float(v) for v in POS[tau][k][1]] for tau in times],
+                "quat": [[float(v) for v in _mat_quat(POS[tau][k][0])] for tau in times]}
+        R, tt = PO_b[k]
+        ax_, an_ = _axis_angle(_mat_quat(R))
         ops = []
-        if abs(th) > 1e-12:
-            ops.append(("r", tuple(P[k]), tuple(N[k]), math.degrees(th)))
-        if abs(s) > 1e-12:
-            ops.append(("t3", tuple(s * N[k])))
+        if an_ > 1e-12:
+            ops.append(("r", (0.0, 0.0, 0.0), tuple(ax_), math.degrees(an_)))
+        if float(_np.abs(tt).max()) > 1e-12:
+            ops.append(("t3", tuple(float(v) for v in tt)))
         for shp, own in zip(j["shapes"], j["owners"]):
             # Always a COPY: the input may be the memo cache's own object, and the
             # plan + owner set below must not land on it.
@@ -3305,14 +3433,12 @@ def _mechanism(_joints, _t=1.0, _duration=0.0, _hold=0.0, _engage="clash",
             except Exception:
                 pass
             bodies.append(res)
-            owners_of.append(k)
 
     # collision check -----------------------------------------------------------
     lines = []
     clash_mesh = None
     n_chk = int(_check or 0)
-    hits = {}
-    skipped = []
+    hits, skipped, sample, rest = {}, [], [], {}
     if n_chk > 0 and nb > 1:
         mf = _mf()
         MAN = [None] * nb
@@ -3329,12 +3455,11 @@ def _mechanism(_joints, _t=1.0, _duration=0.0, _hold=0.0, _engage="clash",
                     parts, mf.OpType.Add)
             else:
                 skipped.append(j["name"])
-        sample = sorted({times[round(i * n_fr / max(1, min(n_chk, n_fr)))]
-                         for i in range(min(n_chk, n_fr) + 1)})
+        m = min(n_chk, n_fr)
+        sample = sorted({times[round(i * n_fr / max(1, m))] for i in range(m + 1)})
 
-        def M34(k, th, s):
-            R, pos = pose(k, th, s)
-            return _np.hstack([R, pos[:, None]])
+        def M34(PO, k):
+            return _np.hstack([PO[k][0], PO[k][1][:, None]])
         pairs_chk = []
         for a in range(nb):
             for b in range(a + 1, nb):
@@ -3343,11 +3468,9 @@ def _mechanism(_joints, _t=1.0, _duration=0.0, _hold=0.0, _engage="clash",
                 if J[a]["kind"] == "fixed" and J[b]["kind"] == "fixed":
                     continue
                 # relative pose constant over the whole run -> designed contact
-                rel0 = None
-                moving = False
+                rel0, moving = None, False
                 for tau in sample:
-                    Ra, pa = pose(a, rec[tau][0][a], rec[tau][1][a])
-                    Rb, pb = pose(b, rec[tau][0][b], rec[tau][1][b])
+                    (Ra, pa), (Rb, pb) = POS[tau][a], POS[tau][b]
                     rel = _np.hstack([Ra.T @ Rb, (Ra.T @ (pb - pa))[:, None]])
                     if rel0 is None:
                         rel0 = rel
@@ -3356,23 +3479,30 @@ def _mechanism(_joints, _t=1.0, _duration=0.0, _hold=0.0, _engage="clash",
                         break
                 if moving:
                     pairs_chk.append((a, b))
+        # The REST pose (every angle 0 — the assembly as modelled) is the
+        # baseline: what already overlaps there is a designed contact (a horn on
+        # its spline, a hub in its bearing) or a CAD clash to fix, but it is not
+        # something the MOTION does. Measured on creepyfinger: 138 mm³ of horn in
+        # the servo envelope at every angle, which drowned the report.
+        PO0 = poses([0.0] * nb, [0.0] * nb)
+        rest = {}
+        for a, b in pairs_chk:
+            x = MAN[a].transform(M34(PO0, a)) ^ MAN[b].transform(M34(PO0, b))
+            rest[(a, b)] = 0.0 if x.is_empty() else float(x.volume())
         for tau in sample:
-            TH_, S_ = rec[tau]
+            PO = POS[tau]
             for a, b in pairs_chk:
-                ma = MAN[a].transform(M34(a, TH_[a], S_[a]))
-                mb = MAN[b].transform(M34(b, TH_[b], S_[b]))
+                ma = MAN[a].transform(M34(PO, a))
+                mb = MAN[b].transform(M34(PO, b))
                 ba, bb = ma.bounding_box(), mb.bounding_box()
                 if any(ba[i] > bb[i + 3] or bb[i] > ba[i + 3] for i in range(3)):
                     continue
                 v = (ma ^ mb).volume()
                 if v > 1e-3:
                     hits.setdefault((a, b), []).append((tau, v))
-        # the overlap at the baked t, as a body to look at
         acc = []
         for a, b in pairs_chk:
-            ma = MAN[a].transform(M34(a, baked[0][a], baked[1][a]))
-            mb = MAN[b].transform(M34(b, baked[0][b], baked[1][b]))
-            x = ma ^ mb
+            x = MAN[a].transform(M34(PO_b, a)) ^ MAN[b].transform(M34(PO_b, b))
             if not x.is_empty() and x.volume() > 1e-3:
                 acc.append(x)
         if acc:
@@ -3382,8 +3512,9 @@ def _mechanism(_joints, _t=1.0, _duration=0.0, _hold=0.0, _engage="clash",
     # report --------------------------------------------------------------------
     def nm(k):
         return J[k]["name"]
-    lines.append("Mechanism — %d bodies, %.2f s%s, %d keyframes, t=%.3f (%.2f s)"
-                 % (nb, T, (" + %.2f s hold" % float(_hold)) if float(_hold) > 0 else "",
+    lines.append("Mechanism — %d bodies, %d pins, %.2f s%s, %d keyframes, t=%.3f (%.2f s)"
+                 % (nb, len(PINS), T,
+                    (" + %.2f s hold" % float(_hold)) if float(_hold) > 0 else "",
                     len(times), t, tau_b))
     drv = []
     for k in range(nb):
@@ -3396,33 +3527,54 @@ def _mechanism(_joints, _t=1.0, _duration=0.0, _hold=0.0, _engage="clash",
     lines.append("drivers: " + (", ".join(drv) if drv else "none — nothing will move"))
     if pairs_b:
         lines.append("in mesh at t:")
-        for c, _phi, fr in pairs_b:
+        PO = PO_b
+        for (ka, ga), (kb, gb), fr in pairs_b:
+            na = gstate(ka, ga, PO)[1]
+            sa = 1.0 if _np.dot((PO[PAR[ka]][0] if PAR[ka] >= 0 else _np.eye(3)) @ N[ka], na) > 0 else -1.0
+            sb = 1.0 if _np.dot((PO[PAR[kb]][0] if PAR[kb] >= 0 else _np.eye(3)) @ N[kb], na) > 0 else -1.0
             lines.append("  %s (%dt) – %s (%dt)  ratio %+.4f%s"
-                         % (nm(c["a"]), c["ga"]["z"], nm(c["b"]), c["gb"]["z"],
-                            -c["ga"]["z"] / c["gb"]["z"] * c["sa"] * c["sb"],
+                         % (nm(ka), ga["z"], nm(kb), gb["z"], -ga["z"] / gb["z"] * sa * sb,
                             "" if fr >= 1.0 else "  (entering, %d%%)" % round(100 * fr)))
-    else:
+    elif cand:
         lines.append("in mesh at t: no gear pairs")
-    moved = {nm(k): math.degrees(baked[0][k]) for k in range(nb)}
-    lines.append("angles at t: " + ", ".join("%s %.1f°" % kv for kv in moved.items()))
+    lines.append("angles at t: " + ", ".join(
+        "%s %.1f°" % (nm(k), math.degrees(baked[0][k])) for k in range(nb)))
     for tau, a, b, d in events:
         lines.append("engage t=%.3f (%.2f s): %s → %s, phase error %.2f° (%s)"
                      % (tau / Ttot, tau, a, b, d, _engage))
-    if conflicts:
-        for (a, b), tau in conflicts.items():
-            lines.append("CONFLICT from t=%.3f: %s and %s are both driven and "
-                         "disagree — a locked loop, or two drivers on one train"
-                         % (tau / Ttot, a, b))
+    for (a, b), tau in conflicts.items():
+        lines.append("CONFLICT from t=%.3f: %s and %s are both driven and disagree — "
+                     "a locked loop, or two drivers on one train" % (tau / Ttot, a, b))
+    if misses:
+        worst = max(misses, key=lambda m_: m_[1])
+        lines.append("LOOP OPEN at %d frames (t %.3f–%.3f), worst gap %.3f mm at t=%.3f — "
+                     "the pins cannot all close there: a dead point, a link too short, "
+                     "or a driver past the linkage's range"
+                     % (len(misses), misses[0][0] / Ttot, misses[-1][0] / Ttot,
+                        worst[1], worst[0] / Ttot))
     if n_chk > 0:
-        if hits:
-            lines.append("collisions (%d frames checked):" % len(sample))
-            for (a, b), hs in sorted(hits.items()):
+        moving_hits = {ab: hs for ab, hs in hits.items() if rest.get(ab, 0.0) <= 1e-3}
+        at_rest = {ab: v for ab, v in rest.items() if v > 1e-3}
+        if moving_hits:
+            lines.append("collisions while moving (%d frames checked):" % len(sample))
+            for (a, b), hs in sorted(moving_hits.items()):
                 pk = max(hs, key=lambda h: h[1])
                 lines.append("  %s × %s  t %.3f–%.3f, %d frames, peak %.2f mm³ at t=%.3f"
                              % (nm(a), nm(b), hs[0][0] / Ttot, hs[-1][0] / Ttot,
                                 len(hs), pk[1], pk[0] / Ttot))
-        else:
-            lines.append("collisions: none in %d frames" % (len(sample) if nb > 1 else 0))
+        elif nb > 1:
+            lines.append("collisions while moving: none in %d frames" % len(sample))
+        if at_rest:
+            lines.append("already overlapping in the REST pose (designed contact, or a "
+                         "CAD clash to fix — not caused by the motion):")
+            for (a, b), v in sorted(at_rest.items()):
+                hs = hits.get((a, b), [])
+                vs = [h[1] for h in hs] or [0.0]
+                pk = max(hs, key=lambda h: h[1]) if hs else (0.0, 0.0)
+                lines.append("  %s × %s  %.2f mm³ at rest; while moving %.2f–%.2f mm³"
+                             "%s" % (nm(a), nm(b), v, min(vs) if len(hs) == len(sample)
+                                     else 0.0, max(vs),
+                                     (", most at t=%.3f" % (pk[0] / Ttot)) if hs else ""))
         if skipped:
             lines.append("not checked (not a closed volume): " + ", ".join(skipped))
     lines.append("solved in %.2f s" % (_time.perf_counter() - t_start))
@@ -3431,8 +3583,11 @@ def _mechanism(_joints, _t=1.0, _duration=0.0, _hold=0.0, _engage="clash",
     trace = {"names": [j["name"] for j in J], "times": times,
              "turn": [[math.degrees(rec[tau][0][k]) for tau in times] for k in range(nb)],
              "slide": [[rec[tau][1][k] for tau in times] for k in range(nb)],
-             "events": events, "conflicts": sorted(conflicts),
-             "collisions": {"%s|%s" % (nm(a), nm(b)): hs for (a, b), hs in hits.items()}}
+             "events": events, "conflicts": sorted(conflicts), "open": misses,
+             "collisions": {"%s|%s" % (nm(a), nm(b)): hs for (a, b), hs in hits.items()},
+             "rest_overlap": {"%s|%s" % (nm(a), nm(b)): v
+                              for (a, b), v in rest.items()
+                              if v > 1e-3}}
     return {"bodies": bodies, "report": "\\n".join(lines), "clash": clash_mesh,
             "trace": trace}
 
@@ -5928,8 +6083,9 @@ _MEMO_SIDEFX = ("_panel(", "_probe(", "_gate(", "_out(", "export_", "_export",
                 "_select_subshapes(")
 # Non-deterministic / reads external state: no key, poisons downstream too.
 # Nodes whose output is plain data that CARRIES the geometry wired into them on
-# to a node that draws it (see _previewed's auto rule).
-_GEOMETRY_CARRIERS = {"Joint"}
+# to a node that draws it (see _previewed's auto rule). A Pin's point is in the
+# rest pose: drawn by itself it stays behind while the joint it marks moves on.
+_GEOMETRY_CARRIERS = {"Joint", "Pin"}
 _MEMO_NONDET = ("import_", "open(", "random.")
 
 

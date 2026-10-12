@@ -980,9 +980,22 @@ notes and measurements in **`PLAN_MECHANISM.md`**; it came from feedback
   Location it was built with; placement now = L_now · L_built⁻¹). Move/Rotate keep
   it, a boolean does not — two gears on one shaft go into ONE Joint, not a Union.
   Hence `at`, not `origin`, on SpurGear.
-- **A Joint's output is `data` that CARRIES geometry**: `_GEOMETRY_CARRIERS` in the
-  transpiler keeps its inputs out of the auto-preview, or every body is drawn twice
-  (at rest + posed — paid for: the shifted cluster showed up twice at t=0.9).
+- **A Joint's (and a Pin's) output is `data` that CARRIES geometry**:
+  `_GEOMETRY_CARRIERS` in the transpiler keeps their inputs out of the auto-preview,
+  or every body is drawn twice (at rest + posed — paid for: the shifted cluster
+  showed up twice at t=0.9; a Pin's point stayed behind as a stray dot).
+- **Closed loops** (a four-bar, a finger driven through a rod): `Joint.parent` puts a
+  joint ON another body (pivot/axis given at rest, then carried), and a `Pin` is a
+  point two bodies share. Free bodies tied to pins are solved per frame (damped
+  Gauss-Newton, warm-started from the previous frame — that keeps the linkage on
+  its assembly branch); a pin that cannot close is reported as `LOOP OPEN` (a dead
+  point). Verified on creepyfinger-v4's four-bar against its own kinematic table:
+  equal to 3 decimals, and it found the dead point at −13.9° the table had papered
+  over. Gear phase is measured on the actual tooth directions, so a gear on a
+  moving body (a planet) works too.
+- **Collisions are reported against the REST pose**: what already overlaps with
+  every angle at 0 (a horn on its spline, a hub in its bore) is listed apart from
+  what collides only while moving — otherwise the first one drowns the report.
 - Replay is the existing `keys` plan per body (a list → `Scene`, owner per shape),
   so the frontend change was one entry in `TIMELINE_NODES`. `_mechanism` also
   returns `trace` (seconds / degrees / mm per body) — the kinematic table.
