@@ -209,6 +209,10 @@ def test_several_sources_into_a_list_input_are_collected_not_dropped():
     d.objects[2].inputs[0].flags = []
     res = importer.import_definition(d, table, decode=lambda o, i, v: None)
     wires = _wires(res)
-    assert _by_id(res)["n2_list_merge"]["type"] == "ListCreate"
+    merge = _by_id(res)["n2_list_merge"]
+    # GH merges sources branch by branch: GhMerge under the branch rules (_gh)
+    assert merge["type"] == "GhMerge" and "_gh" in merge["params"]
+    assert {("n0", "result", "n2_list_merge", "data_1"),
+            ("n0", "result", "n2_list_merge", "data_2")} <= wires
     assert ("n2_list_merge", "result", "n2", "list") in wires
     assert sum(1 for w in wires if w[2] == "n2" and w[3] == "list") == 1
