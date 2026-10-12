@@ -28,7 +28,7 @@ several connections (noodle's multi-connect = GH's fan-in).
 
 Flags on an input: `flatten` -> a ListFlatten in between, `reverse` -> a
 ListReverse, `degrees` -> the node's `degrees` param, `reparameterize` -> its
-`reparameterize` param. `graft` is noodle's default fan-out and adds nothing;
+`reparameterize` param, `graft` -> a GhGraftTree (one branch per item);
 anything with no counterpart is reported.
 
 Ids: GH object #k becomes node `n<k>` (the `#k` of gh_report), inserted helper
@@ -480,7 +480,7 @@ class _Importer:
     def _through_flags(self, o, nid, p, sock, srcs, nd):
         target = nd.input(sock)
         many = len(srcs) > 1
-        if many and (("flatten" in p.flags or "reverse" in p.flags)
+        if many and (any(f in p.flags for f in ("flatten", "graft", "reverse"))
                      or (target.list_access and not target.multiple)):
             srcs = self._merge(nid, sock, srcs)       # ListCreate also flattens
         if "invert" in p.flags and srcs and "GhInvertBoolean" in self.reg:
@@ -491,8 +491,11 @@ class _Importer:
             for src in srcs:
                 self.wire(src, (hid, "boolean"))
             srcs = [(hid, "inverted")]
-        for flag, helper in (("flatten", "ListFlatten"), ("reverse", "ListReverse")):
+        for flag, helper in (("flatten", "ListFlatten"), ("graft", "GhGraftTree"),
+                             ("reverse", "ListReverse")):
             if flag == "flatten" and many:
+                continue
+            if helper not in self.reg:
                 continue
             if flag in p.flags and srcs:
                 hid = f"{nid}_{sock}_{flag}"
@@ -541,7 +544,7 @@ class _Importer:
 
     def _param_flags(self, o, n, p, nd):
         for flag in p.flags:
-            if flag in ("flatten", "reverse", "graft"):
+            if flag in ("flatten", "reverse") or (flag == "graft" and "GhGraftTree" in self.reg):
                 continue
             if flag in ("degrees", "reparameterize") and nd.param(flag) is not None:
                 n["params"][flag] = True
