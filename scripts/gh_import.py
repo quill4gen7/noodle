@@ -51,6 +51,7 @@ def main() -> int:
     ap.add_argument("file")
     ap.add_argument("--geometry", metavar="GEO.json")
     ap.add_argument("--out", metavar="graph.json")
+    ap.add_argument("--map", metavar="map.json", help="where each GH output landed (gh_compare)")
     ap.add_argument("--project")
     ap.add_argument("--server", default="http://localhost:8090")
     ap.add_argument("--arrange", action="store_true")
@@ -65,6 +66,9 @@ def main() -> int:
     if a.out:
         with open(a.out, "w") as f:
             json.dump(res.graph, f, indent=1)
+    if a.map:
+        with open(a.map, "w") as f:
+            json.dump(res.outputs, f)
     if a.project:
         base = f"{a.server}/api/graph/{a.project}"
         if not a.force and _exists(base):
