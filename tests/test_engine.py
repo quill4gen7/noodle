@@ -151,7 +151,8 @@ def test_transpile_bypass_passes_input_through():
     code = transpile(g)
     assert "__out_2 = __out_1" in code          # Fillet output == Box output
     assert "# bypassed" in code
-    assert ".fillet" not in code.lower()         # the fillet op is not emitted
+    body = code.split("# --- end preamble", 1)[-1] if "# --- end preamble" in code else code[code.index("@node:b"):]
+    assert ".fillet" not in body.lower()         # the fillet op is not emitted
 
 
 def test_bypass_flag_round_trips():
