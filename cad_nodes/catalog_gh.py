@@ -138,10 +138,11 @@ _gh("GhCircle", "Circle",
 _gh("GhOffsetCurve", "Offset Curve",
     [_in("curve"), _in("distance"),
      _plane_in(),
-     _in("corners"), _in("both_sides")],
+     _in("corners"), _in("both_sides"), _in("cap_type")],
     [Socket("curve", WIRE_CURVE)],
-    "_gh_offset_curve({curve}, {distance}, {plane}, {corners}, {both_sides})",
-    params=[_num("distance", 1.0), _int("corners", 1), _bool("both_sides", False)],
+    "_gh_offset_curve({curve}, {distance}, {plane}, {corners}, {both_sides}, {cap_type})",
+    params=[_num("distance", 1.0), _int("corners", 1), _bool("both_sides", False),
+            _int("cap_type", 0)],
     description="Offset a planar curve in a plane. Rhino's sign: a positive distance "
                 "goes to the RIGHT of the curve's direction about the plane normal — "
                 "outward on a counter-clockwise loop. corners: 0 none, 1 sharp, "
@@ -375,6 +376,11 @@ _gh("GhNegative", "Negative", [_in("value")], [Socket("result", WIRE_DATA)],
     "_gh_negative({value})", params=[_num("value", 0.0)],
     description="−x.")
 
+_gh("GhListLength", "List Length", [_in("list", list_access=True)],
+    [Socket("length", WIRE_DATA)], "_gh_list_length({list})",
+    description="Number of items — a single item counts as one, nothing as zero "
+                "(noodle's List Length wants a real list).")
+
 _gh("GhRadians", "Radians", [_in("degrees")], [Socket("radians", WIRE_DATA)],
     "_gh_radians({degrees})", params=[_num("degrees", 0.0)],
     description="Degrees to radians — GH angles are radians.")
@@ -468,13 +474,15 @@ _lists("GhTreeBranch")
 # ===========================================================================
 _gh("GhBoundingRectangle", "Bounding Rectangle",
     [_in("geometry", list_access=True),
-     _plane_in(), _in("union")],
+     _plane_in(), _in("union"), _in("slide")],
     [Socket("bounding", WIRE_CURVE), Socket("dimension_x", WIRE_DATA),
      Socket("dimension_y", WIRE_DATA)],
-    "_gh_bounding_rectangle({geometry}, {plane}, {union})", multi=True,
-    params=[_bool("union", False)],
+    "_gh_bounding_rectangle({geometry}, {plane}, {union}, {slide})", multi=True,
+    params=[_bool("union", False), _num("slide", 0.0)],
     description="The rectangle aligned with a plane that holds the geometry, and "
-                "its sides. `union`: one for everything, else one per item.")
+                "its sides. `union`: one for everything, else one per item. "
+                "`slide` sets its height along the plane normal: 0 at the "
+                "bottom of the geometry, 1 at its top.")
 _lists("GhBoundingRectangle")
 
 _gh("GhPolygon", "Polygon",
@@ -793,7 +801,6 @@ ALIASES = {
     "Note": ["Scribble"],
     # barattolo.gh
     "Multiply": ["Multiplication"],
-    "ListLength": ["List Length"],
     "Series": ["Series"],
     "Max": ["Maximum"],
     "Intersect": ["Solid Intersection"],

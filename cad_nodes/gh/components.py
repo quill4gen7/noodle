@@ -155,10 +155,11 @@ COMPONENTS: dict[str, GhMap] = {
         note="the older Offset Curve; Corners is the 2nd 'C' input"),
     "a6129be8-efbd-4039-8128-07a601d50af4": GhMap("Offset Curve", "GhOffsetCurve", "new",
         inputs={"Curve": "curve", "Plane": "plane", "Distance": "distance",
-                "Both Sides": "both_sides"},
+                "Both Sides": "both_sides", "Cap Type": "cap_type"},
         outputs={"Offset": "curve"},
-        note="the Rhino 8 Offset Curve: Kinks and Cap Type are not built",
-        ignore=("Kinks", "Cap Type")),
+        note="Pufferfish's Offset Curve: Both Sides may be the second DISTANCE; "
+             "Cap Type 1/2 closes an open curve's two offsets (flat/round). Kinks "
+             "is not built", ignore=("Kinks",)),
     "424eb433-2b3a-4859-beaf-804d8af0afd7": _new("Control Points", "GhControlPoints",
         ["Curve"], ["Points", "Weights", "Knots"]),
     "dde71aef-d6ed-40a6-af98-6b0673983c82": _new("Nurbs Curve", "GhNurbsCurve",
@@ -270,10 +271,12 @@ COMPONENTS: dict[str, GhMap] = {
         inputs={'Brep': 'brep'},
         outputs={'Brep': 'brep'}),
     "22f0d53c-5673-456d-bdef-1c7085693481": GhMap('Bounding Rectangle', "GhBoundingRectangle", "new",
-        inputs={'Geometry': 'geometry', 'Plane': 'plane', 'Union': 'union'},
+        inputs={'Geometry': 'geometry', 'Plane': 'plane', 'Union': 'union', 'Slide': 'slide'},
         outputs={'Bounding': 'bounding', 'Dimension X': 'dimension_x', 'Dimension Y': 'dimension_y'},
-        note="Axis/Slide alignment not built: always aligned to the plane's x axis",
-        ignore=("Axis", "Slide")),
+        note="Slide = height of the rectangle along the plane normal (0 bottom, 1 top "
+             "of the geometry) — inferred from barattolo, confirm on Rhino. Axis not "
+             "built: always aligned to the plane's x axis",
+        ignore=("Axis",)),
     "439a55a5-2f9e-4f66-9de2-32f24fec2ef5": GhMap('Plane Surface', "GhPlaneSurface", "new",
         inputs={'Plane': 'plane', 'X Size': 'x_size', 'Y Size': 'y_size'},
         outputs={'Plane': 'plane'}),
@@ -441,8 +444,8 @@ COMPONENTS: dict[str, GhMap] = {
     # --- barattolo.gh: aliases ---------------------------------------------
     "ce46b74e-00c9-43c4-805a-193b69ea4a11": GhMap("Multiplication", "Multiply", "alias",
         inputs={"A": "a", "B": "b"}, outputs={"Result": "result"}),
-    "1817fd29-20ae-4503-b542-f0fb651e67d7": GhMap("List Length", "ListLength", "alias",
-        inputs={"List": "list"}, outputs={"Length": "result"}),
+    "1817fd29-20ae-4503-b542-f0fb651e67d7": GhMap("List Length", "GhListLength", "new",
+        inputs={"List": "list"}, outputs={"Length": "length"}),
     "e64c5fb1-845c-4ab1-8911-5f338516ba67": GhMap("Series", "Series", "alias",
         inputs={"Start": "start", "Step": "step", "Count": "count"}, outputs={"Series": "result"},
         params={"Start": "start", "Step": "step", "Count": "count"}),
