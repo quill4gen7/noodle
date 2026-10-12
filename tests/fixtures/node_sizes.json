@@ -341,7 +341,7 @@
  ],
  "GhBoundingRectangle": [
   210,
-  170
+  238
  ],
  "GhBrepBrep": [
   210,
@@ -471,6 +471,10 @@
   210,
   150
  ],
+ "GhGraftTree": [
+  150,
+  26
+ ],
  "GhInterpolate": [
   210,
   262
@@ -515,6 +519,10 @@
   210,
   170
  ],
+ "GhListLength": [
+  150,
+  26
+ ],
  "GhLoft": [
   210,
   102
@@ -545,7 +553,7 @@
  ],
  "GhOffsetCurve": [
   210,
-  330
+  398
  ],
  "GhOffsetSurface": [
   210,
