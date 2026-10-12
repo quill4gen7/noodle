@@ -30,6 +30,10 @@ from typing import Any
 from .archive import Chunk, load, parse
 
 MAPPING = {0: None, 1: "flatten", 2: "graft"}
+_FLAG_ITEMS = (("ReverseData", "reverse"), ("Reverse", "reverse"),
+               ("SimplifyData", "simplify"), ("Simplify", "simplify"),
+               ("Reparameterize", "reparameterize"), ("InvertBooleans", "invert"),
+               ("UseDegrees", "degrees"))
 
 
 @dataclass
@@ -104,9 +108,11 @@ def _param(c: Chunk) -> Param:
     m = MAPPING.get(c.item("Mapping", default=0))
     if m:
         p.flags.append(m)
-    for flag in ("Reverse", "Simplify"):
-        if c.item(flag):
-            p.flags.append(flag.lower())
+    # Item names as Grasshopper writes them (ReverseData, not Reverse: checked
+    # on the three sample files). UseDegrees = an angle input read in degrees.
+    for item, flag in _FLAG_ITEMS:
+        if c.item(item) and flag not in p.flags:
+            p.flags.append(flag)
     p.expression = c.item("InternalExpression") or None
     pd = c.sub("PersistentData")
     if pd is not None:
