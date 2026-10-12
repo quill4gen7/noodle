@@ -2329,7 +2329,8 @@ register(NodeDef("Joint", "mechanism", "Joint",
             Socket("pivot", WIRE_VECTOR, required=False),
             Socket("turn", WIRE_DATA, required=False),
             Socket("slide", WIRE_DATA, required=False),
-            Socket("follows", WIRE_DATA, required=False)],
+            Socket("follows", WIRE_DATA, required=False),
+            Socket("parent", WIRE_DATA, required=False)],
     params=[_choice("axis", "auto", ["auto", "x", "y", "z"], label="axis"),
             _choice("kind", "free", ["free", "fixed"], label="kind"),
             _f("rpm", 0.0, -3000.0, 3000.0, step=1, label="rpm (no turn wired)",
@@ -2338,7 +2339,7 @@ register(NodeDef("Joint", "mechanism", "Joint",
     outputs=_data("joint"),
     code_template={"algebra": "_joint([{shape}], {pivot}, {turn}, {slide}, "
                               "{follows}, {axis}, {kind}, {rpm}, {ratio}, "
-                              "{shape_ids}, {node_id!r}, {joint_name})"},
+                              "{shape_ids}, {node_id!r}, {joint_name}, {parent})"},
     description="One RIGID body of a mechanism and how it may move: it turns about "
                 "`axis` through `pivot` and may slide along that same axis. Every "
                 "shape wired into `shape` moves as one piece — a shaft with its "
@@ -2353,7 +2354,32 @@ register(NodeDef("Joint", "mechanism", "Joint",
                 "(neutral) it stays where it was. `follows` ties this body's turn to "
                 "another Joint's × `ratio` — a splined cluster on its shaft (1), a "
                 "belt or a chain (driver Ø / driven Ø), a reversal (−1). `kind fixed` "
-                "is the frame: it never moves, but it is checked for collisions."))
+                "is the frame: it never moves, but it is checked for collisions. "
+                "`parent` puts this joint ON another body: pivot and axis are "
+                "given where they are in the rest pose and then ride along with "
+                "the parent — the knuckle of a finger on the phalanx before it, a "
+                "planet gear on its carrier. A body whose angle nothing dictates "
+                "but a Pin ties to the others is solved so the pin stays shut."))
+
+register(NodeDef("Pin", "mechanism", "Pin",
+    aliases=["perno", "spina", "chiusura", "loop", "anello", "four-bar",
+             "quadrilatero", "linkage", "leveraggio", "biella", "rod end",
+             "ball joint", "snodo"],
+    inputs=[Socket("a", WIRE_DATA), Socket("b", WIRE_DATA, required=False),
+            Socket("at", WIRE_VECTOR)],
+    outputs=_data("pin"),
+    code_template={"algebra": "_pin({a}, {b}, {at}, {node_id!r})"},
+    description="A point two bodies SHARE, so they cannot come apart there: the "
+                "pin through a connecting rod and the part it pushes. `at` is the "
+                "point in the rest pose; `a` and `b` are the two Joints (leave `b` "
+                "unwired to pin `a` to the ground). This is what closes a LOOP — a "
+                "four-bar linkage, a slider-crank, a finger whose last phalanx is "
+                "driven through a rod — whose angles no single driver dictates: the "
+                "Mechanism solves the free bodies every frame so every pin stays "
+                "shut, starting from the pose before, which keeps the linkage on "
+                "the branch it was assembled in. Wire the Pin into the Mechanism "
+                "with the Joints. When a pin cannot close (a dead point, a link too "
+                "short, a driver past the linkage's range) the report says where."))
 
 register(NodeDef("Mechanism", "mechanism", "Mechanism",
     aliases=["meccanismo", "cinematismo", "kinematics", "cinematica",
@@ -2372,7 +2398,7 @@ register(NodeDef("Mechanism", "mechanism", "Mechanism",
              Socket("clash", WIRE_MESH)],
     gizmo={"kind": "timeline", "binds": ["t"], "anchor": "preview", "lock": ["t"]},
     code_template={"algebra": ""},   # handled by the transpiler (_emit_mechanism)
-    description="Make the Joints wired in move TOGETHER: the drivers turn and slide "
+    description="Make the Joints (and Pins) wired in move TOGETHER: the drivers turn and slide "
                 "on their clock, and every body connected to them follows — through "
                 "gears in mesh (found from the geometry, ratio −z1/z2, teeth "
                 "interleaved), shafts that `follow` each other, chains of both. "

@@ -193,3 +193,70 @@ browser nel container.
 Aperto per il punto 3/4: la cremagliera e gli ingranaggi interni (la fase
 cambia formula), i satelliti (ingranaggio non coassiale col proprio giunto), e i
 vincoli ad anello chiuso del dito.
+
+## Registro del punto 4 (2026-10-11) — anelli chiusi, il dito di creepyfinger
+
+Due cose nuove, nient'altro:
+
+- **`Joint.parent`**: perno e asse si danno nella posa di riposo (mondo) e poi
+  viaggiano col corpo genitore. La posa di un corpo è quella del genitore
+  composta con la sua; i genitori in ciclo sono un errore che dice di usare un
+  Pin.
+- **`Pin`** (`a`, `b` = due Joint, `b` vuoto = il telaio, `at` = il punto a
+  riposo): un punto che due corpi condividono. È il vincolo che chiude un
+  anello. Per fotogramma: driver → propagazione (ingranaggi, follows) → i corpi
+  ancora liberi legati a un Pin (e i loro antenati liberi) si risolvono insieme
+  con Gauss-Newton smorzato (Jacobiano numerico, passo limitato a 0,5 rad),
+  partendo dagli angoli del fotogramma prima — è questo che tiene il leveraggio
+  sul ramo in cui è stato montato — → seconda propagazione dai corpi risolti.
+  Se un perno non chiude (scarto > 1 µm) il report scrive `LOOP OPEN` con
+  l'intervallo e lo scarto peggiore.
+
+Già che c'era, la fase degli ingranaggi si misura sulle direzioni VERE dei denti
+nella posa corrente (non più su angoli di riposo + segno): così vale anche per
+un ingranaggio su un corpo che si muove. Test: un satellite sul portatreno
+attorno a un solare fisso gira, rispetto al portatreno, di +zs/zp.
+
+**Il dito.** Quadrilatero da `cinematica.json`: media attorno a J1 (0, 12),
+distale su J2 (55, 12) con parent la media, biella fra A (2, 3) sul guscio e
+B (43, 16,5) sulla distale. Risolto contro la tabella `fl2` dell'altro agente:
+identico alla terza decimale a 20/45/90/120/140° (18,787 / 36,308 / 51,034 /
+44,625 / 32,887), e al ritorno resta sullo stesso ramo. Sotto zero NON
+coincide, e ha ragione il solutore: **sotto −13,9° di flessione il
+quadrilatero passa il punto morto e non chiude** — a −14° e −15° nessun angolo
+della distale rimette la biella alla sua lunghezza (scarto minimo 0,019 e
+0,177 mm); la tabella lì è un valore bloccato a −30°, e l'interpolazione fra
+−14 e −13 dava l'errore di 1,18°. Il campo dichiarato del dito (−15…140) va
+oltre quello del leveraggio.
+
+**Collisioni: la posa di riposo come riferimento.** Il primo report diceva
+«Guscio × Falange media, 91 fotogrammi su 91, picco 220 mm³» — vero e inutile:
+misurato pezzo per pezzo, è la squadretta dentro l'ingombro del servo (138 mm³
+a ogni angolo) più il mozzo della media nel guscio, già a flessione 0. Ora ciò
+che si compenetra nella posa di riposo (tutti gli angoli a 0 = il montaggio
+com'è modellato) è elencato a parte («designed contact, or a CAD clash to
+fix»), con l'intervallo durante il moto; «collisions while moving» elenca solo
+le coppie che a riposo non si toccano. Sul dito: nessuna collisione in
+movimento su 91 fotogrammi; 220,5 mm³ a riposo (211–221 in movimento).
+
+Altri fantasmi: un `ConstructPoint` che alimenta solo un Pin veniva disegnato
+fermo nella posa di riposo mentre il perno vero si muove → `Pin` in
+`_GEOMETRY_CARRIERS`. Un CodeBlock che alimenta solo CodeBlock passanti resta
+disegnato (ingressi dati): nel grafo del dito ha l'occhio spento a mano.
+
+Grafo di prova: `projects/creepyfinger-mech` (solo sul container locale; i BREP
+copiati dal gpunix in `moto/`): un CodeBlock che importa i pezzi a flessione 0,
+un passante colorato per pezzo (l'owner di ogni corpo della Scene è il nodo che
+lo disegna), 4 Joint, 1 Pin, Keyframes «0:0, 3:140, 4:140, 6.5:−13, 7.5:0».
+Mechanism 1,6–1,8 s (451 keyframe, 91 fotogrammi di collisione), esecuzione
+6,6 s. Screenshot guardati a t 0 / 0,2 / 0,4 / 0,75: la biella resta sui due
+perni. Gen `creepyfinger-mech/g1`.
+
+Test (29 in `tests/test_mechanism.py`): chiusura contro un oracolo
+indipendente (bisezione sulla lunghezza della biella), ritorno sul ramo,
+punto morto a −13,9° riportato, genitori in ciclo, Pin senza punto, satellite,
+Pin fra i portatori.
+
+Aperto: cremagliera e ingranaggi interni; giunti prismatici dentro gli anelli
+(biella-manovella: il Pin c'è, manca solo il caso nel solutore — `slide` oggi
+è sempre un driver); ruote coniche (assi non paralleli).
