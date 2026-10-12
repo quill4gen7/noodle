@@ -364,11 +364,18 @@ cad_nodes/
                        geometry.py = the Rhino geometry the .gh caches as ON_Data
                        (deflate + .NET BinaryFormatter -> rhino3dm, OPTIONAL and
                        not in the image) and curve_code(), a CodeBlock rebuilding
-                       curves as exact OCCT B-splines. It READS a definition; the
-                       graph is rebuilt with catalog nodes, not translated 1:1 —
-                       GH semantics (planes+domains, data trees, surface splits)
-                       have no node-for-node twin. First case: ikeaLack.gh ->
-                       projects/ikea-lack-cassetto. tests/test_gh_import.py.
+                       curves as exact OCCT B-splines. importer.py = the 1:1
+                       translation (scripts/gh_import.py): one node per GH
+                       component through the table components.py (type_guid ->
+                       kind alias|new|slider|panel|container|skip + param-name
+                       maps). Node ids are `n<k>` = the `#k` of gh_report, a
+                       wired floating param vanishes (downstream wired to its
+                       sources), flatten/reverse become ListFlatten/ListReverse,
+                       a Custom Preview becomes the eye + colour of what it
+                       draws; whatever the table does not cover is REPORTED,
+                       never guessed. The hand-made rebuild of ikeaLack.gh is
+                       projects/ikea-lack-cassetto. tests/test_gh_import.py,
+                       tests/test_gh_importer.py.
   slice_summary.py   retro-engineering perception (§7b): slice_summary
                        (symbolic cross-sections; STEP exact, STL arc-fitted)
                        + section_outline (one exact section, edge by edge).
