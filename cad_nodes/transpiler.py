@@ -6006,6 +6006,10 @@ def _export_2d(_shape, _path, _fmt="svg"):
     return _shape
 """
 
+# Grasshopper components (category `grasshopper`): runtime kept in its own module.
+from .gh.runtime import GH_PREAMBLE  # noqa: E402
+PREAMBLE += GH_PREAMBLE
+
 # Output wire types that yield a drawable preview (mesh for solids/sketches,
 # polylines for curves, dots for points). Mirrors the mesh_extractor render paths.
 _PREVIEWABLE = {catalog.WIRE_SOLID, catalog.WIRE_SURFACE, catalog.WIRE_CURVE,
@@ -6037,6 +6041,7 @@ _LIST_PRODUCERS = {
     "Input",    # source-mode multi-line text -> a list
     "Display",  # pass-through preserves list-ness
 }
+_LIST_PRODUCERS |= catalog.catalog_gh.LIST_PRODUCERS   # Grasshopper nodes
 
 
 def format_param(pdef: catalog.Param, value) -> str:
@@ -6653,7 +6658,10 @@ class Transpiler:
             if sock.multiple:                       # collector: whole list
                 subs[sock.name] = ", ".join(vars_)
             elif sock.list_access:                  # consumes the list as-is
-                subs[sock.name] = vars_[0] if vars_ else "None"
+                if vars_:
+                    subs[sock.name] = vars_[0]
+                elif ndef.param(sock.name) is None:  # else: the same-named param
+                    subs[sock.name] = "None"
             elif not vars_:
                 # Unconnected: fall back to a same-named param (params-as-inputs —
                 # wire the socket to override/drive the widget), else None.
@@ -6734,8 +6742,23 @@ class Transpiler:
         if ndef.outputs:
             var = self._new_var(node.id)
             body = ([hoist] if hoist else []) + [f"{var} = {expr}{_annot(node)}"]
+            preview = var
+            if ndef.multi_out:
+                # The helper returns {socket: value} (a list of them when fanned):
+                # each output socket gets its own var, as a CodeBlock's #@out do.
+                # Pre-bound to None so a failing node leaves None downstream.
+                geo = []
+                for sock in ndef.outputs:
+                    self._counter += 1
+                    ov = f"__out_{self._counter}"
+                    lines.append(f"{ov} = None")
+                    body.append(f"{ov} = _cb_pick({var}, {sock.name!r})")
+                    self.out_var_of[(node.id, sock.name)] = ov
+                    if sock.wire_type in _PREVIEWABLE:
+                        geo.append(ov)
+                preview = geo[0] if len(geo) == 1 else f"[{', '.join(geo)}]" if geo else "None"
             if self._previewed(node, ndef):
-                body.append(f"__previews__[{node.id!r}] = {var}")
+                body.append(f"__previews__[{node.id!r}] = {preview}")
             self._guard(lines, body, node)
         else:  # export / sink statement
             self._guard(lines, [f"{expr}{_annot(node)}"], node)

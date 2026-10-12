@@ -131,6 +131,11 @@ class NodeDef:
     # graph validator and the editor resolve it up the chain; the runtime already
     # preserves the kind. See PLAN_DATA_PROTOCOL.md.
     output_follows: Optional[str] = None
+    # multi_out: the template's helper returns {output socket name: value} and
+    # every output socket is read out of it (End Points -> start/end, Area ->
+    # area/centroid…). The emitter registers one var per socket; see
+    # Transpiler._emit_simple. Without it all outputs share the node's one var.
+    multi_out: bool = False
     # subtype_follows: name of the INPUT socket whose effective *subtype* this
     # node's FIRST output inherits when its own subtype is unset — i.e. a
     # pass-through that preserves the advisory tag (a Curve/Panel container, a
@@ -627,7 +632,7 @@ register(NodeDef("MakeFace", "operations", "Surface (Make Face)",
 
 register(NodeDef("PopulateGeometry", "operations", "Populate",
     inputs=[Socket("region", WIRE_SURFACE, required=False, raw=True,
-                   accepts=[WIRE_SOLID, WIRE_MESH])],
+                   accepts=[WIRE_SOLID, WIRE_MESH])] + _pin("count", "seed"),
     params=[_i("count", 40, 1, 5000, label="count"),
             _i("seed", 1, 0, 100000, label="seed", widget="input"),
             _f("width", 100, 1, 5000, label="width", widget="input"),
@@ -1089,13 +1094,17 @@ register(NodeDef("ToPlane", "transform", "To Plane",
                 "perpendicular to the curve, ready to Loft."))
 
 register(NodeDef("Mirror", "transform", "Mirror",
-    inputs=[Socket("shape", WIRE_SOLID, accepts=[WIRE_CURVE, WIRE_MESH])],
+    # `plane` is a params-as-input: wire any Plane (XZ Plane through a point…)
+    # and it overrides the XY/XZ/YZ dropdown.
+    inputs=[Socket("shape", WIRE_SOLID, accepts=[WIRE_CURVE, WIRE_MESH]),
+            Socket("plane", WIRE_PLANE, required=False)],
     params=[Param("plane", "select", "plane", "XZ", widget="select",
                   options=["XY", "XZ", "YZ"],
                   code_map={"XY": "Plane.XY", "XZ": "Plane.XZ", "YZ": "Plane.YZ"}),
             Param("copy", "bool", "copy", False, widget="checkbox")],
     outputs=_geo(),
     code_template={"algebra": "_mirror({shape}, {plane}, {copy})"},
+    output_follows="shape",
     description="Mirror across a plane. `copy` keeps the original too, so the "
                 "result is symmetric (original + reflection)."))
 
@@ -2629,3 +2638,7 @@ for _t, _st in _OUTPUT_SUBTYPES.items():
     _d = REGISTRY.get(_t)
     if _d and _d.outputs:
         _d.outputs[0].subtype = _st
+
+# Grasshopper components (category `grasshopper`) — after the core registry,
+# since they reuse its helpers. See cad_nodes/gh/components.py for the mapping.
+from . import catalog_gh  # noqa: E402,F401
