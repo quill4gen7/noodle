@@ -1037,7 +1037,7 @@ register(NodeDef("Split", "modifiers", "Split",
 # _mesh_matrix). `output_follows="shape"` then carries the mesh type back out, so
 # the mesh lane reuses these nodes instead of duplicating them. PLAN_MESH_LANE.md §3.
 register(NodeDef("Move", "transform", "Move",
-    inputs=[Socket("shape", WIRE_SOLID, accepts=[WIRE_CURVE, WIRE_MESH]),
+    inputs=[Socket("shape", WIRE_SOLID, accepts=[WIRE_CURVE, WIRE_MESH, WIRE_VECTOR]),
             Socket("offset", WIRE_VECTOR, required=False)],
     params=[_f("x", 0, -500, 500), _f("y", 0, -500, 500), _f("z", 0, -500, 500)],
     outputs=_geo(),

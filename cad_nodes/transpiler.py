@@ -4937,6 +4937,8 @@ def _move(_shape, _offset, _x, _y, _z):
         v = Vector(*list(_offset)[:3])
     if _is_mesh(_shape):
         return _shape.transformed(_mesh_matrix("move", x=v.X, y=v.Y, z=v.Z))
+    if isinstance(_shape, Vector):           # a point moves as a point
+        return _shape + v
     return Pos(v.X, v.Y, v.Z) * _shape
 
 
@@ -6724,6 +6726,24 @@ class Transpiler:
             hoist = f"{pv} = _pivot_of({fan['shape']})"
             subs["pivot"] = pv
 
+        # Grasshopper nodes match data BRANCH by branch: a list of lists is a
+        # tree (one branch per sub-list — what a fanned upstream produces), and a
+        # list-access input then runs once per branch, as GH does with a grafted
+        # input (Average of each Voronoi cell's corners, not of all of them).
+        # Their wired list-access inputs become lambda parameters too and the
+        # whole call goes through _gh_fanout (cad_nodes/gh/runtime.py).
+        gh_lists: dict[str, str] = {}
+        # Every node an import brought in from a .gh (stamped params._gh) follows
+        # these rules too, core nodes included: in a GH graph a list of lists IS
+        # a tree, and a noodle Move fanning over a tree's branches would hand a
+        # whole branch to a single move. Native graphs never carry _gh.
+        gh_rules = ndef.category == "grasshopper" or "_gh" in (node.params or {})
+        if gh_rules:
+            for sock in ndef.inputs:
+                if sock.list_access and not sock.multiple and feeds.get(sock.name):
+                    gh_lists[sock.name] = subs[sock.name]
+                    subs[sock.name] = sock.name
+
         template = ndef.code_template.get("algebra")
         if template is None:
             raise ValueError(f"Node {node.type} has no algebra template")
@@ -6735,7 +6755,18 @@ class Transpiler:
         if origin and origin != "None":
             expr = f"_at({expr}, {origin})"
 
-        if fan:
+        if gh_lists:
+            lam = f"lambda {', '.join(list(fan) + list(gh_lists))}: {expr}"
+            kw = "{" + ", ".join(f"{n!r}: {v}" for n, v in fan.items()) + "}"
+            lk = "{" + ", ".join(f"{n!r}: {v}" for n, v in gh_lists.items()) + "}"
+            expr = f"_gh_fanout({lam}, {kw}, {lk})"
+            self._produces_list.add(node.id)
+        elif fan and gh_rules:
+            lam = f"lambda {', '.join(fan)}: {expr}"
+            kw = "{" + ", ".join(f"{n!r}: {v}" for n, v in fan.items()) + "}"
+            expr = f"_gh_fanout({lam}, {kw}, {{}})"
+            self._produces_list.add(node.id)
+        elif fan:
             lam = f"lambda {', '.join(fan)}: {expr}"
             kw = "{" + ", ".join(f"{n!r}: {v}" for n, v in fan.items()) + "}"
             expr = f"_fanout({lam}, {kw})"
@@ -6761,6 +6792,8 @@ class Transpiler:
                     if sock.wire_type in _PREVIEWABLE:
                         geo.append(ov)
                 preview = geo[0] if len(geo) == 1 else f"[{', '.join(geo)}]" if geo else "None"
+            if gh_rules and preview != "None":
+                preview = f"_flatten({preview})"     # a GH tree draws as its items
             if self._previewed(node, ndef):
                 body.append(f"__previews__[{node.id!r}] = {preview}")
             self._guard(lines, body, node)

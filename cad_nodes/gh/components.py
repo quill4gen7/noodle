@@ -15,6 +15,7 @@ components (ikeaLack has two different "Offset Curve"s). Each entry says
   params   {GH input name -> noodle param} for inputs that are widgets in noodle
            (persistent values in the .gh land there)
   note     what is NOT carried over, or differs
+  ignore   GH inputs dropped on purpose (the importer does not report them)
 
 An input/output missing from its map is unsupported: the importer reports it.
 For `new` nodes the map is the snake_case of the GH name by construction
@@ -35,6 +36,10 @@ class GhMap:
     outputs: dict[str, str] = field(default_factory=dict)
     params: dict[str, str] = field(default_factory=dict)
     note: str = ""
+    # GH inputs accepted and dropped ON PURPOSE (a setting noodle has no use for
+    # or cannot honour): the importer stays quiet about them instead of
+    # reporting an unmapped input. Each one is explained in `note`.
+    ignore: tuple[str, ...] = ()
 
 
 def _snake(name: str) -> str:
@@ -92,26 +97,27 @@ COMPONENTS: dict[str, GhMap] = {
         params={"X coordinate": "x", "Y coordinate": "y", "Z coordinate": "z"}),
     "4c4e56eb-2f04-43f9-95a3-cc46a14f495a": GhMap("Line", "Line", "alias",
         inputs={"Start Point": "start", "End Point": "end"}, outputs={"Line": "result"}),
-    "c75b62fa-0a33-4da7-a5bd-03fd0068fd93": GhMap("Length", "CurveLength", "alias",
-        inputs={"Curve": "curve"}, outputs={"Length": "length"}),
+    "c75b62fa-0a33-4da7-a5bd-03fd0068fd93": GhMap("Length", "GhLength", "new",
+        inputs={"Curve": "curve"}, outputs={"Length": "length"},
+        note="a surface wired in gives its perimeter, as GH casts it to its boundary"),
     "10434a15-da85-4281-bb64-a2b3a995b9c6": GhMap("Solid Union", "Union", "alias",
         inputs={"Breps": "shapes"}, outputs={"Result": "result"}),
     "fab11c30-2d9c-4d15-ab3c-2289f1ae5c21": GhMap("Solid Difference", "Subtract", "alias",
         inputs={"Breps A": "a", "Breps B": "b"}, outputs={"Result": "result"}),
-    "8073a420-6bec-49e3-9b18-367f6fd76ac3": GhMap("Join Curves", "Join", "alias",
-        inputs={"Curves": "shapes"}, outputs={"Curves": "result"},
-        note="Preserve direction is ignored"),
+    "8073a420-6bec-49e3-9b18-367f6fd76ac3": GhMap("Join Curves", "GhJoinCurves", "new",
+        inputs={"Curves": "curves", "Preserve": "preserve"}, outputs={"Curves": "curves"},
+        note="Preserve direction is accepted and has no effect"),
     "60e7defa-8b21-4ee1-99aa-a9223d6134ff": GhMap("Mesh Brep", "ToMesh", "alias",
         inputs={"Brep": "shape"}, outputs={"Mesh": "result"},
-        note="Settings ignored (noodle's tolerance)"),
+        note="Settings ignored (noodle's tolerance)", ignore=("Settings",)),
     "c8cb6a5c-2ffd-4095-ba2a-5c35015e09e4": GhMap("Populate Geometry", "PopulateGeometry", "alias",
         inputs={"Geometry": "region", "Count": "count", "Seed": "seed"},
         outputs={"Population": "points"}, params={"Count": "count", "Seed": "seed"},
         note="Points (existing points to avoid) not built; another RNG, so other "
              "points for the same seed"),
-    "0bb3d234-9097-45db-9998-621639c87d3b": GhMap("Bounding Box", "BoundingBox", "alias",
-        inputs={"Content": "shape"}, outputs={"Box": "box"},
-        note="world-aligned only: the Plane input is ignored"),
+    "0bb3d234-9097-45db-9998-621639c87d3b": GhMap("Bounding Box", "GhBoundingBox", "new",
+        inputs={"Content": "content", "Plane": "plane"}, outputs={"Box": "box"},
+        note="per object (GH's 'Union Box' menu option not read); a flat box is a Face"),
     "e9eb1dcf-92f6-4d4d-84ae-96222d60f56b": GhMap("Move", "Move", "alias",
         inputs={"Geometry": "shape", "Motion": "offset"}, outputs={"Geometry": "result"},
         note="Transform output not built"),
@@ -128,9 +134,9 @@ COMPONENTS: dict[str, GhMap] = {
     "9103c240-a6a9-4223-9b42-dbd19bf38e2b": _new("Unit Z", "GhUnitZ", ["Factor"], ["Unit vector"]),
     "79f9fbb3-8f1d-4d9a-88a9-f7961b1012cd": _new("Unit X", "GhUnitX", ["Factor"], ["Unit vector"]),
     "d3d195ea-2d59-4ffa-90b1-8b7ff3369f69": _new("Unit Y", "GhUnitY", ["Factor"], ["Unit vector"]),
-    "17b7152b-d30d-4d50-b9ef-c9fe25576fc2": _new("XY Plane", "GhXYPlane", ["Origin"], ["Plane"]),
-    "8cc3a196-f6a0-49ea-9ed9-0cb343a3ae64": _new("XZ Plane", "GhXZPlane", ["Origin"], ["Plane"]),
-    "fad344bc-09b1-4855-a2e6-437ef5715fe3": _new("YZ Plane", "GhYZPlane", ["Origin"], ["Plane"]),
+    "17b7152b-d30d-4d50-b9ef-c9fe25576fc2": _new("XY Plane", "GhXYPlane", ["Origin"], ["Plane"], rename={"Origin": "origin_point"}),
+    "8cc3a196-f6a0-49ea-9ed9-0cb343a3ae64": _new("XZ Plane", "GhXZPlane", ["Origin"], ["Plane"], rename={"Origin": "origin_point"}),
+    "fad344bc-09b1-4855-a2e6-437ef5715fe3": _new("YZ Plane", "GhYZPlane", ["Origin"], ["Plane"], rename={"Origin": "origin_point"}),
     "9abae6b7-fa1d-448c-9209-4a8155345841": _new("Deconstruct", "GhDeconstruct",
         ["Point"], ["X component", "Y component", "Z component"]),
     "7986486c-621a-48fb-8f27-a28a22c91cc9": _new("Average", "GhAverage",
@@ -151,7 +157,8 @@ COMPONENTS: dict[str, GhMap] = {
         inputs={"Curve": "curve", "Plane": "plane", "Distance": "distance",
                 "Both Sides": "both_sides"},
         outputs={"Offset": "curve"},
-        note="the Rhino 8 Offset Curve: Kinks and Cap Type are not built"),
+        note="the Rhino 8 Offset Curve: Kinks and Cap Type are not built",
+        ignore=("Kinks", "Cap Type")),
     "424eb433-2b3a-4859-beaf-804d8af0afd7": _new("Control Points", "GhControlPoints",
         ["Curve"], ["Points", "Weights", "Knots"]),
     "dde71aef-d6ed-40a6-af98-6b0673983c82": _new("Nurbs Curve", "GhNurbsCurve",
@@ -163,7 +170,8 @@ COMPONENTS: dict[str, GhMap] = {
     "d7e8bbd8-c7fd-4640-a594-4554c6a4670f": GhMap("Close Curve", "GhCloseCurve", "new",
         inputs={"Curve": "curve"},
         outputs={"Closed": "closed", "Result Boolean": "result_boolean"},
-        note="Close Type/Bulge/Tolerance not built: always a straight closing segment"),
+        note="Close Type/Bulge/Tolerance not built: always a straight closing segment",
+        ignore=("Close Type", "Bulge", "Tolerance")),
     "269eaa85-9997-4d77-a9ba-4c58cb45c9d3": _new("Discontinuity", "GhDiscontinuity",
         ["Curve", "Level"], ["Points", "Parameters"]),
     "62cc9684-6a39-422e-aefa-ed44643557b9": _new("Extend Curve", "GhExtendCurve",
@@ -264,7 +272,8 @@ COMPONENTS: dict[str, GhMap] = {
     "22f0d53c-5673-456d-bdef-1c7085693481": GhMap('Bounding Rectangle', "GhBoundingRectangle", "new",
         inputs={'Geometry': 'geometry', 'Plane': 'plane', 'Union': 'union'},
         outputs={'Bounding': 'bounding', 'Dimension X': 'dimension_x', 'Dimension Y': 'dimension_y'},
-        note="Axis/Slide alignment not built: aligned to the plane's x axis; not built: Axis, Slide"),
+        note="Axis/Slide alignment not built: always aligned to the plane's x axis",
+        ignore=("Axis", "Slide")),
     "439a55a5-2f9e-4f66-9de2-32f24fec2ef5": GhMap('Plane Surface', "GhPlaneSurface", "new",
         inputs={'Plane': 'plane', 'X Size': 'x_size', 'Y Size': 'y_size'},
         outputs={'Plane': 'plane'}),
@@ -442,7 +451,8 @@ COMPONENTS: dict[str, GhMap] = {
     "5723c845-cafc-442d-a667-8c76532845e6": GhMap("Solid Intersection", "Intersect", "alias",
         inputs={"Breps A": "a", "Breps B": "b"}, outputs={"Result": "result"}),
     "1b05f28a-6b14-488a-ab1d-6dfe292ed51b": GhMap("Fast Solid Union", "Union", "alias",
-        inputs={"Breps": "shapes"}, outputs={"Result": "result"}, note="Tolerance ignored"),
+        inputs={"Breps": "shapes"}, outputs={"Result": "result"}, note="Tolerance ignored",
+        ignore=("Tolerance",)),
     "04de08cf-c101-4150-bd23-f327d145c5cb": GhMap("Import SVG", "ImportSVG", "alias",
         outputs={"Geo": "result"}, params={"File": "path"},
         note="the file must be in the project folder; a Windows path keeps only its name"),
