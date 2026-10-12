@@ -176,7 +176,11 @@ class _Importer:
         self.out_at: dict[tuple[int, int], list[tuple[str, str]]] = {}
         self.pending: list[tuple[GhObject, str]] = []   # (object, node id) to wire
         self.shown = d.shown()
-        self.claimed: dict[str, set[str]] = {}  # node id -> GH inputs a per-type rule took
+        self.consumed = {a for o in d.objects for p in o.inputs for a, _b in p.wires}
+        self.dead: list[int] = []
+        self.claimed: dict[str, set[str]] = {}
+        # (node id, GH input name) -> (node id, socket): where that input really goes
+        self.redirect: dict[tuple[str, str], tuple[str, str]] = {}  # node id -> GH inputs a per-type rule took
 
     # ------------------------------------------------------------ helpers
     def issue(self, o: GhObject | None, msg: str):
@@ -230,6 +234,9 @@ class _Importer:
         self._show_sources()
         self._custom_previews()
         self._check_wires()
+        if self.dead:
+            self.issues.append("left out, hidden and read by nobody: "
+                               + " ".join(f"#{k}" for k in self.dead))
         return ImportResult(
             graph={"name": self.d.name.rsplit(".", 1)[0] or "gh-import",
                    "nodes": list(self.nodes.values()), "connections": self.conns,
@@ -268,6 +275,9 @@ class _Importer:
 
     def _container(self, o, m):
         p = o.inputs[0] if o.inputs else None
+        if o.hidden and o.k not in self.consumed:
+            self.dead.append(o.k)        # scaffolding: drawn by nobody, read by nobody
+            return
         if p is not None and p.wires:
             # resolved lazily: the sources may come later in the file
             self.out_at[(o.k, 0)] = [("@", f"{a}:{b}") for a, b in p.wires]
@@ -364,6 +374,8 @@ class _Importer:
         up = self.d.objects[a]
         if up.locked or up.type_guid not in self.table:
             return              # already reported once, as disabled / unmapped
+        if _get(self.table[up.type_guid], "kind") in ("container", "skip"):
+            return              # an empty param (reported) / skipped on purpose
         name = up.outputs[b].name if b < len(up.outputs) else f"#{b}"
         self.issue(up, f"output {name!r} is used downstream but not mapped")
 
@@ -376,10 +388,15 @@ class _Importer:
             ins = {o.inputs[0].name: nd.inputs[0].name}
         for p in o.inputs:
             sock = ins.get(p.name)
+            tnid, tnd = nid, nd
+            if (nid, p.name) in self.redirect:      # a per-type rule put a node in front
+                tnid, sock = self.redirect[(nid, p.name)]
+                tnd = self.reg[self.nodes[tnid]["type"]]
             if p.wires:
-                if sock is None or nd.input(sock) is None:
+                if sock is None or tnd.input(sock) is None:
                     self.issue(o, f"input {p.name!r} is wired but "
-                                  + ("not mapped" if sock is None else f"{n['type']} has no socket {sock!r}"))
+                                  + ("not mapped" if sock is None
+                                     else f"{self.nodes[tnid]['type']} has no socket {sock!r}"))
                     continue
                 srcs = []
                 for a, b in p.wires:
@@ -388,8 +405,8 @@ class _Importer:
                         self._missing_output(a, b)
                     else:
                         srcs += s
-                for s in self._through_flags(o, nid, p, sock, srcs, nd):
-                    self.wire(s, (nid, sock))
+                for s in self._through_flags(o, tnid, p, sock, srcs, tnd):
+                    self.wire(s, (tnid, sock))
             elif p.data and p.name not in self.claimed.get(nid, ()):
                 self._persistent(o, nid, p, sock, pmap.get(p.name), nd)
             self._param_flags(o, n, p, nd)
@@ -509,8 +526,14 @@ class _Importer:
             geo = next((p for p in o.inputs if p.name == "Geometry"), None)
             mat = next((p for p in o.inputs if p.name in ("Material", "Shader")), None)
             colour = None
-            if mat is not None and mat.data:
-                c = mat.data[0]
+            data = mat.data if mat is not None else None
+            if mat is not None and mat.wires:
+                # a wire wins over the (stale) value under it; a Shader / Colour
+                # param upstream holds the value itself
+                up = self.d.objects[mat.wires[0][0]]
+                data = up.inputs[0].data if up.floating and up.inputs else None
+            if data:
+                c = data[0]
                 c = c.get("diffuse") if isinstance(c, dict) else c   # a material, or a colour
                 if isinstance(c, int) and not isinstance(c, bool):
                     colour = f"#{c & 0xFFFFFF:06x}"
@@ -519,8 +542,8 @@ class _Importer:
                     self.nodes[nid]["preview"] = True
                     if colour:
                         self.nodes[nid]["color"] = colour
-            if mat is not None and mat.wires:
-                self.issue(o, "colour comes from a wire: set it by hand (🎨 Aspetto)")
+            if mat is not None and mat.wires and colour is None:
+                self.issue(o, "colour comes from a computed wire: set it by hand (🎨 Aspetto)")
 
     def _groups(self) -> list[dict]:
         try:
@@ -559,29 +582,71 @@ class _Importer:
 # by an unwired input (Mirror's plane) — rules of GH, not of the table.
 
 def _graph_mapper(imp: _Importer, o: GhObject, n: dict):
-    """The curve lives in Container/LocalGraph. A `Conic` is the quadratic
-    Bezier (0,0) -> C -> (1,1); degree-elevated it is the cubic with handles
-    2/3 of the way to C, which is what GraphMapper's bezier mode draws."""
+    """The curve lives in Container/LocalGraph, its points NORMALISED to the
+    graph's Domain (x0..x1 -> y0..y1). noodle's GraphMapper works in [0,1], so
+    a domain other than the unit square becomes a Remap on each side:
+    Values: Source (if wired, else x0..x1) -> [0,1], then [0,1] -> Target (if
+    wired, else y0..y1). That Source/Target REPLACE the domain is a reading of
+    the plugin (RichedGraphMapper), to be checked against Grasshopper.
+
+    Curves: Conic (quadratic Bezier (0,0) -> C -> (1,1), degree-elevated: the
+    handles sit 2/3 of the way to C), Bezier (4 control points), Linear,
+    Polyline (its points, linear). Others are reported."""
     c = o.chunk.sub("Container") if o.chunk else None
     lg = c.sub("LocalGraph") if c else None
     g = lg.sub("Graph") if lg else None
     dom = lg.sub("Domain") if lg else None
-    if dom is not None and [dom.item(k) for k in ("x0", "x1", "y0", "y1")] != [0, 1, 0, 1]:
-        imp.issue(o, "graph domain other than [0,1]x[0,1]: not translated")
+    x0, x1, y0, y1 = ([float(dom.item(k)) for k in ("x0", "x1", "y0", "y1")]
+                      if dom is not None else [0.0, 1.0, 0.0, 1.0])
     kind = g.item("container_name") if g else None
+    P = n["params"]
     if kind == "Conic":
         cx, cy = g.item("Cx"), g.item("Cy")
-        n["params"]["mode"] = "bezier"
-        n["params"]["curve"] = [
+        P["mode"] = "bezier"
+        P["curve"] = [
             {"p": [0.0, 0.0], "hi": None, "ho": [2 * cx / 3, 2 * cy / 3]},
             {"p": [1.0, 1.0], "hi": [1 + 2 * (cx - 1) / 3, 1 + 2 * (cy - 1) / 3], "ho": None}]
+    elif kind == "Bezier":
+        xs, ys = g.all("cpx"), g.all("cpy")
+        P["mode"] = "bezier"
+        P["curve"] = [{"p": [xs[0], ys[0]], "hi": None, "ho": [xs[1], ys[1]]},
+                      {"p": [xs[3], ys[3]], "hi": [xs[2], ys[2]], "ho": None}]
     elif kind == "Linear":
-        n["params"]["mode"] = "linear"
+        P["mode"] = "linear"
+    elif kind == "Polyline":
+        P["mode"] = "linear"
+        P["curve"] = [{"p": [pt[0], pt[1]], "hi": None, "ho": None} for pt in g.all("pt")]
+        imp.issue(o, "Polyline graph: points read as normalised to the domain — check")
     else:
-        imp.issue(o, f"graph type {kind!r} not translated (only Conic, Linear)")
-    for p in o.inputs:      # Source / Target: [0,1] is the identity
-        if p.name in ("Source", "Target") and not p.wires and p.data not in (None, [[0.0, 1.0]]):
-            imp.issue(o, f"{p.name} = {_text_of(p.data[0])}: needs a Remap, not inserted")
+        imp.issue(o, f"graph type {kind!r} not translated (Conic, Bezier, Linear, Polyline are)")
+
+    ins = {p.name: p for p in o.inputs}
+    nid = n["id"]
+    x, y = n["position"]
+
+    def side(name, lo, hi, where):
+        p = ins.get(name)
+        wired = p is not None and bool(p.wires)
+        if not wired and (lo, hi) == (0.0, 1.0):
+            return None
+        rid = f"{nid}_{where}"
+        params = ({"source_min": lo, "source_max": hi, "target_min": 0.0, "target_max": 1.0}
+                  if where == "in" else
+                  {"source_min": 0.0, "source_max": 1.0, "target_min": lo, "target_max": hi})
+        imp.node(rid, "Remap", None, params, title=f"{o.nick or o.type} {name}")
+        imp.nodes[rid]["position"] = [x + (-240 if where == "in" else 240), y]
+        if wired:
+            imp.redirect[(nid, name)] = (rid, "source" if where == "in" else "target")
+        return rid
+
+    rin = side("Source", x0, x1, "in")
+    rout = side("Target", y0, y1, "out")
+    if rin:
+        imp.redirect[(nid, "Values")] = (rin, "value")
+        imp.wire((rin, "result"), (nid, "t"))
+    if rout:
+        imp.wire((nid, "result"), (rout, "value"))
+        imp.out_at[(o.k, 0)] = [(rout, "result")]
     return {"Source", "Target"}
 
 
