@@ -154,10 +154,33 @@ def _summarize(value, _depth: int = 0):
         return {"kind": "repr", "type": "unknown", "repr": repr(value)[:200]}
 
 
+def _weld(verts, tris):
+    """Merge vertices that sit at the same place. The viewer smooths normals over
+    SHARED vertices only, so a seam left open — a ToMesh tessellated face by face,
+    a concat of pieces — draws as a row of facets across a smooth surface
+    (bolt-and-nut's thread: 547 duplicated positions in 7350). One integer key per
+    vertex and np.unique: milliseconds, and the payload shrinks too. Triangle
+    order and count are untouched, so a fan-out's `parts` stay valid."""
+    import numpy as np
+    V = np.asarray(verts, dtype=float)
+    F = np.asarray(tris)
+    if len(V) < 2 or not len(F):
+        return V.tolist(), F.tolist()
+    lo = V.min(axis=0)
+    eps = max(float(np.linalg.norm(V.max(axis=0) - lo)), 1e-9) * 2e-6
+    q = np.rint((V - lo) / eps).astype(np.int64)         # ≤ 5e5 per axis
+    n = q.max(axis=0) + 1
+    key = (q[:, 0] * n[1] + q[:, 1]) * n[2] + q[:, 2]    # < 1.3e17: fits int64
+    _, first, inv = np.unique(key, return_index=True, return_inverse=True)
+    if len(first) == len(V):
+        return V.tolist(), F.tolist()
+    return V[first].tolist(), inv.reshape(-1)[F].tolist()
+
+
 def _mesh_geometry(m) -> dict:
     """Vertices/triangles + bbox for a Mesh. Nothing to tessellate — it already IS
     triangles, which makes the mesh lane the cheapest thing here to draw."""
-    verts, tris = m.arrays()
+    verts, tris = _weld(m.tm.vertices, m.tm.faces)   # numpy in, lists out
     return {"mesh": {"vertices": verts, "triangles": tris},
             "bbox": _bbox_of_coords(verts)}
 

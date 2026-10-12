@@ -16,7 +16,6 @@
 // ════════════════════════════════════════════════════════════════════
 import * as THREE from 'three';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
-import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { ViewHelper } from 'three/addons/helpers/ViewHelper.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
@@ -41,7 +40,7 @@ function niceStep(x) {
 function fmtTick(v) { return Math.abs(v) < 1e-6 ? '0' : String(Math.round(v * 1000) / 1000); }
 
 // ── pure data -> THREE object builders (no app/page state) ──
-function geomFromData(m) {
+function geomFromData(m, normals = true) {
   const g = new THREE.BufferGeometry();
   const verts = m.vertices, tris = m.triangles;
   const pos = new Float32Array(verts.length * 3);
@@ -50,7 +49,7 @@ function geomFromData(m) {
   const idx = new Uint32Array(tris.length * 3);
   for (let i = 0; i < tris.length; i++) { idx[3 * i] = tris[i][0]; idx[3 * i + 1] = tris[i][1]; idx[3 * i + 2] = tris[i][2]; }
   g.setIndex(new THREE.BufferAttribute(idx, 1));
-  g.computeVertexNormals();
+  if (normals) g.computeVertexNormals();
   return g;
 }
 // A hue per index, walked by the golden angle so neighbours never collide. It is
@@ -151,9 +150,78 @@ export function rainbowHue(i) {
 // averaging across it shades a cube like a pillow. Crease those at 30°, which
 // leaves the facets of a curved surface smooth.
 const CREASE = Math.PI / 6;
+// Creased normals on the mesh's OWN index. three's toCreasedNormals was the
+// first answer and showed every triangle anyway: it averages UNWEIGHTED face
+// normals, so the long slivers manifold3d and trimesh are full of pull a vertex
+// as hard as the big triangles beside them and the shading streaks along them.
+// Here each face counts by its CORNER ANGLE at the vertex (Thürmer-Wüthrich),
+// which depends on the surface and not on how it happened to be triangulated.
+// It also stays indexed — toCreasedNormals unrolls to 3 vertices per triangle
+// and hashes every position as a string — and splits a vertex only where a
+// crease actually passes through it: typed arrays, a few ms per 100k triangles.
+function creasedNormals(geo, crease) {
+  const P = geo.attributes.position.array, I = geo.index.array;
+  const nv = P.length / 3, nk = I.length, nt = nk / 3;
+  const fn = new Float32Array(nk), wk = new Float32Array(nk);   // per face / per corner
+  const ang = (ax, ay, az, bx, by, bz) => {
+    const l = Math.hypot(ax, ay, az) * Math.hypot(bx, by, bz);
+    return l > 0 ? Math.acos(Math.max(-1, Math.min(1, (ax * bx + ay * by + az * bz) / l))) : 0;
+  };
+  for (let t = 0; t < nt; t++) {
+    const a = 3 * I[3 * t], b = 3 * I[3 * t + 1], c = 3 * I[3 * t + 2];
+    const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2];
+    const vx = P[c] - P[a], vy = P[c + 1] - P[a + 1], vz = P[c + 2] - P[a + 2];
+    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const l = Math.hypot(nx, ny, nz);
+    if (!(l > 0)) continue;                    // degenerate: no normal, no weight
+    fn[3 * t] = nx / l; fn[3 * t + 1] = ny / l; fn[3 * t + 2] = nz / l;
+    const wa = ang(ux, uy, uz, vx, vy, vz);
+    const wb = ang(-ux, -uy, -uz, P[c] - P[b], P[c + 1] - P[b + 1], P[c + 2] - P[b + 2]);
+    wk[3 * t] = wa; wk[3 * t + 1] = wb; wk[3 * t + 2] = Math.max(0, Math.PI - wa - wb);
+  }
+  // vertex -> its corners (CSR)
+  const start = new Uint32Array(nv + 1);
+  for (let k = 0; k < nk; k++) start[I[k] + 1]++;
+  for (let v = 0; v < nv; v++) start[v + 1] += start[v];
+  const fill = start.slice(0, nv), cor = new Uint32Array(nk);
+  for (let k = 0; k < nk; k++) cor[fill[I[k]]++] = k;
+  const cosC = Math.cos(crease);
+  const outP = new Float32Array(3 * nk), outN = new Float32Array(3 * nk), outI = new Uint32Array(nk);
+  let no = 0;
+  const mine = [];                                // output vertices of the current v
+  for (let v = 0; v < nv; v++) {
+    mine.length = 0;
+    for (let i = start[v]; i < start[v + 1]; i++) {
+      const k = cor[i], f = 3 * ((k / 3) | 0);
+      let sx = 0, sy = 0, sz = 0;
+      for (let j = start[v]; j < start[v + 1]; j++) {
+        const k2 = cor[j], g = 3 * ((k2 / 3) | 0);
+        const d = fn[f] * fn[g] + fn[f + 1] * fn[g + 1] + fn[f + 2] * fn[g + 2];
+        if (d >= cosC || (fn[f] === 0 && fn[f + 1] === 0 && fn[f + 2] === 0)) {
+          sx += wk[k2] * fn[g]; sy += wk[k2] * fn[g + 1]; sz += wk[k2] * fn[g + 2];
+        }
+      }
+      const l = Math.hypot(sx, sy, sz) || 1; sx /= l; sy /= l; sz /= l;
+      let o = -1;                               // same normal as a sibling -> share it
+      for (const m of mine)
+        if (outN[3 * m] * sx + outN[3 * m + 1] * sy + outN[3 * m + 2] * sz > 0.99999) { o = m; break; }
+      if (o < 0) {
+        o = no++; mine.push(o);
+        outP[3 * o] = P[3 * v]; outP[3 * o + 1] = P[3 * v + 1]; outP[3 * o + 2] = P[3 * v + 2];
+        outN[3 * o] = sx; outN[3 * o + 1] = sy; outN[3 * o + 2] = sz;
+      }
+      outI[k] = o;
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(outP.slice(0, 3 * no), 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(outN.slice(0, 3 * no), 3));
+  g.setIndex(new THREE.BufferAttribute(outI, 1));
+  return g;
+}
 export function meshFromData(m, color, parts, finish, kind) {
-  let geo = geomFromData(m);
-  if (kind === 'Mesh') { const c = toCreasedNormals(geo, CREASE); geo.dispose(); geo = c; }
+  let geo = geomFromData(m, kind !== 'Mesh');
+  if (kind === 'Mesh') { const c = creasedNormals(geo, CREASE); geo.dispose(); geo = c; }
   const std = c => makeMaterial(c, finish);
   // Rainbow over a fanned list: one geometry group per piece (`parts` counts
   // triangles, so the offsets are 3x that) and a material per group. Without it
