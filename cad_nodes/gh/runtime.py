@@ -370,36 +370,71 @@ _GH_CORNERS = {0: Kind.INTERSECTION, 1: Kind.INTERSECTION, 2: Kind.ARC,
                3: Kind.TANGENT, 4: Kind.INTERSECTION}
 
 
-def _gh_offset_curve(_curve, _distance, _plane=None, _corners=1, _both=False):
+def _gh_offset_curve(_curve, _distance, _plane=None, _corners=1, _both=False, _cap=0):
     """Offset Curve. Rhino's sign: a positive distance offsets to the RIGHT of the
     curve's direction about the plane normal — outward on a counter-clockwise
     loop, inward on a clockwise one. OCCT's offset_2d offsets a CLOSED wire
     outward for a positive distance whatever its direction, so the sign is
     corrected by the loop's orientation; an OPEN wire goes LEFT/RIGHT by side.
     The curve is moved into the plane's local frame first so 'right' means the
-    same thing as in Rhino."""
+    same thing as in Rhino.
+
+    `both` is Pufferfish's "Both Sides": True offsets to -distance as well, a
+    NUMBER is the distance of the second offset (barattolo wires -0.45 against
+    0.45). `cap` (Pufferfish Cap Type: 0 none, 1 flat, 2 round) closes the two
+    offsets of an OPEN curve into one loop — a slot round each ray."""
     w = _gh_curve(_curve)
     if w is None:
         return None
     d = _gh_num(_distance, 1.0)
-    if abs(d) < 1e-12:
-        return w
+    if isinstance(_both, bool) or _both is None:
+        d2 = -d if _both else None
+    else:
+        d2 = _gh_num(_both, 0.0) or None
+    if abs(d) < 1e-12 and d2 is None:
+        return [w]
     pl = _gh_plane(_plane) if _plane is not None else _gh_curve_plane(w)
     kind = _GH_CORNERS.get(int(_gh_num(_corners, 1)), Kind.INTERSECTION)
     flat = pl.to_local_coords(w)
-    out = []
-    dists = [d, -d] if _both else [d]
-    for dd in dists:
+
+    def _one(dd):
         if w.is_closed:
             ccw = _gh_signed_area(w, pl) > 0
-            occ = dd if ccw else -dd
-            r = flat.offset_2d(occ, kind=kind)
-        else:
-            side = Side.RIGHT if dd > 0 else Side.LEFT
-            r = flat.offset_2d(abs(dd), kind=kind, side=side, closed=False)
-        out.append(pl.from_local_coords(r))
-    return out                          # a list output in GH (may be several)
+            return flat.offset_2d(dd if ccw else -dd, kind=kind)
+        side = Side.RIGHT if dd > 0 else Side.LEFT
+        return flat.offset_2d(abs(dd), kind=kind, side=side, closed=False)
 
+    outs = [_one(d)] + ([_one(d2)] if d2 is not None else [])
+    cap = int(_gh_num(_cap, 0))
+    if cap and len(outs) == 2 and not w.is_closed:
+        # OCCT's one-sided offset hands its edges back in no particular order
+        # (the LEFT offset of a line can start mid-way): chain them, and run
+        # each the way the source curve runs, before closing the slot
+        s0 = flat.position_at(0)
+
+        def _orient(o):
+            ch = Wire.combine(list(o.edges()), tol=1e-6)[0]
+            es = _gh_chain(list(ch.edges()))
+            if (es[0].position_at(0) - s0).length > (es[-1].position_at(1) - s0).length:
+                es = [Edge(e.wrapped.Reversed()) for e in reversed(es)]
+            return Wire(es)
+
+        a, b = _orient(outs[0]), _orient(outs[1])
+        a0, a1 = a.position_at(0), a.position_at(1)
+        b0, b1 = b.position_at(0), b.position_at(1)
+        if cap == 2:
+            m1, m0 = flat.position_at(1), flat.position_at(0)
+            t1, t0 = flat.tangent_at(1), flat.tangent_at(0)
+            r1, r0 = (a1 - b1).length / 2, (a0 - b0).length / 2
+            e1 = Edge.make_three_point_arc(a1, m1 + t1 * r1, b1)
+            e0 = Edge.make_three_point_arc(b0, m0 - t0 * r0, a0)
+        else:
+            e1, e0 = Edge.make_line(a1, b1), Edge.make_line(b0, a0)
+        # out along a, across the far cap, BACK along b, across the near cap
+        back = [Edge(e.wrapped.Reversed()) for e in reversed(b.edges())]
+        loop = Wire(list(a.edges()) + [e1] + back + [e0])
+        return [pl.from_local_coords(loop)]
+    return [pl.from_local_coords(o) for o in outs]     # a list output in GH
 
 def _gh_join_curves(_curves, _preserve=False):
     """Join Curves: chain whatever touches end to end and hand back EVERY chain
@@ -417,6 +452,39 @@ def _gh_join_curves(_curves, _preserve=False):
     except Exception:
         ws = [Wire([e]) for e in es]
     return _gh_list(ws)
+
+def _gh_chain(_edges):
+    """Edges reordered (and flipped where needed) into one head-to-tail chain."""
+    es = list(_edges)
+    if len(es) < 2:
+        return es
+    # start from an edge whose start no other edge ends at
+    def _key(p):
+        return (round(p.X, 6), round(p.Y, 6), round(p.Z, 6))
+    ends = {}
+    for e in es:
+        for p in (e.position_at(0), e.position_at(1)):
+            ends[_key(p)] = ends.get(_key(p), 0) + 1
+    first = next((e for e in es if ends[_key(e.position_at(0))] == 1),
+                 next((e for e in es if ends[_key(e.position_at(1))] == 1), es[0]))
+    if ends[_key(first.position_at(0))] != 1 and ends[_key(first.position_at(1))] == 1:
+        first = Edge(first.wrapped.Reversed())
+    out, rest = [first], [e for e in es if e is not first and not e.is_same(first)]
+    while rest:
+        tip = out[-1].position_at(1)
+        nxt = None
+        for e in rest:
+            if (e.position_at(0) - tip).length < 1e-6:
+                nxt = e
+                break
+            if (e.position_at(1) - tip).length < 1e-6:
+                nxt = Edge(e.wrapped.Reversed())
+                break
+        if nxt is None:
+            break
+        rest = [e for e in rest if not e.is_same(nxt)]
+        out.append(nxt)
+    return out
 
 def _gh_end_points(_curve):
     w = _gh_curve(_curve)
@@ -564,6 +632,17 @@ def _gh_extend_curve(_curve, _start=0.0, _end=0.0):
         return None
     L = w.length
     s, e = _gh_num(_start, 0.0), _gh_num(_end, 0.0)
+    es0 = w.edges()
+    if len(es0) == 1 and es0[0].geom_type == GeomType.LINE:
+        # a LINE extends as a line does in Rhino: plain arithmetic on the
+        # infinite line, so a negative length may run past the other end
+        # (barattolo pushes a unit Vector Star ray out to 2..41 that way)
+        p0, p1 = w.position_at(0), w.position_at(1)
+        d = (p1 - p0).normalized()
+        a, b = p0 - d * s, p1 + d * e
+        if (b - a).length < 1e-9 or (b - a).dot(d) <= 0:
+            raise ValueError("Extend Curve: the line collapses to nothing")
+        return Edge.make_line(a, b)
     t0 = (-s / L) if s < 0 else 0.0
     t1 = (1.0 + e / L) if e < 0 else 1.0
     if t1 - t0 <= 1e-9:
@@ -707,16 +786,23 @@ def _gh_scale_nu(_geom, _plane, _x, _y, _z):
 # --- surfaces & breps -----------------------------------------------------------------
 
 def _gh_boundary_surfaces(_edges):
-    """Boundary Surfaces: planar closed curves -> trimmed planar faces. A curve
-    lying INSIDE another on the same plane becomes a hole in it (GH nests them),
-    so a rectangle and its offset give a frame, not two plates."""
+    """Boundary Surfaces: planar closed curves -> trimmed planar faces. Curves
+    nest even-odd on a shared plane, as GH nests them: a curve inside another is
+    a HOLE in it, a curve inside that hole an island (a face again) — so a
+    rectangle and its offset give a frame, and a logo of letters keeps the
+    counters of its o's and a's.
+
+    Cheap tests first (plane, bbox, then one point-in-face), because a lid logo
+    can bring two hundred curves and a boolean per pair took minutes. An
+    identical copy is NOT a hole (GH's closed polylines repeat their first
+    point, so a list of corners can hold the same rectangle twice)."""
     ws = []
     for it in _gh_items(_edges):
         w = _gh_curve(it)
         if w is not None and w.is_closed:
             ws.append(w)
     if not ws:
-        return None
+        return []
     faces = []
     for w in ws:
         try:
@@ -724,35 +810,61 @@ def _gh_boundary_surfaces(_edges):
         except Exception:
             pass
     faces.sort(key=lambda f: -f.area)
-    used = [False] * len(faces)
-    out = []
-    for i, f in enumerate(faces):
-        if used[i]:
-            continue
-        outer = f
+    info = []
+    for f in faces:
         try:
-            n0 = f.normal_at()
+            n = f.normal_at()
         except Exception:
-            n0 = None
-        for j in range(i + 1, len(faces)):
-            if used[j]:
-                continue
-            g = faces[j]
-            try:
-                same = n0 is not None and abs(abs(n0.dot(g.normal_at())) - 1) < 1e-6 \
-                    and abs((g.center() - f.center()).dot(n0)) < 1e-6
-                # a hole is STRICTLY smaller: an identical copy (GH's closed
-                # polylines repeat their first point, so a list of corners can
-                # hold the same rectangle twice) is a second face, not a hole
-                if same and g.area < f.area * (1 - 1e-6) and f.is_inside(g.center()) \
-                        and (g - f).area < 1e-6 * g.area + 1e-9:
-                    outer = outer - g
-                    used[j] = True
-            except Exception:
-                pass
-        out.append(outer.faces()[0] if hasattr(outer, "faces") and len(outer.faces()) == 1 else outer)
-    return _gh_list(out)
+            n = None
+        bb = f.bounding_box()
+        info.append((f, n, f.center(), bb))
 
+    def _contains(a, b):
+        fa, na, ca, ba = info[a]
+        fb, nb, cb, bbb = info[b]
+        if na is None or nb is None or abs(abs(na.dot(nb)) - 1) > 1e-6:
+            return False
+        if abs((cb - ca).dot(na)) > 1e-6:
+            return False
+        if fb.area >= fa.area * (1 - 1e-6):
+            return False
+        tol = 1e-6
+        if (bbb.min.X < ba.min.X - tol or bbb.min.Y < ba.min.Y - tol or bbb.min.Z < ba.min.Z - tol
+                or bbb.max.X > ba.max.X + tol or bbb.max.Y > ba.max.Y + tol
+                or bbb.max.Z > ba.max.Z + tol):
+            return False
+        # a point of b's boundary, not its centre (the centre of a ring is
+        # outside it)
+        p = fb.outer_wire().position_at(0)
+        try:
+            return fa.is_inside(p)
+        except Exception:
+            return False
+
+    parent = [None] * len(info)
+    for b in range(len(info)):
+        for a in range(b - 1, -1, -1):          # smallest container first
+            if _contains(a, b):
+                parent[b] = a
+                break
+    depth = [0] * len(info)
+    for b in range(len(info)):
+        depth[b] = 0 if parent[b] is None else depth[parent[b]] + 1
+    out = []
+    for a in range(len(info)):
+        if depth[a] % 2:
+            continue                             # a hole of its parent
+        holes = [info[b][0].outer_wire() for b in range(len(info))
+                 if parent[b] == a and depth[b] % 2]
+        f = info[a][0]
+        if holes:
+            try:
+                f = Face(f.outer_wire(), holes)
+            except Exception:
+                for h in holes:
+                    f = f - Face(h)
+        out.append(f)
+    return _gh_list(out)
 
 def _gh_extrude(_base, _direction):
     """Extrude along a VECTOR (its length is the distance): a curve becomes a
@@ -1119,7 +1231,19 @@ def _gh_sort_list(_keys, _values=None):
 # ===========================================================================
 
 def _gh_negative(_v):
-    return None if _v is None else -float(_v)
+    """-x — of a vector too, as GH's Negative does."""
+    if _v is None:
+        return None
+    if isinstance(_v, Vector):
+        return -_v
+    return -float(_v)
+
+
+def _gh_list_length(_list):
+    """List Length as GH counts: a single item is a list of one, nothing is 0."""
+    if _list is None:
+        return 0
+    return len(_list) if _is_seq(_list) else 1
 
 
 def _gh_radians(_d):
@@ -1274,7 +1398,7 @@ def _gh_tree_branch(_tree, _path):
 # barattolo.gh: curves
 # ===========================================================================
 
-def _gh_bounding_rectangle(_geometry, _plane=None, _union=False):
+def _gh_bounding_rectangle(_geometry, _plane=None, _union=False, _slide=0.0):
     """Bounding Rectangle: the smallest rectangle aligned with a plane that holds
     the geometry seen from the plane's normal. `union` -> one rectangle for all
     of it, else one per item. (The Axis/Slide alignment inputs are not built:
@@ -1297,7 +1421,12 @@ def _gh_bounding_rectangle(_geometry, _plane=None, _union=False):
             return None
         xa, xb = min(p.X for p in pts), max(p.X for p in pts)
         ya, yb = min(p.Y for p in pts), max(p.Y for p in pts)
-        w = Polyline((xa, ya), (xb, ya), (xb, yb), (xa, yb), close=True)
+        za, zb = min(p.Z for p in pts), max(p.Z for p in pts)
+        # Slide: WHERE along the plane normal the rectangle sits, 0 at the
+        # bottom of the geometry and 1 at its top (barattolo slides one to the
+        # top of the jar and draws its axis from the base circle up to it)
+        z = za + (zb - za) * _gh_num(_slide, 0.0)
+        w = Polyline((xa, ya, z), (xb, ya, z), (xb, yb, z), (xa, yb, z), close=True)
         return pl.from_local_coords(w), xb - xa, yb - ya
 
     groups = [items] if (_union or len(items) <= 1) else [[x] for x in items]
@@ -1467,6 +1596,10 @@ def _gh_region_union(_curves, _plane=None):
     u = fs[0]
     for f in fs[1:]:
         u = u + f
+    try:
+        u = u.clean()        # merge the coplanar pieces the fuse leaves split
+    except Exception:
+        pass
     ws = []
     for f in u.faces():
         ws.append(f.outer_wire())
@@ -1556,8 +1689,12 @@ def _gh_brep_edges(_brep):
 
 
 def _gh_fillet_edge(_shape, _edges, _radii, _blend=0, _metric=0):
-    """Fillet Edge: round the edges listed BY INDEX. The index is into OCCT's
-    edge order, which is not Rhino's — check the picture."""
+    """Fillet Edge: round the edges listed BY INDEX, each with its own radius
+    (the radii list pairs with the edges, the last one repeating). The index is
+    into OCCT's edge order, which is not always Rhino's — check the result.
+    A radius equal to the face it runs over (r 2.2 on a disc 2.2 thick, in
+    barattolo) is legal in Rhino and refused by OCCT at exact equality: it is
+    retried a hair smaller (0.1%) rather than failing."""
     s = _gh_shapes(_shape)
     if not s:
         return None
@@ -1565,12 +1702,27 @@ def _gh_fillet_edge(_shape, _edges, _radii, _blend=0, _metric=0):
     allE = list(part.edges())
     idx = [int(_gh_num(i)) for i in _gh_items(_edges)]
     rs = [_gh_num(r) for r in _gh_items(_radii)] or [1.0]
-    picks = [allE[i] for i in idx if 0 <= i < len(allE)]
-    if not picks:
+    by_r = {}
+    for k, i in enumerate(idx):
+        if 0 <= i < len(allE):
+            by_r.setdefault(rs[min(k, len(rs) - 1)], []).append(allE[i])
+    if not by_r:
         return part
-    r = rs[0]
-    return part.fillet(r, picks)
-
+    out = part
+    for rad, es in by_r.items():
+        # the picks must be edges of the CURRENT part: after a first fillet the
+        # old edges are gone, so re-find them by position
+        cur = list(out.edges())
+        picks = []
+        for e in es:
+            m = e.center()
+            best = min(cur, key=lambda c: (c.center() - m).length)
+            picks.append(best)
+        try:
+            out = out.fillet(rad, picks)
+        except Exception:
+            out = out.fillet(rad * 0.999, picks)
+    return out
 
 def _gh_cap_holes(_brep):
     """Cap Holes: close the planar openings of an open brep with flat faces."""

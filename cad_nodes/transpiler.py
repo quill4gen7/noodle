@@ -6744,6 +6744,15 @@ class Transpiler:
         # whole branch to a single move. Native graphs never carry _gh.
         gh_rules = ndef.category == "grasshopper" or "_gh" in (node.params or {})
         if gh_rules:
+            # ...and every wired item input may carry a list decided only at RUN
+            # time (a CodeBlock returning several curves is not a static list
+            # producer): route them all through the fan-out, which fans only
+            # what really is a list and calls once otherwise.
+            for sock in ndef.inputs:
+                if (not sock.multiple and not sock.list_access and feeds.get(sock.name)
+                        and sock.name not in fan and len(feeds[sock.name]) == 1):
+                    fan[sock.name] = subs[sock.name]
+                    subs[sock.name] = sock.name
             for sock in ndef.inputs:
                 if sock.list_access and not sock.multiple and feeds.get(sock.name):
                     gh_lists[sock.name] = subs[sock.name]

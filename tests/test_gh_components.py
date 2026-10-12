@@ -83,7 +83,8 @@ def test_multi_out_gives_each_output_its_own_var():
     assert {p[2] for p in picks} == {"start", "end"}
     start = next(v for v, _, s in picks if s == "start")
     end = next(v for v, _, s in picks if s == "end")
-    assert re.search(rf"Line\(_pt\({start}\), _pt\({end}\)\)", src)
+    assert re.search(rf"Line\(_pt\({start}\), _pt\({end}\)\)", src) or \
+        re.search(rf"\{{'start': {start}, 'end': {end}\}}", src)
 
 
 def test_an_unwired_list_access_input_falls_back_to_its_param():
