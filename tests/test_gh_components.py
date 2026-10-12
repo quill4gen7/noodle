@@ -98,9 +98,11 @@ def test_mirror_takes_a_wired_plane_and_keeps_the_curve_type():
     assert d.input("plane") is not None and d.output_follows == "shape"
 
 
-@pytest.mark.skipif(not (SAMPLES / "ikeaLack.gh").exists(), reason="no gh-samples")
-def test_ikealack_is_fully_mapped():
+@pytest.mark.parametrize("sample", ["ikeaLack.gh", "barattolo.gh"])
+def test_the_sample_files_are_fully_mapped(sample):
+    if not (SAMPLES / sample).exists():
+        pytest.skip("no gh-samples")
     from cad_nodes.gh import definition
-    d = definition.read(SAMPLES / "ikeaLack.gh")
+    d = definition.read(SAMPLES / sample)
     missing = {(o.type, o.type_guid) for o in d.objects if o.type_guid not in COMPONENTS}
     assert not missing, sorted(missing)

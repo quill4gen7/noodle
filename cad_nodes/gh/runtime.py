@@ -946,4 +946,954 @@ def _gh_sort_list(_keys, _values=None):
     vs = list(_values) if _is_seq(_values) else ([] if _values is None else [_values])
     return {"keys": [ks[i] for i in order],
             "values_a": [vs[i] for i in order if i < len(vs)] if vs else None}
+
+
+# ===========================================================================
+# barattolo.gh: math, logic, lists, trees
+# ===========================================================================
+
+def _gh_negative(_v):
+    return None if _v is None else -float(_v)
+
+
+def _gh_radians(_d):
+    return None if _d is None else math.radians(float(_d))
+
+
+def _gh_concatenate(_a, _b):
+    return ("" if _a is None else str(_a)) + ("" if _b is None else str(_b))
+
+
+def _gh_repeat_data(_data, _length):
+    """Repeat Data: the list repeated CYCLICALLY until it is `length` long
+    (List Repeat repeats a whole list `count` times — not the same thing)."""
+    it = _gh_items(_data)
+    n = int(_gh_num(_length, len(it)))
+    if not it or n <= 0:
+        return []
+    return [it[i % len(it)] for i in range(n)]
+
+
+def _gh_list_indices(_list):
+    it = list(_list) if _is_seq(_list) else ([] if _list is None else [_list])
+    return list(range(len(it)))
+
+
+def _gh_merge(*_streams):
+    out = []
+    for s in _streams:
+        if s is None:
+            continue
+        if isinstance(s, _GhTree):
+            out.append(s)
+        elif _is_seq(s):
+            out.extend(list(s))
+        else:
+            out.append(s)
+    return out
+
+
+def _gh_range(_domain, _steps=10):
+    a, b = _gh_domain(_domain)
+    n = max(1, int(_gh_num(_steps, 10)))
+    return [a + (b - a) * i / n for i in range(n + 1)]
+
+
+def _gh_larger(_a, _b):
+    a, b = _gh_num(_a), _gh_num(_b)
+    return {"larger_than": a > b, "or_equal_to": a >= b}
+
+
+def _gh_smaller(_a, _b):
+    a, b = _gh_num(_a), _gh_num(_b)
+    return {"smaller_than": a < b, "or_equal_to": a <= b}
+
+
+def _gh_bool(_v):
+    if isinstance(_v, str):
+        return _v.strip().lower() in ("true", "1", "yes")
+    return bool(_v)
+
+
+def _gh_gate_or(_a, _b):
+    return _gh_bool(_a) or _gh_bool(_b)
+
+
+def _gh_invert_boolean(_b):
+    v = not _gh_bool(_b)
+    return {"inverted": v, "number": 1 if v else 0}
+
+
+def _gh_weave(_pattern, *_streams):
+    """Weave: interleave the streams following an index pattern (default 0,1,…)
+    until one stream runs out."""
+    st = [list(_gh_items(s)) for s in _streams if s is not None]
+    if not st:
+        return []
+    pat = [int(_gh_num(x)) for x in _gh_items(_pattern)] or list(range(len(st)))
+    pos = [0] * len(st)
+    out = []
+    while True:
+        moved = False
+        for k in pat:
+            if 0 <= k < len(st) and pos[k] < len(st[k]):
+                out.append(st[k][pos[k]])
+                pos[k] += 1
+                moved = True
+            elif 0 <= k < len(st):
+                return out
+        if not moved:
+            return out
+
+
+def _gh_split_list(_list, _index=0):
+    it = list(_list) if _is_seq(_list) else ([] if _list is None else [_list])
+    i = int(_gh_num(_index, 0))
+    return {"list_a": it[:i], "list_b": it[i:]}
+
+
+def _gh_replace_nulls(_items, _repl):
+    it = list(_items) if _is_seq(_items) else ([] if _items is None else [_items])
+    rs = _gh_items(_repl)
+    out, n = [], 0
+    for k, x in enumerate(it):
+        if x is None and rs:
+            out.append(rs[min(n, len(rs) - 1)])
+            n += 1
+        else:
+            out.append(x)
+    return {"items": out, "count": n}
+
+
+class _GhTree(dict):
+    """A Grasshopper data tree: {path tuple: [items]}. Deliberately a dict, not a
+    list: noodle fans out over lists, and a tree must travel as ONE value until
+    Tree Branch takes a branch out of it."""
+    _noodle_tree = True
+
+
+def _gh_path(_p):
+    if isinstance(_p, tuple):
+        return _p
+    if isinstance(_p, (int, float)):
+        return (int(_p),)
+    s = str(_p).strip().strip("{}")
+    return tuple(int(x) for x in s.replace(",", ";").split(";") if x.strip() != "")
+
+
+def _gh_create_tree(_data, _paths):
+    """Create Tree: each item goes to the branch its path names (a list of paths
+    as long as the data, as GH wants it)."""
+    d = list(_data) if _is_seq(_data) else ([] if _data is None else [_data])
+    ps = list(_paths) if _is_seq(_paths) else ([] if _paths is None else [_paths])
+    t = _GhTree()
+    for k, x in enumerate(d):
+        p = _gh_path(ps[min(k, len(ps) - 1)]) if ps else (0,)
+        t.setdefault(p, []).append(x)
+    return t
+
+
+def _gh_tree_branch(_tree, _path):
+    """Tree Branch: the items of one branch. Several trees wired in (a Data
+    param merging them, as barattolo does) are merged first."""
+    trees = [x for x in (_tree if _is_seq(_tree) else [_tree]) if isinstance(x, dict)]
+    t = _GhTree()
+    for tr in trees:
+        for p, v in tr.items():
+            t.setdefault(p, []).extend(v)
+    return t.get(_gh_path(_path), [])
+
+
+# ===========================================================================
+# barattolo.gh: curves
+# ===========================================================================
+
+def _gh_bounding_rectangle(_geometry, _plane=None, _union=False):
+    """Bounding Rectangle: the smallest rectangle aligned with a plane that holds
+    the geometry seen from the plane's normal. `union` -> one rectangle for all
+    of it, else one per item. (The Axis/Slide alignment inputs are not built:
+    the rectangle is aligned with the plane's own x axis.)"""
+    pl = _gh_plane(_plane)
+    items = _gh_items(_geometry)
+
+    def _one(group):
+        pts = []
+        for g in group:
+            if isinstance(g, Vector):
+                pts.append(pl.to_local_coords(g))
+                continue
+            try:
+                bb = pl.to_local_coords(g).bounding_box()
+                pts += [bb.min, bb.max]
+            except Exception:
+                pass
+        if not pts:
+            return None
+        xa, xb = min(p.X for p in pts), max(p.X for p in pts)
+        ya, yb = min(p.Y for p in pts), max(p.Y for p in pts)
+        w = Polyline((xa, ya), (xb, ya), (xb, yb), (xa, yb), close=True)
+        return pl.from_local_coords(w), xb - xa, yb - ya
+
+    groups = [items] if (_union or len(items) <= 1) else [[x] for x in items]
+    rs = [r for r in (_one(g) for g in groups) if r is not None]
+    if not rs:
+        return {"bounding": None, "dimension_x": None, "dimension_y": None}
+    return {"bounding": _gh_out([r[0] for r in rs]),
+            "dimension_x": _gh_out([r[1] for r in rs]),
+            "dimension_y": _gh_out([r[2] for r in rs])}
+
+
+def _gh_polygon(_plane, _radius, _segments=6, _fillet=0.0):
+    """Polygon: a regular polygon INSCRIBED in a circle of `radius` (its corners
+    on the circle), first corner on the plane's x axis."""
+    pl = _gh_plane(_plane)
+    r = _gh_num(_radius, 1.0)
+    n = max(3, int(_gh_num(_segments, 6)))
+    pts = [(r * math.cos(2 * math.pi * i / n), r * math.sin(2 * math.pi * i / n))
+           for i in range(n)]
+    w = Polyline(*pts, close=True)
+    f = _gh_num(_fillet, 0.0)
+    if f > 1e-9:
+        w = w.fillet_2d(f, w.vertices())
+    w = pl.from_local_coords(w)
+    return {"polygon": w, "length": w.length}
+
+
+def _gh_interpolate(_vertices, _degree=3, _periodic=False):
+    pts = [_gh_point(p) for p in _gh_items(_vertices)]
+    pts = [p for p in pts if p is not None]
+    if len(pts) < 2:
+        raise ValueError("Interpolate: needs at least 2 points")
+    per = bool(_periodic)
+    if per and (pts[0] - pts[-1]).length < 1e-9:
+        pts = pts[:-1]
+    e = Spline(*pts, periodic=per) if len(pts) > 2 else Edge.make_line(pts[0], pts[1])
+    return {"curve": e, "length": e.length, "domain": [0.0, 1.0]}
+
+
+def _gh_rebuild_curve(_curve, _degree=3, _count=10):
+    """Rebuild Curve: a B-spline of `degree` with `count` control points fitted
+    to the curve."""
+    from OCP.GeomAPI import GeomAPI_PointsToBSpline
+    from OCP.TColgp import TColgp_Array1OfPnt
+    from OCP.gp import gp_Pnt
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
+    w = _gh_curve(_curve)
+    if w is None:
+        return None
+    deg = max(1, int(_gh_num(_degree, 3)))
+    n = max(deg + 1, int(_gh_num(_count, 10)))
+    m = max(n * 4, 32)
+    A = TColgp_Array1OfPnt(1, m)
+    for i in range(m):
+        p = w.position_at(i / (m - 1))
+        A.SetValue(i + 1, gp_Pnt(p.X, p.Y, p.Z))
+    fit = GeomAPI_PointsToBSpline(A, deg, deg)
+    return Edge(BRepBuilderAPI_MakeEdge(fit.Curve()).Edge())
+
+
+def _gh_simplify_curve(_curve, _tol=None, _angle=None):
+    """Simplify Curve: collinear line segments merged, B-splines that are really
+    lines or arcs replaced by them. `simplified` says whether anything changed."""
+    w = _gh_curve(_curve)
+    if w is None:
+        return {"curve": None, "simplified": False}
+    es = list(w.edges())
+    out, changed = [], False
+    for e in es:
+        if out and e.geom_type == GeomType.LINE and out[-1].geom_type == GeomType.LINE:
+            a = out[-1]
+            if (a.tangent_at(0) - e.tangent_at(0)).length < 1e-6:
+                out[-1] = Edge.make_line(a.position_at(0), e.position_at(1))
+                changed = True
+                continue
+        out.append(e)
+    if not changed:
+        return {"curve": w, "simplified": False}
+    return {"curve": Wire(out), "simplified": True}
+
+
+def _gh_kind_of(_curve, _tol=1e-6):
+    """'arc' | 'circle' | 'ellipse' | None for one curve (a single edge)."""
+    w = _gh_curve(_curve)
+    if w is None or len(w.edges()) != 1:
+        return None
+    e = w.edges()[0]
+    if e.geom_type == GeomType.CIRCLE:
+        return "circle" if e.is_closed else "arc"
+    if e.geom_type == GeomType.ELLIPSE:
+        return "ellipse"
+    return None
+
+
+def _gh_is_arc_circle_ellipse(_curve, _tol=1e-12):
+    k = _gh_kind_of(_curve)
+    return {"arc": k == "arc", "circle": k == "circle", "ellipse": k == "ellipse"}
+
+
+def _gh_arc_circle_ellipse(_curve, _type=0, _tol=1e-12):
+    return _gh_curve(_curve) if _gh_kind_of(_curve) else None
+
+
+def _gh_fillet_curve(_curve, _parameter, _radius):
+    """Fillet (curve): round the corner nearest the point at normalised
+    parameter t."""
+    w = _gh_curve(_curve)
+    if w is None:
+        return {"curve": None, "parameter": None}
+    t = _gh_num(_parameter, 0.0)
+    es = w.edges()
+    if all(e.geom_type == GeomType.LINE for e in es):
+        t = min(max(t / len(es), 0.0), 1.0)   # a polyline's parameters are vertex indices
+    p = w.position_at(t)
+    vs = sorted(w.vertices(), key=lambda v: (Vector(v.X, v.Y, v.Z) - p).length)
+    r = _gh_num(_radius, 1.0)
+    try:
+        f = w.fillet_2d(r, [vs[0]])
+    except Exception:
+        f = w
+    return {"curve": f, "parameter": t}
+
+
+def _gh_project(_geometry, _plane=None):
+    """Project: geometry flattened onto a plane along its normal."""
+    from OCP.GeomProjLib import GeomProjLib
+    from OCP.BRep import BRep_Tool
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
+    from OCP.gp import gp_Pln, gp_Pnt, gp_Dir
+    pl = _gh_plane(_plane)
+    if _geometry is None:
+        return None
+    if isinstance(_geometry, Vector):
+        l = pl.to_local_coords(_geometry)
+        return pl.from_local_coords(Vector(l.X, l.Y, 0))
+    o, z = pl.origin, pl.z_dir
+    from OCP.Geom import Geom_Plane
+    gpl = Geom_Plane(gp_Pln(gp_Pnt(o.X, o.Y, o.Z), gp_Dir(z.X, z.Y, z.Z)))
+    es = []
+    for e in _geometry.edges():
+        c = BRep_Tool.Curve_s(e.wrapped, 0, 1)
+        if c is None:
+            continue
+        a, b = BRep_Tool.Range_s(e.wrapped)
+        from OCP.Geom import Geom_TrimmedCurve
+        pc = GeomProjLib.ProjectOnPlane_s(Geom_TrimmedCurve(c, a, b), gpl,
+                                          gp_Dir(z.X, z.Y, z.Z), True)
+        es.append(Edge(BRepBuilderAPI_MakeEdge(pc).Edge()))
+    if not es:
+        return None
+    try:
+        ws = list(Wire.combine(es, tol=1e-6))
+        return _gh_out(ws)
+    except Exception:
+        return _gh_out(es)
+
+
+def _gh_region_union(_curves, _plane=None):
+    """Region Union: the outline of the union of closed planar regions."""
+    fs = []
+    for c in _gh_items(_curves):
+        w = _gh_curve(c)
+        if w is not None and w.is_closed:
+            fs.append(Face(w))
+    if not fs:
+        return None
+    u = fs[0]
+    for f in fs[1:]:
+        u = u + f
+    ws = []
+    for f in u.faces():
+        ws.append(f.outer_wire())
+        ws += list(f.inner_wires())
+    return _gh_out(ws)
+
+
+def _gh_vector_star(_plane=None, _steps=4, _type=1, _dims=False):
+    """Vector Star: unit vectors fanned evenly round the plane's z axis
+    (`steps` of them), with the lines that draw them."""
+    pl = _gh_plane(_plane)
+    n = max(1, int(_gh_num(_steps, 4)))
+    vs = [pl.x_dir * math.cos(2 * math.pi * i / n) + pl.y_dir * math.sin(2 * math.pi * i / n)
+          for i in range(n)]
+    o = pl.origin
+    return {"vectors": vs, "lines": [Edge.make_line(o, o + v) for v in vs]}
+
+
+# ===========================================================================
+# barattolo.gh: surfaces & breps
+# ===========================================================================
+
+def _gh_rotate(_geometry, _angle, _plane=None, _degrees=False):
+    """Rotate about the plane's normal through its origin (a point gives the XY
+    plane through it). Radians, as GH, unless `degrees`."""
+    if _geometry is None:
+        return None
+    pl = _gh_plane(_plane)
+    a = _gh_num(_angle, 0.0)
+    if not _degrees:
+        a = math.degrees(a)
+    ax = Axis(pl.origin, pl.z_dir)
+    if isinstance(_geometry, Vector):
+        return Vector(Vertex(_geometry.X, _geometry.Y, _geometry.Z).rotate(ax, a).center())
+    if _is_mesh(_geometry):
+        raise ValueError("Rotate (GH): meshes not supported yet — use noodle's Rotate")
+    return _geometry.rotate(ax, a)
+
+
+def _gh_move_to_plane(_geometry, _plane=None, _above=True, _below=True):
+    """Move To Plane: slide geometry along the plane normal until it TOUCHES the
+    plane — from above (its lowest point lands on it) if `above`, from below
+    (its highest point) if `below`. Geometry crossing the plane stays put."""
+    if _geometry is None:
+        return None
+    pl = _gh_plane(_plane)
+    loc = pl.to_local_coords(_geometry)
+    if isinstance(loc, Vector):
+        lo = hi = loc.Z
+    else:
+        bb = loc.bounding_box()
+        lo, hi = bb.min.Z, bb.max.Z
+    dz = 0.0
+    if lo > 0 and _above:
+        dz = -lo
+    elif hi < 0 and _below:
+        dz = -hi
+    v = pl.z_dir * dz
+    return _move(_geometry, v, 0, 0, 0) if not isinstance(_geometry, Vector) else _geometry + v
+
+
+def _gh_plane_surface(_plane, _x, _y):
+    pl = _gh_plane(_plane)
+    x0, x1 = _gh_domain(_x)
+    y0, y1 = _gh_domain(_y)
+    w = Polyline((x0, y0), (x1, y0), (x1, y1), (x0, y1), close=True)
+    return pl.from_local_coords(Face(w))
+
+
+def _gh_brep_edges(_brep):
+    """Brep Edges: naked (used by one face), interior (two), non-manifold (more)."""
+    from OCP.TopExp import TopExp
+    from OCP.TopTools import TopTools_IndexedDataMapOfShapeListOfShape
+    from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE
+    s = _gh_shapes(_brep)
+    naked, inner, nonman = [], [], []
+    for x in s:
+        m = TopTools_IndexedDataMapOfShapeListOfShape()
+        TopExp.MapShapesAndAncestors_s(x.wrapped, TopAbs_EDGE, TopAbs_FACE, m)
+        for i in range(1, m.Extent() + 1):
+            e = Edge(m.FindKey(i))
+            n = m.FindFromIndex(i).Size()
+            if e.length < 1e-9:
+                continue
+            (naked if n == 1 else inner if n == 2 else nonman).append(e)
+    return {"naked": naked, "interior": inner, "non_manifold": nonman}
+
+
+def _gh_fillet_edge(_shape, _edges, _radii, _blend=0, _metric=0):
+    """Fillet Edge: round the edges listed BY INDEX. The index is into OCCT's
+    edge order, which is not Rhino's — check the picture."""
+    s = _gh_shapes(_shape)
+    if not s:
+        return None
+    part = s[0]
+    allE = list(part.edges())
+    idx = [int(_gh_num(i)) for i in _gh_items(_edges)]
+    rs = [_gh_num(r) for r in _gh_items(_radii)] or [1.0]
+    picks = [allE[i] for i in idx if 0 <= i < len(allE)]
+    if not picks:
+        return part
+    r = rs[0]
+    return part.fillet(r, picks)
+
+
+def _gh_cap_holes(_brep):
+    """Cap Holes: close the planar openings of an open brep with flat faces."""
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_Sewing
+    s = _gh_shapes(_brep)
+    if not s:
+        return None
+    x = s[0]
+    if isinstance(x, Solid):
+        return x
+    naked = _gh_brep_edges(x)["naked"]
+    caps = []
+    if naked:
+        for w in Wire.combine(naked, tol=1e-4):
+            try:
+                caps.append(Face(w))
+            except Exception:
+                pass
+    sew = BRepBuilderAPI_Sewing(1e-4)
+    for f in list(x.faces()) + caps:
+        sew.Add(f.wrapped)
+    sew.Perform()
+    sh = _gh_wrap(sew.SewedShape())
+    try:
+        shells = sh.shells() if not isinstance(sh, Shell) else [sh]
+        sol = Solid(shells[0])
+        if sol.volume < 0:
+            from OCP.BRepLib import BRepLib
+            BRepLib.OrientClosedSolid_s(sol.wrapped)
+        return sol if sol.is_valid else sh
+    except Exception:
+        return sh
+
+
+def _gh_is_planar(_surface, _interior=False):
+    f = _gh_face(_surface)
+    if f is None:
+        return {"planar": None, "plane": None}
+    ok = f.geom_type == GeomType.PLANE
+    return {"planar": ok, "plane": Plane(f) if ok else None}
+
+
+def _gh_is_surface_trimmed(_surface):
+    """Trimmed = the face does not cover its whole underlying surface."""
+    f = _gh_face(_surface)
+    if f is None:
+        return None
+    from OCP.BRep import BRep_Tool
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
+    u0, u1, v0, v1 = _gh_face_uv(f)["u"] + _gh_face_uv(f)["v"]
+    full = Face(BRepBuilderAPI_MakeFace(BRep_Tool.Surface_s(f.wrapped), u0, u1, v0, v1, 1e-6).Face())
+    return abs(full.area - f.area) > 1e-6 * max(full.area, 1e-9)
+
+
+def _gh_trim_with_plane(_brep, _plane, _direction=True, _cap=True):
+    """Trim With Plane: cut a brep with a plane and keep one side — the side the
+    plane normal points to when `direction` is on, the other one when off.
+    `cap` closes the cut (a solid) or leaves it open (a shell)."""
+    s = _gh_shapes(_brep)
+    if not s:
+        return None
+    pl = _gh_plane(_plane)
+    keep = Keep.TOP if _gh_bool(_direction) else Keep.BOTTOM
+    r = split(s[0], bisect_by=pl, keep=keep)
+    if not _gh_bool(_cap):
+        cut = [f for f in r.faces() if f.geom_type == GeomType.PLANE
+               and abs(pl.to_local_coords(f.center()).Z) < 1e-6
+               and abs(abs(f.normal_at().dot(pl.z_dir)) - 1) < 1e-6]
+        keepf = [f for f in r.faces() if all(f is not c for c in cut)]
+        return Shell(keepf) if keepf else r
+    return r
+
+
+def _gh_collision_one_many(_collider, _obstacles):
+    """Collision One|Many: does the collider touch (or overlap) any obstacle?
+    `index` is the first obstacle it hits, -1 if none."""
+    from OCP.BRepExtrema import BRepExtrema_DistShapeShape
+    c = _gh_shapes(_collider)
+    if isinstance(_collider, Vector):
+        c = [Vertex(_collider.X, _collider.Y, _collider.Z)]
+    obs = _gh_shapes(_obstacles)
+    if not c or not obs:
+        return {"collision": False, "index": -1}
+    for k, o in enumerate(obs):
+        d = BRepExtrema_DistShapeShape(c[0].wrapped, o.wrapped)
+        if d.IsDone() and d.Value() < 1e-6:
+            return {"collision": True, "index": k}
+        try:
+            if o.volume > 0 and o.is_inside(c[0].center()):
+                return {"collision": True, "index": k}
+        except Exception:
+            pass
+    return {"collision": False, "index": -1}
+
+
+def _gh_extrude_to_plane(_shape, _direction, _plane1, _plane2=None):
+    """Extrude to Plane: extrude along a direction from where the shape meets
+    plane 1 to plane 2 (planes, or planar faces standing for them). With one
+    plane: from the shape itself up to it."""
+    s = _gh_shapes(_shape)
+    if not s:
+        return None
+    v = _gh_vec(_direction).normalized()
+
+    def _plane_of(p):
+        if p is None:
+            return None
+        if isinstance(p, Plane):
+            return p
+        f = _gh_face(p)
+        return Plane(f) if f is not None else _gh_plane(p)
+
+    p1, p2 = _plane_of(_plane1), _plane_of(_plane2)
+    out = []
+    for x in s:
+        c = x.center()
+
+        def _hit(pl):
+            den = v.dot(pl.z_dir)
+            if abs(den) < 1e-12:
+                raise ValueError("Extrude to Plane: the direction is parallel to the plane")
+            return (pl.origin - c).dot(pl.z_dir) / den
+
+        if p2 is None:
+            t0, t1 = 0.0, _hit(p1)
+        else:
+            t0, t1 = _hit(p1), _hit(p2)
+        base = _move(x, v * t0, 0, 0, 0)
+        out.append(_gh_extrude(base, v * (t1 - t0)))
+    return _gh_out(out)
+
+
+def _gh_extrude_tapered(_profile, _direction, _angle=0.0, _corner=0, _merge=True,
+                        _degrees=False):
+    """Extrude Tapered: extrude a planar profile along a vector, the walls
+    leaning in by `angle` (radians unless `degrees`)."""
+    w = _gh_curve(_profile)
+    if w is None:
+        return None
+    v = _gh_vec(_direction)
+    a = _gh_num(_angle, 0.0)
+    if not _degrees:
+        a = math.degrees(a)
+    f = Face(w) if w.is_closed else None
+    if f is None:
+        raise ValueError("Extrude Tapered: the profile must be closed")
+    return extrude(f, amount=v.length, dir=v.normalized(), taper=a)
+
+
+def _gh_brep_plane(_brep, _plane):
+    from OCP.BRepAlgoAPI import BRepAlgoAPI_Section
+    from OCP.gp import gp_Pln, gp_Pnt, gp_Dir
+    s = _gh_shapes(_brep)
+    if not s:
+        return {"curves": None, "points": None}
+    pl = _gh_plane(_plane)
+    o, z = pl.origin, pl.z_dir
+    sec = BRepAlgoAPI_Section(s[0].wrapped, gp_Pln(gp_Pnt(o.X, o.Y, o.Z), gp_Dir(z.X, z.Y, z.Z)))
+    sec.Build()
+    es = list(_gh_wrap(sec.Shape()).edges())
+    if not es:
+        return {"curves": None, "points": None}
+    try:
+        ws = list(Wire.combine(es, tol=1e-4))
+    except Exception:
+        ws = es
+    return {"curves": _gh_out(ws), "points": None}
+
+
+def _gh_volume(_geometry):
+    s = _gh_shapes(_geometry)
+    if not s:
+        return {"volume": None, "centroid": None}
+    tot, acc = 0.0, Vector(0, 0, 0)
+    for x in s:
+        v = x.volume
+        tot += v
+        acc = acc + x.center(CenterOf.MASS) * v
+    return {"volume": tot, "centroid": acc / tot if tot else None}
+
+
+def _gh_loft_options(_closed=False, _adjust=False, _rebuild=0, _refit=0.0, _type=0):
+    return {"closed": _gh_bool(_closed), "type": int(_gh_num(_type, 0))}
+
+
+def _gh_loft(_curves, _options=None):
+    """Loft through section curves -> a surface. Loft type 2 (Straight) gives a
+    ruled loft; `closed` loops back to the first section."""
+    ws = [_gh_curve(c) for c in _gh_items(_curves)]
+    ws = [w for w in ws if w is not None]
+    if len(ws) < 2:
+        raise ValueError("Loft: needs at least two curves")
+    o = _options if isinstance(_options, dict) else {}
+    if o.get("closed"):
+        ws = ws + [ws[0]]
+    ruled = o.get("type") == 2
+    from OCP.BRepOffsetAPI import BRepOffsetAPI_ThruSections
+    th = BRepOffsetAPI_ThruSections(False, ruled)
+    for w in ws:
+        th.AddWire(w.wrapped)
+    th.Build()
+    return _gh_wrap(th.Shape())
+
+
+def _gh_sweep2(_rail1, _rail2, _sections, _same_height=False):
+    """Sweep2: sections swept along rail 1 with rail 2 steering their twist (the
+    second rail is the binormal guide)."""
+    r1, r2 = _gh_curve(_rail1), _gh_curve(_rail2)
+    secs = [_gh_curve(c) for c in _gh_items(_sections)]
+    secs = [w for w in secs if w is not None]
+    if r1 is None or not secs:
+        return None
+    from OCP.BRepOffsetAPI import BRepOffsetAPI_MakePipeShell
+    mk = BRepOffsetAPI_MakePipeShell(r1.wrapped)
+    if r2 is not None:
+        mk.SetMode(r2.wrapped, True)
+    for w in secs:
+        mk.Add(w.wrapped, False, False)
+    mk.Build()
+    if not mk.IsDone():
+        raise ValueError("Sweep2: the sweep failed")
+    return _gh_wrap(mk.Shape())
+
+
+def _gh_unroll(_polysurface, _plane=None, _points=None, _curves=None):
+    """Unroll Polysurface for the developable faces noodle meets on a jar: a
+    plane (laid flat as is), a cylinder (u·r by v) and a cone. The face is laid
+    in the target plane with u along x; points and curves lying on the face go
+    along through their (u, v) — that is what lets a decoration be drawn flat
+    and wrapped back with Surface Morph."""
+    from OCP.BRepTools import BRepTools
+    f = _gh_face(_polysurface)
+    if f is None:
+        return {"unrolled": None, "unrolled_points": None, "unrolled_curves": None}
+    pl = _gh_plane(_plane)
+    gt = f.geom_type
+
+    def _flat(u, v):
+        if gt == GeomType.CYLINDER:
+            r = f.radius if hasattr(f, "radius") else 1.0
+            return Vector(u * r, v, 0)
+        if gt == GeomType.CONE:
+            from OCP.BRep import BRep_Tool
+            from OCP.Geom import Geom_ConicalSurface
+            cs = Geom_ConicalSurface.DownCast(BRep_Tool.Surface_s(f.wrapped))
+            r0, a = cs.RefRadius(), cs.SemiAngle()
+            sl = r0 / math.sin(a) + v if abs(math.sin(a)) > 1e-12 else v
+            phi = u * math.sin(a)
+            return Vector(sl * math.cos(phi), sl * math.sin(phi), 0)
+        return Vector(u, v, 0)
+
+    if gt == GeomType.PLANE:
+        lay = lambda q: pl.from_local_coords(Plane(f).to_local_coords(q))
+        flat = lay(f)
+    elif gt in (GeomType.CYLINDER, GeomType.CONE):
+        uv = _gh_face_uv(f)
+        n = 48
+        us = [uv["u"][0] + (uv["u"][1] - uv["u"][0]) * i / n for i in range(n + 1)]
+        vs = [uv["v"][0], uv["v"][1]]
+        if gt == GeomType.CYLINDER:
+            a, b = _flat(us[0], vs[0]), _flat(us[-1], vs[1])
+            flat = Face(Polyline((a.X, a.Y), (b.X, a.Y), (b.X, b.Y), (a.X, b.Y), close=True))
+        else:
+            ring0 = [_flat(u, vs[0]) for u in us]
+            ring1 = [_flat(u, vs[1]) for u in reversed(us)]
+            flat = Face(Polyline(*(ring0 + ring1), close=True))
+        flat = pl.from_local_coords(flat)
+    else:
+        raise ValueError(f"Unroll: a {gt} face is not developable here (plane, cylinder, cone)")
+
+    def _uv_of(q):
+        from OCP.GeomAPI import GeomAPI_ProjectPointOnSurf
+        from OCP.BRep import BRep_Tool
+        from OCP.gp import gp_Pnt
+        pr = GeomAPI_ProjectPointOnSurf(gp_Pnt(q.X, q.Y, q.Z), BRep_Tool.Surface_s(f.wrapped))
+        u, v = pr.LowerDistanceParameters()
+        return u, v
+
+    def _map(q):
+        if gt == GeomType.PLANE:
+            return lay(q)
+        u, v = _uv_of(q)
+        return pl.from_local_coords(_flat(u, v))
+
+    pts = [_map(_gh_point(p)) for p in _gh_items(_points)] if _points is not None else None
+    crvs = None
+    if _curves is not None:
+        crvs = []
+        for c in _gh_items(_curves):
+            w = _gh_curve(c)
+            if w is None:
+                continue
+            if gt == GeomType.PLANE:
+                crvs.append(lay(w))
+            else:
+                # unwrap u across the seam: a curve going round the cylinder
+                # must not jump back across the whole sheet at u = 2π
+                uvs, prev = [], None
+                for i in range(97):
+                    u, v = _uv_of(w.position_at(i / 96.0))
+                    if prev is not None:
+                        while u - prev > math.pi:
+                            u -= 2 * math.pi
+                        while prev - u > math.pi:
+                            u += 2 * math.pi
+                    prev = u
+                    uvs.append((u, v))
+                sm = [pl.from_local_coords(_flat(u, v)) for u, v in uvs]
+                crvs.append(Spline(*sm))
+    return {"unrolled": flat, "unrolled_points": pts, "unrolled_curves": crvs}
+
+
+def _gh_surface_morph(_geometry, _reference, _surface, _u=None, _v=None, _w=None):
+    """Surface Morph: geometry placed in a REFERENCE BOX is carried onto a
+    surface — the box's x/y become the surface's u/v (over the U/V domains,
+    normalised), its z the distance along the surface normal (over W). Curves
+    come back as splines through the morphed samples; faces and solids as a
+    MESH (a B-Rep cannot be bent exactly — a decoration morphed onto a jar is
+    triangles, and goes on through the mesh lane)."""
+    f = _gh_face(_surface)
+    if f is None or _geometry is None:
+        return None
+    ref = _gh_shapes(_reference)
+    bb = (ref[0] if ref else _geometry).bounding_box()
+    U, V = _gh_domain(_u, (0.0, 1.0)), _gh_domain(_v, (0.0, 1.0))
+    W = _gh_domain(_w, (0.0, 1.0))
+    uv = _gh_face_uv(f)
+    sx = max(bb.max.X - bb.min.X, 1e-12)
+    sy = max(bb.max.Y - bb.min.Y, 1e-12)
+    sz = max(bb.max.Z - bb.min.Z, 1e-12)
+
+    def _m(q):
+        a = (q.X - bb.min.X) / sx
+        b = (q.Y - bb.min.Y) / sy
+        c = (q.Z - bb.min.Z) / sz
+        uu = U[0] + (U[1] - U[0]) * a
+        vv = V[0] + (V[1] - V[0]) * b
+        ww = W[0] + (W[1] - W[0]) * c
+        pu = uv["u"][0] + (uv["u"][1] - uv["u"][0]) * uu
+        pv = uv["v"][0] + (uv["v"][1] - uv["v"][0]) * vv
+        from OCP.BRep import BRep_Tool
+        from OCP.GeomLProp import GeomLProp_SLProps
+        srf = BRep_Tool.Surface_s(f.wrapped)
+        pr = GeomLProp_SLProps(srf, pu, pv, 1, 1e-6)
+        p = pr.Value()
+        n = pr.Normal() if pr.IsNormalDefined() else None
+        base = Vector(p.X(), p.Y(), p.Z())
+        if n is not None:
+            nn = Vector(n.X(), n.Y(), n.Z())
+            if f.wrapped.Orientation().name.endswith("REVERSED"):
+                nn = -nn
+            base = base + nn * ww
+        return base
+
+    out = []
+    for g in _gh_items(_geometry):
+        if isinstance(g, Vector):
+            out.append(_m(g))
+        elif isinstance(g, (Edge, Wire)):
+            w = _gh_curve(g)
+            out.append(Spline(*[_m(w.position_at(i / 96.0)) for i in range(97)]))
+        else:
+            m = _to_mesh(g, 0.05)
+            import numpy as _np
+            import trimesh as _tm
+            V0 = _np.asarray(m.tm.vertices)
+            V1 = _np.array([_m(Vector(*p)).to_tuple() for p in V0])
+            out.append(Mesh(_tm.Trimesh(V1, _np.asarray(m.tm.faces), process=False)))
+    return _gh_out(out)
+
+
+# ===========================================================================
+# Text (Squid's Font / Paragraph / Text Curves)
+# ===========================================================================
+
+def _gh_font_list():
+    import subprocess
+    try:
+        out = subprocess.run(["fc-list", ":", "family"], capture_output=True, text=True,
+                             timeout=10).stdout
+    except Exception:
+        return []
+    fams = sorted({ln.split(",")[0].strip() for ln in out.splitlines() if ln.strip()})
+    return fams
+
+
+def _gh_font(_family=None, _size=10.0, _bold=False, _italic=False, _underline=False):
+    return {"family": _family or "Liberation Sans", "size": _gh_num(_size, 10.0),
+            "bold": _gh_bool(_bold), "italic": _gh_bool(_italic),
+            "underline": _gh_bool(_underline)}
+
+
+def _gh_paragraph(_halign=0, _valign=0, _rtl=False):
+    return {"halign": int(_gh_num(_halign, 0)), "valign": int(_gh_num(_valign, 0)),
+            "rtl": _gh_bool(_rtl)}
+
+
+def _gh_text_curves(_plane, _text, _font=None, _paragraph=None):
+    """Text Curves: the outlines of a text in a font, on a plane — every glyph's
+    outer and inner loops as closed curves (Boundary Surfaces fills them back,
+    holes included). Alignment from the Paragraph: h 0/1/2 = left/centre/right,
+    v 0/1/2 = top/middle/bottom."""
+    if _text is None or str(_text) == "":
+        return None
+    pl = _gh_plane(_plane)
+    f = _font if isinstance(_font, dict) else _gh_font()
+    p = _paragraph if isinstance(_paragraph, dict) else _gh_paragraph()
+    style = (FontStyle.BOLDITALIC if f["bold"] and f["italic"] else
+             FontStyle.BOLD if f["bold"] else FontStyle.ITALIC if f["italic"]
+             else FontStyle.REGULAR)
+    ha = [Align.MIN, Align.CENTER, Align.MAX][max(0, min(2, p["halign"]))]
+    va = [Align.MAX, Align.CENTER, Align.MIN][max(0, min(2, p["valign"]))]
+    sk = Text(str(_text), f["size"], font=f["family"], font_style=style, align=(ha, va))
+    ws = []
+    for fc in sk.faces():
+        ws.append(fc.outer_wire())
+        ws += list(fc.inner_wires())
+    return [pl.from_local_coords(w) for w in ws]
+
+
+# ===========================================================================
+# Export & bake (Pancake, eleFront)
+# ===========================================================================
+
+def _gh_step_export_option(_schema=None, *_rest):
+    return {"format": "step", "schema": _schema}
+
+
+def _gh_filepath_series(_pattern, _start=0, _qty=1):
+    """Filepath Series: file names from a pattern ('{0}.stp' -> 0.stp, 1.stp…)."""
+    pat = str(_pattern or "{0}")
+    a = int(_gh_num(_start, 0))
+    n = max(1, int(_gh_num(_qty, 1)))
+    names = [pat.replace("{0}", str(a + i)) if "{0}" in pat else f"{pat}{a + i}"
+             for i in range(n)]
+    return {"filepath": names[0], "list_of_filepath": names, "counter_of_first_file": a}
+
+
+def _gh_export_file(_geometry, _path, _node_id, _fmt=None):
+    import os as _os
+    s = _gh_shapes(_geometry)
+    if not s or not _path:
+        return None
+    name = _os.path.basename(str(_path).replace("\\", "/")) or "export"
+    ext = (_fmt or _os.path.splitext(name)[1].lstrip(".") or "step").lower()
+    if ext in ("stp", "step"):
+        ext = "step"
+    base = _os.path.splitext(name)[0] + "." + ("step" if ext == "step" else ext)
+    shape = s[0] if len(s) == 1 else Compound(s)
+    out = _out(base, _node_id)
+    if ext == "step":
+        export_step(shape, out)
+    elif ext == "stl":
+        export_stl(shape, out)
+    else:
+        raise ValueError(f"export format {ext!r} is not supported (step, stl)")
+    return out
+
+
+def _gh_export_as(_geometry, _file, _overwrite=True, _options=None, _export=False,
+                  _node_id=None, _attributes=None):
+    """Export As (Pancake): when `export` is true, write the geometry to the
+    project's exports/ under the file's NAME (a Windows path from the .gh keeps
+    only its name). Format from the options (STEP Export Option) or the
+    extension. Not exporting is not an error: ok = False."""
+    if not _gh_bool(_export):
+        return {"ok": False, "export_command": None}
+    fmt = _options.get("format") if isinstance(_options, dict) else None
+    p = _gh_export_file(_geometry, _file, _node_id, fmt)
+    return {"ok": p is not None, "export_command": p}
+
+
+def _gh_elefront_attributes(_name=None, _layer=None, _colour=None, _material=None, **_kw):
+    """eleFront Attributes: the object attributes (name, layer, colour,
+    material) as one value, read by Bake Objects / Export As."""
+    return {"attributes": {"name": _name, "layer": _layer, "colour": _colour,
+                           "material": _material},
+            "name": _name, "layer": _layer, "display_colour": _colour,
+            "material_name": _material}
+
+
+def _gh_bake_objects(_geometry, _attributes=None, _bake=False, _node_id=None):
+    """Bake Objects (eleFront): noodle has no Rhino document to bake into; the
+    nearest thing is a file. When `bake` is true the geometry goes to exports/
+    as STEP, named after the attributes' `name` (or 'bake')."""
+    if not _gh_bool(_bake):
+        return {"message": "not baked (bake is off)", "ghosts": None}
+    a = _attributes.get("attributes", _attributes) if isinstance(_attributes, dict) else {}
+    name = (a or {}).get("name") or "bake"
+    p = _gh_export_file(_geometry, f"{name}.step", _node_id, "step")
+    return {"message": f"baked to {p}", "ghosts": _geometry}
 '''
