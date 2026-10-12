@@ -1355,6 +1355,18 @@ def _gh_replace_nulls(_items, _repl):
     return {"items": out, "count": n}
 
 
+def _gh_graft(_v):
+    """Graft Tree: every item into a branch of its own — a list becomes a list
+    of one-item lists, and a tree is grafted inside each branch. It is what a
+    GH input's [graft] flag does, and it is NOT a no-op: Move To Plane with two
+    curves grafted and eleven planes makes eleven copies of EACH curve
+    (barattolo's nozzle and its bore), ungrafted it pairs them item by item."""
+    if _v is None:
+        return []
+    if not _is_seq(_v):
+        return [[_v]]
+    return [_gh_graft(x) if _is_seq(x) else [x] for x in _v]
+
 class _GhTree(dict):
     """A Grasshopper data tree: {path tuple: [items]}. Deliberately a dict, not a
     list: noodle fans out over lists, and a tree must travel as ONE value until

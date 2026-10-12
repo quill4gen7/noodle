@@ -456,6 +456,15 @@ _gh("GhReplaceNulls", "Replace Nulls",
     description="Fill the empty items of a list.")
 _lists("GhReplaceNulls")
 
+_gh("GhGraftTree", "Graft Tree", [_in("tree", list_access=True)],
+    [Socket("tree", WIRE_DATA, subtype="tree")], "_gh_graft({tree})",
+    aliases=["graft"],
+    description="Every item into a branch of its own (a list of one-item lists). "
+                "What an input's [graft] flag does in GH: the next node then runs "
+                "once per item against the WHOLE of its other inputs, instead of "
+                "pairing item with item.")
+_lists("GhGraftTree")
+
 _gh("GhCreateTree", "Create Tree", [_in("data", list_access=True), _in("path", list_access=True)],
     [Socket("data", WIRE_DATA, subtype="tree")], "_gh_create_tree({data}, {path})",
     description="A data tree: each item in the branch its path names ({0}, {1}… "
@@ -808,6 +817,7 @@ ALIASES = {
     "ImportSVG": ["Import SVG"],
     "NumberInput": ["Number"],
     "StringInput": ["Text", "File Path"],
+    "ListFlatten": ["Flatten Tree", "flatten"],
 }
 for _t, _names in ALIASES.items():
     _d = REGISTRY[_t]
