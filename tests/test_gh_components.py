@@ -43,7 +43,9 @@ def test_every_grasshopper_node_is_in_the_table():
     mapped = {m.noodle for m in COMPONENTS.values()}
     gh = {t for t, d in catalog.REGISTRY.items() if d.category == "grasshopper"}
     # Unit X/Y/Z and the planes are mapped; XY Plane too, though no sample uses it
-    assert gh <= mapped, sorted(gh - mapped)
+    # Graft Tree stands for the [graft] FLAG on an input (inserted by the
+    # importer, as List Flatten is for [flatten]); no sample uses the component
+    assert gh - {"GhGraftTree"} <= mapped, sorted(gh - mapped)
 
 
 def test_multi_out_helpers_return_the_declared_sockets():
@@ -180,3 +182,13 @@ def test_a_numeric_param_may_hold_a_domain_and_emits_only_numbers():
     assert format_param(p, [-10, 10]) == "[-10.0, 10.0]"
     with pytest.raises((TypeError, ValueError)):
         format_param(p, ["__import__('os')", 1])
+
+
+def test_graft_puts_every_item_in_its_own_branch():
+    from cad_nodes.transpiler import PREAMBLE
+    ns = {"ShapeList": type("ShapeList", (list,), {})}
+    for name in ("_is_seq", "_gh_graft"):
+        exec(re.search(rf"\ndef {name}\(.*?(?=\n\S)", PREAMBLE, re.S).group(0), ns)
+    assert ns["_gh_graft"]([1, 2]) == [[1], [2]]
+    assert ns["_gh_graft"]([[1, 2], [3]]) == [[[1], [2]], [[3]]]
+    assert ns["_gh_graft"](5) == [[5]]
