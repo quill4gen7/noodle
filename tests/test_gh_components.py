@@ -45,7 +45,8 @@ def test_every_grasshopper_node_is_in_the_table():
     # Unit X/Y/Z and the planes are mapped; XY Plane too, though no sample uses it
     # Graft Tree stands for the [graft] FLAG on an input (inserted by the
     # importer, as List Flatten is for [flatten]); no sample uses the component
-    assert gh - {"GhGraftTree"} <= mapped, sorted(gh - mapped)
+    flags = {"GhGraftTree", "GhSurfaceParam", "GhBrepParam"}   # importer-inserted
+    assert gh - flags <= mapped, sorted(gh - mapped)
 
 
 def test_multi_out_helpers_return_the_declared_sockets():

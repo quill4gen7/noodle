@@ -355,6 +355,10 @@
   210,
   78
  ],
+ "GhBrepParam": [
+  210,
+  58
+ ],
  "GhBrepPlane": [
   210,
   126
@@ -646,6 +650,10 @@
  "GhSurfaceMorph": [
   210,
   230
+ ],
+ "GhSurfaceParam": [
+  210,
+  58
  ],
  "GhSurfaceSplit": [
   210,

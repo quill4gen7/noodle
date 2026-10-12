@@ -866,6 +866,26 @@ def _gh_boundary_surfaces(_edges):
         out.append(f)
     return _gh_list(out)
 
+def _gh_to_surface(_v):
+    """A GH Surface (or Brep) PARAMETER's cast: a closed planar curve becomes
+    the planar surface it bounds, one per curve (no nesting — that is Boundary
+    Surfaces); faces and breps pass as they are. barattolo feeds a curve into a
+    Surface param and extrudes it: without the cast the extrusion is a wall,
+    not a solid, and the Solid Union after it gets nothing."""
+    out = []
+    for x in _gh_items(_v):
+        if isinstance(x, (Wire, Edge)):
+            w = _gh_curve(x)
+            if w is not None and w.is_closed:
+                try:
+                    out.append(Face(w))
+                    continue
+                except Exception:
+                    pass
+            raise ValueError("a Surface parameter can only take a CLOSED PLANAR curve")
+        out.append(x)
+    return _gh_list(out)
+
 def _gh_extrude(_base, _direction):
     """Extrude along a VECTOR (its length is the distance): a curve becomes a
     surface, a planar face a closed solid — GH's Extrude, not noodle's."""
@@ -1479,25 +1499,22 @@ def _gh_interpolate(_vertices, _degree=3, _periodic=False):
 
 
 def _gh_rebuild_curve(_curve, _degree=3, _count=10):
-    """Rebuild Curve: a B-spline of `degree` with `count` control points fitted
-    to the curve."""
-    from OCP.GeomAPI import GeomAPI_PointsToBSpline
-    from OCP.TColgp import TColgp_Array1OfPnt
-    from OCP.gp import gp_Pnt
-    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
+    """Rebuild Curve: a smooth B-spline through `count` points spread evenly
+    along the curve (periodic when it is closed). OCCT's least-squares fit
+    (GeomAPI_PointsToBSpline) was tried first and BLEW UP on closed glyph
+    outlines with sharp corners — barattolo's text came back 4 m wide — while
+    an interpolation through evenly spread samples stays on the curve."""
     w = _gh_curve(_curve)
     if w is None:
         return None
-    deg = max(1, int(_gh_num(_degree, 3)))
-    n = max(deg + 1, int(_gh_num(_count, 10)))
-    m = max(n * 4, 32)
-    A = TColgp_Array1OfPnt(1, m)
-    for i in range(m):
-        p = w.position_at(i / (m - 1))
-        A.SetValue(i + 1, gp_Pnt(p.X, p.Y, p.Z))
-    fit = GeomAPI_PointsToBSpline(A, deg, deg)
-    return Edge(BRepBuilderAPI_MakeEdge(fit.Curve()).Edge())
-
+    n = max(int(_gh_num(_degree, 3)) + 1, int(_gh_num(_count, 10)))
+    closed = w.is_closed
+    m = n if closed else n
+    ts = [i / (m if closed else m - 1) for i in range(m)]
+    pts = [w.position_at(t) for t in ts]
+    if closed:
+        return Spline(*pts, periodic=True)
+    return Spline(*pts)
 
 def _gh_simplify_curve(_curve, _tol=None, _angle=None):
     """Simplify Curve: collinear line segments merged, B-splines that are really
@@ -1733,8 +1750,39 @@ def _gh_fillet_edge(_shape, _edges, _radii, _blend=0, _metric=0):
         try:
             out = out.fillet(rad, picks)
         except Exception:
-            out = out.fillet(rad * 0.999, picks)
+            try:
+                out = out.fillet(rad * 0.999, picks)
+            except Exception as e:
+                smooth = [allE.index(es[k]) if es[k] in allE else k
+                          for k, p in enumerate(picks) if _gh_is_smooth_edge(out, p)]
+                if smooth:
+                    raise ValueError(
+                        f"Fillet Edge: edge index {smooth} is a SMOOTH seam (two faces "
+                        "meeting tangent, e.g. where an earlier fillet ends) in OCCT's "
+                        "edge order — nothing to round there. The .gh index was counted "
+                        "in Rhino's order and means another edge: pick it by geometry "
+                        "(Brep Edges -> a test -> Dispatch) or fix the index.") from e
+                raise
     return out
+
+
+def _gh_is_smooth_edge(_shape, _edge, _tol_deg=1.0):
+    """True when the two faces on an edge meet tangent (their normals agree at
+    its midpoint) — a seam a fillet cannot round."""
+    from OCP.TopExp import TopExp
+    from OCP.TopTools import TopTools_IndexedDataMapOfShapeListOfShape
+    from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE
+    m = TopTools_IndexedDataMapOfShapeListOfShape()
+    TopExp.MapShapesAndAncestors_s(_shape.wrapped, TopAbs_EDGE, TopAbs_FACE, m)
+    i = m.FindIndex(_edge.wrapped)
+    if i == 0:
+        return False
+    fs = [Face(f) for f in m.FindFromIndex(i)]
+    if len(fs) != 2:
+        return False
+    p = _edge.position_at(0.5)
+    n0, n1 = fs[0].normal_at(p), fs[1].normal_at(p)
+    return abs(n0.dot(n1)) > math.cos(math.radians(_tol_deg))
 
 def _gh_cap_holes(_brep):
     """Cap Holes: close the planar openings of an open brep with flat faces."""
