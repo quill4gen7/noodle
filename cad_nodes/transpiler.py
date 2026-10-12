@@ -4553,8 +4553,12 @@ def _fanout(_fn, _kw):
 
 
 def _flatten(_x):
+    # a single item is a list of one (a lone Wire is not iterable, a lone
+    # Vector would iterate its coordinates): what List Flatten of one wire means
+    if not _is_seq(_x):
+        return [] if _x is None else [_x]
     out = []
-    for it in (_x or []):
+    for it in _x:
         out.extend(_flatten(it)) if _is_seq(it) else out.append(it)
     return out
 

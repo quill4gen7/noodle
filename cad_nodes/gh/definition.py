@@ -124,15 +124,42 @@ def _param(c: Chunk) -> Param:
     return p
 
 
+class GhValue(list):
+    """A persistent value that is a list of numbers in the file but means more:
+    `kind` is point | vector | domain | plane. A plane is
+    [ox, oy, oz, xx, xy, xz, yx, yy, yz] (origin, X axis, Y axis)."""
+    kind = ""
+
+    def __new__(cls, kind, values):
+        return super().__new__(cls, values)
+
+    def __init__(self, kind, values):
+        super().__init__(values)
+        self.kind = kind
+
+
+# Item name in the file -> what the numbers are (surveyed on the three samples)
+_VALUE_KINDS = {"Coordinate": "point", "vector": "vector", "Interval": "domain",
+                "plane": "plane"}
+
+
 def _item_value(it: Chunk) -> Any:
-    """One persistent-data item: a plain value, or a geometry record."""
+    """One persistent-data item: a plain value, a GhValue, a geometry record,
+    or a dict of the item's fields (a material, mesh settings, loft options).
+
+    `TypeName` (written for GH_Integer/GH_Number/GH_Brep… when the container
+    could hold more than one type) names the type; it is never the value."""
     blob = it.item("ON_Data")
     if blob is not None or it.item("RefID") is not None:
         return {"geometry": it.item("TypeName"), "ref": it.item("RefID"),
                 "on_data": blob}
-    for n, _i, _t, v in it.items:
-        return v
-    return None
+    fields = [(n, v) for n, _i, _t, v in it.items if n != "TypeName"]
+    if len(fields) == 1:
+        n, v = fields[0]
+        return GhValue(_VALUE_KINDS[n], v) if n in _VALUE_KINDS else v
+    if dict(fields).keys() >= {"null_string", "string"}:
+        return None if dict(fields)["null_string"] else dict(fields)["string"]
+    return dict(fields) if fields else None
 
 
 def from_chunk(root: Chunk) -> Definition:

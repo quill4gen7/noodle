@@ -42,7 +42,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
-from .definition import Definition, GhObject, Param
+from .definition import Definition, GhObject, GhValue, Param
 
 # GH canvas units are px of a much denser canvas than litegraph's; this keeps
 # the GH picture recognisable. `arrange()` is the real layout.
@@ -113,7 +113,11 @@ def decode_from_report(path) -> Callable[[GhObject, int, dict], Optional[dict]]:
 
 
 def _text_of(v: Any) -> str:
-    """A persistent value as one line of an `Input` node (friendly mode)."""
+    """A persistent value as one line of an `Input` node (friendly mode, which
+    tries JSON first, then "x,y,z" -> Vector)."""
+    import json
+    if isinstance(v, GhValue) and v.kind == "domain":
+        return json.dumps([float(x) for x in v])          # [a, b], not a point
     if isinstance(v, bool):
         return "true" if v else "false"
     if isinstance(v, float):
@@ -121,6 +125,40 @@ def _text_of(v: Any) -> str:
     if isinstance(v, (list, tuple)):
         return ",".join(_text_of(x) for x in v)
     return str(v)
+
+
+def _plane_code(v: GhValue) -> str:
+    o, x, y = v[0:3], v[3:6], v[6:9]
+    z = [x[1] * y[2] - x[2] * y[1], x[2] * y[0] - x[0] * y[2], x[0] * y[1] - x[1] * y[0]]
+    t = lambda w: "(" + ", ".join(f"{c:.10g}" for c in w) + ")"
+    return f"Plane(origin={t(o)}, x_dir={t(x)}, z_dir={t(z)})"
+
+
+def world_plane(v: GhValue) -> Optional[str]:
+    """XY / XZ / YZ when the plane is a world plane through the origin."""
+    if any(abs(c) > 1e-9 for c in v[:3]):
+        return None
+    x, y = v[3:6], v[6:9]
+    n = [x[1] * y[2] - x[2] * y[1], x[2] * y[0] - x[0] * y[2], x[0] * y[1] - x[1] * y[0]]
+    axis = max(range(3), key=lambda i: abs(n[i]))
+    return {0: "YZ", 1: "XZ", 2: "XY"}[axis] if abs(abs(n[axis]) - 1) < 1e-9 else None
+
+
+def _encode(values: list) -> tuple[str, str]:
+    """Values -> (text, mode) of an `Input` node. Planes need build123d mode."""
+    if any(isinstance(v, GhValue) and v.kind == "plane" for v in values):
+        return "\n".join(_plane_code(v) if isinstance(v, GhValue) and v.kind == "plane"
+                         else repr(v) for v in values), "build123d"
+    return "\n".join(_text_of(v) for v in values), "friendly"
+
+
+def _param_value(v: Any, pdef) -> Any:
+    """A persistent value as a widget value of `pdef`."""
+    if isinstance(v, GhValue):
+        if v.kind == "plane" and pdef.type == "select":
+            return world_plane(v)
+        return [float(x) for x in v]
+    return v
 
 
 class _Importer:
@@ -137,6 +175,8 @@ class _Importer:
         # A list because a wired container stands for ALL its sources.
         self.out_at: dict[tuple[int, int], list[tuple[str, str]]] = {}
         self.pending: list[tuple[GhObject, str]] = []   # (object, node id) to wire
+        self.shown = d.shown()
+        self.claimed: dict[str, set[str]] = {}  # node id -> GH inputs a per-type rule took
 
     # ------------------------------------------------------------ helpers
     def issue(self, o: GhObject | None, msg: str):
@@ -163,8 +203,8 @@ class _Importer:
         return nd.outputs[0].name if nd and nd.outputs else "result"
 
     def input_node(self, nid: str, o: GhObject, values: list, title=None) -> tuple[str, str]:
-        self.node(nid, "Input", o, {"text": "\n".join(_text_of(v) for v in values),
-                                    "mode": "friendly"}, title=title, dx=-260)
+        text, mode = _encode(values)
+        self.node(nid, "Input", o, {"text": text, "mode": mode}, title=title, dx=-260)
         return (nid, self.first_output("Input"))
 
     # ------------------------------------------------------------ objects
@@ -187,7 +227,9 @@ class _Importer:
             getattr(self, "_" + _get(m, "kind", "skip"), self._unknown_kind)(o, m)
         for o, nid in self.pending:
             self._wire_inputs(o, nid, self.table[o.type_guid])
+        self._show_sources()
         self._custom_previews()
+        self._check_wires()
         return ImportResult(
             graph={"name": self.d.name.rsplit(".", 1)[0] or "gh-import",
                    "nodes": list(self.nodes.values()), "connections": self.conns,
@@ -252,6 +294,7 @@ class _Importer:
         from .geometry import curve_code
         self.node(nid, "CodeBlock", o, {"code": curve_code(curves, o.nick or o.type)},
                   title=o.nick or o.type)
+        self.nodes[nid]["preview"] = o in self.shown
         self.out_at[(o.k, 0)] = [(nid, "result")]
 
     def _alias(self, o, m):
@@ -262,11 +305,7 @@ class _Importer:
             return
         nid = f"n{o.k}"
         n = self.node(nid, ntype, o, title=o.nick if o.nick and o.nick != o.type else None)
-        if o.hidden and any(s.wire_type != "data" for s in nd.outputs):
-            n["preview"] = False
-        elif not o.hidden and o.type not in ("Custom Preview",):
-            if any(s.wire_type not in ("data",) for s in nd.outputs):
-                n["preview"] = True
+        self._eye(o, n)
         outs = _get(m, "outputs") or {}
         for j, p in enumerate(o.outputs):
             sock = outs.get(p.name)
@@ -277,8 +316,29 @@ class _Importer:
                 continue
             self.out_at[(o.k, j)] = [(nid, sock)]
         self.pending.append((o, nid))
+        extra = _EXTRAS.get(o.type)
+        if extra is not None:
+            self.claimed[nid] = extra(self, o, n) or set()
 
     _new = _alias
+
+    def _eye(self, o: GhObject, n: dict):
+        """GH draws every enabled, non-hidden object that holds geometry
+        (Definition.shown); everything else is drawn by nobody."""
+        nd = self.reg.get(n["type"])
+        if nd is None or all(s.wire_type == "data" for s in nd.outputs):
+            return
+        n["preview"] = o in self.shown
+
+    def _show_sources(self):
+        """A wired container GH draws vanished on import: draw its sources."""
+        for o in self.shown:
+            m = self.table.get(o.type_guid)
+            if m is None or _get(m, "kind") != "container" or (o.k, 0) not in self.out_at:
+                continue
+            for nid, _s in self.sources_of(o.k, 0) or []:
+                if nid in self.nodes:
+                    self.nodes[nid]["preview"] = True
 
     # ------------------------------------------------------------ wires
     def sources_of(self, k: int, j: int, seen=()) -> list[tuple[str, str]] | None:
@@ -330,12 +390,32 @@ class _Importer:
                         srcs += s
                 for s in self._through_flags(o, nid, p, sock, srcs, nd):
                     self.wire(s, (nid, sock))
-            elif p.data:
+            elif p.data and p.name not in self.claimed.get(nid, ()):
                 self._persistent(o, nid, p, sock, pmap.get(p.name), nd)
             self._param_flags(o, n, p, nd)
 
+    def _merge(self, nid, sock, srcs):
+        """Several GH sources into one input are ONE list in GH. noodle keeps
+        that only on an item-access input (fan-out) or a `multiple` one: a
+        plain list_access input reads its first wire and drops the rest
+        silently. So those get a ListCreate collecting every source."""
+        hid = f"{nid}_{sock}_merge"
+        self.node(hid, "ListCreate", None)
+        x, y = self.nodes[nid]["position"]
+        self.nodes[hid]["position"] = [x - 220, y + 40]
+        for s in srcs:
+            self.wire(s, (hid, "items"))
+        return [(hid, self.first_output("ListCreate"))]
+
     def _through_flags(self, o, nid, p, sock, srcs, nd):
+        target = nd.input(sock)
+        many = len(srcs) > 1
+        if many and (("flatten" in p.flags or "reverse" in p.flags)
+                     or (target.list_access and not target.multiple)):
+            srcs = self._merge(nid, sock, srcs)       # ListCreate also flattens
         for flag, helper in (("flatten", "ListFlatten"), ("reverse", "ListReverse")):
+            if flag == "flatten" and many:
+                continue
             if flag in p.flags and srcs:
                 hid = f"{nid}_{sock}_{flag}"
                 self.node(hid, helper, None)
@@ -358,7 +438,12 @@ class _Importer:
             if nd.param(target) is None:
                 self.issue(o, f"input {p.name!r} -> param {target!r}: not on {n['type']}")
                 return
-            n["params"][target] = values[0]
+            v = _param_value(values[0], nd.param(target))
+            if v is None:
+                self.issue(o, f"input {p.name!r}: plane {_text_of(values[0])} is not a world "
+                              f"plane, {n['type']}.{target} cannot hold it")
+                return
+            n["params"][target] = v
             return
         if sock and nd.input(sock) is not None:
             src = self.input_node(f"{nid}_{sock}_value", None, values)
@@ -381,6 +466,36 @@ class _Importer:
             else:
                 self.issue(o, f"input {p.name!r}: flag [{flag}] has no counterpart")
 
+    def _check_wires(self):
+        """Drop — and report — every wire noodle's types refuse, so the graph
+        always loads: a GH wire is untyped, a noodle one is not, and one bad
+        wire makes validate() reject the whole graph."""
+        if self.reg is not _catalog():
+            return              # a stand-in registry: validate() knows nothing of it
+        from cad_nodes.graph import Graph
+        from cad_nodes.casts import wires_compatible
+        while True:
+            g = Graph.from_dict({"name": "x", "nodes": list(self.nodes.values()),
+                                 "connections": self.conns})
+            bad = None
+            for c in g.connections:
+                inp = self.reg[self.nodes[c.to_node]["type"]].input(c.to_socket)
+                if inp is None:
+                    continue
+                t = g.effective_output_type(c.from_node, c.from_socket)
+                if not wires_compatible(t, inp.wire_type) and t not in (inp.accepts or []):
+                    bad = (c, t, inp.wire_type)
+                    break
+            if bad is None:
+                return
+            c, t, w = bad
+            self.conns = [x for x in self.conns if x["id"] != c.id]
+            src, dst = self.nodes[c.from_node], self.nodes[c.to_node]
+            k = lambda n: f"#{n['params']['_gh']['k']}" if "_gh" in n["params"] else n["id"]
+            self.issues.append(f"wire {k(src)} {src['type']}.{c.from_socket} ({t}) -> "
+                               f"{k(dst)} {dst['type']}.{c.to_socket} ({w}): "
+                               "types refused by noodle, dropped")
+
     # ------------------------------------------------------------ display
     def _custom_previews(self):
         """Custom Preview -> the eye on what it draws, coloured if the colour
@@ -394,9 +509,11 @@ class _Importer:
             geo = next((p for p in o.inputs if p.name == "Geometry"), None)
             mat = next((p for p in o.inputs if p.name in ("Material", "Shader")), None)
             colour = None
-            if mat is not None and mat.data and isinstance(mat.data[0], int):
-                c = mat.data[0] & 0xFFFFFF
-                colour = f"#{c:06x}"
+            if mat is not None and mat.data:
+                c = mat.data[0]
+                c = c.get("diffuse") if isinstance(c, dict) else c   # a material, or a colour
+                if isinstance(c, int) and not isinstance(c, bool):
+                    colour = f"#{c & 0xFFFFFF:06x}"
             for a, b in (geo.wires if geo else []):
                 for nid, _s in self.sources_of(a, b) or []:
                     self.nodes[nid]["preview"] = True
@@ -435,6 +552,56 @@ class _Importer:
             out.append({"title": o.nick or "Group", "bounding": [x0, y0, x1 - x0, y1 - y0],
                         "color": colour})
         return out
+
+
+# ---------------------------------------------------------------- per type
+# What a component keeps OUTSIDE its params (a graph mapper's curve) or means
+# by an unwired input (Mirror's plane) — rules of GH, not of the table.
+
+def _graph_mapper(imp: _Importer, o: GhObject, n: dict):
+    """The curve lives in Container/LocalGraph. A `Conic` is the quadratic
+    Bezier (0,0) -> C -> (1,1); degree-elevated it is the cubic with handles
+    2/3 of the way to C, which is what GraphMapper's bezier mode draws."""
+    c = o.chunk.sub("Container") if o.chunk else None
+    lg = c.sub("LocalGraph") if c else None
+    g = lg.sub("Graph") if lg else None
+    dom = lg.sub("Domain") if lg else None
+    if dom is not None and [dom.item(k) for k in ("x0", "x1", "y0", "y1")] != [0, 1, 0, 1]:
+        imp.issue(o, "graph domain other than [0,1]x[0,1]: not translated")
+    kind = g.item("container_name") if g else None
+    if kind == "Conic":
+        cx, cy = g.item("Cx"), g.item("Cy")
+        n["params"]["mode"] = "bezier"
+        n["params"]["curve"] = [
+            {"p": [0.0, 0.0], "hi": None, "ho": [2 * cx / 3, 2 * cy / 3]},
+            {"p": [1.0, 1.0], "hi": [1 + 2 * (cx - 1) / 3, 1 + 2 * (cy - 1) / 3], "ho": None}]
+    elif kind == "Linear":
+        n["params"]["mode"] = "linear"
+    else:
+        imp.issue(o, f"graph type {kind!r} not translated (only Conic, Linear)")
+    for p in o.inputs:      # Source / Target: [0,1] is the identity
+        if p.name in ("Source", "Target") and not p.wires and p.data not in (None, [[0.0, 1.0]]):
+            imp.issue(o, f"{p.name} = {_text_of(p.data[0])}: needs a Remap, not inserted")
+    return {"Source", "Target"}
+
+
+def _mirror(imp: _Importer, o: GhObject, n: dict):
+    """GH mirrors in the YZ plane when P is unwired; noodle's default is XZ.
+    An internalised plane is read by its normal."""
+    p = next((p for p in o.inputs if p.name == "Plane"), None)
+    if p is None or p.wires:
+        return {"Plane"}
+    name = "YZ"
+    if p.data:
+        name = world_plane(p.data[0])
+        if name is None:
+            imp.issue(o, "internalised plane is not a world plane through the origin")
+            return {"Plane"}
+    n["params"]["plane"] = name
+    return {"Plane"}
+
+
+_EXTRAS = {"Rich Graph Mapper": _graph_mapper, "Mirror": _mirror}
 
 
 def import_definition(d: Definition, components=None,

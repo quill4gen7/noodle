@@ -28,8 +28,11 @@ def _post(url, body=None):
                                  data=None if body is None else json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json",
                                           "User-Agent": "noodle-gh-import"})
-    with urllib.request.urlopen(req) as r:
-        return json.loads(r.read() or b"{}")
+    try:
+        with urllib.request.urlopen(req) as r:
+            return json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        raise SystemExit(f"{url}: HTTP {e.code} {e.read().decode(errors='replace')[:2000]}")
 
 
 def _exists(url) -> bool:
