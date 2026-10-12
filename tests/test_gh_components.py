@@ -171,3 +171,11 @@ def test_one_item_fanned_is_one_branch_not_a_tree():
     pts = lambda curve: [curve, curve + 1]           # a list output
     assert ns["_gh_fanout"](pts, {"curve": [5]}, {}) == [5, 6]
     assert ns["_gh_fanout"](pts, {"curve": [5, 7]}, {}) == [[5, 6], [7, 8]]
+
+
+def test_a_numeric_param_may_hold_a_domain_and_emits_only_numbers():
+    from cad_nodes.transpiler import format_param
+    p = catalog.get("GhPlaneSurface").param("x_size")
+    assert format_param(p, [-10, 10]) == "[-10.0, 10.0]"
+    with pytest.raises((TypeError, ValueError)):
+        format_param(p, ["__import__('os')", 1])
