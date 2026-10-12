@@ -127,6 +127,22 @@ def _text_of(v: Any) -> str:
     return str(v)
 
 
+_NUM = r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?"
+
+
+def _panel_line(t: str) -> str:
+    """A line of a GH Panel in the syntax GH casts from: "a to b" is a domain,
+    "{x, y, z}" a point. Everything else is left to Input's friendly parser."""
+    import re
+    m = re.fullmatch(rf"\s*({_NUM})\s+to\s+({_NUM})\s*", t)
+    if m:
+        return f"[{float(m.group(1))!r}, {float(m.group(2))!r}]"
+    m = re.fullmatch(rf"\s*\{{\s*({_NUM})\s*,\s*({_NUM})\s*,\s*({_NUM})\s*\}}\s*", t)
+    if m:
+        return ",".join(m.groups())
+    return t
+
+
 def _plane_code(v: GhValue) -> str:
     o, x, y = v[0:3], v[3:6], v[6:9]
     z = [x[1] * y[2] - x[2] * y[1], x[2] * y[0] - x[0] * y[2], x[0] * y[1] - x[1] * y[0]]
@@ -268,7 +284,7 @@ class _Importer:
             self.pending.append((o, nid))
             self.out_at[(o.k, 0)] = [(nid, self.first_output("Display"))]
         else:
-            lines = (o.text or "").splitlines() or [""]
+            lines = [_panel_line(t) for t in (o.text or "").splitlines()] or [""]
             self.out_at[(o.k, 0)] = [self.input_node(nid, o, lines,
                                                      title=o.nick if o.nick != "Panel" else None)]
             self.nodes[nid]["position"][0] += 260
@@ -306,6 +322,38 @@ class _Importer:
                   title=o.nick or o.type)
         self.nodes[nid]["preview"] = o in self.shown
         self.out_at[(o.k, 0)] = [(nid, "result")]
+
+    def _script(self, o, m):
+        """A GH Python script -> a CodeBlock running the same source: its inputs
+        bound by name (`x = in_0`, in InputParam order), its first output other
+        than `out` (the stdout) as `result`, the rest as `#@out`. Plain Python
+        runs as is; Rhino's API does not, and that is reported."""
+        import base64
+        c = o.chunk.sub("Container") if o.chunk else None
+        sc = c.sub("Script") if c else None
+        b64 = sc.item("Text") if sc else None
+        if not b64:
+            self.issue(o, "no script source in the file")
+            return
+        src = base64.b64decode(b64).decode("utf-8").replace("\r\n", "\n")
+        if len(o.inputs) > 6:
+            self.issue(o, f"{len(o.inputs)} script inputs, a CodeBlock has 6")
+        outs = [p for p in o.outputs if p.name != "out"]
+        head = [f"{p.nick or p.name} = in_{i}" for i, p in enumerate(o.inputs[:6])]
+        tail = [f"#@out {p.nick or p.name}" for p in outs[1:]]
+        if outs:
+            tail.append(f"result = {outs[0].nick or outs[0].name}")
+        code = "\n".join([f"# {o.type} '{o.nick}' from the .gh"] + head + ["", src, ""] + tail)
+        if any(k in src for k in ("rhinoscriptsyntax", "import Rhino", "scriptcontext",
+                                  "from Rhino", "ghpythonlib")):
+            self.issue(o, "the script uses Rhino's API: it will not run in noodle")
+        nid = f"n{o.k}"
+        self.node(nid, "CodeBlock", o, {"code": code},
+                  title=o.nick if o.nick and o.nick != o.type else None)
+        for j, p in enumerate(o.outputs):
+            if p in outs:
+                self.out_at[(o.k, j)] = [(nid, "result" if p is outs[0] else (p.nick or p.name))]
+        self.pending.append((o, nid))
 
     def _alias(self, o, m):
         ntype = _get(m, "noodle")
@@ -386,7 +434,12 @@ class _Importer:
         pmap = _get(m, "params") or {}
         if _get(m, "kind") == "panel":
             ins = {o.inputs[0].name: nd.inputs[0].name}
+        elif _get(m, "kind") == "script":
+            ins = {p.name: f"in_{i}" for i, p in enumerate(o.inputs[:6])}
+        ignore = set(_get(m, "ignore") or ())
         for p in o.inputs:
+            if p.name in ignore:
+                continue            # accepted and dropped on purpose by the table
             sock = ins.get(p.name)
             tnid, tnd = nid, nd
             if (nid, p.name) in self.redirect:      # a per-type rule put a node in front
@@ -430,6 +483,14 @@ class _Importer:
         if many and (("flatten" in p.flags or "reverse" in p.flags)
                      or (target.list_access and not target.multiple)):
             srcs = self._merge(nid, sock, srcs)       # ListCreate also flattens
+        if "invert" in p.flags and srcs and "GhInvertBoolean" in self.reg:
+            hid = f"{nid}_{sock}_invert"
+            self.node(hid, "GhInvertBoolean", None)
+            x, y = self.nodes[nid]["position"]
+            self.nodes[hid]["position"] = [x - 220, y - 40]
+            for src in srcs:
+                self.wire(src, (hid, "boolean"))
+            srcs = [(hid, "inverted")]
         for flag, helper in (("flatten", "ListFlatten"), ("reverse", "ListReverse")):
             if flag == "flatten" and many:
                 continue
@@ -448,14 +509,20 @@ class _Importer:
         n = self.nodes[nid]
         target = param or (sock if sock and nd.param(sock) else None)
         values = [v for v in p.data if not (isinstance(v, dict) and "geometry" in v)]
+        if "invert" in p.flags:          # GH's [invert] on a constant: not B
+            values = [(not v) if isinstance(v, bool) else v for v in values]
         if len(values) != len(p.data):
             self.issue(o, f"input {p.name!r}: internalised Rhino geometry is not imported")
             return
+        pdef = nd.param(target) if target else None
+        if (pdef is not None and len(values) == 1 and isinstance(values[0], (list, dict))
+                and pdef.type in ("float", "int", "bool")):
+            target = None          # a domain / point cannot sit in a number widget
         if target and len(values) == 1:
-            if nd.param(target) is None:
+            if pdef is None:
                 self.issue(o, f"input {p.name!r} -> param {target!r}: not on {n['type']}")
                 return
-            v = _param_value(values[0], nd.param(target))
+            v = _param_value(values[0], pdef)
             if v is None:
                 self.issue(o, f"input {p.name!r}: plane {_text_of(values[0])} is not a world "
                               f"plane, {n['type']}.{target} cannot hold it")
@@ -478,8 +545,8 @@ class _Importer:
                 continue
             if flag in ("degrees", "reparameterize") and nd.param(flag) is not None:
                 n["params"][flag] = True
-            elif flag == "invert" and nd.param("invert") is not None:
-                n["params"]["invert"] = True
+            elif flag == "invert" and (p.wires and "GhInvertBoolean" in self.reg or p.data):
+                continue            # applied on the wire / on the value
             else:
                 self.issue(o, f"input {p.name!r}: flag [{flag}] has no counterpart")
 
