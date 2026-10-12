@@ -1325,7 +1325,9 @@ register(NodeDef("ListLast", "data", "List Last",
 register(NodeDef("ListReverse", "data", "List Reverse",
     inputs=[Socket("list", WIRE_DATA, list_access=True)],
     outputs=_data(),
-    code_template={"algebra": "list(reversed({list}))"},
+    # not list(...): wrapped in a lambda (fan-out) the socket `list` is an
+    # argument and shadows the builtin — "'list' object is not callable"
+    code_template={"algebra": "[*reversed({list})]"},
     description="Reverse the order of a list."))
 
 register(NodeDef("ListSlice", "data", "List Slice",
