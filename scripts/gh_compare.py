@@ -31,6 +31,17 @@ _EPILOGUE = r'''
 # --- gh_compare (injected) ---
 import json as _json
 from build123d import Shape, ShapeList, Vector
+from OCP.Bnd import Bnd_Box as _Bnd
+from OCP.BRepBndLib import BRepBndLib as _BB
+
+def _gc_bbox(x):
+    # exact, from the geometry: Shape.bounding_box() reads the triangulation
+    # stored on the edges, and a face tessellated elsewhere (Populate, the
+    # preview) makes the box of a curve that bounds it garbage
+    b = _Bnd()
+    _BB.AddOptimal_s(x.wrapped, b, False, False)
+    x0, y0, z0, x1, y1, z1 = b.Get()
+    return type("B", (), {"min": Vector(x0, y0, z0), "max": Vector(x1, y1, z1)})()
 def _gc_items(v, depth=0):
     if isinstance(v, (list, tuple, ShapeList)):
         out, br = [], 0
@@ -53,7 +64,7 @@ def _gc_stats(v):
         s["types"][tn] = s["types"].get(tn, 0) + 1
         try:
             if isinstance(x, Shape):
-                grow(x.bounding_box())
+                grow(_gc_bbox(x))
                 sol = x.solids()
                 if sol:
                     s["sum"]["volume"] = s["sum"].get("volume", 0) + sum(z.volume for z in sol)
