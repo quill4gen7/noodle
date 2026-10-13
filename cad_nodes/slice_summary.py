@@ -626,7 +626,8 @@ def summarize(shape, n_per_axis: int = 10) -> dict:
         return {"success": False,
                 "error": "no shape to slice (the graph produced no result)"}
 
-    bb = shape.bounding_box()
+    from .mesh_extractor import _geom_bbox   # never the triangulation
+    bb = _geom_bbox(shape)
     size = (bb.max.X - bb.min.X, bb.max.Y - bb.min.Y, bb.max.Z - bb.min.Z)
     try:
         volume = round(shape.volume, 2)

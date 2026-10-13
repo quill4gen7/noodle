@@ -337,9 +337,31 @@ cad_nodes/
                        preview meshes, view stats) — on a repeat run only the
                        dirty subtree re-executes/re-meshes (~8.5s -> ~0.5s on the
                        lego brick; cache dies with the worker = ⚙ warm toggle).
-                       Live-path bboxes use optimal=False (~2s -> ~5ms each,
-                       ≤1% oversized, view.bbox carries approx:true); exports
-                       and picker signatures keep exact geometry.
+                       Live-path bboxes use the POLES box (~2s -> ~3ms on the
+                       lego brick, view.bbox carries approx:true; never smaller,
+                       but on splines it is NOT ≤1% — measured +24% on
+                       voronoi-vase, +19% on pipe-fitting); exports and picker
+                       signatures keep exact geometry.
+                       TRAP, paid for: NEVER READ TRIANGULATION FOR A BBOX.
+                       build123d's `Shape.bounding_box()` — optimal=True AND
+                       False — lets OCCT read the triangulation /
+                       PolygonOnTriangulation stored on the edges, and once ANY
+                       face sharing a curve's edges was tessellated off the XY
+                       plane (the preview does it, Populate does it) that data is
+                       wrong for the curve. Six lines: a Spline+line profile in
+                       x=220 measures (0, 180, 90.28); `Face(w).tessellate(0.5,
+                       0.3)`; now it measures (90, 270, 180.27) — Bounding Box,
+                       Align, Bbox Plane, `_domain2d` (Voronoi) all read that.
+                       The rule: measure through `_bbox(shape, exact=True)` in the
+                       PREAMBLE (`BRepBndLib.AddOptimal`, useTriangulation=False;
+                       `exact=False` = `BRepBndLib.Add` without triangulation, the
+                       fast poles box — same cost as optimal=False, measured), or
+                       `mesh_extractor._geom_bbox` in the imported worker modules
+                       (they cannot see the PREAMBLE; measure.py/slice_summary.py
+                       import it). `_gh_bbox` is `_bbox`. Exact costs what it
+                       always did (lego brick 2.17s either way): the values on
+                       solids are identical, only the curve case changes.
+                       tests/test_bbox_no_triangulation.py pins every call site.
   graph.py           Graph/Node/Connection dataclasses; from_dict/to_dict;
                        validate() (raises on incompatible wires / unknown sockets).
   api.py             High-level ops over a GraphStore: add_node, connect,

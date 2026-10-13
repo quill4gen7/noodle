@@ -111,7 +111,8 @@ def _one(value, ref: str = "?"):
 
 
 def _bbox(shape) -> dict:
-    bb = shape.bounding_box()
+    from .mesh_extractor import _geom_bbox   # never the triangulation
+    bb = _geom_bbox(shape)
     return {"min": _vec(bb.min), "max": _vec(bb.max),
             "size": [bb.max.X - bb.min.X, bb.max.Y - bb.min.Y, bb.max.Z - bb.min.Z]}
 
@@ -216,6 +217,7 @@ def section_stats(shape, axis: str = "z", offset: float = 0.0,
     slice_summary.outline — use `outline: true` for the edge-by-edge listing."""
     from build123d import section
 
+    from .mesh_extractor import _geom_bbox
     from .slice_summary import _COORDS, _PLANE, _PROJ
     axis = str(axis).lower()
     if axis not in _PLANE:
@@ -226,7 +228,7 @@ def section_stats(shape, axis: str = "z", offset: float = 0.0,
     regions = []
     xs, ys = [], []
     for f in faces:
-        bb = f.bounding_box()
+        bb = _geom_bbox(f)
         lo, hi = proj(bb.min), proj(bb.max)
         xs += [lo[0], hi[0]]
         ys += [lo[1], hi[1]]
