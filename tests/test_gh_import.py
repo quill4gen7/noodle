@@ -234,3 +234,17 @@ def test_a_solid_whose_coarse_tessellation_fails_is_retried_finer():
     entry = mx._preview_geom(Rail())
     assert entry["mesh"]["triangles"] == [[0, 1, 2]]
     assert len(Rail.asked) >= 2 and Rail.asked[-1] < Rail.asked[0]
+
+
+def test_rational_control_points_are_dehomogenised():
+    """rhino3dm gives a rational curve's CVs as (x*w, y*w, z*w, w)."""
+    class P:
+        def __init__(self, x, y, z, w): self.X, self.Y, self.Z, self.W = x, y, z, w
+    class N:
+        Degree, IsPeriodic, IsRational = 2, False, True
+        Points = [P(0, 0, 0, 1), P(0.7071, 0.7071, 0, 0.7071), P(0, 1, 0, 1)]
+        Knots = [0, 0, 1, 1]
+        def ToNurbsCurve(self): return self
+    rec = geometry._nurbs(N())
+    assert rec["points"][1] == [1.0, 1.0, 0.0]
+    assert rec["weights"] == [1, 0.7071, 1]
