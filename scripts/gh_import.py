@@ -52,6 +52,7 @@ def main() -> int:
     ap.add_argument("--geometry", metavar="GEO.json")
     ap.add_argument("--out", metavar="graph.json")
     ap.add_argument("--map", metavar="map.json", help="where each GH output landed (gh_compare)")
+    ap.add_argument("--assets", metavar="DIR", help="folder with the files the .gh reads (SVG…)")
     ap.add_argument("--project")
     ap.add_argument("--server", default="http://localhost:8090")
     ap.add_argument("--arrange", action="store_true")
@@ -59,6 +60,8 @@ def main() -> int:
     a = ap.parse_args()
     d = definition.read(a.file)
     kw = {"decode": importer.decode_from_report(a.geometry)} if a.geometry else {}
+    if a.assets:
+        kw["assets"] = os.listdir(a.assets)
     res = importer.import_definition(d, **kw)
     print(res.report())
     if a.project:
