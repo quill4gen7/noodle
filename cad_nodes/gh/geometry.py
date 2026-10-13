@@ -70,10 +70,12 @@ def decode(blob: bytes) -> dict | None:
     if obj is None:
         return None
     if isinstance(obj, r.Curve):
-        segs = ([obj.SegmentCurve(i) for i in range(obj.SegmentCount)]
-                if isinstance(obj, r.PolyCurve) else [obj])
+        # The WHOLE curve as one NURBS, a PolyCurve included: its segments are
+        # the underlying curves, untrimmed to the sub-domain the PolyCurve
+        # uses (barattolo #1107: 2.7x the length, a bbox twice too big), and
+        # sewing them leaves gaps. ToNurbsCurve is exact, kinks and all.
         return {"kind": "curve", "class": cls, "closed": bool(obj.IsClosed),
-                "segments": [_nurbs(s) for s in segs]}
+                "segments": [_nurbs(obj)]}
     if isinstance(obj, r.Mesh):
         return {"kind": "mesh", "class": cls, **_mesh(obj)}
     if isinstance(obj, r.Brep):
@@ -98,9 +100,14 @@ def decode(blob: bytes) -> dict | None:
 def _nurbs(c) -> dict:
     n = c.ToNurbsCurve()
     pts = [n.Points[i] for i in range(len(n.Points))]
+    # rhino3dm hands out the HOMOGENEOUS control points of a rational curve
+    # (x*w, y*w, z*w, w), as openNURBS stores them: divide, or every arc and
+    # rational spline comes out scaled by its weights (barattolo #1107: 3x long)
+    rat = bool(n.IsRational)
     return {"degree": n.Degree, "periodic": bool(n.IsPeriodic),
-            "points": [[p.X, p.Y, p.Z] for p in pts],
-            "weights": [p.W for p in pts] if n.IsRational else None,
+            "points": [[p.X / p.W, p.Y / p.W, p.Z / p.W] if rat else [p.X, p.Y, p.Z]
+                       for p in pts],
+            "weights": [p.W for p in pts] if rat else None,
             "knots": [n.Knots[i] for i in range(len(n.Knots))]}
 
 

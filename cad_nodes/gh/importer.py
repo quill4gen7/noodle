@@ -54,6 +54,9 @@ class ImportResult:
     graph: dict
     issues: list[str] = field(default_factory=list)
     unmapped: dict[str, list[int]] = field(default_factory=dict)  # "Name guid" -> [k]
+    # "k:j" (GH object k, output j) -> [[node id, socket], …]: where each GH
+    # output landed, for comparing a run against Grasshopper's own (gh_compare)
+    outputs: dict[str, list] = field(default_factory=dict)
 
     def report(self) -> str:
         out = [f"{len(self.graph['nodes'])} nodes, {len(self.graph['connections'])} wires, "
@@ -178,8 +181,9 @@ def _param_value(v: Any, pdef) -> Any:
 
 
 class _Importer:
-    def __init__(self, d: Definition, components, decode, registry):
+    def __init__(self, d: Definition, components, decode, registry, assets=None):
         self.d = d
+        self.assets = set(assets) if assets is not None else None
         self.table = components
         self.decode = decode
         self.reg = registry
@@ -260,7 +264,10 @@ class _Importer:
             graph={"name": self.d.name.rsplit(".", 1)[0] or "gh-import",
                    "nodes": list(self.nodes.values()), "connections": self.conns,
                    "groups": self._groups()},
-            issues=self.issues, unmapped=self.unmapped)
+            issues=self.issues, unmapped=self.unmapped,
+            outputs={f"{k}:{j}": [list(x) for x in srcs]
+                     for (k, j) in self.out_at
+                     if (srcs := self.sources_of(k, j))})
 
     _CURVE_WORDS = ("curve", "line", "polyline", "rectangle", "circle", "arc", "ellipse",
                     "polygon", "boundary", "outline", "edges", "segments", "offset", "joined")
@@ -333,10 +340,23 @@ class _Importer:
             self.pending.append((o, nid))
             self.out_at[(o.k, 0)] = [(nid, self.first_output("Display"))]
         else:
-            lines = [_panel_line(t) for t in (o.text or "").splitlines()] or [""]
+            raw = (o.text or "").splitlines()
+            if len(raw) > 1 and self._panel_multiline(o):
+                import json
+                lines = [json.dumps(o.text.replace("\r\n", "\n"))]   # ONE string
+            else:
+                lines = [_panel_line(t) for t in raw] or [""]
             self.out_at[(o.k, 0)] = [self.input_node(nid, o, lines,
                                                      title=o.nick if o.nick != "Panel" else None)]
             self.nodes[nid]["position"][0] += 260
+
+    @staticmethod
+    def _panel_multiline(o: GhObject) -> bool:
+        """GH Panel 'Multiline data': the whole text is ONE item, not a line
+        per item (the default in the file samples)."""
+        c = o.chunk.sub("Container") if o.chunk else None
+        pp = c.sub("PanelProperties") if c else None
+        return bool(pp.item("Multiline", default=True)) if pp else True
 
     def _container(self, o, m):
         p = o.inputs[0] if o.inputs else None
@@ -489,8 +509,9 @@ class _Importer:
             ins = {p.name: f"in_{i}" for i, p in enumerate(o.inputs[:6])}
         ignore = set(_get(m, "ignore") or ())
         for p in o.inputs:
-            if p.name in ignore:
-                continue            # accepted and dropped on purpose by the table
+            if p.name in ignore or (p.wires and p.name in self.claimed.get(nid, ())
+                                    and (nid, p.name) not in self.redirect):
+                continue            # dropped on purpose (table) / taken by a per-type rule
             sock = ins.get(p.name)
             tnid, tnd = nid, nd
             if (nid, p.name) in self.redirect:      # a per-type rule put a node in front
@@ -784,7 +805,7 @@ def _mirror(imp: _Importer, o: GhObject, n: dict):
     An internalised plane is read by its normal."""
     p = next((p for p in o.inputs if p.name == "Plane"), None)
     if p is None or p.wires:
-        return {"Plane"}
+        return set()            # a wired plane is wired as usual
     name = "YZ"
     if p.data:
         name = world_plane(p.data[0])
@@ -795,16 +816,45 @@ def _mirror(imp: _Importer, o: GhObject, n: dict):
     return {"Plane"}
 
 
-_EXTRAS = {"Rich Graph Mapper": _graph_mapper, "Mirror": _mirror}
+PLACEHOLDER_SVG = "placeholder.svg"
+
+
+def _import_svg(imp: _Importer, o: GhObject, n: dict):
+    """The SVG path usually comes from a Panel holding a Windows path. Only the
+    file NAME survives (it has to sit in the project folder); a file that is
+    not among `assets` becomes PLACEHOLDER_SVG, which the caller must provide."""
+    import ntpath
+    p = next((p for p in o.inputs if p.name == "File"), None)
+    if p is None:
+        return set()
+    text = None
+    if p.wires:
+        up = imp.d.objects[p.wires[0][0]]
+        if up.type == "Panel" and not (up.inputs and up.inputs[0].wires):
+            text = (up.text or "").strip().splitlines()[0] if up.text else None
+    elif p.data:
+        text = str(p.data[0])
+    name = ntpath.basename(text) if text else None
+    if name and imp.assets is not None and name in imp.assets:
+        n["params"]["path"] = name
+    else:
+        n["params"]["path"] = PLACEHOLDER_SVG
+        imp.issue(o, f"SVG {name or '(computed path)'} not available: {PLACEHOLDER_SVG} instead")
+    return {"File"}
+
+
+_EXTRAS = {"Rich Graph Mapper": _graph_mapper, "Mirror": _mirror, "Import SVG": _import_svg}
 
 
 def import_definition(d: Definition, components=None,
                       decode: Callable[[GhObject, int, dict], Optional[dict]] = decode_with_rhino3dm,
-                      registry=None) -> ImportResult:
+                      registry=None, assets=None) -> ImportResult:
     """Translate `d` with the GH->noodle table (default: components.COMPONENTS).
 
     `decode` turns an internalised geometry value into a geometry record; the
     default needs rhino3dm, `decode_from_report()` reads one decoded earlier.
+    `assets`: file names present in the project folder (None = unknown, so
+    every referenced file falls back to a placeholder).
     """
     return _Importer(d, _default_components() if components is None else components,
-                     decode, _catalog() if registry is None else registry).run()
+                     decode, _catalog() if registry is None else registry, assets).run()
