@@ -340,10 +340,23 @@ class _Importer:
             self.pending.append((o, nid))
             self.out_at[(o.k, 0)] = [(nid, self.first_output("Display"))]
         else:
-            lines = [_panel_line(t) for t in (o.text or "").splitlines()] or [""]
+            raw = (o.text or "").splitlines()
+            if len(raw) > 1 and self._panel_multiline(o):
+                import json
+                lines = [json.dumps(o.text.replace("\r\n", "\n"))]   # ONE string
+            else:
+                lines = [_panel_line(t) for t in raw] or [""]
             self.out_at[(o.k, 0)] = [self.input_node(nid, o, lines,
                                                      title=o.nick if o.nick != "Panel" else None)]
             self.nodes[nid]["position"][0] += 260
+
+    @staticmethod
+    def _panel_multiline(o: GhObject) -> bool:
+        """GH Panel 'Multiline data': the whole text is ONE item, not a line
+        per item (the default in the file samples)."""
+        c = o.chunk.sub("Container") if o.chunk else None
+        pp = c.sub("PanelProperties") if c else None
+        return bool(pp.item("Multiline", default=True)) if pp else True
 
     def _container(self, o, m):
         p = o.inputs[0] if o.inputs else None
@@ -792,7 +805,7 @@ def _mirror(imp: _Importer, o: GhObject, n: dict):
     An internalised plane is read by its normal."""
     p = next((p for p in o.inputs if p.name == "Plane"), None)
     if p is None or p.wires:
-        return {"Plane"}
+        return set()            # a wired plane is wired as usual
     name = "YZ"
     if p.data:
         name = world_plane(p.data[0])

@@ -216,3 +216,19 @@ def test_several_sources_into_a_list_input_are_collected_not_dropped():
             ("n0", "result", "n2_list_merge", "data_2")} <= wires
     assert ("n2_list_merge", "result", "n2", "list") in wires
     assert sum(1 for w in wires if w[2] == "n2" and w[3] == "list") == 1
+
+
+def test_a_wired_mirror_plane_stays_wired():
+    # Mirror's rule only fills in an UNWIRED plane; claiming the wired one
+    # dropped it and every mirror fell back to a plane through the origin
+    table = dict(TABLE)
+    table[T["add"]] = {"kind": "alias", "noodle": "Mirror",
+                       "inputs": {"A": "shape", "B": "plane"}, "outputs": {"Result": "result"}}
+    d = _definition()
+    o = d.objects[2]
+    o.type = "Mirror"
+    o.inputs[1].name = "Plane"
+    o.inputs[1].wires = [(0, 0)]
+    table[T["add"]]["inputs"] = {"A": "shape", "Plane": "plane"}
+    res = importer.import_definition(d, table, decode=lambda o, i, v: None)
+    assert ("n0", "result", "n2", "plane") in _wires(res)
