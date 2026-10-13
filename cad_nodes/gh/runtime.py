@@ -150,12 +150,10 @@ def _gh_bbox(_s):
     and once ANY face sharing those edges has been tessellated off the XY
     plane (Populate does it, the preview does it) that triangulation is wrong
     for the curve: a profile 0 x 180 x 90 in x = 220 measures 90 x 270 x 180.
-    Six lines reproduce it; it bit ikeaLack #99 -> Bounding Box -> Voronoi."""
-    from OCP.Bnd import Bnd_Box
-    from OCP.BRepBndLib import BRepBndLib
-    b = Bnd_Box()
-    BRepBndLib.AddOptimal_s(_s.wrapped, b, False, False)
-    return BoundBox(b)
+    Six lines reproduce it; it bit ikeaLack #99 -> Bounding Box -> Voronoi.
+    The core PREAMBLE's _bbox is the one implementation (the whole engine uses
+    it now); this name stays for the GH helpers that already call it."""
+    return _bbox(_s)
 
 def _gh_from_local(_pl, _s):
     """A shape drawn in a plane's local frame, brought back to the world with

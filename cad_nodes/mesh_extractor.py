@@ -64,13 +64,41 @@ def _count(shape, attr):
         return None
 
 
+def _geom_bbox(shape, exact: bool = True):
+    """A bounding box from the GEOMETRY, never from a tessellation — the twin of
+    the transpiler PREAMBLE's `_bbox` (this module is imported by the worker and
+    cannot see helpers that live in the generated script's globals, so the few
+    lines are duplicated on purpose; measure.py and slice_summary.py import this
+    one). Never call Shape.bounding_box() for a value that matters: build123d
+    lets OCCT read the triangulation stored on the edges, and once a face sharing
+    a curve's edges has been tessellated off the XY plane that data is wrong —
+    a profile 0 x 180 x 90 measures 90 x 270 x 180 (CLAUDE.md, worker notes).
+
+    exact=True: BRepBndLib.AddOptimal (no triangulation) = the tight box.
+    exact=False: BRepBndLib.Add (no triangulation) = curve/surface poles, fast,
+    never smaller, slightly larger on splines."""
+    w = getattr(shape, "wrapped", None)
+    if w is None:
+        return shape.bounding_box()
+    from build123d import BoundBox
+    from OCP.Bnd import Bnd_Box
+    from OCP.BRepBndLib import BRepBndLib
+    b = Bnd_Box()
+    if exact:
+        BRepBndLib.AddOptimal_s(w, b, False, False)
+    else:
+        BRepBndLib.Add_s(w, b, False)
+    return BoundBox(b)
+
+
 def _live_bbox(shape):
-    """Approximate bounding box for the LIVE preview path. optimal=True (the
-    build123d default) computes the exact box from geometry — ~2s on a complex
-    filleted part, and it used to run up to 3x per execute (deflection scaling,
-    view summary, preview entry). optimal=False uses curve/surface poles: <10ms,
-    within ~0.5% (never smaller). Exports and picker signatures don't use it."""
-    return shape.bounding_box(optimal=False)
+    """Approximate bounding box for the LIVE preview path. The exact box costs
+    ~2s on a complex filleted part, and it used to run up to 3x per execute
+    (deflection scaling, view summary, preview entry). The poles-based box is
+    <10ms, within ~0.5% (never smaller) — the view tags it `approx`. Exports and
+    picker signatures don't use it. Read from geometry, not triangulation
+    (`_geom_bbox`): build123d's optimal=False read the stale edge polygons too."""
+    return _geom_bbox(shape, exact=False)
 
 
 def _deflection(shape, linear_frac: float) -> float:
@@ -490,7 +518,7 @@ def _extract_pieces(shape, linear_frac: float = 0.01, angular: float = 0.3) -> d
     items: list[dict] = []
     for i, p in enumerate(pieces):
         try:
-            bb = p.bounding_box()
+            bb = _geom_bbox(p)
             c = (bb.min + bb.max) * 0.5
             sz = (_num(lambda p=p: p.volume) or _num(lambda p=p: p.area)
                   or _num(lambda p=p: p.length) or 0.0)

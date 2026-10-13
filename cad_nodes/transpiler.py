@@ -408,7 +408,7 @@ def _subshape_fingerprint(_s, _kind):
         if _kind == "shape":
             # a WHOLE object picked from a list: bbox centre + a size metric
             # (volume, else area, else length) — universal across solids/faces/curves.
-            _bb = _s.bounding_box()
+            _bb = _bbox(_s)
             _c = (_bb.min + _bb.max) * 0.5
             _sz = 0.0
             for _attr in ("volume", "area", "length"):
@@ -822,6 +822,38 @@ def _shell_faces(_part, _faces, _thickness):
             "a smaller thickness." % (_thickness, type(_exc).__name__))
 
 
+def _bbox(_s, exact=True):
+    \"\"\"THE bounding box of a B-Rep shape, from its GEOMETRY — never from a
+    tessellation. Use it instead of Shape.bounding_box() everywhere.
+
+    build123d's bounding_box() (optimal=True and False alike) lets OCCT read the
+    triangulation / PolygonOnTriangulation stored on the edges. Once ANY face
+    sharing a curve's edges has been tessellated off the XY plane (the preview
+    does it, Populate does it), that data is wrong for the curve: a profile
+    0 x 180 x 90 lying in x = 220 measures 90 x 270 x 180 after `Face(w)
+    .tessellate(...)`. Measured on ikeaLack #99 -> Bounding Box -> Voronoi.
+
+    exact=True  -> BRepBndLib.AddOptimal (useTriangulation=False): the tight box,
+                   what build123d's optimal=True means to give.
+    exact=False -> BRepBndLib.Add (useTriangulation=False): from curve/surface
+                   poles, fast, never smaller than the shape (it can be larger —
+                   a spline's control polygon overshoots). For sizing heuristics
+                   only (a tessellation deflection), never placement.
+    Anything without a B-Rep (no .wrapped) falls back to its own
+    bounding_box().\"\"\"
+    _w = getattr(_s, "wrapped", None)
+    if _w is None:
+        return _s.bounding_box()
+    from OCP.Bnd import Bnd_Box
+    from OCP.BRepBndLib import BRepBndLib
+    _b = Bnd_Box()
+    if exact:
+        BRepBndLib.AddOptimal_s(_w, _b, False, False)
+    else:
+        BRepBndLib.Add_s(_w, _b, False)
+    return BoundBox(_b)
+
+
 def _bbox_solid(_shape):
     \"\"\"The axis-aligned bounding box of _shape as an actual solid Box (not the
     raw BoundBox data object), seated at the box centre. A flat input (a 2D
@@ -830,7 +862,7 @@ def _bbox_solid(_shape):
     (a thin slab) instead of failing on a degenerate dimension.\"\"\"
     if _shape is None:
         return None
-    bb = _shape.bounding_box()
+    bb = _bbox(_shape)
     sz, c = bb.size, bb.center()
     eps = max(sz.X, sz.Y, sz.Z, 1.0) * 1e-3
     return Box(max(sz.X, eps), max(sz.Y, eps), max(sz.Z, eps)).moved(Pos(c.X, c.Y, c.Z))
@@ -846,7 +878,7 @@ def _bbox_plane(_shape, _plane, _t=0.5):
     if _shape is None:
         return pl
     try:
-        bb = _shape.bounding_box()
+        bb = _bbox(_shape)
         n = pl.z_dir
         lo, hi = Vector(bb.min), Vector(bb.max)
         c = (lo + hi) * 0.5
@@ -976,7 +1008,7 @@ def _to_mesh(_x, _tol=None):
         return _mesh_concat([_to_mesh(i, _tol) for i in _x])
     if _tol is None:                       # scale the deflection to the part
         try:
-            bb = _x.bounding_box(optimal=False)
+            bb = _bbox(_x, exact=False)
             diag = (bb.size.X ** 2 + bb.size.Y ** 2 + bb.size.Z ** 2) ** 0.5
             _tol = max(diag * 0.005, 0.01)
         except Exception:
@@ -4829,7 +4861,7 @@ def _shape_center_weight(_s):
         _c = _s.center(CenterOf.MASS)
     except Exception:
         try:
-            _bb = _s.bounding_box()
+            _bb = _bbox(_s)
             _c = (_bb.min + _bb.max) * 0.5
         except Exception:
             return (None, 0.0)
@@ -5499,7 +5531,7 @@ def _domain2d(_region, _w, _h, _pts=None):
     else the points' extent, else a 0..w x 0..h box.\"\"\"
     if _region is not None:
         try:
-            bb = _region.bounding_box()
+            bb = _bbox(_region)
             return bb.min.X, bb.min.Y, bb.max.X, bb.max.Y
         except Exception:
             pass
@@ -5629,7 +5661,7 @@ def _populate(_count=40, _seed=1, _width=100.0, _height=100.0, _region=None):
             # 2D: draw in the bbox with the SAME two rng.uniform calls as the
             # old node (a Rectangle rejects nothing -> byte-identical points,
             # e.g. the voronoi vase), then keep only what is really inside.
-            bb = r.bounding_box()
+            bb = _bbox(r)
             z = (bb.min.Z + bb.max.Z) / 2.0
             out = []
             for _round in range(24):
@@ -5848,7 +5880,7 @@ def _align(_shape, _ref=None, _target=None):
         return None
     _r = _pt(_ref)
     if _r is None:
-        _bb = _shape.bounding_box()
+        _bb = _bbox(_shape)
         _r = (_bb.min + _bb.max) / 2
     _t = _pt(_target)
     if _t is None:
