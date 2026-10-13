@@ -271,12 +271,9 @@ COMPONENTS: dict[str, GhMap] = {
         inputs={'Brep': 'brep'},
         outputs={'Brep': 'brep'}),
     "22f0d53c-5673-456d-bdef-1c7085693481": GhMap('Bounding Rectangle', "GhBoundingRectangle", "new",
-        inputs={'Geometry': 'geometry', 'Plane': 'plane', 'Union': 'union', 'Slide': 'slide'},
+        inputs={'Geometry': 'geometry', 'Plane': 'plane', 'Union': 'union', 'Slide': 'slide', 'Axis': 'axis'},
         outputs={'Bounding': 'bounding', 'Dimension X': 'dimension_x', 'Dimension Y': 'dimension_y'},
-        note="Slide = height of the rectangle along the plane normal (0 bottom, 1 top "
-             "of the geometry) — inferred from barattolo, confirm on Rhino. Axis not "
-             "built: always aligned to the plane's x axis",
-        ignore=("Axis",)),
+        note="Axis and Slide as measured in Rhino 8 (gh_probe_rhino)"),
     "439a55a5-2f9e-4f66-9de2-32f24fec2ef5": GhMap('Plane Surface', "GhPlaneSurface", "new",
         inputs={'Plane': 'plane', 'X Size': 'x_size', 'Y Size': 'y_size'},
         outputs={'Plane': 'plane'}),
@@ -380,7 +377,7 @@ COMPONENTS: dict[str, GhMap] = {
     "a725d81b-2e91-429f-af46-152f07c50617": GhMap('Trim With Plane', "GhTrimWithPlane", "new",
         inputs={'Brep': 'brep', 'Plane': 'plane', 'Plane Direction': 'plane_direction', 'Cap': 'cap', 'Tolerance': 'tolerance'},
         outputs={'Trimmed Breps': 'trimmed_breps'},
-        note='which side Plane Direction keeps is assumed (normal side when on) — verify'),
+        note='Plane Direction on keeps the side OPPOSITE the normal (measured in Rhino 8)'),
     "f3230ecb-3631-4d6f-86f2-ef4b2ed37f45": GhMap('Replace Nulls', "GhReplaceNulls", "new",
         inputs={'Items': 'items', 'Replacements': 'replacements'},
         outputs={'Items': 'items', 'Count': 'count'}),

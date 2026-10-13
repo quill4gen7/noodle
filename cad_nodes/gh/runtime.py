@@ -464,11 +464,11 @@ def _gh_offset_curve(_curve, _distance, _plane=None, _corners=1, _both=False, _c
         a0, a1 = a.position_at(0), a.position_at(1)
         b0, b1 = b.position_at(0), b.position_at(1)
         if cap == 2:
-            m1, m0 = flat.position_at(1), flat.position_at(0)
-            t1, t0 = flat.tangent_at(1), flat.tangent_at(0)
-            r1, r0 = (a1 - b1).length / 2, (a0 - b0).length / 2
-            e1 = Edge.make_three_point_arc(a1, m1 + t1 * r1, b1)
-            e0 = Edge.make_three_point_arc(b0, m0 - t0 * r0, a0)
+            # Pufferfish's ROUND cap is a half-ELLIPSE, 0.75 x the slot width
+            # deep (measured in Rhino 8: a 100 line, d 5 -> closed 220, bulging
+            # 3.75; both sides -> 240, bulging 7.5) — not a semicircle (0.5 w)
+            e1 = _gh_half_ellipse(a1, b1, flat.tangent_at(1))
+            e0 = _gh_half_ellipse(b0, a0, -flat.tangent_at(0))
         else:
             e1, e0 = Edge.make_line(a1, b1), Edge.make_line(b0, a0)
         # out along a, across the far cap, BACK along b, across the near cap
@@ -526,6 +526,17 @@ def _gh_chain(_edges):
         rest = [e for e in rest if not e.is_same(nxt)]
         out.append(nxt)
     return out
+
+def _gh_half_ellipse(_p, _q, _out):
+    """Half an ellipse from p to q bulging along `out`: the chord is its minor
+    diameter, its depth 0.75 x the chord (Pufferfish's round cap)."""
+    c = (_p + _q) * 0.5
+    w = (_q - _p).length
+    x = (_p - c).normalized()
+    out = (_out - x * _out.dot(x)).normalized()
+    z = x.cross(out)
+    pl = Plane(c, x, z)
+    return Edge.make_ellipse(w / 2, 0.75 * w, pl, 0, 180)
 
 def _gh_end_points(_curve):
     w = _gh_curve(_curve)
@@ -609,46 +620,97 @@ def _gh_nurbs_curve(_vertices, _degree=3, _periodic=False):
 
 
 def _gh_discontinuity(_curve, _level=1):
-    """Where a curve breaks its continuity: the joints between its edges whose
-    tangents differ (level 1, G1) — for level 2 the joints whose curvature
-    differs too, which on a polyline is the same set. A closed curve reports its
-    seam when it is a corner; an open one never reports its ends."""
+    """Discontinuity, with the rules measured in Rhino 8 (gh_probe_rhino):
+    - an OPEN curve always reports its two ends;
+    - level 1 reports where the curve KINKS (tangent breaks);
+    - level 2 reports kinks AND curvature breaks — a line meeting an arc, and
+      inside a NURBS every knot of multiplicity >= degree-1 (a 9-CV circle gives
+      three points at 90/180/270°, though it is geometrically smooth there);
+    - the SEAM of a closed curve counts at level 1 if it is a kink, and at
+      level 2 only if it is smooth but changes curvature (a filleted rectangle
+      reports it, a square does not — that is Rhino's answer, not a typo).
+    Parameters are the normalised length along the curve (Rhino's own
+    parameters are not reproduced)."""
     w = _gh_curve(_curve)
     if w is None:
         return {"points": None, "parameters": None}
-    es = w.edges()
-    pts, ts = [], []
-    total = w.length or 1.0
-    acc = 0.0
-    n = len(es)
-    joints = range(n) if w.is_closed else range(1, n)
+    lvl = 2 if int(_gh_num(_level, 1)) >= 2 else 1
+    es = list(w.edges())
+    if len(es) > 1:
+        es = _gh_chain(es)
     lengths = [e.length for e in es]
-    for j in joints:
-        a, b = es[j - 1], es[j]
-        ta, tb = a.tangent_at(1), b.tangent_at(0)
-        if (ta - tb).length > 1e-6:
-            pts.append(b.position_at(0))
-            ts.append(sum(lengths[:j]) / total if j else 0.0)
-    # a single smooth edge: look for kinks inside it (an imported polyline
-    # B-spline of degree 1 is one edge with interior knots of full multiplicity)
-    if n == 1 and not pts:
-        try:
-            from OCP.BRep import BRep_Tool
-            from OCP.GeomConvert import GeomConvert
-            c = GeomConvert.CurveToBSplineCurve_s(BRep_Tool.Curve_s(es[0].wrapped, 0, 1))
-            d = c.Degree()
-            lo, hi = c.FirstParameter(), c.LastParameter()
-            for i in range(1, c.NbKnots() + 1):
-                k, m = c.Knot(i), c.Multiplicity(i)
-                inner = lo < k < hi
-                if m >= d and (inner or (w.is_closed and i == 1)):
-                    p = c.Value(k)
-                    pts.append(Vector(p.X(), p.Y(), p.Z()))
-                    ts.append((k - lo) / (hi - lo))
-        except Exception:
-            pass
-    return {"points": pts, "parameters": ts}
+    total = sum(lengths) or 1.0
+    starts = [sum(lengths[:k]) / total for k in range(len(es))]
+    eps = 1e-4
 
+    def _kink(a, b):
+        return (a.tangent_at(1) - b.tangent_at(0)).length > 1e-6
+
+    def _k_end(e, at_end):
+        L = e.length or 1.0
+        if at_end:
+            return (e.tangent_at(1) - e.tangent_at(1 - eps)).length / (eps * L)
+        return (e.tangent_at(eps) - e.tangent_at(0)).length / (eps * L)
+
+    def _curv_break(a, b):
+        ka, kb = _k_end(a, True), _k_end(b, False)
+        return abs(ka - kb) > 1e-3 * max(1.0, ka, kb)
+
+    pts, ts = [], []
+
+    def _add(p, s):
+        pts.append(p)
+        ts.append(s)
+
+    closed = w.is_closed
+    if not closed:
+        _add(w.position_at(0), 0.0)
+    elif len(es) >= 1:
+        last, first = es[-1], es[0]
+        k = _kink(last, first)
+        if (lvl == 1 and k) or (lvl == 2 and not k and _curv_break(last, first)):
+            _add(first.position_at(0), 0.0)
+    for idx, e in enumerate(es):
+        if idx > 0:
+            a = es[idx - 1]
+            k = _kink(a, e)
+            if k or (lvl == 2 and _curv_break(a, e)):
+                _add(e.position_at(0), starts[idx])
+        # breaks INSIDE one NURBS edge, at its knots
+        if e.geom_type in (GeomType.BSPLINE, GeomType.BEZIER):
+            try:
+                from OCP.BRep import BRep_Tool
+                from OCP.GeomConvert import GeomConvert
+                c = GeomConvert.CurveToBSplineCurve_s(BRep_Tool.Curve_s(e.wrapped, 0, 1))
+                d = c.Degree()
+                lo, hi = c.FirstParameter(), c.LastParameter()
+                for kk in range(1, c.NbKnots() + 1):
+                    u, m = c.Knot(kk), c.Multiplicity(kk)
+                    if not (lo < u < hi):
+                        continue
+                    hit = False
+                    if m >= d:            # parametric C0: is it a real kink?
+                        from OCP.gp import gp_Pnt, gp_Vec
+                        p0, v0, p1, v1 = gp_Pnt(), gp_Vec(), gp_Pnt(), gp_Vec()
+                        c.D1(u - 1e-7 * (hi - lo), p0, v0)
+                        c.D1(u + 1e-7 * (hi - lo), p1, v1)
+                        # a real kink turns the tangent by a finite angle; a
+                        # smooth curve turns it by ~curvature x 2e-7 (circle)
+                        if v0.Magnitude() > 0 and v1.Magnitude() > 0 \
+                                and v0.Angle(v1) > 1e-3:
+                            hit = True
+                    if lvl == 2 and m >= d - 1:
+                        hit = True
+                    if hit:
+                        q = c.Value(u)
+                        s = (u - lo) / (hi - lo)
+                        _add(Vector(q.X(), q.Y(), q.Z()),
+                             starts[idx] + s * lengths[idx] / total)
+            except Exception:
+                pass
+    if not closed:
+        _add(w.position_at(1), 1.0)
+    return {"points": pts, "parameters": ts}
 
 def _gh_close_curve(_curve):
     w = _gh_curve(_curve)
@@ -1500,12 +1562,28 @@ def _gh_tree_branch(_tree, _path):
 # barattolo.gh: curves
 # ===========================================================================
 
-def _gh_bounding_rectangle(_geometry, _plane=None, _union=False, _slide=0.0):
-    """Bounding Rectangle: the smallest rectangle aligned with a plane that holds
-    the geometry seen from the plane's normal. `union` -> one rectangle for all
-    of it, else one per item. (The Axis/Slide alignment inputs are not built:
-    the rectangle is aligned with the plane's own x axis.)"""
-    pl = _gh_plane(_plane)
+def _gh_bounding_rectangle(_geometry, _plane=None, _union=False, _slide=0.0, _axis=0):
+    """Bounding Rectangle: the rectangle aligned with a plane that holds the
+    geometry seen along one of the plane's axes. `union` -> one rectangle for
+    all of it, else one per item. Measured in Rhino 8 on a box x0..20 y0..10
+    z10..30 in the XY plane: Axis 0 looks along the plane's z (normal +Z, 20x10),
+    Axis 1 along its y (normal −Y, the XZ rectangle 20x20), Axis 2 along its x
+    (normal +X, the YZ rectangle 10x20). Slide places it between the geometry's
+    MIN and MAX along that axis, counted in the axis' positive sense even where
+    the normal points the other way (Axis 1: slide 0 -> y = 0)."""
+    pl0 = _gh_plane(_plane)
+    ax = int(_gh_num(_axis, 0)) % 3
+    flip = False
+    if ax == 1:
+        pl = Plane(pl0.origin, pl0.x_dir, -pl0.y_dir)
+        flip = True                       # its normal is −y, the slide runs +y
+    elif ax == 2:
+        pl = Plane(pl0.origin, pl0.y_dir, pl0.x_dir)
+    else:
+        pl = pl0
+    sl = _gh_num(_slide, 0.0)
+    if flip:
+        sl = 1.0 - sl
     items = _gh_items(_geometry)
 
     def _one(group):
@@ -1527,7 +1605,7 @@ def _gh_bounding_rectangle(_geometry, _plane=None, _union=False, _slide=0.0):
         # Slide: WHERE along the plane normal the rectangle sits, 0 at the
         # bottom of the geometry and 1 at its top (barattolo slides one to the
         # top of the jar and draws its axis from the base circle up to it)
-        z = za + (zb - za) * _gh_num(_slide, 0.0)
+        z = za + (zb - za) * sl
         w = Polyline((xa, ya, z), (xb, ya, z), (xb, yb, z), (xa, yb, z), close=True)
         return _gh_from_local(pl, w), xb - xa, yb - ya
 
@@ -1908,20 +1986,23 @@ def _gh_is_surface_trimmed(_surface):
 
 
 def _gh_trim_with_plane(_brep, _plane, _direction=True, _cap=True):
-    """Trim With Plane: cut a brep with a plane and keep one side — the side the
-    plane normal points to when `direction` is on, the other one when off.
+    """Trim With Plane: cut a brep with a plane and keep one side — the side
+    OPPOSITE the plane normal when `direction` is on, the normal side when off.
     `cap` closes the cut (a solid) or leaves it open (a shell)."""
     s = _gh_shapes(_brep)
     if not s:
         return None
     pl = _gh_plane(_plane)
-    keep = Keep.TOP if _gh_bool(_direction) else Keep.BOTTOM
+    # measured in Rhino 8 (cube ±10 cut by XY): Plane Direction ON keeps the
+    # half BELOW, i.e. the side OPPOSITE the normal; off keeps the side above
+    keep = Keep.BOTTOM if _gh_bool(_direction) else Keep.TOP
     r = split(s[0], bisect_by=pl, keep=keep)
     if not _gh_bool(_cap):
         cut = [f for f in r.faces() if f.geom_type == GeomType.PLANE
                and abs(pl.to_local_coords(f.center()).Z) < 1e-6
                and abs(abs(f.normal_at().dot(pl.z_dir)) - 1) < 1e-6]
-        keepf = [f for f in r.faces() if all(f is not c for c in cut)]
+        # is_same, not `is`: faces() builds new wrapper objects on every call
+        keepf = [f for f in r.faces() if not any(f.is_same(c) for c in cut)]
         return Shell(keepf) if keepf else r
     return r
 
