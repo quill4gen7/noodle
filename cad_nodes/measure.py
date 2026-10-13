@@ -376,7 +376,8 @@ def exact(shapes: list, m: dict) -> dict:
     """{kind, value, a, b} of the browser's dimension `m`, measured on `shapes`
     ([shape of a] or [shape of a, shape of b])."""
     sa, sb = shapes[0], shapes[-1]
-    bb = sa.bounding_box()
+    from .mesh_extractor import _geom_bbox   # never the triangulation
+    bb = _geom_bbox(sa)
     tol = max(1e-3, 2e-3 * (bb.max - bb.min).length)      # the tessellation's chordal slack
     kind = m.get("kind")
     A = _locate(sa, m["a"], tol)
