@@ -144,6 +144,39 @@ def _gh_plane(_v):
     return Plane.XY.move(Location(p)) if p is not None else Plane.XY
 
 
+def _gh_bbox(_s):
+    """The EXACT bounding box, from the geometry, never from a tessellation.
+    build123d's bounding_box() reads the triangulation stored on the edges,
+    and once ANY face sharing those edges has been tessellated off the XY
+    plane (Populate does it, the preview does it) that triangulation is wrong
+    for the curve: a profile 0 x 180 x 90 in x = 220 measures 90 x 270 x 180.
+    Six lines reproduce it; it bit ikeaLack #99 -> Bounding Box -> Voronoi."""
+    from OCP.Bnd import Bnd_Box
+    from OCP.BRepBndLib import BRepBndLib
+    b = Bnd_Box()
+    BRepBndLib.AddOptimal_s(_s.wrapped, b, False, False)
+    return BoundBox(b)
+
+def _gh_from_local(_pl, _s):
+    """A shape drawn in a plane's local frame, brought back to the world with
+    the transform BAKED into its geometry. Plane.from_local_coords only sets a
+    Location and keeps the local geometry underneath; a face later built on
+    those edges and tessellated (Populate does, on any face off the XY plane)
+    stores polygons that ignore the Location, and every bounding box measured
+    afterwards — of the curve itself, by Bounding Box, by Voronoi 3D — comes
+    out as garbage (ikeaLack #99: 262 x 473 x 398 for a curve 0 x 210 x 135
+    lying in x = 220). Points pass through."""
+    out = _pl.from_local_coords(_s)
+    if not hasattr(out, "wrapped") or isinstance(out, Vector):
+        return out
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
+    loc = out.wrapped.Location()
+    if loc.IsIdentity():
+        return out
+    base = out.wrapped.Located(type(loc)())
+    baked = BRepBuilderAPI_Transform(base, loc.Transformation(), True).Shape()
+    return _gh_wrap(baked)
+
 def _gh_world_plane(_kind, _origin=None):
     """XY / XZ / YZ Plane components. Their axes match Rhino's: XZ has normal -Y
     (x=X, y=Z), YZ has normal +X (x=Y, y=Z) — build123d's Plane.XZ/YZ agree."""
@@ -333,13 +366,13 @@ def _gh_rectangle(_plane, _x, _y, _r=0.0):
     else:
         w = Polyline((xa, ya), (xb, ya), (xb, yb), (xa, yb), close=True)
     length = w.length
-    return {"rectangle": pl.from_local_coords(w), "length": length}
+    return {"rectangle": _gh_from_local(pl, w), "length": length}
 
 
 def _gh_circle(_plane, _r):
     pl = _gh_plane(_plane)
     r = _gh_num(_r, 1.0)
-    return pl.from_local_coords(Wire([Edge.make_circle(abs(r))]))
+    return _gh_from_local(pl, Wire([Edge.make_circle(abs(r))]))
 
 
 def _gh_signed_area(_w, _pl):
@@ -395,7 +428,12 @@ def _gh_offset_curve(_curve, _distance, _plane=None, _corners=1, _both=False, _c
         return [w]
     pl = _gh_plane(_plane) if _plane is not None else _gh_curve_plane(w)
     kind = _GH_CORNERS.get(int(_gh_num(_corners, 1)), Kind.INTERSECTION)
-    flat = pl.to_local_coords(w)
+    # a DEEP copy: to_local_coords only moves the Location and shares the
+    # edges, and a Face built on the same curve upstream (Boundary Surfaces in
+    # ikeaLack) has already hung pcurves on them — BRepOffset then reads those
+    # and throws the offset out of the plane (bbox 88..351 on a curve lying in
+    # x=220). Same family as _thicken's deepcopy: never offset shared topology.
+    flat = pl.to_local_coords(_copy.deepcopy(w))
 
     def _one(dd):
         if w.is_closed:
@@ -406,6 +444,11 @@ def _gh_offset_curve(_curve, _distance, _plane=None, _corners=1, _both=False, _c
 
     outs = [_one(d)] + ([_one(d2)] if d2 is not None else [])
     cap = int(_gh_num(_cap, 0))
+    if cap and len(outs) == 1 and not w.is_closed:
+        # Pufferfish caps a ONE-sided offset too: the loop runs out along the
+        # source and back along its offset (Rhino: ikeaLack #80 is 916 long,
+        # twice the profile plus the two caps)
+        outs = [flat, outs[0]]
     if cap and len(outs) == 2 and not w.is_closed:
         # OCCT's one-sided offset hands its edges back in no particular order
         # (the LEFT offset of a line can start mid-way): chain them, and run
@@ -433,8 +476,8 @@ def _gh_offset_curve(_curve, _distance, _plane=None, _corners=1, _both=False, _c
         # out along a, across the far cap, BACK along b, across the near cap
         back = [Edge(e.wrapped.Reversed()) for e in reversed(b.edges())]
         loop = Wire(list(a.edges()) + [e1] + back + [e0])
-        return [pl.from_local_coords(loop)]
-    return [pl.from_local_coords(o) for o in outs]     # a list output in GH
+        return [_gh_from_local(pl, loop)]
+    return [_gh_from_local(pl, o) for o in outs]     # a list output in GH
 
 def _gh_join_curves(_curves, _preserve=False):
     """Join Curves: chain whatever touches end to end and hand back EVERY chain
@@ -694,7 +737,7 @@ def _gh_bounding_box(_content, _plane=None):
         return None
     lo, hi = [], []
     for x in s:
-        bb = pl.to_local_coords(x).bounding_box()
+        bb = _gh_bbox(pl.to_local_coords(x))
         lo.append(bb.min)
         hi.append(bb.max)
     for q in pts:
@@ -705,21 +748,27 @@ def _gh_bounding_box(_content, _plane=None):
     b = Vector(max(v.X for v in hi), max(v.Y for v in hi), max(v.Z for v in hi))
     d = b - a
     dims = [d.X, d.Y, d.Z]
-    if min(dims) > 1e-9:
+    # flat = thinner than 0.1% of the box: the exact bbox of a spline carries a
+    # few hundredths of margin, and a 0.05 mm "box" round a planar curve is a
+    # flat box in GH's eyes, not a solid
+    eps = max(max(dims) * 1e-3, 1e-9)
+    if min(dims) > eps:
         box = Box(d.X, d.Y, d.Z, align=(Align.MIN,) * 3).moved(Location(a.to_tuple()))
-        return pl.from_local_coords(box)
-    flat = [i for i in range(3) if dims[i] <= 1e-9]
+        return _gh_from_local(pl, box)
+    flat = [i for i in range(3) if dims[i] <= eps]
     if len(flat) > 1:
-        return pl.from_local_coords(Edge.make_line(a, b)) if d.length > 1e-9 else None
+        return _gh_from_local(pl, Edge.make_line(a, b)) if d.length > 1e-9 else None
     k = flat[0]
     i, j = [x for x in range(3) if x != k]
+    mid = [(a.X + b.X) / 2, (a.Y + b.Y) / 2, (a.Z + b.Z) / 2]
+
     def P(ui, uj):
-        c = [a.X, a.Y, a.Z]
+        c = list(mid)
         c[i] = (a.to_tuple()[i], b.to_tuple()[i])[ui]
         c[j] = (a.to_tuple()[j], b.to_tuple()[j])[uj]
         return tuple(c)
     face = Face(Polyline(P(0, 0), P(1, 0), P(1, 1), P(0, 1), close=True))
-    return pl.from_local_coords(face)
+    return _gh_from_local(pl, face)
 
 
 def _gh_length_of(_curve):
@@ -763,7 +812,7 @@ def _gh_scale_nu(_geom, _plane, _x, _y, _z):
     sx, sy, sz = _gh_num(_x, 1), _gh_num(_y, 1), _gh_num(_z, 1)
     if isinstance(_geom, Vector):
         l = pl.to_local_coords(_geom)
-        return pl.from_local_coords(Vector(l.X * sx, l.Y * sy, l.Z * sz))
+        return _gh_from_local(pl, Vector(l.X * sx, l.Y * sy, l.Z * sz))
     if _is_mesh(_geom):
         raise ValueError("Scale NU: meshes are not supported yet")
     if abs(sx - sy) < 1e-12 and abs(sy - sz) < 1e-12:
@@ -780,7 +829,7 @@ def _gh_scale_nu(_geom, _plane, _x, _y, _z):
     g.SetVectorialPart(gp_Mat(sx, 0, 0, 0, sy, 0, 0, 0, sz))
     g.SetTranslationPart(gp_XYZ(0, 0, 0))
     r = BRepBuilderAPI_GTransform(local.wrapped, g, True).Shape()
-    return pl.from_local_coords(_gh_wrap(r))
+    return _gh_from_local(pl, _gh_wrap(r))
 
 
 # --- surfaces & breps -----------------------------------------------------------------
@@ -816,7 +865,7 @@ def _gh_boundary_surfaces(_edges):
             n = f.normal_at()
         except Exception:
             n = None
-        bb = f.bounding_box()
+        bb = _gh_bbox(f)
         info.append((f, n, f.center(), bb))
 
     def _contains(a, b):
@@ -1142,7 +1191,7 @@ def _gh_voronoi3d(_points, _box):
     if len(P) < 1:
         return {"cells": None, "boundary": None}
     if _box is not None:
-        bb = _gh_shapes(_box)[0].bounding_box()
+        bb = _gh_bbox(_gh_shapes(_box)[0])
         lo = _np.array([bb.min.X, bb.min.Y, bb.min.Z])
         hi = _np.array([bb.max.X, bb.max.Y, bb.max.Z])
         # a FLAT box (Bounding Box of a planar curve, as ikeaLack does): give it
@@ -1445,7 +1494,7 @@ def _gh_bounding_rectangle(_geometry, _plane=None, _union=False, _slide=0.0):
                 pts.append(pl.to_local_coords(g))
                 continue
             try:
-                bb = pl.to_local_coords(g).bounding_box()
+                bb = _gh_bbox(pl.to_local_coords(g))
                 pts += [bb.min, bb.max]
             except Exception:
                 pass
@@ -1459,7 +1508,7 @@ def _gh_bounding_rectangle(_geometry, _plane=None, _union=False, _slide=0.0):
         # top of the jar and draws its axis from the base circle up to it)
         z = za + (zb - za) * _gh_num(_slide, 0.0)
         w = Polyline((xa, ya, z), (xb, ya, z), (xb, yb, z), (xa, yb, z), close=True)
-        return pl.from_local_coords(w), xb - xa, yb - ya
+        return _gh_from_local(pl, w), xb - xa, yb - ya
 
     groups = [items] if (_union or len(items) <= 1) else [[x] for x in items]
     rs = [r for r in (_one(g) for g in groups) if r is not None]
@@ -1482,7 +1531,7 @@ def _gh_polygon(_plane, _radius, _segments=6, _fillet=0.0):
     f = _gh_num(_fillet, 0.0)
     if f > 1e-9:
         w = w.fillet_2d(f, w.vertices())
-    w = pl.from_local_coords(w)
+    w = _gh_from_local(pl, w)
     return {"polygon": w, "length": w.length}
 
 
@@ -1590,7 +1639,7 @@ def _gh_project(_geometry, _plane=None):
         return None
     if isinstance(_geometry, Vector):
         l = pl.to_local_coords(_geometry)
-        return pl.from_local_coords(Vector(l.X, l.Y, 0))
+        return _gh_from_local(pl, Vector(l.X, l.Y, 0))
     o, z = pl.origin, pl.z_dir
     from OCP.Geom import Geom_Plane
     gpl = Geom_Plane(gp_Pln(gp_Pnt(o.X, o.Y, o.Z), gp_Dir(z.X, z.Y, z.Z)))
@@ -1679,7 +1728,7 @@ def _gh_move_to_plane(_geometry, _plane=None, _above=True, _below=True):
     if isinstance(loc, Vector):
         lo = hi = loc.Z
     else:
-        bb = loc.bounding_box()
+        bb = _gh_bbox(loc)
         lo, hi = bb.min.Z, bb.max.Z
     dz = 0.0
     if lo > 0 and _above:
@@ -1695,7 +1744,7 @@ def _gh_plane_surface(_plane, _x, _y):
     x0, x1 = _gh_domain(_x)
     y0, y1 = _gh_domain(_y)
     w = Polyline((x0, y0), (x1, y0), (x1, y1), (x0, y1), close=True)
-    return pl.from_local_coords(Face(w))
+    return _gh_from_local(pl, Face(w))
 
 
 def _gh_brep_edges(_brep):
@@ -2035,7 +2084,7 @@ def _gh_unroll(_polysurface, _plane=None, _points=None, _curves=None):
         return Vector(u, v, 0)
 
     if gt == GeomType.PLANE:
-        lay = lambda q: pl.from_local_coords(Plane(f).to_local_coords(q))
+        lay = lambda q: _gh_from_local(pl, Plane(f).to_local_coords(q))
         flat = lay(f)
     elif gt in (GeomType.CYLINDER, GeomType.CONE):
         uv = _gh_face_uv(f)
@@ -2049,7 +2098,7 @@ def _gh_unroll(_polysurface, _plane=None, _points=None, _curves=None):
             ring0 = [_flat(u, vs[0]) for u in us]
             ring1 = [_flat(u, vs[1]) for u in reversed(us)]
             flat = Face(Polyline(*(ring0 + ring1), close=True))
-        flat = pl.from_local_coords(flat)
+        flat = _gh_from_local(pl, flat)
     else:
         raise ValueError(f"Unroll: a {gt} face is not developable here (plane, cylinder, cone)")
 
@@ -2065,7 +2114,7 @@ def _gh_unroll(_polysurface, _plane=None, _points=None, _curves=None):
         if gt == GeomType.PLANE:
             return lay(q)
         u, v = _uv_of(q)
-        return pl.from_local_coords(_flat(u, v))
+        return _gh_from_local(pl, _flat(u, v))
 
     pts = [_map(_gh_point(p)) for p in _gh_items(_points)] if _points is not None else None
     crvs = None
@@ -2090,7 +2139,7 @@ def _gh_unroll(_polysurface, _plane=None, _points=None, _curves=None):
                             u += 2 * math.pi
                     prev = u
                     uvs.append((u, v))
-                sm = [pl.from_local_coords(_flat(u, v)) for u, v in uvs]
+                sm = [_gh_from_local(pl, _flat(u, v)) for u, v in uvs]
                 crvs.append(Spline(*sm))
     return {"unrolled": flat, "unrolled_points": pts, "unrolled_curves": crvs}
 
@@ -2106,7 +2155,7 @@ def _gh_surface_morph(_geometry, _reference, _surface, _u=None, _v=None, _w=None
     if f is None or _geometry is None:
         return None
     ref = _gh_shapes(_reference)
-    bb = (ref[0] if ref else _geometry).bounding_box()
+    bb = _gh_bbox(ref[0] if ref else _geometry)
     U, V = _gh_domain(_u, (0.0, 1.0)), _gh_domain(_v, (0.0, 1.0))
     W = _gh_domain(_w, (0.0, 1.0))
     uv = _gh_face_uv(f)
@@ -2200,7 +2249,7 @@ def _gh_text_curves(_plane, _text, _font=None, _paragraph=None):
     for fc in sk.faces():
         ws.append(fc.outer_wire())
         ws += list(fc.inner_wires())
-    return [pl.from_local_coords(w) for w in ws]
+    return [_gh_from_local(pl, w) for w in ws]
 
 
 # ===========================================================================
