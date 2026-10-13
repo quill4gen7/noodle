@@ -67,19 +67,6 @@
    "title": "05 passo filetto"
   },
   {
-   "id": "pDT",
-   "type": "NumberSlider",
-   "params": {
-    "value": 14.2
-   },
-   "position": [
-    80.0,
-    935.0
-   ],
-   "parent": null,
-   "title": "06 diametro filetto"
-  },
-  {
    "id": "pCL",
    "type": "NumberSlider",
    "params": {
@@ -132,32 +119,6 @@
    "title": "10 fillet tappo"
   },
   {
-   "id": "pRH",
-   "type": "NumberSlider",
-   "params": {
-    "value": 0.45
-   },
-   "position": [
-    80.0,
-    1877.0
-   ],
-   "parent": null,
-   "title": "12 rilievo nervature"
-  },
-  {
-   "id": "pRW",
-   "type": "NumberSlider",
-   "params": {
-    "value": 0.9
-   },
-   "position": [
-    80.0,
-    2034.0
-   ],
-   "parent": null,
-   "title": "13 larghezza nervature"
-  },
-  {
    "id": "pTW",
    "type": "NumberSlider",
    "params": {
@@ -171,10 +132,10 @@
    },
    "position": [
     80.0,
-    2191.0
+    2348.0
    ],
    "parent": null,
-   "title": "14 torsione"
+   "title": "15 torsione"
   },
   {
    "id": "pSD",
@@ -184,23 +145,10 @@
    },
    "position": [
     80.0,
-    2348.0
+    2505.0
    ],
    "parent": null,
-   "title": "15 spessore stencil"
-  },
-  {
-   "id": "pNR",
-   "type": "IntegerSlider",
-   "params": {
-    "value": 21
-   },
-   "position": [
-    80.0,
-    1720.0
-   ],
-   "parent": null,
-   "title": "11 nervature"
+   "title": "16 spessore stencil"
   },
   {
    "id": "eTot",
@@ -209,8 +157,8 @@
     "expr": "x + y"
    },
    "position": [
-    470.0,
-    1906.829767350162
+    503.6,
+    902.22868451612
    ],
    "parent": null,
    "title": "altezza totale"
@@ -222,8 +170,8 @@
     "expr": "x / 2"
    },
    "position": [
-    470.0,
-    383.829767350162
+    503.6,
+    2921.589372132276
    ],
    "parent": null
   },
@@ -234,8 +182,8 @@
     "expr": "x + y / 2"
    },
    "position": [
-    470.0,
-    2625.829767350162
+    503.6,
+    384.2286845161198
    ],
    "parent": null
   },
@@ -246,8 +194,8 @@
     "expr": "x + y"
    },
    "position": [
-    470.0,
-    1504.829767350162
+    803.6,
+    1905.0
    ],
    "parent": null,
    "title": "raggio inviluppo"
@@ -259,8 +207,8 @@
     "expr": "x + y"
    },
    "position": [
-    470.0,
-    584.829767350162
+    803.6,
+    2508.0
    ],
    "parent": null
   },
@@ -271,8 +219,8 @@
     "expr": "x + y"
    },
    "position": [
-    470.0,
-    785.829767350162
+    803.6,
+    2307.0
    ],
    "parent": null
   },
@@ -283,8 +231,8 @@
     "expr": "x + y"
    },
    "position": [
-    470.0,
-    2826.829767350162
+    803.6,
+    1503.0
    ],
    "parent": null
   },
@@ -295,8 +243,8 @@
     "expr": "y + 1"
    },
    "position": [
-    470.0,
-    1303.829767350162
+    803.6,
+    1704.0
    ],
    "parent": null
   },
@@ -307,8 +255,8 @@
     "expr": "x + y / 2 - 0.5"
    },
    "position": [
-    470.0,
-    1705.829767350162
+    803.6,
+    2106.0
    ],
    "parent": null
   },
@@ -319,8 +267,8 @@
     "expr": "x - y"
    },
    "position": [
-    770.0,
-    2236.6928303974464
+    803.6,
+    784.0
    ],
    "parent": null
   },
@@ -332,7 +280,7 @@
    },
    "position": [
     80.0,
-    2505.0
+    2662.0
    ],
    "parent": null,
    "title": "sezioni loft"
@@ -344,8 +292,8 @@
     "expr": "x / (y - 1)"
    },
    "position": [
-    470.0,
-    2107.829767350162
+    503.6,
+    1261.72868451612
    ],
    "parent": null
   },
@@ -356,8 +304,8 @@
     "expr": "x / (y - 1)"
    },
    "position": [
-    770.0,
-    1401.6928303974464
+    803.6,
+    985.0
    ],
    "parent": null
   },
@@ -368,8 +316,8 @@
     "start": 0.0
    },
    "position": [
-    770.0,
-    1919.6928303974464
+    803.6,
+    1186.0
    ],
    "parent": null
   },
@@ -380,8 +328,8 @@
     "start": 0.0
    },
    "position": [
-    1070.0,
-    1365.0
+    1103.6,
+    1086.808765712465
    ],
    "parent": null
   },
@@ -390,8 +338,8 @@
    "type": "ConstructPoint",
    "params": {},
    "position": [
-    770.0,
-    1602.6928303974464
+    1103.6,
+    2004.3518022537226
    ],
    "parent": null
   },
@@ -400,8 +348,8 @@
    "type": "Rectangle",
    "params": {},
    "position": [
-    1070.0,
-    1682.0
+    1403.6,
+    1899.297883929825
    ],
    "parent": null,
    "title": "sezione nervatura"
@@ -414,8 +362,8 @@
     "about": "world"
    },
    "position": [
-    1370.0,
-    1607.2975052517345
+    1821.1999999999998,
+    1407.9458270767304
    ],
    "parent": null
   },
@@ -424,8 +372,8 @@
    "type": "ConstructPoint",
    "params": {},
    "position": [
-    1370.0,
-    1290.2975052517345
+    1403.6,
+    1309.297883929825
    ],
    "parent": null
   },
@@ -434,8 +382,8 @@
    "type": "Move",
    "params": {},
    "position": [
-    1670.0,
-    1465.3559486427662
+    2138.0,
+    1485.7324385046668
    ],
    "parent": null
   },
@@ -447,8 +395,8 @@
     "solid": true
    },
    "position": [
-    1986.8,
-    1473.9143920337983
+    2438.0,
+    1604.843021506056
    ],
    "parent": null,
    "title": "nervatura ritorta"
@@ -458,8 +406,8 @@
    "type": "ArrayPolar",
    "params": {},
    "position": [
-    2286.8,
-    1513.1936137293142
+    2754.8,
+    2008.5988753378335
    ],
    "parent": null,
    "title": "Nervature"
@@ -469,8 +417,8 @@
    "type": "MeshUnion",
    "params": {},
    "position": [
-    2603.6000000000004,
-    1636.833224577072
+    3054.8,
+    2005.2762399226392
    ],
    "parent": null
   },
@@ -479,8 +427,8 @@
    "type": "ConstructPoint",
    "params": {},
    "position": [
-    770.0,
-    241.92575537443417
+    803.6,
+    3227.0
    ],
    "parent": null
   },
@@ -491,8 +439,8 @@
     "centered": true
    },
    "position": [
-    1070.0,
-    150.0
+    1103.6,
+    2785.8651951108654
    ],
    "parent": null
   },
@@ -506,8 +454,8 @@
     "n": 1
    },
    "position": [
-    1370.0,
-    636.6058123648809
+    1403.6,
+    2580.4955632800134
    ],
    "parent": null
   },
@@ -518,8 +466,8 @@
     "mode": "fillet"
    },
    "position": [
-    1670.0,
-    606.8774007259417
+    1821.1999999999998,
+    2618.0286447411668
    ],
    "parent": null
   },
@@ -533,8 +481,8 @@
     "n": 1
    },
    "position": [
-    1986.8,
-    808.5308247019013
+    2138.0,
+    2575.437751338762
    ],
    "parent": null
   },
@@ -545,8 +493,8 @@
     "mode": "fillet"
    },
    "position": [
-    2286.8,
-    756.6592450802245
+    2438.0,
+    2555.4323582903676
    ],
    "parent": null
   },
@@ -555,8 +503,8 @@
    "type": "ConstructPoint",
    "params": {},
    "position": [
-    770.0,
-    558.9257553744342
+    803.6,
+    2910.0
    ],
    "parent": null
   },
@@ -567,8 +515,8 @@
     "centered": true
    },
    "position": [
-    1070.0,
-    563.0
+    1103.6,
+    2364.502870374407
    ],
    "parent": null
   },
@@ -582,8 +530,8 @@
     "n": 1
    },
    "position": [
-    1370.0,
-    969.6058123648811
+    1403.6,
+    2244.708121701194
    ],
    "parent": null
   },
@@ -594,8 +542,8 @@
     "mode": "fillet"
    },
    "position": [
-    1670.0,
-    899.8774007259417
+    1821.1999999999998,
+    2325.0286447411668
    ],
    "parent": null
   },
@@ -609,8 +557,8 @@
     "n": 1
    },
    "position": [
-    1986.8,
-    1101.5308247019013
+    2138.0,
+    2282.437751338762
    ],
    "parent": null
   },
@@ -621,8 +569,8 @@
     "mode": "fillet"
    },
    "position": [
-    2286.8,
-    1049.6592450802245
+    2438.0,
+    2262.4323582903676
    ],
    "parent": null
   },
@@ -631,8 +579,8 @@
    "type": "MeshIntersect",
    "params": {},
    "position": [
-    2903.6000000000004,
-    1205.5733576234566
+    3354.8,
+    2305.0851131556988
    ],
    "parent": null,
    "title": "nervature base"
@@ -642,8 +590,8 @@
    "type": "MeshUnion",
    "params": {},
    "position": [
-    3203.6000000000004,
-    1061.6967131311876
+    3654.8,
+    2478.3865920278754
    ],
    "parent": null,
    "title": "Base con nervature"
@@ -653,8 +601,8 @@
    "type": "ConstructPoint",
    "params": {},
    "position": [
-    470.0,
-    986.829767350162
+    503.6,
+    3122.589372132276
    ],
    "parent": null
   },
@@ -668,8 +616,8 @@
     "font_size": 2.2
    },
    "position": [
-    770.0,
-    990.026758368366
+    803.6,
+    3544.0
    ],
    "parent": null,
    "title": "Testo fondo"
@@ -679,8 +627,8 @@
    "type": "Extrude",
    "params": {},
    "position": [
-    1070.0,
-    976.0
+    1103.6,
+    3198.8651951108654
    ],
    "parent": null
   },
@@ -689,8 +637,8 @@
    "type": "MeshIntersect",
    "params": {},
    "position": [
-    3503.6000000000004,
-    1080.2823573021901
+    3954.8,
+    2674.6768599949405
    ],
    "parent": null,
    "title": "STENCIL BASE"
@@ -700,8 +648,8 @@
    "type": "MeshSubtract",
    "params": {},
    "position": [
-    3803.6000000000004,
-    1091.5953002230658
+    4254.8,
+    2553.404984258575
    ],
    "parent": null
   },
@@ -710,8 +658,8 @@
    "type": "ConstructPoint",
    "params": {},
    "position": [
-    470.0,
-    2308.829767350162
+    503.6,
+    1812.3136365109153
    ],
    "parent": null
   },
@@ -725,8 +673,8 @@
     "clearance": 0.0
    },
    "position": [
-    4103.6,
-    1161.0150573589406
+    4554.8,
+    2140.433157029802
    ],
    "parent": null,
    "title": "BASE (filetto)"
@@ -736,8 +684,8 @@
    "type": "ConstructPoint",
    "params": {},
    "position": [
-    770.0,
-    2766.2590887077677
+    803.6,
+    150.0
    ],
    "parent": null
   },
@@ -748,8 +696,8 @@
     "centered": true
    },
    "position": [
-    1070.0,
-    2753.0
+    1103.6,
+    356.80876571246495
    ],
    "parent": null
   },
@@ -763,8 +711,8 @@
     "n": 1
    },
    "position": [
-    1370.0,
-    2614.2975052517345
+    1403.6,
+    666.22658834287
    ],
    "parent": null
   },
@@ -775,8 +723,8 @@
     "mode": "fillet"
    },
    "position": [
-    1670.0,
-    2605.2695400864704
+    1821.1999999999998,
+    725.9458270767304
    ],
    "parent": null
   },
@@ -785,8 +733,8 @@
    "type": "ConstructPoint",
    "params": {},
    "position": [
-    770.0,
-    2449.2590887077677
+    803.6,
+    466.99999999999994
    ],
    "parent": null
   },
@@ -797,8 +745,8 @@
     "centered": true
    },
    "position": [
-    1070.0,
-    2340.0
+    1103.6,
+    1403.808765712465
    ],
    "parent": null
   },
@@ -812,8 +760,8 @@
     "n": 1
    },
    "position": [
-    1370.0,
-    2341.2975052517345
+    1403.6,
+    1626.297883929825
    ],
    "parent": null
   },
@@ -824,8 +772,8 @@
     "mode": "fillet"
    },
    "position": [
-    1670.0,
-    2312.2695400864704
+    1821.1999999999998,
+    1772.9458270767304
    ],
    "parent": null
   },
@@ -834,8 +782,8 @@
    "type": "MeshIntersect",
    "params": {},
    "position": [
-    2903.6000000000004,
-    2129.509714613914
+    3354.8,
+    1639.9395405661523
    ],
    "parent": null,
    "title": "nervature tappo"
@@ -845,8 +793,8 @@
    "type": "MeshUnion",
    "params": {},
    "position": [
-    3203.6000000000004,
-    2334.955796286721
+    3654.8,
+    1255.7167573400711
    ],
    "parent": null,
    "title": "Tappo con nervature"
@@ -856,8 +804,8 @@
    "type": "ConstructPoint",
    "params": {},
    "position": [
-    1070.0,
-    2023.0
+    1103.6,
+    769.808765712465
    ],
    "parent": null
   },
@@ -871,8 +819,8 @@
     "font_size": 2.4
    },
    "position": [
-    1370.0,
-    1972.2975052517345
+    1403.6,
+    939.2265883428702
    ],
    "parent": null,
    "title": "Testo tappo"
@@ -882,8 +830,8 @@
    "type": "Extrude",
    "params": {},
    "position": [
-    1670.0,
-    1923.2695400864704
+    1821.1999999999998,
+    1018.9458270767304
    ],
    "parent": null
   },
@@ -892,8 +840,8 @@
    "type": "MeshIntersect",
    "params": {},
    "position": [
-    3503.6000000000004,
-    2132.7342289558437
+    3954.8,
+    1207.6276440496388
    ],
    "parent": null,
    "title": "STENCIL TAPPO"
@@ -903,8 +851,8 @@
    "type": "MeshSubtract",
    "params": {},
    "position": [
-    3803.6000000000004,
-    2186.120104503593
+    4254.8,
+    1252.7003708388017
    ],
    "parent": null
   },
@@ -917,11 +865,176 @@
     "profile": "ISO metric"
    },
    "position": [
-    4103.6,
-    1966.0150573589408
+    4554.8,
+    1335.433157029802
    ],
    "parent": null,
    "title": "TAPPO (filetto)"
+  },
+  {
+   "id": "pNZ",
+   "type": "NumberSlider",
+   "params": {
+    "value": 0.45
+   },
+   "position": [
+    80.0,
+    1720.0
+   ],
+   "parent": null,
+   "title": "11 ugello (larghezza linea)"
+  },
+  {
+   "id": "pRL",
+   "type": "IntegerSlider",
+   "params": {
+    "value": 2
+   },
+   "position": [
+    80.0,
+    1877.0
+   ],
+   "parent": null,
+   "title": "12 linee per nervatura"
+  },
+  {
+   "id": "pRHn",
+   "type": "IntegerSlider",
+   "params": {
+    "value": 1
+   },
+   "position": [
+    80.0,
+    2034.0
+   ],
+   "parent": null,
+   "title": "13 linee di rilievo"
+  },
+  {
+   "id": "pRS",
+   "type": "NumberSlider",
+   "params": {
+    "value": 5.0
+   },
+   "position": [
+    80.0,
+    2191.0
+   ],
+   "parent": null,
+   "title": "14 passo nervature (\u00d7 ugello)"
+  },
+  {
+   "id": "eRW",
+   "type": "Expression",
+   "params": {
+    "expr": "x * y"
+   },
+   "position": [
+    503.6,
+    1611.3136365109153
+   ],
+   "parent": null,
+   "title": "larghezza nervatura"
+  },
+  {
+   "id": "eRH",
+   "type": "Expression",
+   "params": {
+    "expr": "x * y"
+   },
+   "position": [
+    503.6,
+    2129.313636510916
+   ],
+   "parent": null,
+   "title": "rilievo nervatura"
+  },
+  {
+   "id": "eSp",
+   "type": "Expression",
+   "params": {
+    "expr": "x * y"
+   },
+   "position": [
+    503.6,
+    2330.3136365109153
+   ],
+   "parent": null,
+   "title": "passo nervature"
+  },
+  {
+   "id": "eN",
+   "type": "Expression",
+   "params": {
+    "expr": "max(3, int(2 * math.pi * x / y))"
+   },
+   "position": [
+    803.6,
+    2709.0
+   ],
+   "parent": null,
+   "title": "numero nervature"
+  },
+  {
+   "id": "pSF",
+   "type": "NumberSlider",
+   "params": {
+    "value": 0.69
+   },
+   "position": [
+    80.0,
+    935.0
+   ],
+   "parent": null,
+   "title": "06 spalla filetto"
+  },
+  {
+   "id": "eDT",
+   "type": "Expression",
+   "params": {
+    "expr": "2 * (x - y)"
+   },
+   "position": [
+    503.6,
+    2531.3136365109153
+   ],
+   "parent": null,
+   "title": "diametro filetto"
+  },
+  {
+   "id": "txtBr",
+   "type": "Rotate",
+   "params": {
+    "angle": 180.0,
+    "axis": "X",
+    "about": "world"
+   },
+   "position": [
+    1403.6,
+    2969.337971237727
+   ],
+   "parent": null,
+   "title": "testo fondo girato (leggibile da sotto)"
+  },
+  {
+   "id": "cSD",
+   "type": "ConstructPoint",
+   "params": {},
+   "position": [
+    503.6,
+    3439.589372132276
+   ],
+   "parent": null
+  },
+  {
+   "id": "txtBu",
+   "type": "Move",
+   "params": {},
+   "position": [
+    1821.1999999999998,
+    2911.856549335854
+   ],
+   "parent": null
   }
  ],
  "connections": [
@@ -968,25 +1081,11 @@
    "to_socket": "x"
   },
   {
-   "id": "c7",
-   "from_node": "pRH",
-   "from_socket": "result",
-   "to_node": "eRe",
-   "to_socket": "y"
-  },
-  {
    "id": "c8",
    "from_node": "pFB",
    "from_socket": "result",
    "to_node": "eFBe",
    "to_socket": "x"
-  },
-  {
-   "id": "c9",
-   "from_node": "pRH",
-   "from_socket": "result",
-   "to_node": "eFBe",
-   "to_socket": "y"
   },
   {
    "id": "c10",
@@ -996,25 +1095,11 @@
    "to_socket": "x"
   },
   {
-   "id": "c11",
-   "from_node": "pRH",
-   "from_socket": "result",
-   "to_node": "eFSe",
-   "to_socket": "y"
-  },
-  {
    "id": "c12",
    "from_node": "pFT",
    "from_socket": "result",
    "to_node": "eFTe",
    "to_socket": "x"
-  },
-  {
-   "id": "c13",
-   "from_node": "pRH",
-   "from_socket": "result",
-   "to_node": "eFTe",
-   "to_socket": "y"
   },
   {
    "id": "c14",
@@ -1024,25 +1109,11 @@
    "to_socket": "x"
   },
   {
-   "id": "c15",
-   "from_node": "pRH",
-   "from_socket": "result",
-   "to_node": "eRibL",
-   "to_socket": "y"
-  },
-  {
    "id": "c16",
    "from_node": "pR",
    "from_socket": "result",
    "to_node": "eRibC",
    "to_socket": "x"
-  },
-  {
-   "id": "c17",
-   "from_node": "pRH",
-   "from_socket": "result",
-   "to_node": "eRibC",
-   "to_socket": "y"
   },
   {
    "id": "c18",
@@ -1129,13 +1200,6 @@
    "to_socket": "width"
   },
   {
-   "id": "c30",
-   "from_node": "pRW",
-   "from_socket": "result",
-   "to_node": "rib",
-   "to_socket": "height"
-  },
-  {
    "id": "c31",
    "from_node": "cRib",
    "from_socket": "point",
@@ -1190,13 +1254,6 @@
    "from_socket": "result",
    "to_node": "ribA",
    "to_socket": "shape"
-  },
-  {
-   "id": "c39",
-   "from_node": "pNR",
-   "from_socket": "result",
-   "to_node": "ribA",
-   "to_socket": "count"
   },
   {
    "id": "c40",
@@ -1409,13 +1466,6 @@
    "to_socket": "origin"
   },
   {
-   "id": "c70",
-   "from_node": "txtB",
-   "from_socket": "result",
-   "to_node": "txtBX",
-   "to_socket": "sketch"
-  },
-  {
    "id": "c71",
    "from_node": "pSD",
    "from_socket": "result",
@@ -1428,13 +1478,6 @@
    "from_socket": "result",
    "to_node": "stB",
    "to_socket": "a"
-  },
-  {
-   "id": "c73",
-   "from_node": "txtBX",
-   "from_socket": "result",
-   "to_node": "stB",
-   "to_socket": "b"
   },
   {
    "id": "c74",
@@ -1484,13 +1527,6 @@
    "from_socket": "result",
    "to_node": "thM",
    "to_socket": "pitch"
-  },
-  {
-   "id": "c81",
-   "from_node": "pDT",
-   "from_socket": "result",
-   "to_node": "thM",
-   "to_socket": "diameter"
   },
   {
    "id": "c82",
@@ -1717,18 +1753,193 @@
    "to_socket": "pitch"
   },
   {
-   "id": "c114",
-   "from_node": "pDT",
-   "from_socket": "result",
-   "to_node": "thF",
-   "to_socket": "diameter"
-  },
-  {
    "id": "c115",
    "from_node": "pCL",
    "from_socket": "result",
    "to_node": "thF",
    "to_socket": "clearance"
+  },
+  {
+   "id": "c108_",
+   "from_node": "pNZ",
+   "from_socket": "result",
+   "to_node": "eRW",
+   "to_socket": "x"
+  },
+  {
+   "id": "c109_",
+   "from_node": "pRL",
+   "from_socket": "result",
+   "to_node": "eRW",
+   "to_socket": "y"
+  },
+  {
+   "id": "c110_",
+   "from_node": "pNZ",
+   "from_socket": "result",
+   "to_node": "eRH",
+   "to_socket": "x"
+  },
+  {
+   "id": "c111_",
+   "from_node": "pRHn",
+   "from_socket": "result",
+   "to_node": "eRH",
+   "to_socket": "y"
+  },
+  {
+   "id": "c112_",
+   "from_node": "pNZ",
+   "from_socket": "result",
+   "to_node": "eSp",
+   "to_socket": "x"
+  },
+  {
+   "id": "c113_",
+   "from_node": "pRS",
+   "from_socket": "result",
+   "to_node": "eSp",
+   "to_socket": "y"
+  },
+  {
+   "id": "c114_",
+   "from_node": "pR",
+   "from_socket": "result",
+   "to_node": "eN",
+   "to_socket": "x"
+  },
+  {
+   "id": "c115_",
+   "from_node": "eSp",
+   "from_socket": "result",
+   "to_node": "eN",
+   "to_socket": "y"
+  },
+  {
+   "id": "c116",
+   "from_node": "eRH",
+   "from_socket": "result",
+   "to_node": "eRe",
+   "to_socket": "y"
+  },
+  {
+   "id": "c117",
+   "from_node": "eRH",
+   "from_socket": "result",
+   "to_node": "eFBe",
+   "to_socket": "y"
+  },
+  {
+   "id": "c118",
+   "from_node": "eRH",
+   "from_socket": "result",
+   "to_node": "eFSe",
+   "to_socket": "y"
+  },
+  {
+   "id": "c119",
+   "from_node": "eRH",
+   "from_socket": "result",
+   "to_node": "eFTe",
+   "to_socket": "y"
+  },
+  {
+   "id": "c120",
+   "from_node": "eRH",
+   "from_socket": "result",
+   "to_node": "eRibL",
+   "to_socket": "y"
+  },
+  {
+   "id": "c121",
+   "from_node": "eRH",
+   "from_socket": "result",
+   "to_node": "eRibC",
+   "to_socket": "y"
+  },
+  {
+   "id": "c122",
+   "from_node": "eRW",
+   "from_socket": "result",
+   "to_node": "rib",
+   "to_socket": "height"
+  },
+  {
+   "id": "c123",
+   "from_node": "eN",
+   "from_socket": "result",
+   "to_node": "ribA",
+   "to_socket": "count"
+  },
+  {
+   "id": "c122_",
+   "from_node": "pR",
+   "from_socket": "result",
+   "to_node": "eDT",
+   "to_socket": "x"
+  },
+  {
+   "id": "c123_",
+   "from_node": "pSF",
+   "from_socket": "result",
+   "to_node": "eDT",
+   "to_socket": "y"
+  },
+  {
+   "id": "c124",
+   "from_node": "eDT",
+   "from_socket": "result",
+   "to_node": "thM",
+   "to_socket": "diameter"
+  },
+  {
+   "id": "c125",
+   "from_node": "eDT",
+   "from_socket": "result",
+   "to_node": "thF",
+   "to_socket": "diameter"
+  },
+  {
+   "id": "c124_",
+   "from_node": "txtB",
+   "from_socket": "result",
+   "to_node": "txtBX",
+   "to_socket": "sketch"
+  },
+  {
+   "id": "c125_",
+   "from_node": "txtBX",
+   "from_socket": "result",
+   "to_node": "txtBr",
+   "to_socket": "shape"
+  },
+  {
+   "id": "c126",
+   "from_node": "pSD",
+   "from_socket": "result",
+   "to_node": "cSD",
+   "to_socket": "z"
+  },
+  {
+   "id": "c127",
+   "from_node": "txtBr",
+   "from_socket": "result",
+   "to_node": "txtBu",
+   "to_socket": "shape"
+  },
+  {
+   "id": "c128",
+   "from_node": "cSD",
+   "from_socket": "point",
+   "to_node": "txtBu",
+   "to_socket": "offset"
+  },
+  {
+   "id": "c129",
+   "from_node": "txtBu",
+   "from_socket": "result",
+   "to_node": "stB",
+   "to_socket": "b"
   }
  ]
 }
