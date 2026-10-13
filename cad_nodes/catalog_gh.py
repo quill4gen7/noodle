@@ -494,11 +494,11 @@ _lists("GhTreeBranch")
 # ===========================================================================
 _gh("GhBoundingRectangle", "Bounding Rectangle",
     [_in("geometry", list_access=True),
-     _plane_in(), _in("union"), _in("slide")],
+     _plane_in(), _in("union"), _in("slide"), _in("axis")],
     [Socket("bounding", WIRE_CURVE), Socket("dimension_x", WIRE_DATA),
      Socket("dimension_y", WIRE_DATA)],
-    "_gh_bounding_rectangle({geometry}, {plane}, {union}, {slide})", multi=True,
-    params=[_bool("union", False), _num("slide", 0.0)],
+    "_gh_bounding_rectangle({geometry}, {plane}, {union}, {slide}, {axis})", multi=True,
+    params=[_bool("union", False), _num("slide", 0.0), _int("axis", 0)],
     description="The rectangle aligned with a plane that holds the geometry, and "
                 "its sides. `union`: one for everything, else one per item. "
                 "`slide` sets its height along the plane normal: 0 at the "
@@ -636,8 +636,9 @@ _gh("GhTrimWithPlane", "Trim With Plane",
     [Socket("trimmed_breps", WIRE_SOLID)],
     "_gh_trim_with_plane({brep}, {plane}, {plane_direction}, {cap})",
     params=[_bool("plane_direction", True), _bool("cap", True)],
-    description="Cut a brep with a plane and keep the side the normal points to "
-                "(`plane_direction` off: the other side); `cap` closes the cut.")
+    description="Cut a brep with a plane and keep one side: `plane_direction` on "
+                "keeps the side OPPOSITE the normal (as Rhino does), off the normal "
+                "side; `cap` closes the cut.")
 
 _gh("GhCollisionOneMany", "Collision One|Many",
     [_in("collider"), _in("obstacles", list_access=True)],
