@@ -193,3 +193,22 @@ def test_graft_puts_every_item_in_its_own_branch():
     assert ns["_gh_graft"]([1, 2]) == [[1], [2]]
     assert ns["_gh_graft"]([[1, 2], [3]]) == [[[1], [2]], [[3]]]
     assert ns["_gh_graft"](5) == [[5]]
+
+
+def test_expression_binds_x_and_y_without_a_fan_out():
+    """Expression's template used to be the bare `(x + y)`: x and y existed
+    only inside a fan-out lambda, so two plain numbers wired in gave 'name not
+    defined' (found building the native barattolo)."""
+    g = Graph.from_dict({"name": "t", "nodes": [
+        {"id": "a", "type": "NumberInput", "params": {"value": 2}},
+        {"id": "b", "type": "NumberInput", "params": {"value": 3}},
+        {"id": "e", "type": "Expression", "params": {"expr": "x * y"}},
+    ], "connections": [
+        {"id": "w1", "from_node": "a", "from_socket": "result", "to_node": "e", "to_socket": "x"},
+        {"id": "w2", "from_node": "b", "from_socket": "result", "to_node": "e", "to_socket": "y"},
+    ]})
+    line = next(l for l in transpile(g).splitlines() if "@node:e " in l)
+    ns = {}
+    exec(line.split("#")[0].strip().replace(line.split("=")[0].strip(), "r", 1)
+         .replace("__out_1", "2").replace("__out_2", "3"), ns)
+    assert ns["r"] == 6
