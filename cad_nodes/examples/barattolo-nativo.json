@@ -1,0 +1,1734 @@
+{
+ "name": "barattolo-nativo",
+ "nodes": [
+  {
+   "id": "pR",
+   "type": "NumberSlider",
+   "params": {
+    "value": 7.8
+   },
+   "position": [
+    80.0,
+    150.0
+   ],
+   "parent": null,
+   "title": "01 raggio"
+  },
+  {
+   "id": "pHB",
+   "type": "NumberSlider",
+   "params": {
+    "value": 58.0
+   },
+   "position": [
+    80.0,
+    307.0
+   ],
+   "parent": null,
+   "title": "02 altezza base"
+  },
+  {
+   "id": "pHL",
+   "type": "NumberSlider",
+   "params": {
+    "value": 57.6
+   },
+   "position": [
+    80.0,
+    464.0
+   ],
+   "parent": null,
+   "title": "03 altezza tappo"
+  },
+  {
+   "id": "pLT",
+   "type": "NumberSlider",
+   "params": {
+    "value": 10.0
+   },
+   "position": [
+    80.0,
+    621.0
+   ],
+   "parent": null,
+   "title": "04 altezza filetto"
+  },
+  {
+   "id": "pPT",
+   "type": "NumberSlider",
+   "params": {
+    "value": 3.33
+   },
+   "position": [
+    80.0,
+    778.0
+   ],
+   "parent": null,
+   "title": "05 passo filetto"
+  },
+  {
+   "id": "pDT",
+   "type": "NumberSlider",
+   "params": {
+    "value": 14.2
+   },
+   "position": [
+    80.0,
+    935.0
+   ],
+   "parent": null,
+   "title": "06 diametro filetto"
+  },
+  {
+   "id": "pCL",
+   "type": "NumberSlider",
+   "params": {
+    "value": 0.3
+   },
+   "position": [
+    80.0,
+    1092.0
+   ],
+   "parent": null,
+   "title": "07 gioco filetto"
+  },
+  {
+   "id": "pFB",
+   "type": "NumberSlider",
+   "params": {
+    "value": 2.2
+   },
+   "position": [
+    80.0,
+    1249.0
+   ],
+   "parent": null,
+   "title": "08 fillet base"
+  },
+  {
+   "id": "pFS",
+   "type": "NumberSlider",
+   "params": {
+    "value": 1.575
+   },
+   "position": [
+    80.0,
+    1406.0
+   ],
+   "parent": null,
+   "title": "09 fillet spalla"
+  },
+  {
+   "id": "pFT",
+   "type": "NumberSlider",
+   "params": {
+    "value": 2.2
+   },
+   "position": [
+    80.0,
+    1563.0
+   ],
+   "parent": null,
+   "title": "10 fillet tappo"
+  },
+  {
+   "id": "pRH",
+   "type": "NumberSlider",
+   "params": {
+    "value": 0.45
+   },
+   "position": [
+    80.0,
+    1877.0
+   ],
+   "parent": null,
+   "title": "12 rilievo nervature"
+  },
+  {
+   "id": "pRW",
+   "type": "NumberSlider",
+   "params": {
+    "value": 0.9
+   },
+   "position": [
+    80.0,
+    2034.0
+   ],
+   "parent": null,
+   "title": "13 larghezza nervature"
+  },
+  {
+   "id": "pTW",
+   "type": "NumberSlider",
+   "params": {
+    "_ui": {
+     "value": {
+      "min": 0,
+      "max": 180.0
+     }
+    },
+    "value": 180.0
+   },
+   "position": [
+    80.0,
+    2191.0
+   ],
+   "parent": null,
+   "title": "14 torsione"
+  },
+  {
+   "id": "pSD",
+   "type": "NumberSlider",
+   "params": {
+    "value": 1.0
+   },
+   "position": [
+    80.0,
+    2348.0
+   ],
+   "parent": null,
+   "title": "15 spessore stencil"
+  },
+  {
+   "id": "pNR",
+   "type": "IntegerSlider",
+   "params": {
+    "value": 21
+   },
+   "position": [
+    80.0,
+    1720.0
+   ],
+   "parent": null,
+   "title": "11 nervature"
+  },
+  {
+   "id": "eTot",
+   "type": "Expression",
+   "params": {
+    "expr": "x + y"
+   },
+   "position": [
+    470.0,
+    1906.829767350162
+   ],
+   "parent": null,
+   "title": "altezza totale"
+  },
+  {
+   "id": "eZb",
+   "type": "Expression",
+   "params": {
+    "expr": "x / 2"
+   },
+   "position": [
+    470.0,
+    383.829767350162
+   ],
+   "parent": null
+  },
+  {
+   "id": "eZl",
+   "type": "Expression",
+   "params": {
+    "expr": "x + y / 2"
+   },
+   "position": [
+    470.0,
+    2625.829767350162
+   ],
+   "parent": null
+  },
+  {
+   "id": "eRe",
+   "type": "Expression",
+   "params": {
+    "expr": "x + y"
+   },
+   "position": [
+    470.0,
+    1504.829767350162
+   ],
+   "parent": null,
+   "title": "raggio inviluppo"
+  },
+  {
+   "id": "eFBe",
+   "type": "Expression",
+   "params": {
+    "expr": "x + y"
+   },
+   "position": [
+    470.0,
+    584.829767350162
+   ],
+   "parent": null
+  },
+  {
+   "id": "eFSe",
+   "type": "Expression",
+   "params": {
+    "expr": "x + y"
+   },
+   "position": [
+    470.0,
+    785.829767350162
+   ],
+   "parent": null
+  },
+  {
+   "id": "eFTe",
+   "type": "Expression",
+   "params": {
+    "expr": "x + y"
+   },
+   "position": [
+    470.0,
+    2826.829767350162
+   ],
+   "parent": null
+  },
+  {
+   "id": "eRibL",
+   "type": "Expression",
+   "params": {
+    "expr": "y + 1"
+   },
+   "position": [
+    470.0,
+    1303.829767350162
+   ],
+   "parent": null
+  },
+  {
+   "id": "eRibC",
+   "type": "Expression",
+   "params": {
+    "expr": "x + y / 2 - 0.5"
+   },
+   "position": [
+    470.0,
+    1705.829767350162
+   ],
+   "parent": null
+  },
+  {
+   "id": "eTxtZ",
+   "type": "Expression",
+   "params": {
+    "expr": "x - y"
+   },
+   "position": [
+    770.0,
+    2236.6928303974464
+   ],
+   "parent": null
+  },
+  {
+   "id": "nSec",
+   "type": "IntegerSlider",
+   "params": {
+    "value": 13
+   },
+   "position": [
+    80.0,
+    2505.0
+   ],
+   "parent": null,
+   "title": "sezioni loft"
+  },
+  {
+   "id": "eStepA",
+   "type": "Expression",
+   "params": {
+    "expr": "x / (y - 1)"
+   },
+   "position": [
+    470.0,
+    2107.829767350162
+   ],
+   "parent": null
+  },
+  {
+   "id": "eStepZ",
+   "type": "Expression",
+   "params": {
+    "expr": "x / (y - 1)"
+   },
+   "position": [
+    770.0,
+    1401.6928303974464
+   ],
+   "parent": null
+  },
+  {
+   "id": "sA",
+   "type": "Series",
+   "params": {
+    "start": 0.0
+   },
+   "position": [
+    770.0,
+    1919.6928303974464
+   ],
+   "parent": null
+  },
+  {
+   "id": "sZ",
+   "type": "Series",
+   "params": {
+    "start": 0.0
+   },
+   "position": [
+    1070.0,
+    1365.0
+   ],
+   "parent": null
+  },
+  {
+   "id": "cRib",
+   "type": "ConstructPoint",
+   "params": {},
+   "position": [
+    770.0,
+    1602.6928303974464
+   ],
+   "parent": null
+  },
+  {
+   "id": "rib",
+   "type": "Rectangle",
+   "params": {},
+   "position": [
+    1070.0,
+    1682.0
+   ],
+   "parent": null,
+   "title": "sezione nervatura"
+  },
+  {
+   "id": "ribR",
+   "type": "Rotate",
+   "params": {
+    "axis": "Z",
+    "about": "world"
+   },
+   "position": [
+    1370.0,
+    1607.2975052517345
+   ],
+   "parent": null
+  },
+  {
+   "id": "cZ",
+   "type": "ConstructPoint",
+   "params": {},
+   "position": [
+    1370.0,
+    1290.2975052517345
+   ],
+   "parent": null
+  },
+  {
+   "id": "ribM",
+   "type": "Move",
+   "params": {},
+   "position": [
+    1670.0,
+    1465.3559486427662
+   ],
+   "parent": null
+  },
+  {
+   "id": "ribL",
+   "type": "Loft",
+   "params": {
+    "ruled": false,
+    "solid": true
+   },
+   "position": [
+    1986.8,
+    1473.9143920337983
+   ],
+   "parent": null,
+   "title": "nervatura ritorta"
+  },
+  {
+   "id": "ribA",
+   "type": "ArrayPolar",
+   "params": {},
+   "position": [
+    2286.8,
+    1513.1936137293142
+   ],
+   "parent": null,
+   "title": "Nervature"
+  },
+  {
+   "id": "ribU",
+   "type": "MeshUnion",
+   "params": {},
+   "position": [
+    2603.6000000000004,
+    1636.833224577072
+   ],
+   "parent": null
+  },
+  {
+   "id": "ccb",
+   "type": "ConstructPoint",
+   "params": {},
+   "position": [
+    770.0,
+    241.92575537443417
+   ],
+   "parent": null
+  },
+  {
+   "id": "cb",
+   "type": "Cylinder",
+   "params": {
+    "centered": true
+   },
+   "position": [
+    1070.0,
+    150.0
+   ],
+   "parent": null
+  },
+  {
+   "id": "cbE0",
+   "type": "SubshapesByPosition",
+   "params": {
+    "kind": "edge",
+    "axis": "Z",
+    "pick": "min",
+    "n": 1
+   },
+   "position": [
+    1370.0,
+    636.6058123648809
+   ],
+   "parent": null
+  },
+  {
+   "id": "cbF0",
+   "type": "FilletChamferSelected",
+   "params": {
+    "mode": "fillet"
+   },
+   "position": [
+    1670.0,
+    606.8774007259417
+   ],
+   "parent": null
+  },
+  {
+   "id": "cbE1",
+   "type": "SubshapesByPosition",
+   "params": {
+    "kind": "edge",
+    "axis": "Z",
+    "pick": "max",
+    "n": 1
+   },
+   "position": [
+    1986.8,
+    808.5308247019013
+   ],
+   "parent": null
+  },
+  {
+   "id": "cbF1",
+   "type": "FilletChamferSelected",
+   "params": {
+    "mode": "fillet"
+   },
+   "position": [
+    2286.8,
+    756.6592450802245
+   ],
+   "parent": null
+  },
+  {
+   "id": "ceb",
+   "type": "ConstructPoint",
+   "params": {},
+   "position": [
+    770.0,
+    558.9257553744342
+   ],
+   "parent": null
+  },
+  {
+   "id": "eb",
+   "type": "Cylinder",
+   "params": {
+    "centered": true
+   },
+   "position": [
+    1070.0,
+    563.0
+   ],
+   "parent": null
+  },
+  {
+   "id": "ebE0",
+   "type": "SubshapesByPosition",
+   "params": {
+    "kind": "edge",
+    "axis": "Z",
+    "pick": "min",
+    "n": 1
+   },
+   "position": [
+    1370.0,
+    969.6058123648811
+   ],
+   "parent": null
+  },
+  {
+   "id": "ebF0",
+   "type": "FilletChamferSelected",
+   "params": {
+    "mode": "fillet"
+   },
+   "position": [
+    1670.0,
+    899.8774007259417
+   ],
+   "parent": null
+  },
+  {
+   "id": "ebE1",
+   "type": "SubshapesByPosition",
+   "params": {
+    "kind": "edge",
+    "axis": "Z",
+    "pick": "max",
+    "n": 1
+   },
+   "position": [
+    1986.8,
+    1101.5308247019013
+   ],
+   "parent": null
+  },
+  {
+   "id": "ebF1",
+   "type": "FilletChamferSelected",
+   "params": {
+    "mode": "fillet"
+   },
+   "position": [
+    2286.8,
+    1049.6592450802245
+   ],
+   "parent": null
+  },
+  {
+   "id": "ribB",
+   "type": "MeshIntersect",
+   "params": {},
+   "position": [
+    2903.6000000000004,
+    1205.5733576234566
+   ],
+   "parent": null,
+   "title": "nervature base"
+  },
+  {
+   "id": "baseR",
+   "type": "MeshUnion",
+   "params": {},
+   "position": [
+    3203.6000000000004,
+    1061.6967131311876
+   ],
+   "parent": null,
+   "title": "Base con nervature"
+  },
+  {
+   "id": "cTb",
+   "type": "ConstructPoint",
+   "params": {},
+   "position": [
+    470.0,
+    986.829767350162
+   ],
+   "parent": null
+  },
+  {
+   "id": "txtB",
+   "type": "Text",
+   "params": {
+    "text": "BOREDOM",
+    "font": "Liberation Sans",
+    "style": "bold",
+    "font_size": 2.2
+   },
+   "position": [
+    770.0,
+    990.026758368366
+   ],
+   "parent": null,
+   "title": "Testo fondo"
+  },
+  {
+   "id": "txtBX",
+   "type": "Extrude",
+   "params": {},
+   "position": [
+    1070.0,
+    976.0
+   ],
+   "parent": null
+  },
+  {
+   "id": "stB",
+   "type": "MeshIntersect",
+   "params": {},
+   "position": [
+    3503.6000000000004,
+    1080.2823573021901
+   ],
+   "parent": null,
+   "title": "STENCIL BASE"
+  },
+  {
+   "id": "baseM",
+   "type": "MeshSubtract",
+   "params": {},
+   "position": [
+    3803.6000000000004,
+    1091.5953002230658
+   ],
+   "parent": null
+  },
+  {
+   "id": "cNeck",
+   "type": "ConstructPoint",
+   "params": {},
+   "position": [
+    470.0,
+    2308.829767350162
+   ],
+   "parent": null
+  },
+  {
+   "id": "thM",
+   "type": "Thread",
+   "params": {
+    "kind": "external",
+    "size": "custom",
+    "profile": "ISO metric",
+    "clearance": 0.0
+   },
+   "position": [
+    4103.6,
+    1161.0150573589406
+   ],
+   "parent": null,
+   "title": "BASE (filetto)"
+  },
+  {
+   "id": "ccl",
+   "type": "ConstructPoint",
+   "params": {},
+   "position": [
+    770.0,
+    2766.2590887077677
+   ],
+   "parent": null
+  },
+  {
+   "id": "cl",
+   "type": "Cylinder",
+   "params": {
+    "centered": true
+   },
+   "position": [
+    1070.0,
+    2753.0
+   ],
+   "parent": null
+  },
+  {
+   "id": "clE0",
+   "type": "SubshapesByPosition",
+   "params": {
+    "kind": "edge",
+    "axis": "Z",
+    "pick": "max",
+    "n": 1
+   },
+   "position": [
+    1370.0,
+    2614.2975052517345
+   ],
+   "parent": null
+  },
+  {
+   "id": "clF0",
+   "type": "FilletChamferSelected",
+   "params": {
+    "mode": "fillet"
+   },
+   "position": [
+    1670.0,
+    2605.2695400864704
+   ],
+   "parent": null
+  },
+  {
+   "id": "cel",
+   "type": "ConstructPoint",
+   "params": {},
+   "position": [
+    770.0,
+    2449.2590887077677
+   ],
+   "parent": null
+  },
+  {
+   "id": "el",
+   "type": "Cylinder",
+   "params": {
+    "centered": true
+   },
+   "position": [
+    1070.0,
+    2340.0
+   ],
+   "parent": null
+  },
+  {
+   "id": "elE0",
+   "type": "SubshapesByPosition",
+   "params": {
+    "kind": "edge",
+    "axis": "Z",
+    "pick": "max",
+    "n": 1
+   },
+   "position": [
+    1370.0,
+    2341.2975052517345
+   ],
+   "parent": null
+  },
+  {
+   "id": "elF0",
+   "type": "FilletChamferSelected",
+   "params": {
+    "mode": "fillet"
+   },
+   "position": [
+    1670.0,
+    2312.2695400864704
+   ],
+   "parent": null
+  },
+  {
+   "id": "ribT",
+   "type": "MeshIntersect",
+   "params": {},
+   "position": [
+    2903.6000000000004,
+    2129.509714613914
+   ],
+   "parent": null,
+   "title": "nervature tappo"
+  },
+  {
+   "id": "lidR",
+   "type": "MeshUnion",
+   "params": {},
+   "position": [
+    3203.6000000000004,
+    2334.955796286721
+   ],
+   "parent": null,
+   "title": "Tappo con nervature"
+  },
+  {
+   "id": "cTt",
+   "type": "ConstructPoint",
+   "params": {},
+   "position": [
+    1070.0,
+    2023.0
+   ],
+   "parent": null
+  },
+  {
+   "id": "txtT",
+   "type": "Text",
+   "params": {
+    "text": "REFUEL",
+    "font": "Liberation Sans",
+    "style": "bold",
+    "font_size": 2.4
+   },
+   "position": [
+    1370.0,
+    1972.2975052517345
+   ],
+   "parent": null,
+   "title": "Testo tappo"
+  },
+  {
+   "id": "txtTX",
+   "type": "Extrude",
+   "params": {},
+   "position": [
+    1670.0,
+    1923.2695400864704
+   ],
+   "parent": null
+  },
+  {
+   "id": "stT",
+   "type": "MeshIntersect",
+   "params": {},
+   "position": [
+    3503.6000000000004,
+    2132.7342289558437
+   ],
+   "parent": null,
+   "title": "STENCIL TAPPO"
+  },
+  {
+   "id": "lidM",
+   "type": "MeshSubtract",
+   "params": {},
+   "position": [
+    3803.6000000000004,
+    2186.120104503593
+   ],
+   "parent": null
+  },
+  {
+   "id": "thF",
+   "type": "Thread",
+   "params": {
+    "kind": "internal",
+    "size": "custom",
+    "profile": "ISO metric"
+   },
+   "position": [
+    4103.6,
+    1966.0150573589408
+   ],
+   "parent": null,
+   "title": "TAPPO (filetto)"
+  }
+ ],
+ "connections": [
+  {
+   "id": "c1",
+   "from_node": "pHB",
+   "from_socket": "result",
+   "to_node": "eTot",
+   "to_socket": "x"
+  },
+  {
+   "id": "c2",
+   "from_node": "pHL",
+   "from_socket": "result",
+   "to_node": "eTot",
+   "to_socket": "y"
+  },
+  {
+   "id": "c3",
+   "from_node": "pHB",
+   "from_socket": "result",
+   "to_node": "eZb",
+   "to_socket": "x"
+  },
+  {
+   "id": "c4",
+   "from_node": "pHB",
+   "from_socket": "result",
+   "to_node": "eZl",
+   "to_socket": "x"
+  },
+  {
+   "id": "c5",
+   "from_node": "pHL",
+   "from_socket": "result",
+   "to_node": "eZl",
+   "to_socket": "y"
+  },
+  {
+   "id": "c6",
+   "from_node": "pR",
+   "from_socket": "result",
+   "to_node": "eRe",
+   "to_socket": "x"
+  },
+  {
+   "id": "c7",
+   "from_node": "pRH",
+   "from_socket": "result",
+   "to_node": "eRe",
+   "to_socket": "y"
+  },
+  {
+   "id": "c8",
+   "from_node": "pFB",
+   "from_socket": "result",
+   "to_node": "eFBe",
+   "to_socket": "x"
+  },
+  {
+   "id": "c9",
+   "from_node": "pRH",
+   "from_socket": "result",
+   "to_node": "eFBe",
+   "to_socket": "y"
+  },
+  {
+   "id": "c10",
+   "from_node": "pFS",
+   "from_socket": "result",
+   "to_node": "eFSe",
+   "to_socket": "x"
+  },
+  {
+   "id": "c11",
+   "from_node": "pRH",
+   "from_socket": "result",
+   "to_node": "eFSe",
+   "to_socket": "y"
+  },
+  {
+   "id": "c12",
+   "from_node": "pFT",
+   "from_socket": "result",
+   "to_node": "eFTe",
+   "to_socket": "x"
+  },
+  {
+   "id": "c13",
+   "from_node": "pRH",
+   "from_socket": "result",
+   "to_node": "eFTe",
+   "to_socket": "y"
+  },
+  {
+   "id": "c14",
+   "from_node": "pR",
+   "from_socket": "result",
+   "to_node": "eRibL",
+   "to_socket": "x"
+  },
+  {
+   "id": "c15",
+   "from_node": "pRH",
+   "from_socket": "result",
+   "to_node": "eRibL",
+   "to_socket": "y"
+  },
+  {
+   "id": "c16",
+   "from_node": "pR",
+   "from_socket": "result",
+   "to_node": "eRibC",
+   "to_socket": "x"
+  },
+  {
+   "id": "c17",
+   "from_node": "pRH",
+   "from_socket": "result",
+   "to_node": "eRibC",
+   "to_socket": "y"
+  },
+  {
+   "id": "c18",
+   "from_node": "eTot",
+   "from_socket": "result",
+   "to_node": "eTxtZ",
+   "to_socket": "x"
+  },
+  {
+   "id": "c19",
+   "from_node": "pSD",
+   "from_socket": "result",
+   "to_node": "eTxtZ",
+   "to_socket": "y"
+  },
+  {
+   "id": "c20",
+   "from_node": "pTW",
+   "from_socket": "result",
+   "to_node": "eStepA",
+   "to_socket": "x"
+  },
+  {
+   "id": "c21",
+   "from_node": "nSec",
+   "from_socket": "result",
+   "to_node": "eStepA",
+   "to_socket": "y"
+  },
+  {
+   "id": "c22",
+   "from_node": "eTot",
+   "from_socket": "result",
+   "to_node": "eStepZ",
+   "to_socket": "x"
+  },
+  {
+   "id": "c23",
+   "from_node": "nSec",
+   "from_socket": "result",
+   "to_node": "eStepZ",
+   "to_socket": "y"
+  },
+  {
+   "id": "c24",
+   "from_node": "eStepA",
+   "from_socket": "result",
+   "to_node": "sA",
+   "to_socket": "step"
+  },
+  {
+   "id": "c25",
+   "from_node": "nSec",
+   "from_socket": "result",
+   "to_node": "sA",
+   "to_socket": "count"
+  },
+  {
+   "id": "c26",
+   "from_node": "eStepZ",
+   "from_socket": "result",
+   "to_node": "sZ",
+   "to_socket": "step"
+  },
+  {
+   "id": "c27",
+   "from_node": "nSec",
+   "from_socket": "result",
+   "to_node": "sZ",
+   "to_socket": "count"
+  },
+  {
+   "id": "c28",
+   "from_node": "eRibC",
+   "from_socket": "result",
+   "to_node": "cRib",
+   "to_socket": "x"
+  },
+  {
+   "id": "c29",
+   "from_node": "eRibL",
+   "from_socket": "result",
+   "to_node": "rib",
+   "to_socket": "width"
+  },
+  {
+   "id": "c30",
+   "from_node": "pRW",
+   "from_socket": "result",
+   "to_node": "rib",
+   "to_socket": "height"
+  },
+  {
+   "id": "c31",
+   "from_node": "cRib",
+   "from_socket": "point",
+   "to_node": "rib",
+   "to_socket": "origin"
+  },
+  {
+   "id": "c32",
+   "from_node": "rib",
+   "from_socket": "result",
+   "to_node": "ribR",
+   "to_socket": "shape"
+  },
+  {
+   "id": "c33",
+   "from_node": "sA",
+   "from_socket": "result",
+   "to_node": "ribR",
+   "to_socket": "angle"
+  },
+  {
+   "id": "c34",
+   "from_node": "sZ",
+   "from_socket": "result",
+   "to_node": "cZ",
+   "to_socket": "z"
+  },
+  {
+   "id": "c35",
+   "from_node": "ribR",
+   "from_socket": "result",
+   "to_node": "ribM",
+   "to_socket": "shape"
+  },
+  {
+   "id": "c36",
+   "from_node": "cZ",
+   "from_socket": "point",
+   "to_node": "ribM",
+   "to_socket": "offset"
+  },
+  {
+   "id": "c37",
+   "from_node": "ribM",
+   "from_socket": "result",
+   "to_node": "ribL",
+   "to_socket": "sections"
+  },
+  {
+   "id": "c38",
+   "from_node": "ribL",
+   "from_socket": "result",
+   "to_node": "ribA",
+   "to_socket": "shape"
+  },
+  {
+   "id": "c39",
+   "from_node": "pNR",
+   "from_socket": "result",
+   "to_node": "ribA",
+   "to_socket": "count"
+  },
+  {
+   "id": "c40",
+   "from_node": "ribA",
+   "from_socket": "result",
+   "to_node": "ribU",
+   "to_socket": "shapes"
+  },
+  {
+   "id": "c41",
+   "from_node": "eZb",
+   "from_socket": "result",
+   "to_node": "ccb",
+   "to_socket": "z"
+  },
+  {
+   "id": "c42",
+   "from_node": "pR",
+   "from_socket": "result",
+   "to_node": "cb",
+   "to_socket": "radius"
+  },
+  {
+   "id": "c43",
+   "from_node": "pHB",
+   "from_socket": "result",
+   "to_node": "cb",
+   "to_socket": "height"
+  },
+  {
+   "id": "c44",
+   "from_node": "ccb",
+   "from_socket": "point",
+   "to_node": "cb",
+   "to_socket": "origin"
+  },
+  {
+   "id": "c45",
+   "from_node": "cb",
+   "from_socket": "result",
+   "to_node": "cbE0",
+   "to_socket": "geometry"
+  },
+  {
+   "id": "c46",
+   "from_node": "cb",
+   "from_socket": "result",
+   "to_node": "cbF0",
+   "to_socket": "part"
+  },
+  {
+   "id": "c47",
+   "from_node": "cbE0",
+   "from_socket": "selection",
+   "to_node": "cbF0",
+   "to_socket": "selection"
+  },
+  {
+   "id": "c48",
+   "from_node": "pFB",
+   "from_socket": "result",
+   "to_node": "cbF0",
+   "to_socket": "size"
+  },
+  {
+   "id": "c49",
+   "from_node": "cbF0",
+   "from_socket": "result",
+   "to_node": "cbE1",
+   "to_socket": "geometry"
+  },
+  {
+   "id": "c50",
+   "from_node": "cbF0",
+   "from_socket": "result",
+   "to_node": "cbF1",
+   "to_socket": "part"
+  },
+  {
+   "id": "c51",
+   "from_node": "cbE1",
+   "from_socket": "selection",
+   "to_node": "cbF1",
+   "to_socket": "selection"
+  },
+  {
+   "id": "c52",
+   "from_node": "pFS",
+   "from_socket": "result",
+   "to_node": "cbF1",
+   "to_socket": "size"
+  },
+  {
+   "id": "c53",
+   "from_node": "eZb",
+   "from_socket": "result",
+   "to_node": "ceb",
+   "to_socket": "z"
+  },
+  {
+   "id": "c54",
+   "from_node": "eRe",
+   "from_socket": "result",
+   "to_node": "eb",
+   "to_socket": "radius"
+  },
+  {
+   "id": "c55",
+   "from_node": "pHB",
+   "from_socket": "result",
+   "to_node": "eb",
+   "to_socket": "height"
+  },
+  {
+   "id": "c56",
+   "from_node": "ceb",
+   "from_socket": "point",
+   "to_node": "eb",
+   "to_socket": "origin"
+  },
+  {
+   "id": "c57",
+   "from_node": "eb",
+   "from_socket": "result",
+   "to_node": "ebE0",
+   "to_socket": "geometry"
+  },
+  {
+   "id": "c58",
+   "from_node": "eb",
+   "from_socket": "result",
+   "to_node": "ebF0",
+   "to_socket": "part"
+  },
+  {
+   "id": "c59",
+   "from_node": "ebE0",
+   "from_socket": "selection",
+   "to_node": "ebF0",
+   "to_socket": "selection"
+  },
+  {
+   "id": "c60",
+   "from_node": "eFBe",
+   "from_socket": "result",
+   "to_node": "ebF0",
+   "to_socket": "size"
+  },
+  {
+   "id": "c61",
+   "from_node": "ebF0",
+   "from_socket": "result",
+   "to_node": "ebE1",
+   "to_socket": "geometry"
+  },
+  {
+   "id": "c62",
+   "from_node": "ebF0",
+   "from_socket": "result",
+   "to_node": "ebF1",
+   "to_socket": "part"
+  },
+  {
+   "id": "c63",
+   "from_node": "ebE1",
+   "from_socket": "selection",
+   "to_node": "ebF1",
+   "to_socket": "selection"
+  },
+  {
+   "id": "c64",
+   "from_node": "eFSe",
+   "from_socket": "result",
+   "to_node": "ebF1",
+   "to_socket": "size"
+  },
+  {
+   "id": "c65",
+   "from_node": "ribU",
+   "from_socket": "result",
+   "to_node": "ribB",
+   "to_socket": "a"
+  },
+  {
+   "id": "c66",
+   "from_node": "ebF1",
+   "from_socket": "result",
+   "to_node": "ribB",
+   "to_socket": "b"
+  },
+  {
+   "id": "c67",
+   "from_node": "cbF1",
+   "from_socket": "result",
+   "to_node": "baseR",
+   "to_socket": "shapes"
+  },
+  {
+   "id": "c68",
+   "from_node": "ribB",
+   "from_socket": "result",
+   "to_node": "baseR",
+   "to_socket": "shapes"
+  },
+  {
+   "id": "c69",
+   "from_node": "cTb",
+   "from_socket": "point",
+   "to_node": "txtB",
+   "to_socket": "origin"
+  },
+  {
+   "id": "c70",
+   "from_node": "txtB",
+   "from_socket": "result",
+   "to_node": "txtBX",
+   "to_socket": "sketch"
+  },
+  {
+   "id": "c71",
+   "from_node": "pSD",
+   "from_socket": "result",
+   "to_node": "txtBX",
+   "to_socket": "amount"
+  },
+  {
+   "id": "c72",
+   "from_node": "baseR",
+   "from_socket": "result",
+   "to_node": "stB",
+   "to_socket": "a"
+  },
+  {
+   "id": "c73",
+   "from_node": "txtBX",
+   "from_socket": "result",
+   "to_node": "stB",
+   "to_socket": "b"
+  },
+  {
+   "id": "c74",
+   "from_node": "baseR",
+   "from_socket": "result",
+   "to_node": "baseM",
+   "to_socket": "a"
+  },
+  {
+   "id": "c75",
+   "from_node": "stB",
+   "from_socket": "result",
+   "to_node": "baseM",
+   "to_socket": "b"
+  },
+  {
+   "id": "c76",
+   "from_node": "pHB",
+   "from_socket": "result",
+   "to_node": "cNeck",
+   "to_socket": "z"
+  },
+  {
+   "id": "c77",
+   "from_node": "cNeck",
+   "from_socket": "point",
+   "to_node": "thM",
+   "to_socket": "at"
+  },
+  {
+   "id": "c78",
+   "from_node": "baseM",
+   "from_socket": "result",
+   "to_node": "thM",
+   "to_socket": "shape"
+  },
+  {
+   "id": "c79",
+   "from_node": "pLT",
+   "from_socket": "result",
+   "to_node": "thM",
+   "to_socket": "length"
+  },
+  {
+   "id": "c80",
+   "from_node": "pPT",
+   "from_socket": "result",
+   "to_node": "thM",
+   "to_socket": "pitch"
+  },
+  {
+   "id": "c81",
+   "from_node": "pDT",
+   "from_socket": "result",
+   "to_node": "thM",
+   "to_socket": "diameter"
+  },
+  {
+   "id": "c82",
+   "from_node": "eZl",
+   "from_socket": "result",
+   "to_node": "ccl",
+   "to_socket": "z"
+  },
+  {
+   "id": "c83",
+   "from_node": "pR",
+   "from_socket": "result",
+   "to_node": "cl",
+   "to_socket": "radius"
+  },
+  {
+   "id": "c84",
+   "from_node": "pHL",
+   "from_socket": "result",
+   "to_node": "cl",
+   "to_socket": "height"
+  },
+  {
+   "id": "c85",
+   "from_node": "ccl",
+   "from_socket": "point",
+   "to_node": "cl",
+   "to_socket": "origin"
+  },
+  {
+   "id": "c86",
+   "from_node": "cl",
+   "from_socket": "result",
+   "to_node": "clE0",
+   "to_socket": "geometry"
+  },
+  {
+   "id": "c87",
+   "from_node": "cl",
+   "from_socket": "result",
+   "to_node": "clF0",
+   "to_socket": "part"
+  },
+  {
+   "id": "c88",
+   "from_node": "clE0",
+   "from_socket": "selection",
+   "to_node": "clF0",
+   "to_socket": "selection"
+  },
+  {
+   "id": "c89",
+   "from_node": "pFT",
+   "from_socket": "result",
+   "to_node": "clF0",
+   "to_socket": "size"
+  },
+  {
+   "id": "c90",
+   "from_node": "eZl",
+   "from_socket": "result",
+   "to_node": "cel",
+   "to_socket": "z"
+  },
+  {
+   "id": "c91",
+   "from_node": "eRe",
+   "from_socket": "result",
+   "to_node": "el",
+   "to_socket": "radius"
+  },
+  {
+   "id": "c92",
+   "from_node": "pHL",
+   "from_socket": "result",
+   "to_node": "el",
+   "to_socket": "height"
+  },
+  {
+   "id": "c93",
+   "from_node": "cel",
+   "from_socket": "point",
+   "to_node": "el",
+   "to_socket": "origin"
+  },
+  {
+   "id": "c94",
+   "from_node": "el",
+   "from_socket": "result",
+   "to_node": "elE0",
+   "to_socket": "geometry"
+  },
+  {
+   "id": "c95",
+   "from_node": "el",
+   "from_socket": "result",
+   "to_node": "elF0",
+   "to_socket": "part"
+  },
+  {
+   "id": "c96",
+   "from_node": "elE0",
+   "from_socket": "selection",
+   "to_node": "elF0",
+   "to_socket": "selection"
+  },
+  {
+   "id": "c97",
+   "from_node": "eFTe",
+   "from_socket": "result",
+   "to_node": "elF0",
+   "to_socket": "size"
+  },
+  {
+   "id": "c98",
+   "from_node": "ribU",
+   "from_socket": "result",
+   "to_node": "ribT",
+   "to_socket": "a"
+  },
+  {
+   "id": "c99",
+   "from_node": "elF0",
+   "from_socket": "result",
+   "to_node": "ribT",
+   "to_socket": "b"
+  },
+  {
+   "id": "c100",
+   "from_node": "clF0",
+   "from_socket": "result",
+   "to_node": "lidR",
+   "to_socket": "shapes"
+  },
+  {
+   "id": "c101",
+   "from_node": "ribT",
+   "from_socket": "result",
+   "to_node": "lidR",
+   "to_socket": "shapes"
+  },
+  {
+   "id": "c102",
+   "from_node": "eTxtZ",
+   "from_socket": "result",
+   "to_node": "cTt",
+   "to_socket": "z"
+  },
+  {
+   "id": "c103",
+   "from_node": "cTt",
+   "from_socket": "point",
+   "to_node": "txtT",
+   "to_socket": "origin"
+  },
+  {
+   "id": "c104",
+   "from_node": "txtT",
+   "from_socket": "result",
+   "to_node": "txtTX",
+   "to_socket": "sketch"
+  },
+  {
+   "id": "c105",
+   "from_node": "pSD",
+   "from_socket": "result",
+   "to_node": "txtTX",
+   "to_socket": "amount"
+  },
+  {
+   "id": "c106",
+   "from_node": "lidR",
+   "from_socket": "result",
+   "to_node": "stT",
+   "to_socket": "a"
+  },
+  {
+   "id": "c107",
+   "from_node": "txtTX",
+   "from_socket": "result",
+   "to_node": "stT",
+   "to_socket": "b"
+  },
+  {
+   "id": "c108",
+   "from_node": "lidR",
+   "from_socket": "result",
+   "to_node": "lidM",
+   "to_socket": "a"
+  },
+  {
+   "id": "c109",
+   "from_node": "stT",
+   "from_socket": "result",
+   "to_node": "lidM",
+   "to_socket": "b"
+  },
+  {
+   "id": "c110",
+   "from_node": "cNeck",
+   "from_socket": "point",
+   "to_node": "thF",
+   "to_socket": "at"
+  },
+  {
+   "id": "c111",
+   "from_node": "lidM",
+   "from_socket": "result",
+   "to_node": "thF",
+   "to_socket": "shape"
+  },
+  {
+   "id": "c112",
+   "from_node": "pLT",
+   "from_socket": "result",
+   "to_node": "thF",
+   "to_socket": "length"
+  },
+  {
+   "id": "c113",
+   "from_node": "pPT",
+   "from_socket": "result",
+   "to_node": "thF",
+   "to_socket": "pitch"
+  },
+  {
+   "id": "c114",
+   "from_node": "pDT",
+   "from_socket": "result",
+   "to_node": "thF",
+   "to_socket": "diameter"
+  },
+  {
+   "id": "c115",
+   "from_node": "pCL",
+   "from_socket": "result",
+   "to_node": "thF",
+   "to_socket": "clearance"
+  }
+ ]
+}

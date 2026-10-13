@@ -933,7 +933,8 @@ register(NodeDef("CombineSelection", "select", "Combine Selection",
 register(NodeDef("FilletChamferSelected", "modifiers", "Fillet / Chamfer (selected)",
     # Applies to whatever the selection holds: edges (3D) OR vertices (2D
     # corners) — so this also covers "fillet selected corners" via Select Vertex.
-    inputs=[Socket("part", WIRE_SOLID), Socket("selection", WIRE_SELECTION, list_access=True)],
+    inputs=[Socket("part", WIRE_SOLID), Socket("selection", WIRE_SELECTION, list_access=True)]
+           + _pin("size"),
     params=[_mode_param(), _f("size", 2, 0.01, 100, step=0.05)],
     outputs=_geo(),
     code_template={"algebra": "_round({part}, {selection}, {mode}, {size})"},
@@ -2214,7 +2215,7 @@ register(NodeDef("Thread", "fastener", "Thread",
     inputs=[Socket("at", WIRE_VECTOR, required=False),
             Socket("shape", WIRE_SOLID, required=False,
                    accepts=[WIRE_MESH, WIRE_SURFACE])]
-           + _pin("length", "clearance", "starts"),
+           + _pin("length", "clearance", "starts", "pitch", "diameter"),
     params=[_choice("kind", "external", ["external", "internal"], label="kind"),
             _choice("size", "M6", _THREAD_SIZE_OPTIONS, label="size"),
             _f("length", 10.0, 0.5, 500, label="length (mm)", soft_max=100),

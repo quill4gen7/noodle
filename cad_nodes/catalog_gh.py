@@ -270,10 +270,11 @@ _gh("GhUnsplitRevolve", "Unsplit Revolve Surface",
     [_in("profile"), _in("axis"), _in("revolution", list_access=True)],
     [Socket("unsplit", WIRE_SURFACE)],
     "_gh_revolve_unsplit({profile}, {axis}, {revolution}, {degrees})",
-    params=[_bool("degrees", False)],
+    params=[_bool("degrees", True)],
     description="Revolve a profile curve about an axis LINE over an angle domain "
-                "(radians; set `degrees` when the .gh input had Degrees on) into "
-                "one surface, not split at the seam.")
+                "into one surface, not split at the seam. The domain is in "
+                "DEGREES — measured in Rhino 8: ikeaLack's −45..0 gives area "
+                "34365.3, a 45° sweep, not 45 radians.")
 
 _gh("GhIsotrim", "Isotrim", [_in("surface"), _in("domain")],
     [Socket("surface", WIRE_SURFACE)], "_gh_isotrim({surface}, {domain}, {reparameterize})",

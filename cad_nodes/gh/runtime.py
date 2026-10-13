@@ -1107,7 +1107,30 @@ def _gh_surface_split(_surface, _curves):
     if not cs:
         return f
     r = _gh_split_by(f, cs)
-    return _gh_list(list(r.faces()))
+    frags = list(r.faces())
+    # Rhino's order (measured, ikeaLack #134/#218/#237/#241): fragment 0 is the
+    # RESIDUE — the piece still bounded by the surface's own outer edge — then
+    # the pieces in the order of the cutting curves that bound them. Not by
+    # area: #218's 47 cells come in curve order, not sorted.
+    outer = f.outer_wire()
+    probes = [outer.position_at(i / 16.0) for i in range(16)]
+
+    def _touches_outer(g):
+        return sum(1 for p in probes if g.distance_to(p) < 1e-5)
+
+    def _first_curve(g):
+        for k, c in enumerate(cs):
+            m = c.position_at(0.5) if hasattr(c, "position_at") else c.center()
+            if g.distance_to(m) < 1e-5:
+                return k
+        return len(cs)
+
+    if len(frags) > 1:
+        res = max(range(len(frags)), key=lambda i: _touches_outer(frags[i]))
+        rest = [g for i, g in enumerate(frags) if i != res]
+        rest.sort(key=_first_curve)
+        frags = [frags[res]] + rest
+    return _gh_list(frags)
 
 
 def _gh_trim_with_brep(_curve, _brep):
