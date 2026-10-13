@@ -181,8 +181,9 @@ def _param_value(v: Any, pdef) -> Any:
 
 
 class _Importer:
-    def __init__(self, d: Definition, components, decode, registry):
+    def __init__(self, d: Definition, components, decode, registry, assets=None):
         self.d = d
+        self.assets = set(assets) if assets is not None else None
         self.table = components
         self.decode = decode
         self.reg = registry
@@ -495,8 +496,9 @@ class _Importer:
             ins = {p.name: f"in_{i}" for i, p in enumerate(o.inputs[:6])}
         ignore = set(_get(m, "ignore") or ())
         for p in o.inputs:
-            if p.name in ignore:
-                continue            # accepted and dropped on purpose by the table
+            if p.name in ignore or (p.wires and p.name in self.claimed.get(nid, ())
+                                    and (nid, p.name) not in self.redirect):
+                continue            # dropped on purpose (table) / taken by a per-type rule
             sock = ins.get(p.name)
             tnid, tnd = nid, nd
             if (nid, p.name) in self.redirect:      # a per-type rule put a node in front
@@ -801,16 +803,45 @@ def _mirror(imp: _Importer, o: GhObject, n: dict):
     return {"Plane"}
 
 
-_EXTRAS = {"Rich Graph Mapper": _graph_mapper, "Mirror": _mirror}
+PLACEHOLDER_SVG = "placeholder.svg"
+
+
+def _import_svg(imp: _Importer, o: GhObject, n: dict):
+    """The SVG path usually comes from a Panel holding a Windows path. Only the
+    file NAME survives (it has to sit in the project folder); a file that is
+    not among `assets` becomes PLACEHOLDER_SVG, which the caller must provide."""
+    import ntpath
+    p = next((p for p in o.inputs if p.name == "File"), None)
+    if p is None:
+        return set()
+    text = None
+    if p.wires:
+        up = imp.d.objects[p.wires[0][0]]
+        if up.type == "Panel" and not (up.inputs and up.inputs[0].wires):
+            text = (up.text or "").strip().splitlines()[0] if up.text else None
+    elif p.data:
+        text = str(p.data[0])
+    name = ntpath.basename(text) if text else None
+    if name and imp.assets is not None and name in imp.assets:
+        n["params"]["path"] = name
+    else:
+        n["params"]["path"] = PLACEHOLDER_SVG
+        imp.issue(o, f"SVG {name or '(computed path)'} not available: {PLACEHOLDER_SVG} instead")
+    return {"File"}
+
+
+_EXTRAS = {"Rich Graph Mapper": _graph_mapper, "Mirror": _mirror, "Import SVG": _import_svg}
 
 
 def import_definition(d: Definition, components=None,
                       decode: Callable[[GhObject, int, dict], Optional[dict]] = decode_with_rhino3dm,
-                      registry=None) -> ImportResult:
+                      registry=None, assets=None) -> ImportResult:
     """Translate `d` with the GH->noodle table (default: components.COMPONENTS).
 
     `decode` turns an internalised geometry value into a geometry record; the
     default needs rhino3dm, `decode_from_report()` reads one decoded earlier.
+    `assets`: file names present in the project folder (None = unknown, so
+    every referenced file falls back to a placeholder).
     """
     return _Importer(d, _default_components() if components is None else components,
-                     decode, _catalog() if registry is None else registry).run()
+                     decode, _catalog() if registry is None else registry, assets).run()
