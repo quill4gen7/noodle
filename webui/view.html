@@ -1310,6 +1310,20 @@ function disposeObj(o) {
   });
   if (o.parent) o.parent.remove(o);
 }
+// ∿ a stroke's shape, for an action that RESHAPES it (a curve edited again):
+// its samples and, for a curve, the points it goes through
+const strokeGeom = s => ({ pts: s.pts.map(p => p.clone()), nrm: s.nrm.map(n => n.clone()), lift: s.lift.slice(),
+  curve: s.curve ? { ctrl: s.curve.ctrl.map(p => p.clone()), closed: !!s.curve.closed } : null, view: s.view });
+function setStrokeGeom(s, g) {
+  s.pts = g.pts.map(p => p.clone()); s.nrm = g.nrm.map(n => n.clone()); s.lift = g.lift.slice();
+  if (g.curve) s.curve = { ctrl: g.curve.ctrl.map(p => p.clone()), closed: !!g.curve.closed }; else delete s.curve;
+  if ('view' in g) s.view = g.view;
+  delete s._p3;
+  if (s.obj) redrawStroke(s);
+}
+const curveOut = c => c && { points: c.ctrl.map(p => [r4(p.x), r4(p.y), r4(p.z)]), closed: !!c.closed };
+const curveIn = c => c && Array.isArray(c.points) && c.points.length
+  ? { ctrl: c.points.map(a => new THREE.Vector3(...a)), closed: !!c.closed } : null;
 function redrawStroke(s) {
   if (s.obj) disposeObj(s.obj);
   s.obj = strokeObject(s); annoGroup.add(s.obj); viewer.invalidate();
@@ -3318,6 +3332,7 @@ function stepBack(a) {
   let touched = [];
   if (a.undo) touched = a.undo() || [];        // a tool module's own action
   else if (a.type === 'pen') { a.strokes = removeGesture(a.g); touched = viewsOf(a.strokes); }
+  else if (a.type === 'reshape') { const v = a.s.view; setStrokeGeom(a.s, a.before); touched = [v, a.s.view]; }
   else if (a.type === 'erase') { restore(a); touched = viewsOf(allItems(a)); }
   else if (a.type === 'label') {
     const st = takeLabelStrokes(a.L);
@@ -3348,6 +3363,7 @@ function stepForward(a) {
   let touched = [];
   if (a.redo) touched = a.redo() || [];
   else if (a.type === 'pen') { restore({ strokes: a.strokes || [] }); touched = viewsOf(a.strokes || []); }
+  else if (a.type === 'reshape') { const v = a.s.view; setStrokeGeom(a.s, a.after); touched = [v, a.s.view]; }
   else if (a.type === 'erase') { takeAway(a); touched = viewsOf(allItems(a)); }
   else if (a.type === 'label') {
     restore({ labels: [a.L], strokes: a.strokes || [] }); touched = viewsOf([a.L, ...(a.strokes || [])]);
@@ -3640,7 +3656,7 @@ TOOLS.preferKey('t', labelStyle);              // T goes back to the text style 
 Object.assign(TOOLS.ctx, { THREE, viewer, vp, $, surfaceHit, firstHit, mmPerPx, annoGroup, pen, pushAction,
   syncDraw, setTool, toast, takeView, refreshViews, disposeObj, isDrawing: () => drawing,
   toolDef: () => toolDef, visibleBox, planeInk: () => draft.filter(s => s.plane),
-  newStroke: startStroke, redrawStroke, nextGesture: () => ++gesture, inDraft: s => draft.includes(s),
+  newStroke: startStroke, redrawStroke, strokeGeom, setStrokeGeom, draft, nextGesture: () => ++gesture, inDraft: s => draft.includes(s),
   dropStroke: s => { const i = draft.indexOf(s); if (i >= 0) draft.splice(i, 1); if (s.obj) disposeObj(s.obj); s.obj = null; viewer.invalidate(); } });
 TOOLS.mount({ tabs: $('d-tabs'), rows: $('d-rows'), common: $('d-ctools'), onChange: onToolChange, active: () => drawing });
 TOOLS.attach(vp);
@@ -3744,11 +3760,16 @@ function actOut(a) {
   if (a.type === 'shape') return { ...t, S: a.S.k, before: a.before ? stOut(a.before) : null,
     ...(a.after ? { after: stOut(a.after) } : {}), ...(a.recolor ? { recolor: true } : {}) };
   if (a.type === 'measure') return { ...t, M: a.M.k };
+  if (a.type === 'reshape') return { ...t, s: a.s.k, before: geomOut(a.before), after: geomOut(a.after) };
   return null;
 }
+// a reshaped stroke's two shapes (the view is not kept: its picture may be gone)
+const geomOut = g => ({ pts: g.pts.map(xyz4), nrm: g.nrm.map(xyz4), lift: g.lift.map(r4), curve: curveOut(g.curve) });
+const geomIn = g => ({ pts: g.pts.map(a => new THREE.Vector3(...a)), nrm: g.nrm.map(a => new THREE.Vector3(...a)),
+  lift: g.lift.slice(), curve: curveIn(g.curve) });
 function actItems(a) {
   return [...(a.strokes || []), ...(a.labels || []), ...(a.measures || []), ...(a.shapes || []),
-    ...(a.oldStrokes || []), ...(a.newStrokes || []), ...[a.L, a.S, a.M].filter(Boolean)];
+    ...(a.oldStrokes || []), ...(a.newStrokes || []), ...[a.L, a.S, a.M, a.s].filter(Boolean)];
 }
 // the items, in full (the page's own format, not the note's)
 function itemOut(x, B) {
@@ -3757,7 +3778,8 @@ function itemOut(x, B) {
     ...(x.lift && x.lift.some(v => v > 0) ? { lift: x.lift.map(r4) } : {}),
     ...(x.pen3d ? { pen3d: true } : {}), ...(x.alpha ? { alpha: x.alpha } : {}),
     ...(x.brushA ? { brushA: B(x.brushA) } : {}), ...(x.brushT ? { brushT: B(x.brushT) } : {}),
-    ...(x.label && x.label.k != null ? { label: x.label.k } : {}), ...(x.plane ? { plane: x.plane } : {}) };
+    ...(x.label && x.label.k != null ? { label: x.label.k } : {}), ...(x.plane ? { plane: x.plane } : {}),
+    ...(x.curve ? { curve: curveOut(x.curve) } : {}) };
   if (x.at && x.up) return { kind: 'label', k: x.k, text: x.text, color: x.color, style: x.style, at: xyz4(x.at), n: xyz4(x.n),
     up: xyz4(x.up), w: x.w, h: x.h, surface: x.surface || null, fit: fitOut(x.fit), piece: x.piece,
     ...(x.plane ? { plane: x.plane } : {}), ...(x.img ? { img: x.img.data } : {}) };
@@ -3806,6 +3828,7 @@ async function itemIn(r) {
   if (r.kind === 'stroke') return { color: r.color, width: r.width, g: r.g, k: r.k, piece: r.piece || null,
     pts: r.pts.map(V), nrm: r.nrm.map(V), lift: r.lift || r.pts.map(() => 0), view: null, obj: null,
     ...(r.pen3d ? { pen3d: true } : {}), ...(r.alpha ? { alpha: r.alpha } : {}), ...(r.plane ? { plane: r.plane } : {}),
+    ...(curveIn(r.curve) ? { curve: curveIn(r.curve) } : {}),
     brushA: r.brushA ? brushes.get(r.brushA) || null : null, brushT: r.brushT ? brushes.get(r.brushT) || null : null,
     _labelK: r.label };
   if (r.kind === 'label') {
@@ -3844,6 +3867,7 @@ async function historyIn(h) {
     } else if (r.type === 'shape') Object.assign(a, { S: ref(r.S), before: r.before ? stIn(r.before) : null,
       ...(r.after ? { after: stIn(r.after) } : {}), ...(r.recolor ? { recolor: true } : {}) });
     else if (r.type === 'measure') a.M = ref(r.M);
+    else if (r.type === 'reshape') Object.assign(a, { s: ref(r.s), before: geomIn(r.before), after: geomIn(r.after) });
     else throw new Error(`history: unknown action ${r.type}`);
     return a;
   };
@@ -3891,6 +3915,7 @@ function noteBody(withPictures) {
       ...(s.label && words.includes(s.label) ? { label: words.indexOf(s.label) } : {}),
       view: s.view == null ? null : remap.get(s.view),
       ...(s.plane ? { plane: s.plane } : {}),     // ⊞ drawn in the void, on this plane
+      ...(s.curve ? { curve: curveOut(s.curve) } : {}),   // ∿ the points it goes through: it can be edited again
       points: s.pts.map(p => [r4(p.x), r4(p.y), r4(p.z)]),
       normals: s.nrm.map(n => [+n.x.toFixed(3), +n.y.toFixed(3), +n.z.toFixed(3)]),
       // the 3D pen: how far each sample sits above the part, only when it piled up
@@ -4106,6 +4131,7 @@ async function resumeNote(n) {
     const d = { color: s.color, width: s.width_mm || 1, g: s.g ?? 0, k: kOf('strokes', si), piece: s.piece || null, pts, nrm,
       lift: s.lifts && s.lifts.length === pts.length ? s.lifts.slice() : pts.map(() => 0),
       view: viewOf(s.view), obj: null, ...(s.plane ? { plane: s.plane } : {}),
+      ...(curveIn(s.curve) ? { curve: curveIn(s.curve) } : {}),
       ...(s.pen ? { pen3d: s.pen === '3d' } : {}), ...(s.alpha ? { alpha: s.alpha } : {}), ...brushesOf(n, s) };
     if (s.kind === 'text' && words[s.label - 1]) d.label = words[s.label - 1];
     g0 = Math.max(g0, d.g);

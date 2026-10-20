@@ -31,7 +31,7 @@ const st = {
   free: false,                                 // 🔒 off: the view moves, each stroke lays its own glass
   plane: null,                                 // {origin, normal} V3 — normal towards the camera
   camSig: '',
-  closed: false,
+  closed: false,                               // ◯ for the next new curve (an open one has its own)
   cur: null,                                   // the curve being edited {plane, data, ctrl:[V3], s, g}
   drag: null,                                  // {i, id}
   lastTap: { i: -1, t: 0 },
@@ -129,16 +129,17 @@ export function refresh() {
       b.title = st.free ? 'Vista libera: ogni tratto si posa dove guardi — tocca per bloccarla'
         : 'Vista bloccata: tocca per liberarla (la rotella, il destro e due dita tornano a muoverla)';
     }
-    if (closeBtn) closeBtn.classList.toggle('on', st.closed);
+    if (closeBtn) closeBtn.classList.toggle('on', isClosed());
     drawHandles();
   } finally { busy = false; }
 }
 
 // ── ∿ the curve ──
+const isClosed = () => (st.cur ? st.cur.closed : st.closed);
 function samples(cur) {
   const T = C.THREE, n = cur.ctrl.length;
   if (n < 2) return cur.ctrl.map(p => p.clone());
-  const closed = st.closed && n >= 3;
+  const closed = cur.closed && n >= 3;
   const crv = new T.CatmullRomCurve3(cur.ctrl, closed, 'centripetal');
   const px = crv.getLength() / Math.max(C.mmPerPx(cur.plane.origin), 1e-6);
   const k = Math.min(800, Math.max(12, Math.ceil(px / 3)));
@@ -150,10 +151,18 @@ function rebuild() {
   const cur = st.cur;
   if (!cur) return;
   if (cur.s && !C.inDraft(cur.s)) cur.s = null;   // 🗑 / a resume took it away
-  if (!cur.ctrl.length) { if (cur.s) C.dropStroke(cur.s); st.cur = null; drawHandles(); C.syncDraw(); return; }
+  if (!cur.ctrl.length) {
+    if (cur.s && cur.before) {                 // a saved curve with every point taken off: it is rubbed out
+      C.setStrokeGeom(cur.s, cur.before); C.dropStroke(cur.s);
+      C.pushAction({ type: 'erase', strokes: [cur.s], labels: [], measures: [], shapes: [] });
+      C.refreshViews([cur.s.view]);
+    } else if (cur.s) C.dropStroke(cur.s);
+    st.cur = null; drawHandles(); C.syncDraw(); return;
+  }
   const pts = samples(cur), n = cur.plane.normal;
   if (!cur.s) cur.s = C.newStroke({ p: pts[0], n: n.clone(), key: null, plane: cur.data }, cur.g);
   cur.s.pts = pts; cur.s.nrm = pts.map(() => n.clone()); cur.s.lift = pts.map(() => 0);
+  cur.s.curve = { ctrl: cur.ctrl.map(p => p.clone()), closed: !!cur.closed };   // saved: it can be taken up again
   delete cur.s._p3;
   C.redrawStroke(cur.s);
   drawHandles();
@@ -163,8 +172,17 @@ export function commit() {
   const cur = st.cur;
   st.cur = null; st.drag = null;
   if (!cur || !cur.s || !C.inDraft(cur.s)) { drawHandles(); return false; }
-  C.pushAction({ type: 'pen', g: cur.g });
-  C.takeView([cur.s]);
+  if (cur.before) {                            // a saved curve edited again: one reshape step, if it changed
+    const after = C.strokeGeom(cur.s);
+    if (JSON.stringify(after.curve) === JSON.stringify(cur.before.curve)) { drawHandles(); return false; }
+    const old = cur.before.view;
+    C.takeView([cur.s]);
+    C.pushAction({ type: 'reshape', s: cur.s, before: cur.before, after: C.strokeGeom(cur.s) });
+    if (old != null && old !== cur.s.view) C.refreshViews([old]);   // its old picture must not show the old curve
+  } else {
+    C.pushAction({ type: 'pen', g: cur.g });
+    C.takeView([cur.s]);
+  }
   drawHandles();
   queueMicrotask(() => C.syncDraw());           // ↶ lights up
   return true;
@@ -172,7 +190,10 @@ export function commit() {
 function dropCurve() {
   const cur = st.cur;
   st.cur = null; st.drag = null;
-  if (cur && cur.s && C.inDraft(cur.s)) C.dropStroke(cur.s);
+  if (cur && cur.s && C.inDraft(cur.s)) {
+    if (cur.before) C.setStrokeGeom(cur.s, cur.before);   // Esc on a saved curve: back as it was
+    else C.dropStroke(cur.s);
+  }
   drawHandles(); C.syncDraw();
 }
 // ↶ while a curve is open: its last point, not the action before it
@@ -206,17 +227,52 @@ function segmentAt(x, y, R) {
   }
   if (bi < 0) return -1;
   // the samples are evenly spaced along the curve: which span of points is it in?
-  const segs = st.closed && n >= 3 ? n : n - 1;
+  const segs = cur.closed && n >= 3 ? n : n - 1;
   return Math.min(n, Math.floor((bi / (pts.length - 1)) * segs) + 1);
+}
+// a saved curve under (x, y): its samples or its points within R px
+function curveAt(x, y, R) {
+  const r = C.$('c').getBoundingClientRect(), X = x - r.left, Y = y - r.top;
+  let best = null, bd = R;
+  for (const s of C.draft) {
+    if (!s.curve || !s.plane || (st.cur && s === st.cur.s)) continue;
+    for (const p of s.curve.ctrl) { const [a, b] = toScreen(p), d = Math.hypot(a - X, b - Y); if (d <= bd) { bd = d; best = s; } }
+    for (let i = 1; i < s.pts.length; i++) {
+      const [ax, ay] = toScreen(s.pts[i - 1]), [bx, by] = toScreen(s.pts[i]);
+      const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+      const t = l2 ? Math.max(0, Math.min(1, ((X - ax) * dx + (Y - ay) * dy) / l2)) : 0;
+      const d = Math.hypot(ax + t * dx - X, ay + t * dy - Y);
+      if (d <= bd) { bd = d; best = s; }
+    }
+  }
+  return best;
+}
+// take a saved curve up again: its own plane, its own points
+function reopen(s) {
+  const T = C.THREE, o = new T.Vector3(...s.plane.origin), n = new T.Vector3(...s.plane.normal).normalize();
+  st.cur = { plane: { origin: o, normal: n }, data: s.plane, ctrl: s.curve.ctrl.map(p => p.clone()),
+    closed: !!s.curve.closed, s, g: s.g, before: C.strokeGeom(s) };
+  st.lastTap = { i: -1, t: 0 };
+  // seen almost edge-on its points cannot be dragged well
+  const f = C.viewer.camera.getWorldDirection(new T.Vector3());
+  if (Math.abs(f.dot(n)) < 0.35) C.toast('∿ Curva vista di taglio: gira la vista (🔒 / ✋) verso di lei per spostarne i punti', 3500);
+  drawHandles(); C.syncDraw();
 }
 function curveDown(e) {
   if (e.button !== 0 || !e.isPrimary || e.target !== C.$('c')) return;
   e.stopPropagation(); e.preventDefault();
   try { C.$('c').setPointerCapture(e.pointerId); } catch {}
+  // a tap on a saved curve (and not on the one open): take it up again
+  const R0 = near(e);
+  if (!st.cur || (handleAt(e.clientX, e.clientY, R0) < 0 && segmentAt(e.clientX, e.clientY, R0) < 0)) {
+    const old = curveAt(e.clientX, e.clientY, R0);
+    if (old) { if (st.cur) commit(); reopen(old); return; }
+  }
   if (!st.cur) {
     if (st.free) layGlass();
     const pl = glass();
-    st.cur = { plane: { origin: pl.origin.clone(), normal: pl.normal.clone() }, data: planeData(pl), ctrl: [], s: null, g: C.nextGesture() };
+    st.cur = { plane: { origin: pl.origin.clone(), normal: pl.normal.clone() }, data: planeData(pl), ctrl: [], s: null,
+      g: C.nextGesture(), closed: st.closed };
   }
   const cur = st.cur, R = near(e);
   let i = handleAt(e.clientX, e.clientY, R);
@@ -261,7 +317,7 @@ function drawHandles() {
   const col = (C.pen && C.pen.color) || INK_COLOR;
   const P = cur.ctrl.map(toScreen);
   const poly = P.map(p => p.map(v => v.toFixed(1)).join(',')).join(' ');
-  svg.innerHTML = (P.length > 1 ? `<polyline points="${poly}${st.closed && P.length > 2 ? ' ' + P[0].join(',') : ''}" fill="none" stroke="#fff" stroke-opacity=".45" stroke-dasharray="4 4" stroke-width="1"/>` : '')
+  svg.innerHTML = (P.length > 1 ? `<polyline points="${poly}${cur.closed && P.length > 2 ? ' ' + P[0].join(',') : ''}" fill="none" stroke="#fff" stroke-opacity=".45" stroke-dasharray="4 4" stroke-width="1"/>` : '')
     + P.map(([x, y], i) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${i === P.length - 1 ? 7 : 6}" fill="${col}" fill-opacity=".35" stroke="#fff" stroke-width="2"/>`).join('');
   // the view can still move (🔓, a resize): follow it
   const sig = camSig() + C.$('c').clientWidth + 'x' + C.$('c').clientHeight;
@@ -299,7 +355,9 @@ export function install(penGesture) {
     b.textContent = txt; b.title = title; b.onclick = e => { e.stopPropagation(); fn(); }; return b; };
   const toggleLock = () => { st.free = !st.free; if (!st.free) layGlass(); C.syncDraw(); };
   const lockS = btn('🔒', '', toggleLock), lockC = btn('🔒', '', toggleLock);
-  const closeBtn = btn('◯', 'Chiusa: la curva torna al primo punto', () => { st.closed = !st.closed; rebuild(); C.syncDraw(); });
+  const closeBtn = btn('◯', 'Chiusa: la curva torna al primo punto', () => {
+    st.closed = !isClosed(); if (st.cur) st.cur.closed = st.closed;
+    rebuild(); C.syncDraw(); });
   const done = btn('✓', 'Fine curva (Invio) — la prossima pressione ne inizia una nuova', () => commit());
   st.el = { locks: [lockS, lockC], closeBtn };
   addEventListener('keydown', onKey, true);
@@ -309,7 +367,7 @@ export function install(penGesture) {
     options: () => [lockS], ...penGesture });
   registerTool({ id: 'curve', tab: 'pencil', mode: 'curve', screen: true, icon: '∿', label: 'Curva', cursor: 'crosshair', ownsTaps: true,
     title: 'Curva: come Schermo, ma una spline a punti spostabili — tocca per aggiungere, trascina per spostare, doppio tocco toglie, Invio finisce',
-    hint: () => 'Curva: tocca per aggiungere un punto, trascina un punto per spostarlo, trascina sulla curva per inserirne uno, doppio tocco lo toglie · Invio/✓ finisce, Esc annulla, ↶ toglie l\'ultimo · ' + HINT_LOCK(),
+    hint: () => 'Curva: tocca per aggiungere un punto (su una curva già fatta: la riprendi), trascina un punto per spostarlo, trascina sulla curva per inserirne uno, doppio tocco lo toglie · Invio/✓ finisce, Esc annulla, ↶ toglie l\'ultimo · ' + HINT_LOCK(),
     options: () => [closeBtn, done, lockC],
     down: curveDown, move: curveMove, up: curveUp, cancel: curveUp });
 }

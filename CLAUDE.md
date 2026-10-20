@@ -2187,9 +2187,13 @@ result while the workflow moves on.
   is never drawn on. ∿ Curva = a centripetal Catmull-Rom through movable points
   (tap adds, drag moves, drag on the curve inserts, double tap removes, ◯ closes,
   Enter/✓ ends, Esc drops, ↶ takes back the last point); the handles are an SVG
-  over the canvas. Both emit ordinary pen strokes with `plane` — the server and
-  the eraser need nothing new; the control points are NOT saved, only the
-  sampled curve. `ctx` is filled after `install()`: use the DOM there, not `C.vp`.
+  over the canvas. Both emit ordinary pen strokes with `plane`. A Curva stroke
+  also carries `curve: {points, closed}` (note, history pool, api validation): a
+  tap on a saved curve with ∿ takes it up again on ITS OWN plane, and finishing
+  it pushes ONE `reshape` action (before/after geometry, in the saved history
+  too — a module's undo()/redo() would have cut the history there). Every point
+  taken off a saved curve = an erase. `ctx` is filled after `install()`: use the
+  DOM there, not `C.vp`.
 - **The viewer draws on demand** (`CadViewer.invalidate()`, no continuous loop):
   anything that changes the scene from outside the viewer must ask for a frame.
   `/view` does it in `poseTrack()` (every timeline pose) and `apply()` (hidden

@@ -2498,6 +2498,15 @@ def add_note(store: GraphStore, graph_id: str, gen: str, payload: dict,
             out["plane"] = {"origin": _vec(pl.get("origin"), f"stroke {i} plane origin"),
                             "normal": [round(c / nn, 4) for c in nv]}
             node = piece = None
+        # ∿ a Curva stroke: the points the spline goes through, so the viewer
+        # can take it up again and move them; `points` above are its samples
+        if s.get("curve") is not None:
+            cv = s["curve"]
+            if not isinstance(cv, dict) or not isinstance(cv.get("points"), list) \
+                    or not 1 <= len(cv["points"]) <= 500:
+                raise ValueError(f"note: stroke {i} curve must be {{points: 1..500 points, closed}}")
+            out["curve"] = {"points": [_vec(q, f"stroke {i} curve point") for q in cv["points"]],
+                            "closed": bool(cv.get("closed"))}
         if node:
             out["piece"] = piece
             out["node"] = node
