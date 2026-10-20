@@ -2088,6 +2088,19 @@ result while the workflow moves on.
   the plane moves and never while a pointer button is down, cached per plane
   (+ section state), the removed side of a ✂ cut dropped. Tests:
   `tests/test_view_plane.py`.
+- **🖥 Schermo / ∿ Curva — a glass in front of the part** (`webui/view-screen.js`,
+  ✎ Matita row). quill: «come piano ma proietta il piano dove guardi e blocca la
+  vista». Taking either tool lays a plane square to the view, a hair in front of
+  the nearest VISIBLE VERTEX (the bbox's near corner floats far off in an iso
+  view), and turns `controls.enabled` off; putting it down (✋ Muovi, another tool,
+  closing ✎) frees the view, and the glass is re-laid wherever the camera is when
+  a stroke starts (🔒 frees the view without leaving the tool). Unlike ⊞ the part
+  is never drawn on. ∿ Curva = a centripetal Catmull-Rom through movable points
+  (tap adds, drag moves, drag on the curve inserts, double tap removes, ◯ closes,
+  Enter/✓ ends, Esc drops, ↶ takes back the last point); the handles are an SVG
+  over the canvas. Both emit ordinary pen strokes with `plane` — the server and
+  the eraser need nothing new; the control points are NOT saved, only the
+  sampled curve. `ctx` is filled after `install()`: use the DOM there, not `C.vp`.
 - **The viewer draws on demand** (`CadViewer.invalidate()`, no continuous loop):
   anything that changes the scene from outside the viewer must ask for a frame.
   `/view` does it in `poseTrack()` (every timeline pose) and `apply()` (hidden

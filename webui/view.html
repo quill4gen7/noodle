@@ -561,6 +561,7 @@ import { initSection } from '/static/view-section.js';
 import * as LOOK from '/static/view-look.js';
 import { makePlate, plateSprites, installPlates, GHOST } from '/static/view-plates.js';
 import * as VP from '/static/view-plane.js';
+import * as SC from '/static/view-screen.js';
 
 const $ = id => document.getElementById(id);
 const seg = location.pathname.split('/').filter(Boolean);     // ['view', name, gen?]
@@ -1275,6 +1276,7 @@ function surfaceHit(x, y) {
 // ⊞ where the ink goes: on the part when the ray meets it, else — with a working
 // plane chosen for this tool (webui/view-plane.js) — on the plane, in the void
 function inkHit(x, y) {
+  if (SC.on(toolDef)) return SC.hit(x, y);     // 🖥 Schermo: always on the glass, never on the part
   return surfaceHit(x, y) || (VP.on(toolDef) ? VP.planeHit(x, y) : null);
 }
 // How a stroke LOOKS is webui/view-ink.js (+ the pure geometry in ink.js):
@@ -1357,7 +1359,8 @@ function penDown(e) {
     if (at) { e.stopPropagation(); e.preventDefault(); VP.anchor(at.p); syncDraw(); }
     return;
   }
-  let hit = surfaceHit(e.clientX, e.clientY);
+  if (SC.on(toolDef)) SC.strokeStart();        // 🖥 with the view free, the glass goes where you look
+  let hit = SC.on(toolDef) ? SC.hit(e.clientX, e.clientY) : surfaceHit(e.clientX, e.clientY);
   // the plane follows the last point a stroke began on, ON the part; in the
   // void, with a plane in use, the press draws on it instead of orbiting
   if (hit && (tool === 'pen' || tool === 'text') && VP.on(toolDef)) VP.anchor(hit.p);
@@ -3362,6 +3365,7 @@ function stepForward(a) {
   return touched;
 }
 function undo() {
+  if (SC.undoPoint()) return;                  // ∿ a curve being drawn: its last point first
   const a = actions.pop();
   if (!a) return;
   const touched = stepBack(a);
@@ -3401,12 +3405,12 @@ function syncDraw() {
   const any = draft.length || labels.length || dmeasures.length || shapes.length;
   $('d-send').disabled = !any && !save.id;
   if (any || save.id) scheduleSave();
-  $('d-undo').disabled = !actions.length; $('d-redo').disabled = !redone.length;
+  $('d-undo').disabled = !actions.length && !SC.editing(); $('d-redo').disabled = !redone.length;
   $('d-clear').disabled = $('d-clearall').disabled = !any;
   syncHide();
   const h = toolDef && toolDef.hint, ph = VP.hint(toolDef);
   // ⊞ with a working plane in use the void draws: its own line replaces «fuori dal pezzo: muovi»
-  $('d-hint').textContent = ph ? (typeof h === 'function' ? h() : h || '') + (h ? ' · ' : '') + ph
+  $('d-hint').textContent = SC.on(toolDef) ? (typeof h === 'function' ? h() : h || '') : ph ? (typeof h === 'function' ? h() : h || '') + (h ? ' · ' : '') + ph
     : (typeof h === 'function' ? h() : h || '') + (h ? ' · ' : '') + DRAW_HINT;
   vp.dataset.tool = drawing ? tool : '';
   $('c').style.cursor = drawing && toolDef && toolDef.cursor ? toolDef.cursor : '';
@@ -3422,6 +3426,7 @@ function syncDraw() {
   $('d-size').value = sliderOfSize(pen.size); $('d-sizev').textContent = pen.size + 'px';
   $('d-sizebox').style.setProperty('--dot', Math.min(22, 3 + pen.size / 2) + 'px');
   VP.refresh();                                // ⊞ the working plane: shown with an ink tool in hand
+  SC.refresh();                                // 🖥 ∿ the glass: the view held while one is in hand
   requestAnimationFrame(placeToast);           // the bar may have grown, folded or moved
 }
 function setDrawing(on) {
@@ -3606,6 +3611,7 @@ TOOLS.registerTool({ id: 'decal', tab: 'pencil', key: 't', mode: 'text', style: 
   title: 'Decal: il testo incollato alla superficie (piano, cilindro, sfera) — trascina un riquadro e scrivi',
   hint: 'Decal: ' + TEXT_HINT, select: () => useLabelStyle('decal'), deselect: closeText, ...PEN_GESTURE });
 VP.install();                                  // ⊞ Piano: the pencil's working plane (webui/view-plane.js)
+SC.install(PEN_GESTURE);                       // 🖥 Schermo + ∿ Curva: a glass in front of the part (webui/view-screen.js)
 TOOLS.registerTool({ id: 'tag', tab: 'tag', key: 't', mode: 'text', style: 'tag', icon: '⚑', label: 'Targhetta', cursor: 'text',
   title: 'Targhetta: un cartellino con uno stelo che indica il punto e si legge da ogni lato — trascina un riquadro e scrivi',
   hint: 'Targhetta: ' + TEXT_HINT, select: () => useLabelStyle('tag'), deselect: closeText, ...PEN_GESTURE });
@@ -3633,7 +3639,9 @@ TOOLS.registerTool({ id: 'hand', tab: 'common', mode: 'hand', icon: '✋', label
 TOOLS.preferKey('t', labelStyle);              // T goes back to the text style used last
 Object.assign(TOOLS.ctx, { THREE, viewer, vp, $, surfaceHit, firstHit, mmPerPx, annoGroup, pen, pushAction,
   syncDraw, setTool, toast, takeView, refreshViews, disposeObj, isDrawing: () => drawing,
-  toolDef: () => toolDef, visibleBox, planeInk: () => draft.filter(s => s.plane) });
+  toolDef: () => toolDef, visibleBox, planeInk: () => draft.filter(s => s.plane),
+  newStroke: startStroke, redrawStroke, nextGesture: () => ++gesture, inDraft: s => draft.includes(s),
+  dropStroke: s => { const i = draft.indexOf(s); if (i >= 0) draft.splice(i, 1); if (s.obj) disposeObj(s.obj); s.obj = null; viewer.invalidate(); } });
 TOOLS.mount({ tabs: $('d-tabs'), rows: $('d-rows'), common: $('d-ctools'), onChange: onToolChange, active: () => drawing });
 TOOLS.attach(vp);
 onToolChange(TOOLS.current());
