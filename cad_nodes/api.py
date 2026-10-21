@@ -146,6 +146,22 @@ def codeblock_sections_run(store: GraphStore, graph_id: str, node_ref: str,
     return res
 
 
+
+def codeblock_trace(store: GraphStore, graph_id: str, node_ref: str,
+                    budget_ms: Optional[float] = None) -> dict:
+    """🔦 Which piece of the block's result each #@param moves: a traced side
+    run (cad_nodes/cb_trace.py). Returns `items` (one per drawn piece: key,
+    rung piece|curve|feature, the params it depends on, its line and cost),
+    `params` {name: [keys]}, the `silent` params that light nothing, and the
+    pieces' meshes as `previews` keyed like the items. Saves nothing."""
+    from .executor import codeblock_trace_run as _run
+    graph = store.load(graph_id)
+    node = resolve_node(graph, node_ref)
+    res = _run(graph, node.id, store.dir(graph_id),
+               None if budget_ms is None else float(budget_ms) / 1000.0)
+    res["node"] = node.id
+    return res
+
 # --- node addressing -------------------------------------------------------
 def resolve_node(graph: Graph, ref: str) -> Node:
     """Find a node by id, or else by its exact user-given title.

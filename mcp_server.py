@@ -404,6 +404,31 @@ def cad_codeblock_sections(graph_id: str, node: str, run: bool = False,
 
 
 @mcp.tool()
+def cad_codeblock_trace(graph_id: str, node: str, param: str = "") -> dict:
+    """🔦 Which pieces of a CodeBlock's result each `#@param` moves, found by
+    RUNNING the saved block from a traced copy (saves nothing). A piece is a
+    shape as it goes into a boolean (or, if it takes > 100 ms to rebuild, its
+    parts / curves / points). Returns per value the pieces it SHAPES and the
+    ones it only MOVES, with the code line that builds each, plus `silent`:
+    values no piece of the result depends on. `param` narrows it to one value.
+    The user sees the same thing by hovering the block's sliders after
+    🔦 Traccia valori in the node's menu."""
+    def _r(store, gid):
+        res = api.codeblock_trace(store, gid, node)
+        res.pop("previews", None)                    # meshes are for the viewer, not for you
+        items = {it["key"]: it for it in res.get("items", [])}
+        names = [param] if param else sorted(res.get("params", {}))
+        by = {}
+        for p in names:
+            its = [items[k] for k in res.get("params", {}).get(p, []) if k in items]
+            by[p] = {"shapes": [{"line": i["line"], "kind": i["kind"], "rung": i["rung"]} for i in its if p in i["shapes"]],
+                     "moves": len([i for i in its if p not in i["shapes"]])}
+        return {"node": res.get("node"), "success": res.get("success"), "error": res.get("error"),
+                "stats": res.get("stats"), "silent": res.get("silent", []), "params": by}
+    return _safe(_r, STORE, graph_id)
+
+
+@mcp.tool()
 def cad_export_all(graph_id: str) -> dict:
     """Bake every PREVIEWED node (what the viewport shows) to STEP + STL, zipped
     with a manifest.json, into the project's exports/ (indexed in

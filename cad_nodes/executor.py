@@ -1029,6 +1029,56 @@ def codeblock_sections_run(graph: Graph, node_id: str, workdir: Path,
     }
 
 
+def codeblock_trace_run(graph: Graph, node_id: str, workdir: Path,
+                        budget_s: float | None = None, timeout: int = 300) -> dict:
+    """🔦 Run ONE CodeBlock (and what feeds it) from a traced copy
+    (cad_nodes/cb_trace.py): for every #@param, the pieces of the result it
+    moves — each drawn whole if it rebuilds within `budget_s`, else its parts,
+    else its curves — as view previews keyed `cbt:<k>`, plus the table that
+    says which keys each param lights. Like the sections run it saves nothing
+    (publish=False) and the block's memo key is unique, upstream stays cached."""
+    from . import cb_trace
+    node = graph.node(node_id)
+    if node.type != "CodeBlock":
+        raise ValueError(f"{node_id!r} is a {node.type}, not a CodeBlock")
+    code = node.params.get("code", "") or ""
+    try:
+        traced = cb_trace.instrument(code)
+    except SyntaxError as e:
+        return {"success": False, "error": f"SyntaxError: {e.msg} (line {e.lineno})"}
+    budget = cb_trace.BUDGET_S if budget_s is None else float(budget_s)
+    keep = _ancestors(graph, node_id)
+    d = graph.to_dict()
+    d["nodes"] = [n for n in d["nodes"] if n["id"] in keep]
+    d["connections"] = [c for c in d["connections"]
+                        if c["from_node"] in keep and c["to_node"] in keep]
+    for n in d["nodes"]:
+        n["preview"] = False
+        if n["id"] == node_id:
+            n["params"] = {**n["params"], "code": traced + f"# trace run {uuid.uuid4().hex}\n"}
+    sub = Graph.from_dict(d)
+    run_id = uuid.uuid4().hex
+    out = run_dir(workdir.resolve(), run_id) / "trace.json"
+    t0 = time.time()
+    code_run = (cb_trace.RUNTIME + "\n" + transpile(sub, memo=True)
+                + cb_trace.TAIL.format(budget=budget, out=str(out)))
+    res = execute_code(code_run, workdir, timeout=timeout, write_stl=False,
+                       run_id=run_id, publish=False)
+    try:
+        data = json.loads(out.read_text())
+    except (OSError, ValueError):
+        data = {"items": [], "params": {}, "declared": [], "silent": [], "stats": {}}
+    err = (res.get("node_errors") or {}).get(node_id)
+    data.setdefault("stats", {})["wall_s"] = round(time.time() - t0, 2)
+    previews = ((res.get("view") or {}).get("previews") or {})
+    return {
+        "success": bool(res.get("success")) and not err and bool(data.get("items") or not data.get("declared")),
+        **data,
+        "previews": {k: v for k, v in previews.items() if k.startswith("cbt:")},
+        "error": (err.get("message") if isinstance(err, dict) else err) or res.get("errors"),
+    }
+
+
 def operand_meshes(graph: Graph, node_ids: list[str], workdir: Path,
                    timeout: int = 60) -> dict:
     """The baked meshes of `node_ids`, for the editor's in-browser boolean
