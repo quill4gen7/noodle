@@ -990,6 +990,12 @@ function registerNodes(defs){
         // that you could not SEE the result without closing them first.
         if (self.widgets && self.widgets.some(w=>w.isEye))   // draws geometry
           opts.push({content: '🎨 Aspetto…', callback: ()=> editAppearance(self)});
+        // 🔦 which pieces each #@param moves (cad_nodes/cb_trace.py)
+        if (self.cadType === 'CodeBlock'){
+          const on = cbTrace && cbTrace.node === self;
+          opts.push({content: on ? '🔦 Aggiorna traccia' : '🔦 Traccia valori', callback: ()=> traceCodeblock(self)});
+          if (on) opts.push({content: '🔦 Spegni traccia', callback: ()=> cbtClear()});
+        }
         return opts;
       };
     };
@@ -2063,6 +2069,157 @@ async function runSections(sid){
   }
 }
 window.openSectionsView = openSectionsView;
+
+// ── 🔦 Traccia — which pieces of a CodeBlock's result each #@param moves ──
+// (cad_nodes/cb_trace.py, PLAN in CLAUDE.md §9f). One traced side run of the
+// SAVED block, on demand from the node's menu; then hovering one of its
+// sliders lights its pieces on top of the result — amber where the value
+// SHAPES the piece, faint blue where it only MOVES it (a Pos / gira applied
+// to what contains it). Hover runs nothing; letting a slider go recomputes
+// nothing. A piece is the thing as it goes into a boolean, or — when it costs
+// more than 100 ms to rebuild — its parts, its curves, its points.
+const CBT_SHAPE = 0xfbbf24, CBT_MOVE = 0x38bdf8;
+const cbtEsc = x => String(x).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+let cbTrace = null;   // {node, id, name, data, sig, stale, group, cache: Map(key → geometry), shown}
+function cbtSig(node){
+  const codeW = (node.widgets||[]).find(x => x.cadParam === 'code');
+  return JSON.stringify([(codeW ? codeW.value : node.properties.code) || '', node._cb || {}]);
+}
+function cbtClear(){
+  if (!cbTrace) return;
+  cbtShow(null);
+  if (cbTrace.group && cbTrace.group.parent) cbTrace.group.parent.remove(cbTrace.group);
+  for (const g of cbTrace.cache.values()) for (const x of [g.geo, g.edges]) if (x) x.dispose();
+  const n = cbTrace.node; cbTrace = null;
+  const info = document.getElementById('cbt-info'); if (info) info.remove();
+  if (n && n.setDirtyCanvas) n.setDirtyCanvas(true, true);
+}
+async function traceCodeblock(node){
+  if (!currentName) return;
+  // the trace reads the SAVED block: save what is on the canvas first
+  if (!(await persistToServer())) { toast('error', 'Salvataggio non riuscito: la traccia legge il blocco salvato'); return; }
+  const id = graphIdOf(node), name = currentName;
+  toast('info', '🔦 Traccia: una corsa del blocco, i pezzi arrivano alla fine…');
+  let d;
+  try {
+    const r = await fetchTimed(`${API}/api/graph/${encodeURIComponent(name)}/codeblock/${encodeURIComponent(id)}/trace`,
+                               {method: 'POST'}, 900000);
+    d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.status);
+  } catch(e){ toast('error', 'Traccia: ' + e.message); return; }
+  if (!(d.items || []).length){ toast('error', 'Traccia: ' + (d.error || 'nessun pezzo nel risultato')); return; }
+  cbtClear();
+  const group = new THREE.Group(); group.name = 'cb-trace'; group.renderOrder = 8;
+  viewer.scene.add(group);
+  const byKey = {}; for (const it of d.items) byKey[it.key] = it;
+  cbTrace = {node, id, name, data: d, byKey, sig: cbtSig(node), stale: false, group, cache: new Map(), shown: null};
+  const n = Object.keys(d.params || {}).length;
+  toast('success', `🔦 ${d.items.length} pezzi, ${n} valori collegati` + ((d.silent||[]).length ? ` (${d.silent.length} senza pezzi)` : '')
+        + ' — passa sopra uno slider del blocco');
+  node.setDirtyCanvas(true, true);
+}
+// geometry per key, built once (the view.json shapes: mesh / polylines / points)
+function cbtGeom(key){
+  if (cbTrace.cache.has(key)) return cbTrace.cache.get(key);
+  const p = cbTrace.data.previews[key];
+  let g = null;
+  if (p && p.mesh){
+    const m = meshFromData(p.mesh, '#ffffff'); m.material.dispose();
+    g = {kind: 'mesh', geo: m.geometry, edges: new THREE.EdgesGeometry(m.geometry, 35)};
+  } else if (p && p.polylines){
+    const v = [];
+    for (const pl of p.polylines) for (let i = 0; i + 1 < pl.length; i++) v.push(...pl[i], ...pl[i + 1]);
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+    g = {kind: 'lines', geo};
+  } else if (p && p.points){
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(p.points.flat(), 3));
+    g = {kind: 'points', geo};
+  }
+  cbTrace.cache.set(key, g);
+  return g;
+}
+function cbtObjects(g, color, strong){
+  const out = [], fade = cbTrace.stale ? 0.5 : 1;
+  if (g.kind === 'mesh'){
+    // the piece lies ON the part's faces: pulled forward so it wins the depth test,
+    // and its outline drawn through the part so a piece inside still reads
+    out.push(new THREE.Mesh(g.geo, new THREE.MeshBasicMaterial({color, transparent: true, opacity: (strong ? 0.42 : 0.16) * fade,
+      depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide})));
+    out.push(new THREE.LineSegments(g.edges, new THREE.LineBasicMaterial({color, transparent: true,
+      opacity: (strong ? 0.95 : 0.45) * fade, depthTest: false})));
+  } else if (g.kind === 'lines'){
+    out.push(new THREE.LineSegments(g.geo, new THREE.LineBasicMaterial({color, transparent: true, opacity: (strong ? 1 : 0.5) * fade, depthTest: false})));
+  } else {
+    out.push(new THREE.Points(g.geo, new THREE.PointsMaterial({color, size: strong ? 7 : 4, sizeAttenuation: false,
+      transparent: true, opacity: fade, depthTest: false})));
+  }
+  for (const o of out){ o.renderOrder = 9; o.raycast = () => {}; }
+  return out;
+}
+function cbtShow(param){
+  if (!cbTrace) return;
+  if (param === cbTrace.shown) return;
+  cbTrace.shown = param;
+  const grp = cbTrace.group;
+  for (const o of [...grp.children]){ grp.remove(o); if (o.material) o.material.dispose(); }
+  let info = document.getElementById('cbt-info');
+  if (!param){ if (info) info.hidden = true; if (viewer) viewer.invalidate(); return; }
+  const keys = (cbTrace.data.params || {})[param] || [];
+  let ns = 0, nm = 0;
+  const lines = new Set();
+  for (const k of keys){
+    const it = cbTrace.byKey[k], g = cbtGeom(k);
+    if (!it || !g) continue;
+    const strong = (it.shapes || []).includes(param);
+    strong ? ns++ : nm++;
+    if (strong && it.line) lines.add(it.line);
+    for (const o of cbtObjects(g, strong ? CBT_SHAPE : CBT_MOVE, strong)) grp.add(o);
+  }
+  if (!info){
+    info = document.createElement('div'); info.id = 'cbt-info';
+    info.style.cssText = 'position:absolute;left:50%;bottom:52px;transform:translateX(-50%);z-index:6;max-width:80%;padding:6px 10px;border-radius:8px;'
+      + 'background:rgba(11,14,20,.82);border:1px solid #fbbf2466;color:#e5e7eb;font:12px/1.4 var(--mono,monospace);pointer-events:none';
+    document.querySelector('.viewer-wrap').appendChild(info);
+  }
+  info.hidden = false;
+  const L = [...lines].sort((a, b) => a - b);
+  info.innerHTML = keys.length
+    ? `🔦 <b style="color:#fbbf24">${cbtEsc(param)}</b>: <span style="color:#fbbf24">${ns} pezz${ns === 1 ? 'o' : 'i'} fatt${ns === 1 ? 'o' : 'i'}</span>`
+      + (nm ? ` · <span style="color:#38bdf8">${nm} solo spostat${nm === 1 ? 'o' : 'i'}</span>` : '')
+      + (L.length ? ` · righe ${L.slice(0, 8).join(', ')}${L.length > 8 ? '…' : ''}` : '')
+      + (cbTrace.stale ? ' · <span style="color:#f87171">traccia vecchia: 🔦 Aggiorna dal menu</span>' : '')
+    : `🔦 <b>${cbtEsc(param)}</b>: nessun pezzo del risultato dipende da questo valore`
+      + ((cbTrace.data.silent || []).includes(param) ? ' (un if, un conteggio o un pezzo che non arriva in uscita)' : '');
+  if (viewer) viewer.invalidate();
+}
+// the #@param slider under the pointer, on the traced block
+function cbtHover(e){
+  if (!cbTrace || !lcanvas) return;
+  const node = cbTrace.node;
+  if (!node.graph){ cbtClear(); return; }
+  let param = null;
+  const [gx, gy] = lcanvas.convertEventToCanvasOffset(e);
+  if (lgraph.getNodeOnPos(gx, gy) === node && !(node.flags && node.flags.collapsed)){
+    const y = gy - node.pos[1], ws = node.widgets || [];
+    for (let i = 0; i < ws.length; i++){
+      const w = ws[i];
+      if (w.last_y == null) continue;
+      const next = ws.slice(i + 1).find(x => x.last_y != null);
+      const h = next ? next.last_y - w.last_y : LiteGraph.NODE_WIDGET_HEIGHT + 4;
+      if (y >= w.last_y && y < w.last_y + h){ param = w.cbParam || null; break; }
+    }
+  }
+  cbtShow(param);
+}
+// after every render: the traced block edited since? (its pieces may have moved)
+function cbtCheckStale(){
+  if (!cbTrace) return;
+  if (!cbTrace.node.graph){ cbtClear(); return; }
+  const stale = cbtSig(cbTrace.node) !== cbTrace.sig;
+  if (stale !== cbTrace.stale){ cbTrace.stale = stale; const p = cbTrace.shown; cbTrace.shown = undefined; cbtShow(p); }
+}
+window.traceCodeblock = traceCodeblock;
+
 
 // ════════════════════════════════════════════════════════════════════
 // Curve editor — a reusable control-point curve widget. One data model:
@@ -4432,6 +4589,7 @@ window.renderProjectList = function(){
 };
 
 window.openGraph = async function(name){
+  if (name !== currentName) cbtClear();   // 🔦 a trace belongs to its graph
   if(!name || name===currentName) { closeMenus(); return; }
   const seq = ++openSequence;
   if (!(await guardUnsaved()) || seq !== openSequence) return;
@@ -5121,6 +5279,7 @@ function renderPreviews(view, bakedGraph = null){
         { onSize:(s)=>{ if(s) setStats(`${s.x.toFixed(1)} × ${s.y.toFixed(1)} × ${s.z.toFixed(1)} mm`); } }); },
   });
   previewMeshes = r.meshes;
+  cbtCheckStale();                       // 🔦 the traced block edited since the trace?
   previewAnims = {};                     // Drop timelines riding the previews (fastDrag replay)
   const pvs = (view && view.previews) || {};
   for (const id in pvs) if (pvs[id] && pvs[id].anim) previewAnims[id] = pvs[id].anim;
@@ -6102,6 +6261,8 @@ function initGraph(){
   touchPreInit();                         // pointer events: must precede bindEvents
   lcanvas = new LGraphCanvas(canvas, lgraph);
   lcanvas.onSearchBox = nodeSearchRows;   // find nodes by label/alias, not just type path
+  canvas.addEventListener('pointermove', e => cbtHover(e));        // 🔦 a traced block's slider under the pointer
+  canvas.addEventListener('pointerleave', () => cbtShow(null));
   lcanvas.background_image = null;
   // live triggers on structural changes (guarded while loading a graph)
   lgraph.onNodeAdded = ()=>{ scheduleHistory(); scheduleLive(); };

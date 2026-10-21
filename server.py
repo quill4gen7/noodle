@@ -1313,6 +1313,18 @@ async def codeblock_sections(name: str, node_id: str):
         raise HTTPException(400, str(e.args[0] if isinstance(e, KeyError) else e)) from e
 
 
+@app.post("/api/graph/{name}/codeblock/{node_id}/trace")
+async def codeblock_trace(name: str, node_id: str, budget_ms: float | None = None):
+    """🔦 The pieces of the block's result each #@param moves (cad_nodes/cb_trace.py):
+    a traced side run of the saved block; nothing is written."""
+    require_project(name)
+    try:
+        return await off_loop(api.codeblock_trace, GraphStore(PROJECTS_DIR),
+                              name, node_id, budget_ms)
+    except (ValueError, KeyError) as e:
+        raise HTTPException(400, str(e.args[0] if isinstance(e, KeyError) else e)) from e
+
+
 @app.post("/api/graph/{name}/codeblock/{node_id}/sections/run")
 async def codeblock_sections_run(name: str, node_id: str, section: str | None = None):
     """Run the block (and only what feeds it) from an instrumented copy: time and

@@ -355,6 +355,9 @@ cad_nodes/
                        the picture the user sees. Warm browser (the cost is the
                        launch, not the frame). Camera presets + azim/elev/zoom,
                        frame-one-node, ortho. NOT a second renderer, on purpose.
+  cb_trace.py / cb_trace_rt.py  🔦 Traccia (§9f): which pieces of a
+                       CodeBlock's result each #@param moves — a traced side
+                       run of the block (rewrite + injected runtime).
   slice_summary.py   retro-engineering perception (§7b): slice_summary
                        (symbolic cross-sections; STEP exact, STL arc-fitted)
                        + section_outline (one exact section, edge by edge).
@@ -2234,6 +2237,59 @@ result while the workflow moves on.
   filament if it piled up (`lifts`), spray otherwise — a ✎³ line that never
   stacked comes back as spray after a reload. `disposeObj` skips the shared
   spray materials (`isShared`).
+
+## 9f. 🔦 Traccia — which pieces of a CodeBlock each `#@param` moves
+
+quill: «i blocchi di codice sono lunghi, modificare un valore è lentissimo e
+devi sapere cosa stai muovendo: non puoi scoprirlo senza leggere il codice».
+A CodeBlock's node menu → **🔦 Traccia valori** runs the SAVED block once
+from a traced copy; then hovering one of its sliders lights, on top of the
+result, the pieces that value moves — amber where it SHAPES the piece, faint
+blue where it only MOVES it (a Pos / Rot / gira applied to what contains it),
+with the code lines in a label. Hover runs nothing; releasing a slider
+recomputes nothing; Live may stay off. `cbtCheckStale` marks the overlay old
+when the block's code or `_cb` changed since. 🔦 Spegni traccia clears it.
+
+- **Why it can be fast, measured** on creepyfinger-v4 (1289 lines, 97 values),
+  walle-v7 and tars: the booleans are 69-86% of a run; a primitive costs
+  ~0.5 ms, an extrude 1-8 ms, a loft ~8 ms; and the PIECES that go into the
+  booleans (the cheaper operand, not the body) rebuild within 100 ms in
+  95-100% of cases, median < 1 ms. Deferring the booleans instead does NOT
+  work: creepyfinger's `pulisci()` reads `.solids()` after every boolean, so
+  all 257 of them got forced anyway.
+- **How** (`cad_nodes/cb_trace.py` rewrites, `cb_trace_rt.py` is the runtime,
+  injected as SOURCE in front of the script like the sections markers; the
+  executor run is `codeblock_trace_run`, modelled on the sections run, saves
+  nothing). The copy wraps every call in `__cbt_call__(line, f, …)` and every
+  `+ - & *` in `__cbt_bin__` — no build123d class is patched in the warm worker.
+  Numbers carry their params (`_TF`/`_TI`, through `math`, `round`, helpers; a
+  traced `range(n)` hands out counters that remember n, so a loop's pieces
+  light with the count). Objects carry params, cost and contents by id.
+- **The piece tree**: a boolean makes each operand a node; a move with the same
+  TShape (`IsPartner`, matrix from the two locations) or a `mirror` carries the
+  contents with a matrix; a fillet/chamfer on picked sub-shapes (results of
+  `.edges()`, `group_by`… remember the shape they came from) adds a FEATURE
+  node. **The body is the LEFT operand of `-` / `&`** (what is cut from), else
+  the dearest operand only if it is itself a boolean result — "the dearest"
+  alone was wrong twice (a moved cube dearer than the plate it sits on; a
+  composite tool dearer than the box it cuts). The walk splits bodies, draws
+  pieces whole within the budget (100 ms), else their parts, else their
+  curves, else their points (a 2D fillet's vertices).
+- **Traps paid for**: the rotation is snapped to orthogonal and applied with
+  `BRepBuilderAPI_Transform` — build123d's `transform_shape` goes through a
+  GTrsf and refused 284 of 286 pieces ("non-orthogonal"); every bookkeeping
+  step is guarded so the user's code never breaks, which also HIDES runtime
+  bugs (a NameError lost every param silently) — `tests/test_cb_trace.py`
+  drives the runtime with stand-in shapes for exactly that reason, and
+  `stats.unplaced` names what could not be drawn instead of dropping it.
+- Limits: a value used only in an `if` lights nothing (`silent` in the
+  answer); numbers read back from geometry (`bb.min.Y`) lose their params;
+  the overlay is in the block's own output frame (a Move node downstream is
+  not applied). Not built yet: step 3 — rebuilding the lit pieces live while
+  the slider drags (the derivatives + 60 fps browser rebuild of the plan).
+- Surfaces: `POST /api/graph/{name}/codeblock/{node}/trace` (`off_loop`),
+  `api.codeblock_trace`, MCP `cad_codeblock_trace` (lean: per value the pieces
+  it shapes with their lines, how many it moves, `silent`).
 
 ## 9d. Exports — the bake bundle and the per-workflow index
 
