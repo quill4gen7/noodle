@@ -236,6 +236,22 @@ def test_the_editor_lights_on_hover_and_never_runs():
     assert "runGraph" not in hover and "scheduleLive" not in hover and "persistToServer" not in hover
 
 
+def test_a_wired_value_drives_the_replay_and_run_shows_the_dot():
+    html = (ROOT / "webui" / "nodes.html").read_text()
+    # a value node wired straight into a #@param replays, a chain does not
+    src = html[html.index("function cbtSrcOf"):html.index("function cbtWiredTargets")]
+    assert "ins.length !== 1" in src and "s.link != null" in src
+    on = html[html.index("function onParamChange"):html.index("// ── Drop live replay")]
+    assert "cbtLiveFrom(node)" in on
+    # the wired value is part of what the replay sends (cbtNowVals reads the wire)
+    now = html[html.index("function cbtNowVals"):html.index("function cbtValues")]
+    assert "cbtSrcOf(cbTrace.node" in now
+    # ● on ▶ Run: on when stale/anticipated, off when a run lands, never in Live
+    dot = html[html.index("function setNeedsRun"):html.index("function previewStale")]
+    assert "!liveMode" in dot
+    assert html.count("setNeedsRun(true)") == 2 and "setNeedsRun(false);" in html
+
+
 # ── step 3: replay — the lit pieces again, for another value, while dragging ──
 class Pos2:
     """A Pos that writes its numbers into the moved shape's name."""

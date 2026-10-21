@@ -2439,6 +2439,17 @@ happens on release (`liveFire` holds while `cbtHolding()`).
   value replays too. The live pieces are half see-through lit solids with a
   coloured outline: they are what goes INTO the booleans (a shell before its
   cavity is cut), so opaque they hid the inside and flat amber read as a blob.
+- **A value WIRED into the block replays too** (`cbtLiveFrom`, `cbtSrcOf`,
+  `cbtWiredTargets`): the trace binds every numeric `#@param` by name, wired or
+  not, so a Number Slider wired STRAIGHT into a `#@param` socket drives the
+  replay like the block's own slider (its press traces the block, it gets the
+  ⚡, the label says `c = 9 ← Lato`). Only a direct wire from a value node
+  whose own value is not wired, and one wire per socket: anything in between
+  (a Math node, a list) would have to be evaluated in the browser, and the
+  anticipation could lie. Measured on a toy block: 23 ms per answer, 0 runs.
+- **● on ▶ Run** (`setNeedsRun`, every `.js-run-btn`): with Live off, the
+  viewport is not the exact model — set by `previewStale`/`previewAnticipated`,
+  cleared when a run lands, never shown in Live (it runs by itself).
 - **⚡ beside a slider** = this value replays live (`data.fast[p]` from the
   trace: pieces rebuilt + their measured cost, pieces moved). Yellow = within
   250 ms, orange = the heavy pieces stay grey until release, grey = Live is
