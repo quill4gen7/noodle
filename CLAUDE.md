@@ -2358,6 +2358,10 @@ happens on release (`liveFire` holds while `cbtHolding()`).
   whose own value is not wired, and one wire per socket: anything in between
   (a Math node, a list) would have to be evaluated in the browser, and the
   anticipation could lie. Measured on a toy block: 23 ms per answer, 0 runs.
+- **Readable at a glance**: a fast slider gets a bold 13px ⚡ and, with ⚡ Fast or
+  Live on, its whole track outlined in the same colour (`drawCbtFast`). **L**
+  switches Live ⇄ ⚡ Fast (`switchMode`; from neither it turns ⚡ Fast on), also
+  in ⌘K and the shortcuts list.
 - **● on ▶ Run** (`setNeedsRun`, every `.js-run-btn`): with Live off, the
   viewport is not the exact model — set by `previewStale`/`previewAnticipated`,
   cleared when a run lands, never shown in Live (it runs by itself).

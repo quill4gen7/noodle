@@ -250,6 +250,9 @@ def test_a_wired_value_drives_the_replay_and_run_shows_the_dot():
     dot = html[html.index("function setNeedsRun"):html.index("function previewStale")]
     assert "!liveMode" in dot
     assert html.count("setNeedsRun(true)") == 2 and "setNeedsRun(false);" in html
+    # L = Live ⇄ ⚡ Fast, a key nobody else had (F frames the view)
+    assert "k === 'l' && !e.ctrlKey" in html and "window.switchMode" in html
+    assert "['L','Live ⇄ ⚡ Fast']" in html
 
 
 # ── step 3: replay — the lit pieces again, for another value, while dragging ──

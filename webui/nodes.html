@@ -382,7 +382,7 @@ body.touch-ui .toolbar [onclick="openPalette()"]::after{content:"☰ Comandi";fo
       <button class="tb-btn primary js-run-btn" id="btn-run" onclick="runGraph()" title="Run the graph (Ctrl+Enter)">▶ Run</button>
       <button class="tb-btn" id="btn-stop" onclick="stopRun()" disabled title="Cancel the current run">■ Stop</button>
       <button class="tb-btn toggle js-live-btn" id="btn-live" onclick="toggleLive()" title="Live: ogni modifica ricalcola il modello esatto (anche al rilascio di uno slider)">Live</button>
-      <button class="tb-btn toggle js-fast-btn" id="btn-fast" onclick="toggleFast()" title="⚡ Fast: trascinando, i nodi col ⚡ si aggiornano subito nella vista; il calcolo esatto parte solo con ▶ Run (Ctrl+Enter). Spegne Live.">⚡ Fast</button>
+      <button class="tb-btn toggle js-fast-btn" id="btn-fast" onclick="toggleFast()" title="⚡ Fast: trascinando, i nodi col ⚡ si aggiornano subito nella vista; il calcolo esatto parte solo con ▶ Run (Ctrl+Enter). Spegne Live. Tasto L: Live ⇄ Fast.">⚡ Fast</button>
       <button class="tb-btn" id="btn-arrange" onclick="arrangeGraph()" title="Riordina i nodi: da sinistra a destra per profondità, senza sovrapposizioni, gruppi tenuti insieme (Ctrl+Shift+A)">⊞ Riordina</button>
       <div class="status-pill" id="status">Ready</div>
       <span class="health-dot" id="health" title="Backend health"></span>
@@ -2374,10 +2374,19 @@ function drawCbtFast(ctx, node, w, y, H){
   const t = !w.cbParam && cbTrace && cbtWiredFast(node);
   const lvl = w.disabled ? null : w.cbParam ? cbtFast(node, w.cbParam) : t ? cbtFast(t.node, t.param) : null;
   if (!lvl) return;
+  // a 10px ⚡ in the margin went unseen: a bigger one, and with ⚡ Fast or Live
+  // on the whole track outlined in its colour, so the fast values read at a glance
+  const on = fastDrag(), col = !on ? '#6b7280' : lvl === 'full' ? '#facc15' : '#fb923c';
   ctx.save();
-  ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = !fastDrag() ? '#6b7280' : lvl === 'full' ? '#facc15' : '#fb923c';
-  ctx.fillText('⚡', 7.5, y + H / 2);
+  if (on){
+    const m = 15, x1 = node.size[0] - m;
+    ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.globalAlpha = 0.9;
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(m - 1, y - 1, x1 - m + 2, H + 2, 4) : ctx.rect(m - 1, y - 1, x1 - m + 2, H + 2);
+    ctx.stroke(); ctx.globalAlpha = 1;
+  }
+  ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = col;
+  ctx.fillText('⚡', 7, y + H / 2 + 1);
   ctx.restore();
 }
 function cbtHolding(){ const L = cbTrace && cbTrace.live; return !!(L && (L.w._drag || isPlaying(L.w))); }
@@ -3680,6 +3689,11 @@ window.toggleLive = function(){
   else { clearTimeout(liveTimer); runPending = false; }
   syncModeButtons();
 };
+// L: Live ⇄ ⚡ Fast (from neither, ⚡ Fast — the one that never runs by itself)
+window.switchMode = function(){
+  if (fastMode){ toggleLive(); toast('info', 'Live: ogni modifica ricalcola (L per ⚡ Fast)'); }
+  else toggleFast();
+};
 window.toggleFast = function(){
   setFastMode(!fastMode);
   if (fastMode && liveMode){ liveMode = false; clearTimeout(liveTimer); runPending = false; }
@@ -4182,6 +4196,7 @@ document.addEventListener('keydown', (e)=>{
   else if (k === 'f' && !e.ctrlKey && !e.metaKey){ e.preventDefault(); frameView(); }
   else if (k === 'i' && !e.ctrlKey && !e.metaKey){ e.preventDefault(); toggleIsolate(); }
   else if (k === 'o' && !e.ctrlKey && !e.metaKey){ e.preventDefault(); toggleProjection(); }
+  else if (k === 'l' && !e.ctrlKey && !e.metaKey && !e.altKey){ e.preventDefault(); switchMode(); }
 });
 
 // ── floating selection toolbar (anchored above the selection) ──
@@ -7300,7 +7315,7 @@ function showRestoreModal(name, d){
 window.openShortcuts = function(){
   closeMenus();
   const rows=[['Ctrl+Enter','Run graph'],['Ctrl+S','Save'],['Ctrl+N','New project'],['Ctrl+K','Command palette'],
-    ['F','Fit to view'],['I','Isolate selected shapes'],['Ctrl+G','Group selection'],['Ctrl+B','Bypass'],['Del','Delete'],
+    ['F','Fit to view'],['L','Live ⇄ ⚡ Fast'],['I','Isolate selected shapes'],['Ctrl+G','Group selection'],['Ctrl+B','Bypass'],['Del','Delete'],
     ['Ctrl+Z','Undo'],['Ctrl+Shift+Z / Ctrl+Y','Redo'],
     ['Ctrl+C / Ctrl+V','Copy / paste'],['Ctrl+X','Cut'],['Ctrl+D','Duplicate'],
     ['Esc','Exit edit / close'],['dbl-click','Search nodes'],
@@ -7633,6 +7648,7 @@ function paletteCommands(){
   return [
     {ic:'▶', label:'Run graph', k:'Ctrl+Enter', run:()=>runGraph()},
     {ic:'●', label:'Toggle Live', k:'', run:()=>toggleLive()},
+    {ic:'⚡', label:'Live ⇄ ⚡ Fast', k:'L', run:()=>switchMode()},
     {ic:'💾',label:'Save', k:'Ctrl+S', run:()=>saveGraph()},
     {ic:'＋',label:'New project…', k:'Ctrl+N', run:()=>promptNewGraph()},
     {ic:'⬆',label:'Import model (STEP/STL/SVG/DXF)…', k:'', run:()=>importModel()},
