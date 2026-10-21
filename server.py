@@ -1314,13 +1314,16 @@ async def codeblock_sections(name: str, node_id: str):
 
 
 @app.post("/api/graph/{name}/codeblock/{node_id}/trace")
-async def codeblock_trace(name: str, node_id: str, budget_ms: float | None = None):
+async def codeblock_trace(name: str, node_id: str, budget_ms: float | None = None,
+                          body: Optional[dict] = Body(default=None)):
     """🔦 The pieces of the block's result each #@param moves (cad_nodes/cb_trace.py):
-    a traced side run of the saved block; nothing is written."""
+    a traced side run of the saved block — or of the graph posted as the body
+    (the editor's canvas: tracing never forces a save); nothing is written."""
     require_project(name)
+    snap = body if body and "nodes" in body else None
     try:
         return await off_loop(api.codeblock_trace, GraphStore(PROJECTS_DIR),
-                              name, node_id, budget_ms)
+                              name, node_id, budget_ms, snap)
     except (ValueError, KeyError) as e:
         raise HTTPException(400, str(e.args[0] if isinstance(e, KeyError) else e)) from e
 
@@ -1336,7 +1339,7 @@ async def codeblock_trace_replay(name: str, node_id: str, body: dict = Body(...)
     try:
         return await off_loop(api.codeblock_trace_replay, GraphStore(PROJECTS_DIR), name,
                               body["trace"], body.get("values") or {}, body.get("focus"),
-                              body.get("probe"), body.get("heavy_ms"))
+                              body.get("probe"), body.get("heavy_ms"), body.get("also"))
     except (ValueError, KeyError, TypeError) as e:
         raise HTTPException(400, str(e.args[0] if isinstance(e, KeyError) else e)) from e
 

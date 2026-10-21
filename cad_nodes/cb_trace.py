@@ -117,7 +117,7 @@ _cbt_T = getattr(_cbt_s.modules.get("_noodle_cbt"), "traces", {{}}).get({tid!r})
 if _cbt_T is None:
     _cbt_res = {{"gone": True}}
 else:
-    __previews__, _cbt_res = _cbt_T["replay"]({values!r}, {focus!r}, {probe!r}, {heavy!r})
+    __previews__, _cbt_res = _cbt_T["replay"]({values!r}, {focus!r}, {probe!r}, {heavy!r}, {also!r})
 with open({out!r}, "w") as _cbt_f:
     _cbt_j.dump(_cbt_res, _cbt_f)
 """

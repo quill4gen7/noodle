@@ -445,7 +445,9 @@ runtime VALUE, not the declared type: points → dots, solid/sketch → mesh, cu
 `params._ui` is another editor-only namespace (like CodeBlock's `_cb`): per-slider
 drag window + step set via the slider's ⚙ (`{param: {min,max,step}}`). Sliders in
 the editor are a custom `cadslider` widget — the drag window defaults to ±10
-(clipped to catalog hard bounds, auto-grown to contain the value) and drag snaps
+(clipped to catalog hard bounds, auto-grown to contain the value WITH headroom:
+a value never sits on the edge — `flessione = 10` used to get −10…10 and could
+not be dragged up at all, now −10…25) and drag snaps
 to the step; the typed ✎ field clamps only on the catalog's hard min/max. The
 drag is RELATIVE (a press never changes the value; moving shifts it by the
 distance, track = the whole window) and the window only grows during a session
@@ -1060,11 +1062,18 @@ long time — **no saved project uses a group**, so nothing exercised the path
 
 ### 6b. Drag anticipation (the old ✥ fastDrag)
 
-It is **not a mode of its own**: `fastDrag()` in nodes.html is `liveMode &&
-fastEnabled`, so turning Live on turns it on. `fastEnabled` is the escape hatch
-for a slow machine (Settings ⚙ checkbox, persisted in localStorage
-`noodle:settings:fastDrag`, default on) — with it off, Live still works, it just
-waits for each run. There is no toolbar button any more.
+Two toolbar modes, mutually exclusive (turning one on turns the other off):
+**Live** re-runs exactly after every change (anticipating while a hand is down,
+if the ⚙ setting `fastEnabled` allows — `noodle:settings:fastDrag`); **⚡ Fast**
+(`fastMode`, remembered in `noodle:settings:fastMode`) anticipates and NEVER
+runs by itself — ▶ Run / Ctrl+Enter computes. `fastDrag()` = `fastMode ||
+(liveMode && fastEnabled)`. Fast exists because quill found the re-run on
+release annoying on heavy graphs (creepyfinger): with it the anticipated
+geometry simply stays until Run, and the ⚡ marks are yellow in either mode,
+grey in neither. Other editor switches of the same review: **autosave** can be
+turned off (⚙, `noodle:settings:autosave`; the pill then reads «Non salvato ·
+clic per salvare», runs post their snapshot without saving, the local draft
+still guards a crash) and **Costi** left the toolbar for ⚙ only.
 
 The contract: while a param drags, replay it locally in Three.js; when the drag
 settles, `scheduleLive()` re-bakes it exactly. The local replay must therefore be
@@ -2321,8 +2330,11 @@ happens on release (`liveFire` holds while `cbtHolding()`).
   it rebuilt whole bodies (`pulisci`/`.solids()` loops) and on 2026-10-21 that
   filled the mini PC's RAM and swap and froze it — hence also `memguard` (a
   worker over `NOODLE_WORKER_MAX_MB` is killed: "Memoria esaurita").
-- **60 fps between answers**: the editor probes 7 values across the drag window
-  + the current one; between two samples a moved piece follows the SCREW from
+- **60 fps between answers**: the first answer of a drag asks the current
+  value only, the second adds 5 values across the drag window (a probe costs
+  a placement recompute per moving piece: 0.33 s each on creepyfinger's
+  `flessione`, so 8 per answer had made every answer 3 s), later ones the
+  current value again, merged into the table; between two samples a moved piece follows the SCREW from
   one matrix to the next (rotation about B·A⁻¹'s own axis through its fixed
   point + the slide along it — a lerp would cut an arc's chord). A rebuilt mesh
   is placed at the value it was built for, so `T(v)·T(v_ref)⁻¹` carries it.
@@ -2330,6 +2342,14 @@ happens on release (`liveFire` holds while `cbtHolding()`).
   lands. Measured: tars 17-35 ms per answer for a small value, ~1.7 s for
   `gioco` (78 rebuilt, 29 left grey); creepyfinger `largo_retro` ~0.8 s,
   container peak 1.4 GB.
+- **In ⚡ Fast** the first press on a slider of an untraced (or edited, or
+  `gone`) block traces it in the background (`cbtPrepare`), posting the
+  canvas as the body — tracing never saves. The overlay stays after release
+  until a run lands; dragging a second slider keeps the first one's pieces
+  (`also` = values moved since the last exact run, `cbtPending`). A typed
+  value replays too. The live pieces are half see-through lit solids with a
+  coloured outline: they are what goes INTO the booleans (a shell before its
+  cavity is cut), so opaque they hid the inside and flat amber read as a blob.
 - **⚡ beside a slider** = this value replays live (`data.fast[p]` from the
   trace: pieces rebuilt + their measured cost, pieces moved). Yellow = within
   250 ms, orange = the heavy pieces stay grey until release, grey = Live is

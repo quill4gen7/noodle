@@ -148,14 +148,20 @@ def codeblock_sections_run(store: GraphStore, graph_id: str, node_ref: str,
 
 
 def codeblock_trace(store: GraphStore, graph_id: str, node_ref: str,
-                    budget_ms: Optional[float] = None) -> dict:
+                    budget_ms: Optional[float] = None, graph: Optional[dict] = None) -> dict:
     """🔦 Which piece of the block's result each #@param moves: a traced side
     run (cad_nodes/cb_trace.py). Returns `items` (one per drawn piece: key,
     rung piece|curve|feature, the params it depends on, its line and cost),
     `params` {name: [keys]}, the `silent` params that light nothing, and the
-    pieces' meshes as `previews` keyed like the items. Saves nothing."""
+    pieces' meshes as `previews` keyed like the items. `graph` = a snapshot
+    to trace instead of the saved graph (the editor's canvas, unsaved edits
+    included — tracing must not force a save). Saves nothing."""
     from .executor import codeblock_trace_run as _run
-    graph = store.load(graph_id)
+    if graph is not None:
+        graph = Graph.from_dict(graph)
+        graph.validate()
+    else:
+        graph = store.load(graph_id)
     node = resolve_node(graph, node_ref)
     res = _run(graph, node.id, store.dir(graph_id),
                None if budget_ms is None else float(budget_ms) / 1000.0)
@@ -165,7 +171,7 @@ def codeblock_trace(store: GraphStore, graph_id: str, node_ref: str,
 
 def codeblock_trace_replay(store: GraphStore, graph_id: str, trace_id: str, values: dict,
                            focus: Optional[str] = None, probe: Optional[list] = None,
-                           heavy_ms: Optional[float] = None) -> dict:
+                           heavy_ms: Optional[float] = None, also: Optional[list] = None) -> dict:
     """🔦 The pieces `focus` lights, rebuilt for `values` (the #@params that
     differ from the trace, name → number) from the recipes the trace left in
     the warm worker — no graph run, no boolean on the body. Items come back
@@ -174,6 +180,8 @@ def codeblock_trace_replay(store: GraphStore, graph_id: str, trace_id: str, valu
     `probe` = extra values of `focus` measured as matrices only (`frames`).
     `heavy_ms` = the rebuild budget (default 1500, 20…1500): the cheapest pieces
     first, the rest come back moved in their old shape (`old: true`).
+    `also` = more params whose pieces to send back too (the editor's values
+    changed since its last exact run, so several dragged sliders show at once).
     `gone: true` = trace again. Saves nothing."""
     from .executor import codeblock_trace_replay as _replay
     if not isinstance(values, dict) or not all(isinstance(v, (int, float)) and not isinstance(v, bool)
@@ -182,7 +190,9 @@ def codeblock_trace_replay(store: GraphStore, graph_id: str, trace_id: str, valu
     if probe is not None and (not isinstance(probe, list) or len(probe) > 8):
         raise ValueError("`probe` must be a list of at most 8 numbers")
     heavy = 1.5 if heavy_ms is None else min(1.5, max(0.02, float(heavy_ms) / 1000))
-    return _replay(store.dir(graph_id), str(trace_id), values, focus, probe, heavy_s=heavy)
+    if also is not None and (not isinstance(also, list) or not all(isinstance(a, str) for a in also)):
+        raise ValueError("`also` must be a list of param names")
+    return _replay(store.dir(graph_id), str(trace_id), values, focus, probe, heavy_s=heavy, also=also)
 
 
 # --- node addressing -------------------------------------------------------

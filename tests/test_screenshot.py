@@ -203,7 +203,7 @@ def test_the_shot_page_never_writes_the_graph():
     import pathlib
     src = (pathlib.Path(__file__).parent.parent / "webui" / "nodes.html").read_text()
     body = src.split('async function executeCurrentGraph(){')[1].split('window.exportStep =')[0]
-    assert 'if (!window.__noodleShot && !(await persistToServer(json)))' in body
+    assert 'if (!window.__noodleShot && autosaveOn() && !(await persistToServer(json)))' in body
     assert 'body:window.__noodleShot ? undefined : json' in body
     # and the flag is still stamped before the page loads
     assert "window.__noodleShot = true;" in inspect.getsource(screenshot)

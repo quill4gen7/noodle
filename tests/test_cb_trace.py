@@ -471,3 +471,22 @@ def test_the_trace_says_what_a_drag_of_each_value_costs(tmp_path):
         assert json.loads(out.read_text())["fast"] == {}
     finally:
         sys.modules.pop("_noodle_cbt", None)
+
+
+def test_a_replay_also_sends_the_pieces_of_other_changed_values():
+    """⚡ Fast mode never re-runs on release, so a second slider must not make the
+    first one's pieces vanish: `also` asks for theirs as well."""
+    rt = run_fn(PEGS)
+    rt._cbt_placed = lambda obj, M, curves: obj
+    prev, _ = rt._cbt_replay(keep_of(rt), {"k": 4.0, "w": 70.0}, "w")
+    assert sorted(o.name for o in prev.values()) == ["at(70.0, 0.0, 0.0)(Box(70.0,5,5))"]
+    prev, _ = rt._cbt_replay(keep_of(rt), {"k": 4.0, "w": 70.0}, "w", also=["k"])
+    assert len(prev) == 4 and "at(70.0, 0.0, 0.0)(Box(70.0,5,5))" in {o.name for o in prev.values()}
+    # a name that did not change brings nothing
+    prev, _ = rt._cbt_replay(keep_of(rt), {"w": 70.0}, "w", also=["k"])
+    assert len(prev) == 1
+
+
+def test_the_trace_route_can_trace_the_editor_snapshot():
+    server = (ROOT / "server.py").read_text()
+    assert 'snap = body if body and "nodes" in body else None' in server
