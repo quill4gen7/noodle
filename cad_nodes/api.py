@@ -162,6 +162,29 @@ def codeblock_trace(store: GraphStore, graph_id: str, node_ref: str,
     res["node"] = node.id
     return res
 
+
+def codeblock_trace_replay(store: GraphStore, graph_id: str, trace_id: str, values: dict,
+                           focus: Optional[str] = None, probe: Optional[list] = None,
+                           heavy_ms: Optional[float] = None) -> dict:
+    """🔦 The pieces `focus` lights, rebuilt for `values` (the #@params that
+    differ from the trace, name → number) from the recipes the trace left in
+    the warm worker — no graph run, no boolean on the body. Items come back
+    as a new mesh (`mesh: true`, in `previews`) or, when the values only MOVE
+    the piece, as `D`: a 4x4 row-major matrix from where the trace drew it.
+    `probe` = extra values of `focus` measured as matrices only (`frames`).
+    `heavy_ms` = the rebuild budget (default 1500, 20…1500): the cheapest pieces
+    first, the rest come back moved in their old shape (`old: true`).
+    `gone: true` = trace again. Saves nothing."""
+    from .executor import codeblock_trace_replay as _replay
+    if not isinstance(values, dict) or not all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                                               for v in values.values()):
+        raise ValueError("`values` must map param names to numbers")
+    if probe is not None and (not isinstance(probe, list) or len(probe) > 8):
+        raise ValueError("`probe` must be a list of at most 8 numbers")
+    heavy = 1.5 if heavy_ms is None else min(1.5, max(0.02, float(heavy_ms) / 1000))
+    return _replay(store.dir(graph_id), str(trace_id), values, focus, probe, heavy_s=heavy)
+
+
 # --- node addressing -------------------------------------------------------
 def resolve_node(graph: Graph, ref: str) -> Node:
     """Find a node by id, or else by its exact user-given title.

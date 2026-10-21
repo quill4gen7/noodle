@@ -2380,11 +2380,53 @@ when the block's code or `_cb` changed since. 🔦 Spegni traccia clears it.
 - Limits: a value used only in an `if` lights nothing (`silent` in the
   answer); numbers read back from geometry (`bb.min.Y`) lose their params;
   the overlay is in the block's own output frame (a Move node downstream is
-  not applied). Not built yet: step 3 — rebuilding the lit pieces live while
-  the slider drags (the derivatives + 60 fps browser rebuild of the plan).
+  not applied).
 - Surfaces: `POST /api/graph/{name}/codeblock/{node}/trace` (`off_loop`),
   `api.codeblock_trace`, MCP `cad_codeblock_trace` (lean: per value the pieces
   it shapes with their lines, how many it moves, `silent`).
+
+**⚡ Step 3 — the lit pieces follow a drag.** With Live on, a hand (or ▶) on a
+traced slider no longer waits for the run: the pieces that value lights are
+rebuilt by the server and drawn over the ghosted scene; the one exact run
+happens on release (`liveFire` holds while `cbtHolding()`).
+
+- **Replay, not a run** (`POST …/codeblock/{node}/trace/replay`, body `{trace,
+  values, focus, probe, heavy_ms}`, `executor.codeblock_trace_replay`). The
+  trace PARKS its recipes in the warm worker (`sys.modules["_noodle_cbt"]`, ONE
+  trace — creepyfinger's holds ~2 GB; `gone: true` = trace again). Every
+  recorded object keeps up to 4 recipes (`R["RCP"]`, innermost first, all kept
+  alive in `R["KEEP"]` — a freed id once handed a new shape a stale recipe);
+  numbers carry theirs in `_r` (`param`/`op`/`call`/`item`); a call snapshots
+  the closure cells and globals of user functions so helpers and loop variables
+  replay at THEIR value. Only the lit pieces are rebuilt, never a boolean on the
+  body; a piece the values only move comes back as a matrix `D` (16 floats, row
+  major, relative to where the trace drew it). Over budget (`heavy_ms`, the
+  editor asks 250) the cheapest first, the rest `old: true`; wall clock
+  2.5×budget. `probe`: up to 8 values of `focus` measured as matrices only.
+- **Branches**: comparisons, `bool()` and `index()` of traced numbers are
+  recorded with their outcome and line; after a replay they are re-decided in
+  FRAME mode (numbers and locations only, 0.25 s) and `approx`/`flips` name the
+  lines whose `if` would go the other way. **Never re-decide in full mode**:
+  it rebuilt whole bodies (`pulisci`/`.solids()` loops) and on 2026-10-21 that
+  filled the mini PC's RAM and swap and froze it — hence also `memguard` (a
+  worker over `NOODLE_WORKER_MAX_MB` is killed: "Memoria esaurita").
+- **60 fps between answers**: the editor probes 7 values across the drag window
+  + the current one; between two samples a moved piece follows the SCREW from
+  one matrix to the next (rotation about B·A⁻¹'s own axis through its fixed
+  point + the slide along it — a lerp would cut an arc's chord). A rebuilt mesh
+  is placed at the value it was built for, so `T(v)·T(v_ref)⁻¹` carries it.
+  One request in flight; the next goes with whatever the slider says when it
+  lands. Measured: tars 17-35 ms per answer for a small value, ~1.7 s for
+  `gioco` (78 rebuilt, 29 left grey); creepyfinger `largo_retro` ~0.8 s,
+  container peak 1.4 GB.
+- **⚡ beside a slider** = this value replays live (`data.fast[p]` from the
+  trace: pieces rebuilt + their measured cost, pieces moved). Yellow = within
+  250 ms, orange = the heavy pieces stay grey until release, grey = Live is
+  off. The hover label says the same in words. `cbtSig` ignores numeric `_cb`
+  values (a drag must not make the trace "old"); code or a toggle/select does.
+- Validated by replaying against a real trace at the new value (bbox per
+  piece): tars 96%, walle 93%, creepyfinger 83%; the misses checked in-process
+  were the truth's own run-to-run instability, not the replay.
 
 ## 9d. Exports — the bake bundle and the per-workflow index
 

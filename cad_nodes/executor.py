@@ -1076,7 +1076,7 @@ def codeblock_trace_run(graph: Graph, node_id: str, workdir: Path,
     out = run_dir(workdir.resolve(), run_id) / "trace.json"
     t0 = time.time()
     code_run = (cb_trace.RUNTIME + "\n" + transpile(sub, memo=True)
-                + cb_trace.TAIL.format(budget=budget, out=str(out)))
+                + cb_trace.TAIL.format(budget=budget, out=str(out), tid=run_id))
     res = execute_code(code_run, workdir, timeout=timeout, write_stl=False,
                        run_id=run_id, publish=False)
     try:
@@ -1092,6 +1092,40 @@ def codeblock_trace_run(graph: Graph, node_id: str, workdir: Path,
         "previews": {k: v for k, v in previews.items() if k.startswith("cbt:")},
         "error": (err.get("message") if isinstance(err, dict) else err) or res.get("errors"),
     }
+
+
+def codeblock_trace_replay(workdir: Path, trace_id: str, values: dict,
+                           focus: str | None = None, probe: list | None = None,
+                           heavy_s: float = 1.5, timeout: int = 60) -> dict:
+    """🔦 step 3 — the pieces a value lights, again, for other values: while a
+    slider drags, the editor asks this with the values that differ from the
+    trace. It runs nothing of the graph: the trace parked its recipes in the
+    warm worker (cb_trace_rt._cbt_finish) and only the lit pieces are rebuilt
+    — never a boolean on the body, so it costs what the pieces cost (the
+    trace's 100 ms budget each). A piece only MOVED comes back as a matrix.
+    `gone` = the worker no longer holds that trace (restarted, cold mode, or
+    a newer trace since — it keeps one): trace again."""
+    from . import cb_trace
+    vals = {str(k): float(v) for k, v in (values or {}).items()}
+    run_id = uuid.uuid4().hex
+    out = run_dir(workdir.resolve(), run_id) / "replay.json"
+    t0 = time.time()
+    code_run = cb_trace.REPLAY.format(tid=str(trace_id), values=vals, focus=focus,
+                                      probe=[float(v) for v in (probe or [])],
+                                      heavy=float(heavy_s), out=str(out))
+    res = execute_code(code_run, workdir, timeout=timeout, write_stl=False,
+                       run_id=run_id, publish=False)
+    try:
+        data = json.loads(out.read_text())
+    except (OSError, ValueError):
+        return {"success": False, "error": res.get("errors") or "replay produced nothing"}
+    if data.get("gone"):
+        return {"success": False, "gone": True,
+                "error": "the worker no longer holds this trace: trace again"}
+    previews = ((res.get("view") or {}).get("previews") or {})
+    data["wall_s"] = round(time.time() - t0, 3)
+    return {"success": True, **data,
+            "previews": {k: v for k, v in previews.items() if k.startswith("cbt:")}}
 
 
 def operand_meshes(graph: Graph, node_ids: list[str], workdir: Path,
