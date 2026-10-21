@@ -1096,7 +1096,8 @@ def codeblock_trace_run(graph: Graph, node_id: str, workdir: Path,
 
 def codeblock_trace_replay(workdir: Path, trace_id: str, values: dict,
                            focus: str | None = None, probe: list | None = None,
-                           heavy_s: float = 1.5, timeout: int = 60) -> dict:
+                           heavy_s: float = 1.5, timeout: int = 60,
+                           also: list | None = None) -> dict:
     """🔦 step 3 — the pieces a value lights, again, for other values: while a
     slider drags, the editor asks this with the values that differ from the
     trace. It runs nothing of the graph: the trace parked its recipes in the
@@ -1112,7 +1113,8 @@ def codeblock_trace_replay(workdir: Path, trace_id: str, values: dict,
     t0 = time.time()
     code_run = cb_trace.REPLAY.format(tid=str(trace_id), values=vals, focus=focus,
                                       probe=[float(v) for v in (probe or [])],
-                                      heavy=float(heavy_s), out=str(out))
+                                      heavy=float(heavy_s), also=[str(a) for a in (also or [])],
+                                      out=str(out))
     res = execute_code(code_run, workdir, timeout=timeout, write_stl=False,
                        run_id=run_id, publish=False)
     try:

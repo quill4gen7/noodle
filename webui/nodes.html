@@ -377,8 +377,8 @@ body.touch-ui .toolbar [onclick="openPalette()"]::after{content:"☰ Comandi";fo
     <div class="tb-zone">
       <button class="tb-btn primary" id="btn-run" onclick="runGraph()" title="Run the graph (Ctrl+Enter)">▶ Run</button>
       <button class="tb-btn" id="btn-stop" onclick="stopRun()" disabled title="Cancel the current run">■ Stop</button>
-      <button class="tb-btn toggle js-live-btn" id="btn-live" onclick="toggleLive()" title="Auto-run on every change — and drags (Move/Rotate/Scale, a Drop timeline) replay live in the viewport while you hold them. Settings ⚙ turns that anticipation off.">Live</button>
-      <button class="tb-btn toggle js-cost-btn" id="btn-cost" onclick="toggleCost()" title="Show each node's cost from the last run (blue = served by the cache)">Costi</button>
+      <button class="tb-btn toggle js-live-btn" id="btn-live" onclick="toggleLive()" title="Live: ogni modifica ricalcola il modello esatto (anche al rilascio di uno slider)">Live</button>
+      <button class="tb-btn toggle js-fast-btn" id="btn-fast" onclick="toggleFast()" title="⚡ Fast: trascinando, i nodi col ⚡ si aggiornano subito nella vista; il calcolo esatto parte solo con ▶ Run (Ctrl+Enter). Spegne Live.">⚡ Fast</button>
       <button class="tb-btn" id="btn-arrange" onclick="arrangeGraph()" title="Riordina i nodi: da sinistra a destra per profondità, senza sovrapposizioni, gruppi tenuti insieme (Ctrl+Shift+A)">⊞ Riordina</button>
       <div class="status-pill" id="status">Ready</div>
       <span class="health-dot" id="health" title="Backend health"></span>
@@ -639,14 +639,16 @@ function previewStale(){
   // say so where the eye already is, or the feature looks broken (it is off by
   // default on every page load).
   el.textContent = 'Preview out of date — Run to update'
-    + (!liveMode && fastEnabled && antMarks.size ? ' · attiva Live per l\'anteprima istantanea ⚡' : '');
+    + (!fastDrag() && antMarks.size ? ' · attiva ⚡ Fast per l\'anteprima istantanea' : '');
   el.classList.add('visible');
 }
 // The drag is being shown locally: say so instead of "out of date", which it is
 // not (it stayed lit for the whole gesture). The exact re-bake replaces it.
 function previewAnticipated(){
   const el = document.getElementById('viewer-stats');
-  el.textContent = '⚡ Anteprima istantanea — ricalcolo esatto al rilascio'; el.classList.add('visible');
+  el.textContent = liveMode ? '⚡ Anteprima istantanea — ricalcolo esatto al rilascio'
+                            : '⚡ Anteprima veloce — ▶ Run (Ctrl+Enter) per il calcolo esatto';
+  el.classList.add('visible');
 }
 window.stopRun = function(){
   runPending = false; clearTimeout(liveTimer);
@@ -685,7 +687,13 @@ const FAST_FLAG = 'noodle:settings:fastDrag';
 const HQ_FLAG = 'noodle:settings:hqRender';
 setQuality(localStorage.getItem(HQ_FLAG) !== '0');
 let fastEnabled = localStorage.getItem(FAST_FLAG) !== '0';
-const fastDrag = () => liveMode && fastEnabled;
+// ⚡ Fast is the anticipation WITHOUT the exact run on release (quill: «il
+// ricalcolo appena lasci da noia»): drags show at once, ▶ Run computes. Live
+// and Fast exclude each other; Live keeps anticipating while you hold (the
+// setting above), then re-runs.
+const FASTMODE_FLAG = 'noodle:settings:fastMode';
+let fastMode = localStorage.getItem(FASTMODE_FLAG) === '1';
+const fastDrag = () => fastMode || (liveMode && fastEnabled);
 let previewMeshes = {};    // graph node-id -> THREE.Mesh currently shown
 let previewAnims  = {};    // graph node-id -> Drop animation plan (view previews[].anim)
 // RefImage: editor-only textured quads drawn in the viewport as modelling refs
@@ -1200,8 +1208,10 @@ function sliderCfg(node, w){
   }
   const v = Number(w.value) || 0;
   const cap = (w.softMax != null) ? Math.min(w.softMax, h.max) : h.max;
-  let hi = Math.max(Math.min(cap, Math.max(10, niceCap(v))), h.min);
-  let lo = Math.min(Math.max(h.min, v < 0 ? -niceCap(-v) : -10), hi);
+  // headroom: a value never sits ON the window's edge (niceCap(10) is 10, so a
+  // flessione = 10 got −10…10 and could never be dragged up — only the ⚙ could)
+  let hi = Math.max(Math.min(cap, Math.max(10, niceCap(v > 0 ? v * 1.25 : v))), h.min);
+  let lo = Math.min(Math.max(h.min, v < 0 ? -niceCap(-v * 1.25) : -10), hi);
   // The window only GROWS (w._win, this session): derived from the value alone, it
   // collapsed back to −10…10 the moment a value of 120 went below 10, and the
   // slider could never bring it back.
@@ -1270,6 +1280,7 @@ function cadSliderMouse(ev, pos, node, w){
   if (down){ w._drag = true; w._dragCfg = sliderCfg(node, w);
              w._x0 = pos[0]; w._v0 = Number(w.value) || 0; stopSliderPlay(w);
              antPrepare(node);              // operands fetched before the first move (§6b)
+             cbtPrepare(node, w);           // 🔦 a CodeBlock slider: trace it once, then ⚡
              return true; }   // a hand on the slider wins
   if (move && w._drag){
     const cfg = w._dragCfg || sliderCfg(node, w);
@@ -1747,7 +1758,7 @@ function syncCodeblockOutputs(node, code){
 }
 
 function makeCbWidget(node, d, val){
-  const set = v => { node._cb = node._cb || {}; node._cb[d.name] = v; onParamChange(node); };
+  const set = v => { node._cb = node._cb || {}; node._cb[d.name] = v; node._cbtLast = d.name; onParamChange(node); };
   let w;
   if (d.type === 'bool'){
     w = node.addWidget('toggle', '◆ ' + d.name, !!val, v => set(!!v));
@@ -2100,28 +2111,48 @@ function cbtClear(){
   const info = document.getElementById('cbt-info'); if (info) info.remove();
   if (n && n.setDirtyCanvas) n.setDirtyCanvas(true, true);
 }
-async function traceCodeblock(node){
-  if (!currentName) return;
-  // the trace reads the SAVED block: save what is on the canvas first
-  if (!(await persistToServer())) { toast('error', 'Salvataggio non riuscito: la traccia legge il blocco salvato'); return; }
+let cbtTracing = null;   // the block a trace is running for (one at a time)
+// the block needs a (new) trace before its sliders can replay live
+function cbtNeedsTrace(node){
+  return !cbTrace || cbTrace.node !== node || cbTrace.stale || cbTrace.gone;
+}
+// pointer down on a CodeBlock slider with ⚡ Fast (or Live) on: trace it in the
+// background the first time, so the ⚡ needs no trip to the node menu
+function cbtPrepare(node, w){
+  if (!fastDrag() || READ_ONLY || !node || node.cadType !== 'CodeBlock' || !w.cbParam || w.disabled) return;
+  if (cbtTracing || !cbtNeedsTrace(node)) return;
+  traceCodeblock(node, true);
+}
+async function traceCodeblock(node, auto = false){
+  if (!currentName || cbtTracing) return;
   const id = graphIdOf(node), name = currentName;
-  toast('info', '🔦 Traccia: una corsa del blocco, i pezzi arrivano alla fine…');
+  const label = node.title || 'CodeBlock';
+  cbtTracing = node;
+  toast('info', auto ? `🔦 Preparo il trascinamento veloce di «${label}»: una corsa del blocco…`
+                     : '🔦 Traccia: una corsa del blocco, i pezzi arrivano alla fine…');
   let d;
   try {
+    // the canvas as it is, unsaved edits included: tracing never forces a save
     const r = await fetchTimed(`${API}/api/graph/${encodeURIComponent(name)}/codeblock/${encodeURIComponent(id)}/trace`,
-                               {method: 'POST'}, 900000);
+                               {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify(toGraphJSON(name))}, 900000);
     d = await r.json();
     if (!r.ok) throw new Error(d.detail || r.status);
   } catch(e){ toast('error', 'Traccia: ' + e.message); return; }
+  finally { cbtTracing = null; }
+  if (name !== currentName || !node.graph) return;
   if (!(d.items || []).length){ toast('error', 'Traccia: ' + (d.error || 'nessun pezzo nel risultato')); return; }
   cbtClear();
   const group = new THREE.Group(); group.name = 'cb-trace'; group.renderOrder = 8;
   viewer.scene.add(group);
   const byKey = {}; for (const it of d.items) byKey[it.key] = it;
-  cbTrace = {node, id, name, data: d, byKey, sig: cbtSig(node), stale: false, group, cache: new Map(), shown: null};
-  const n = Object.keys(d.params || {}).length;
-  toast('success', `🔦 ${d.items.length} pezzi, ${n} valori collegati` + ((d.silent||[]).length ? ` (${d.silent.length} senza pezzi)` : '')
-        + ' — passa sopra uno slider del blocco');
+  cbTrace = {node, id, name, data: d, byKey, sig: cbtSig(node), stale: false, gone: false, group, cache: new Map(),
+             shown: null, baked: {...(d.values || {})}};
+  const n = Object.keys(d.params || {}).length, nf = Object.keys(d.fast || {}).length;
+  toast('success', auto
+    ? `⚡ «${label}» pronto: ${nf} slider col ⚡ si aggiornano trascinandoli`
+    : `🔦 ${d.items.length} pezzi, ${n} valori collegati` + ((d.silent||[]).length ? ` (${d.silent.length} senza pezzi)` : '')
+      + ' — passa sopra uno slider del blocco');
   node.setDirtyCanvas(true, true);
 }
 // geometry per key, built once (the view.json shapes: mesh / polylines / points)
@@ -2149,6 +2180,20 @@ function cbtGeomOf(p){
 }
 function cbtObjects(g, color, strong, live = false){
   const out = [], fade = cbTrace.stale ? 0.5 : 1;
+  if (g.kind === 'mesh' && live){
+    // while dragging the pieces stand in for the part: lit solids that read as
+    // shape (a flat amber over 100 pieces read as one blob), the colour on the
+    // outline; a piece still in its old shape stays a grey ghost
+    const old = color === CBT_OLD;
+    // half see-through: the pieces are what goes INTO the booleans, a solid shell
+    // before its cavity is cut among them, and opaque it hid the whole inside
+    out.push(new THREE.Mesh(g.geo, new THREE.MeshStandardMaterial({color: old ? 0x9ca3af : 0xe8d9a8,
+      roughness: 0.6, metalness: 0.05, transparent: true, opacity: old ? 0.25 : 0.5, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1, side: THREE.DoubleSide})));
+    out.push(new THREE.LineSegments(g.edges, new THREE.LineBasicMaterial({color, transparent: true, opacity: old ? 0.4 : 0.9})));
+    for (const o of out){ o.renderOrder = 9; o.raycast = () => {}; }
+    return out;
+  }
   if (g.kind === 'mesh'){
     // the piece lies ON the part's faces: pulled forward so it wins the depth test,
     // and its outline drawn through the part so a piece inside still reads
@@ -2262,9 +2307,12 @@ function cbtCheckStale(){
 // The ⚡ left of a slider says which values do this: yellow = every piece
 // rebuilt within ~250 ms, orange = the heavy ones lag (grey) until release,
 // grey ⚡ = it would, with Live on.
-const CBT_OLD = 0xa8a29e, CBT_FULL_MS = 250, CBT_PROBES = 7;
+// CBT_PROBES: matrices across the drag window, asked ONCE per drag (each costs a
+// recompute of every moving piece's placement — 0.33 s apiece on creepyfinger's
+// flessione, so 8 per answer made every answer 3 s instead of 0.7)
+const CBT_OLD = 0xa8a29e, CBT_FULL_MS = 250, CBT_PROBES = 5;
 function cbtFast(node, name){
-  if (!cbTrace || cbTrace.node !== node || cbTrace.stale || !cbTrace.data.trace) return null;
+  if (!cbTrace || cbTrace.node !== node || cbTrace.stale || cbTrace.gone || !cbTrace.data.trace) return null;
   const f = (cbTrace.data.fast || {})[name];
   return f ? (f.rebuild_ms <= CBT_FULL_MS ? 'full' : 'part') : null;
 }
@@ -2278,28 +2326,43 @@ function drawCbtFast(ctx, node, w, y, H){
   ctx.restore();
 }
 function cbtHolding(){ const L = cbTrace && cbTrace.live; return !!(L && (L.w._drag || isPlaying(L.w))); }
-// the values that differ from the trace (a wired one is the wire's business)
-function cbtValues(){
-  const V = {}, base = cbTrace.data.values || {};
+// the block's traced values as the sliders say now (a wired one is the wire's business)
+function cbtNowVals(){
+  const out = {}, base = cbTrace.data.values || {};
   for (const w of cbTrace.node.widgets || []){
     if (!w.cbParam || w.disabled || !(w.cbParam in base)) continue;
     const v = Number(w.value);
-    if (Number.isFinite(v) && Math.abs(v - base[w.cbParam]) > 1e-9) V[w.cbParam] = v;
+    if (Number.isFinite(v)) out[w.cbParam] = v;
   }
+  return out;
+}
+// the ones that differ from the trace: what the replay must change
+function cbtValues(){
+  const V = {}, base = cbTrace.data.values || {}, now = cbtNowVals();
+  for (const [n, v] of Object.entries(now)) if (Math.abs(v - base[n]) > 1e-9) V[n] = v;
   return V;
+}
+// the ones moved since the last exact run (⚡ Fast never runs on release): their
+// pieces come back too, so a second slider does not hide the first one's
+function cbtPending(){
+  const now = cbtNowVals(), b = cbTrace.baked || {};
+  return Object.keys(now).filter(n => Math.abs(now[n] - (b[n] ?? now[n])) > 1e-9);
 }
 // onParamChange of the traced block: true = shown live, the run waits for release
 function cbtLiveChange(node){
   if (!cbTrace || cbTrace.node !== node) return false;
-  const w = (node.widgets || []).find(x => x.cbParam && (x._drag || isPlaying(x)));
-  if (!w || !cbtFast(node, w.cbParam)) return false;     // a typed value just runs
+  // a hand or ▶ on a slider; in ⚡ Fast also a typed value (Live just runs it)
+  const w = (node.widgets || []).find(x => x.cbParam && (x._drag || isPlaying(x)))
+         || (fastMode ? (node.widgets || []).find(x => x.cbParam && x.cbParam === node._cbtLast && x.hard) : null);
+  if (!w || !cbtFast(node, w.cbParam)) return false;
   let L = cbTrace.live;
-  if (!L || L.w !== w){
-    cbtLiveEnd();
+  if (!L){
     cbtShow(null);
-    L = cbTrace.live = {param: w.cbParam, w, items: null, tables: {}, objs: new Map(),
+    L = cbTrace.live = {param: w.cbParam, w, items: null, tables: {}, objs: new Map(), also: [],
                         busy: false, again: false, n: 0, ms: 0, d: null};
     cbTrace.shown = '⚡';                                 // the hover overlay stays off
+  } else if (L.w !== w){
+    L.w = w; L.param = w.cbParam; L.tables = {};          // another slider: the others' pieces stay
   }
   cbtGhost(true);
   cbtLiveDraw();
@@ -2315,8 +2378,15 @@ async function cbtPump(){
     do {
       L.again = false;
       const v = Number(L.w.value), cfg = L.w._dragCfg || sliderCfg(T.node, L.w);
+      const also = cbtPending().filter(n => n !== L.param);
+      // the moving pieces' matrices depend on the OTHER values too: a new set, a new table
+      const tkey = JSON.stringify([L.param, Object.entries(cbtValues()).filter(([n]) => n !== L.param)]);
+      if (L.tkey !== tkey){ L.tkey = tkey; L.tables = {}; L.full = false; }
+      // the first answer quick (the current value only), the window's matrices
+      // with the second, then current values again: 60 fps from the table
+      const win = !L.full && L.n > 0;
       const probe = [v];
-      for (let i = 0; i < CBT_PROBES; i++){
+      if (win) for (let i = 0; i < CBT_PROBES; i++){
         const x = cfg.lo + (cfg.hi - cfg.lo) * i / (CBT_PROBES - 1);
         probe.push(L.w.isInt ? Math.round(x) : +x.toFixed(6));
       }
@@ -2325,30 +2395,36 @@ async function cbtPump(){
       try {
         const r = await fetchTimed(`${API}/api/graph/${encodeURIComponent(T.name)}/codeblock/${encodeURIComponent(T.id)}/trace/replay`,
           {method: 'POST', headers: {'Content-Type': 'application/json'},
-           body: JSON.stringify({trace: T.data.trace, values: cbtValues(), focus: L.param, probe,
+           body: JSON.stringify({trace: T.data.trace, values: cbtValues(), focus: L.param, probe, also,
                                  heavy_ms: CBT_FULL_MS})}, 30000);
         d = await r.json();
         if (!r.ok && !d.gone) throw new Error(d.detail || d.error || r.status);
       } catch(e){ log('🔦 replay: ' + e.message, 'err'); break; }
       if (cbTrace !== T || T.live !== L) return;           // released and baked, or another drag
       if (d.gone){
-        T.data.trace = null;
-        toast('info', '🔦 Il worker non ha più la traccia: 🔦 Aggiorna traccia dal menu del blocco');
+        T.data.trace = null; T.gone = true;                // the next press on a slider traces again
+        toast('info', '🔦 Il worker non ha più la traccia: la rifaccio al prossimo trascinamento');
         cbtLiveEnd(); if (lcanvas) lcanvas.setDirty(true, true);
         return;
       }
-      cbtTake(L, d, probe, v);
+      L.also = also;
+      if (L.tkey === tkey) cbtTake(L, d, probe, v);
+      if (win && L.tkey === tkey) L.full = true;
       L.n++; L.ms = performance.now() - t0;
       cbtLiveDraw();
-    } while (L.again && cbTrace && cbTrace.live === L);
+    } while ((L.again || !L.full) && cbTrace && cbTrace.live === L);
   } finally { L.busy = false; }
 }
 function cbtMat(D){ const m = new THREE.Matrix4(); m.set(...D); return m; }
 function cbtTake(L, d, probe, v){
-  const tables = {};
+  // rows merge into the drag's table: the window's (kept) + the last few current values
+  const tables = L.tables || {};
   for (const [k, Ds] of Object.entries(d.frames || {})){
     if (Ds.length !== probe.length) continue;           // a probe failed: alignment lost
-    tables[k] = Ds.map((D, i) => [probe[i], cbtMat(D)]).sort((a, b) => a[0] - b[0]);
+    const fresh = Ds.map((D, i) => [probe[i], cbtMat(D), i > 0]);
+    const keep = (tables[k] || []).filter(r => !fresh.some(f => Math.abs(f[0] - r[0]) < 1e-9));
+    const win = keep.filter(r => r[2]), cur = keep.filter(r => !r[2]).slice(-6);
+    tables[k] = [...win, ...cur, ...fresh].sort((a, b) => a[0] - b[0]);
   }
   const items = {};
   for (const it of d.items || []){
@@ -2403,11 +2479,12 @@ function cbtLiveDraw(){
   if (!L || !viewer) return;
   const grp = T.group, v = Number(L.w.value), seen = new Set();
   let ns = 0, nm = 0, nold = 0;
-  for (const k of (T.data.params || {})[L.param] || []){
+  const keys = new Set([...((T.data.params || {})[L.param] || []), ...Object.keys(L.items || {})]);
+  for (const k of keys){
     const it = T.byKey[k]; if (!it) continue;
     const e = L.items && L.items[k], g = (e && e.g) || cbtGeom(k);
     if (!g) continue;
-    const strong = (it.shapes || []).includes(L.param);
+    const strong = (it.shapes || []).some(p => p === L.param || L.also.includes(p));
     // its shape not rebuilt (yet): flagged by the server, or no answer yet and
     // the value already away from the trace's
     const old = strong && (e ? !!e.old : Math.abs(v - ((T.data.values || {})[L.param] ?? v)) > 1e-9);
@@ -2438,7 +2515,7 @@ function cbtLiveDraw(){
     + (nold ? ` · <span style="color:#a8a29e">${nold} ancora vecch${nold === 1 ? 'io' : 'i'}</span>` : '')
     + (L.n ? ` · ${Math.round(L.ms)} ms` : ' · …')
     + (flips.length ? ` · <span style="color:#f87171">un if cambia strada (righe ${flips.slice(0, 6).join(', ')})</span>` : '')
-    + ' · esatto al rilascio';
+    + (liveMode ? ' · esatto al rilascio' : ' · ▶ Run per l\'esatto');
   viewer.invalidate();
 }
 // the baked scene, faded while the pieces move over it (and back) — all of it:
@@ -2469,11 +2546,19 @@ function cbtLiveEnd(){
   T.shown = undefined;
   cbtShow(null);
 }
-// after a render: the exact run landed — the live pieces have done their job
-function cbtAfterRender(){
-  if (!cbTrace || !cbTrace.live) return;
-  if (cbtHolding()) cbtGhost(true);                      // a new mesh under a hand still down
+// after a render: an exact run (`ran`) landed — the live pieces have done their
+// job; a display-only refresh (colour, finish) keeps them over the new meshes
+function cbtAfterRender(ran){
+  if (!cbTrace) return;
+  if (ran) cbTrace.baked = cbtNowVals();
+  if (!cbTrace.live) return;
+  if (cbtHolding() || !ran) cbtGhost(true);
   else cbtLiveEnd();
+}
+// a run is over, landed or not: in Live a failed one must not leave the pieces
+// up; in ⚡ Fast they stay (they are what you asked for) until a run lands
+function cbtRunOver(){
+  if (cbTrace && cbTrace.live && !cbtHolding() && !fastMode) cbtLiveEnd();
 }
 window.traceCodeblock = traceCodeblock;
 
@@ -3493,7 +3578,7 @@ async function postThumb(){
 // while the hand is still on the control the exact run waits (antHolding).
 function scheduleLive(anticipated = false){
   if (loadingGraph) return;
-  if (currentName) anticipated && liveMode ? previewAnticipated() : previewStale();
+  if (currentName) anticipated && fastDrag() ? previewAnticipated() : previewStale();
   if(!liveMode) return;
   clearTimeout(liveTimer);
   liveTimer = setTimeout(liveFire, 120);
@@ -3506,12 +3591,28 @@ function liveFire(){
   if (antHolding() || cbtHolding()){ liveTimer = setTimeout(liveFire, 120); return; }
   runGraph();
 }
+function syncModeButtons(){
+  document.querySelectorAll('.js-live-btn').forEach(b=>b.classList.toggle('on', liveMode));
+  document.querySelectorAll('.js-fast-btn').forEach(b=>b.classList.toggle('on', fastMode));
+  if (lcanvas) lcanvas.setDirty(true, true);   // the ⚡ marks light up / dim with the mode
+}
+function setFastMode(on){
+  fastMode = !!on;
+  try { localStorage.setItem(FASTMODE_FLAG, fastMode ? '1' : '0'); } catch(_){}
+}
 window.toggleLive = function(){
   liveMode = !liveMode;
-  document.querySelectorAll('.js-live-btn').forEach(b=>b.classList.toggle('on', liveMode));
+  if (liveMode && fastMode) setFastMode(false);
   if(liveMode) scheduleLive();
   else { clearTimeout(liveTimer); runPending = false; }
-  if (lcanvas) lcanvas.setDirty(true, true);   // the ⚡ marks light up / dim with Live
+  syncModeButtons();
+};
+window.toggleFast = function(){
+  setFastMode(!fastMode);
+  if (fastMode && liveMode){ liveMode = false; clearTimeout(liveTimer); runPending = false; }
+  syncModeButtons();
+  toast('info', fastMode ? '⚡ Fast: trascinando vedi subito, ▶ Run (Ctrl+Enter) per il calcolo esatto'
+                         : '⚡ Fast spento');
 };
 window.toggleCost = function(){
   showCost = !showCost;
@@ -4632,7 +4733,7 @@ window.runGraph = function(){
       while (runPending){ runPending = false; await executeCurrentGraph(); }
     } catch(e){ setStatus('execution failed','err'); log(e.message,'err'); }
     finally { runTask = null; runContext = null; document.getElementById('btn-stop').disabled = true;
-              cbtAfterRender(); }   // ⚡ a failed run too: the live pieces must not stay up
+              cbtRunOver(); }       // ⚡ a failed run too (Live): the live pieces must not stay up
   })();
   return runTask;
 };
@@ -4649,7 +4750,8 @@ async function executeCurrentGraph(){
   // over the file on disk — taking a picture destroyed the user's work, and
   // silently. /execute runs the graph ON DISK, which is exactly what an agent
   // wants rendered, so skipping the save is also the more correct behaviour.
-  if (!window.__noodleShot && !(await persistToServer(json))){
+  // autosave off: the run posts its snapshot (below) and saves nothing
+  if (!window.__noodleShot && autosaveOn() && !(await persistToServer(json))){
     if (sameSession()) setStatus('Save failed — execution not started','err');
     return;
   }
@@ -5240,9 +5342,9 @@ function costLabel(t){
 let antMarks = new Set();
 function computeAntMarks(){
   antMarks = new Set();
-  // fastEnabled, not fastDrag(): with Live off the marks are still drawn (dimmed),
-  // so the user can see which sliders WOULD be instant once Live is on.
-  if (!fastEnabled || !lgraph || !currentName) return 0;
+  // not fastDrag(): with both modes off the marks are still drawn (dimmed),
+  // so the user can see which sliders WOULD be instant in ⚡ Fast.
+  if (!lgraph || !currentName) return 0;
   const model = modelFromGraph(toGraphJSON(currentName), catalog);
   const screen = antScreen(null);
   for (const n of lgraph._nodes){
@@ -5254,12 +5356,12 @@ function computeAntMarks(){
   return antMarks.size;
 }
 function drawAntMark(ctx, n){
-  if (!antMarks.has(n) || !fastEnabled) return;
+  if (!antMarks.has(n)) return;
   const th = LiteGraph.NODE_TITLE_HEIGHT || 20;
   const shift = (showCost && lastCost && lastCost.get(n)) ? 56 : 0;   // sit left of the cost badge
   ctx.save();
   ctx.font = '12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = liveMode ? '#facc15' : '#6b7280';        // grey = needs Live
+  ctx.fillStyle = fastDrag() ? '#facc15' : '#6b7280';      // grey = needs ⚡ Fast or Live
   ctx.fillText('⚡', n.size[0] - 12 - shift, -th / 2);
   ctx.restore();
 }
@@ -5541,7 +5643,7 @@ function renderPreviews(view, bakedGraph = null){
   });
   previewMeshes = r.meshes;
   cbtCheckStale();                       // 🔦 the traced block edited since the trace?
-  cbtAfterRender();                      // ⚡ the exact run landed: the live pieces go
+  cbtAfterRender(!!bakedGraph);          // ⚡ the exact run landed: the live pieces go
   previewAnims = {};                     // Drop timelines riding the previews (fastDrag replay)
   const pvs = (view && view.previews) || {};
   for (const id in pvs) if (pvs[id] && pvs[id].anim) previewAnims[id] = pvs[id].anim;
@@ -6889,8 +6991,11 @@ function setDocState(s){
   const el = document.getElementById('doc-status');
   el.className = 'doc-status ' + s;
   el.querySelector('.lbl').textContent =
-    ({none:'No graph', saved:'Saved', dirty:'Unsaved', saving:'Saving…', failed:'Save failed'})[s];
-  el.onclick = (s==='failed') ? (()=>persistToServer().then(ok=>ok&&refreshGraphList())) : null;
+    ({none:'No graph', saved:'Saved', dirty: autosaveOn() ? 'Unsaved' : 'Non salvato · clic per salvare',
+      saving:'Saving…', failed:'Save failed'})[s];
+  el.title = autosaveOn() ? '' : 'Salvataggio automatico spento (⚙ Impostazioni): clic o Ctrl+S per salvare';
+  el.style.cursor = (s==='failed' || s==='dirty') ? 'pointer' : '';
+  el.onclick = (s==='failed' || s==='dirty') ? (()=>persistToServer().then(ok=>ok&&refreshGraphList())) : null;
 }
 // local draft (browser safety net) ---------------------------------
 function draftKey(name){ return 'noodle:draft:'+name; }
@@ -6929,8 +7034,14 @@ function checkDirty(){
     scheduleServerSave();
   }
 }
+// Autosave can be switched off (⚙ Settings): edits then stay on the canvas (and
+// in the local draft) until Ctrl+S or a click on the “Unsaved” pill; runs post
+// their snapshot without saving it.
+const AUTOSAVE_FLAG = 'noodle:settings:autosave';
+function autosaveOn(){ try { return localStorage.getItem(AUTOSAVE_FLAG) !== '0'; } catch(_){ return true; } }
 function scheduleServerSave(){
   clearTimeout(serverSaveTimer);
+  if (!autosaveOn()) return;
   const epoch = sessionEpoch;
   serverSaveTimer = setTimeout(()=>{
     serverSaveTimer = null;
@@ -7258,6 +7369,12 @@ window.openSettings = function(){
       `(your text + technical context + optional graph snapshot &amp; recent logs) under `+
       `<code>feedback/</code> so a coding agent can pick it up and fix it.</small></span></label>`+
     `<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;margin-top:12px">`+
+      `<input type="checkbox" id="set-autosave" ${autosaveOn()?'checked':''} style="margin-top:3px">`+
+      `<span><b>Salvataggio automatico</b><br>`+
+      `<small style="color:var(--txt-dim)">Acceso: ogni modifica viene salvata dopo 2,5 s. Spento: `+
+      `salvi tu, con Ctrl+S o un clic su «Non salvato»; le corse e la 🔦 traccia usano quello che `+
+      `c'è sul canvas senza salvarlo, e la bozza locale protegge comunque da una chiusura.</small></span></label>`+
+    `<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;margin-top:12px">`+
       `<input type="checkbox" id="set-cost" ${showCost?'checked':''} style="margin-top:3px">`+
       `<span><b>Show node costs</b><br>`+
       `<small style="color:var(--txt-dim)">Puts the last run's wall-clock on each node. `+
@@ -7265,7 +7382,7 @@ window.openSettings = function(){
       `recompute, hue by cost; red means it threw.</small></span></label>`+
     `<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;margin-top:12px">`+
       `<input type="checkbox" id="set-fast" ${fastEnabled?'checked':''} style="margin-top:3px">`+
-      `<span><b>Anticipate drags while Live is on</b><br>`+
+      `<span><b>Anticipate drags while Live is on</b> <small>(⚡ Fast always does)</small><br>`+
       `<small style="color:var(--txt-dim)">Dragging Move / Rotate / Scale — or a Drop timeline — `+
       `replays in the viewport at 60fps instead of waiting for the engine; the exact re-bake `+
       `lands when you let go. Turn it off if the local replay costs your machine more than `+
@@ -7279,6 +7396,9 @@ window.openSettings = function(){
     `<div class="modal-actions"><button class="tb-btn primary" id="set-ok">Done</button></div>`);
   const cb=m.ov.querySelector('#set-fb');
   cb.addEventListener('change', ()=>{ localStorage.setItem(FEEDBACK_FLAG, cb.checked?'1':'0'); applyFeedbackSetting(); });
+  const ca=m.ov.querySelector('#set-autosave');
+  ca.addEventListener('change', ()=>{ try { localStorage.setItem(AUTOSAVE_FLAG, ca.checked?'1':'0'); } catch(_){}
+    setDocState(docState); if (ca.checked && docState==='dirty') scheduleServerSave(); });
   const cc=m.ov.querySelector('#set-cost');
   cc.addEventListener('change', ()=>{ if (cc.checked !== showCost) toggleCost(); });
   const ch=m.ov.querySelector('#set-hq');
@@ -8194,6 +8314,7 @@ document.addEventListener('keydown', e=>{
   try { initViewer(); } catch(e){ log('3D viewer disabled: '+(e.message||e), 'err'); }
   applyFeedbackSetting();
   document.querySelectorAll('.js-cost-btn').forEach(b=>b.classList.toggle('on', showCost));
+  syncModeButtons();
   setHealth('busy'); setDocState('none');
   try{
     const getJSON = async (path, timeout=15000)=>{

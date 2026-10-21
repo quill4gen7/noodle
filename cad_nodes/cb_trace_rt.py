@@ -834,16 +834,19 @@ def _cbt_rel(M, M0):
     return [round(float(v), 9) for v in (A @ np.linalg.inv(B)).ravel()]
 
 
-def _cbt_replay(items, V, focus=None, probe=(), heavy_s=1.5, wall_s=4.0):
+def _cbt_replay(items, V, focus=None, probe=(), heavy_s=1.5, wall_s=4.0, also=()):
     """The pieces `focus` lights, with the params in V (name → value). A piece
     the changed values SHAPE is rebuilt (its recipe, nothing downstream: no
     boolean on the body ever runs); a piece they only MOVE comes back as a
     matrix from where the trace drew it. `probe`: more values of `focus`, for
     which only those matrices are measured — the editor's derivative, which
-    carries a moving piece at 60 fps between two answers."""
+    carries a moving piece at 60 fps between two answers. `also`: params
+    whose pieces come back too (rebuilt after the focus's, in the budget)."""
     t0 = _cbt_time.perf_counter()
     V = {n: v for n, v in V.items() if n in R["vals"]}
-    lit = [it for it in items if (focus in it["params"] if focus else it["params"] & set(V))]
+    extra = set(also or ()) & set(V)
+    lit = [it for it in items if ((focus in it["params"] or it["params"] & extra) if focus
+                                  else it["params"] & set(V))]
     keys = frozenset(V)
     # a feature's edges are picks of the shape they were picked from: rebuilt
     # as "item j of that shape's .edges()" (a count change can pick others)
@@ -852,7 +855,8 @@ def _cbt_replay(items, V, focus=None, probe=(), heavy_s=1.5, wall_s=4.0):
     # but in their old shape, flagged `old` (exact on release)
     cost = lambda it: R["nodes"][it["node"]].get("rcost", R["nodes"][it["node"]]["cost"])
     rebuild, acc = set(), 0.0
-    for it in sorted(shaped, key=cost):
+    # the dragged value's pieces first, then the cheapest
+    for it in sorted(shaped, key=lambda it: (focus is not None and focus not in it["params"], cost(it))):
         acc += cost(it)
         if acc > heavy_s:
             break
@@ -959,8 +963,8 @@ def _cbt_finish(budget, path, prefix="cbt:", tid=None):
             while len(mod.traces) >= 1:          # one: a creepyfinger trace holds ~2 GB
                 mod.traces.pop(next(iter(mod.traces)))
             # the wall clock follows the budget: a drag asks for a small one
-            mod.traces[tid] = {"R": R, "replay": lambda V, focus=None, probe=(), heavy_s=1.5:
-                               _cbt_replay(keep, V, focus, probe, heavy_s, max(0.6, 2.5 * heavy_s))}
+            mod.traces[tid] = {"R": R, "replay": lambda V, focus=None, probe=(), heavy_s=1.5, also=():
+                               _cbt_replay(keep, V, focus, probe, heavy_s, max(0.6, 2.5 * heavy_s), also)}
             live = True
         except Exception:
             live = False
