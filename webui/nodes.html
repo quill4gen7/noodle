@@ -31,6 +31,10 @@ body{font-family:var(--font);background:var(--bg-0);color:var(--text);}
 .tb-btn:hover{border-color:var(--text-dim);background:var(--bg-2);}
 .tb-btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;}
 .tb-btn.primary:hover{background:var(--accent-hover);}
+/* ● on ▶ Run: what the viewport shows is not the exact model yet (Live off) */
+.js-run-btn{position:relative;}
+.js-run-btn.needs-run::after{content:'';position:absolute;top:-4px;right:-4px;width:10px;height:10px;border-radius:50%;background:#facc15;box-shadow:0 0 0 2px var(--bg-0,#111);animation:needsRun 1.6s ease-in-out infinite;}
+@keyframes needsRun{50%{transform:scale(.7);opacity:.6}}
 .toolbar .spacer{flex:1;}
 .status-pill{font-size:11px;padding:3px 8px;border-radius:10px;background:var(--bg-3);color:var(--text-dim);}
 .status-pill.ok{color:var(--green);} .status-pill.err{color:var(--accent);}
@@ -375,7 +379,7 @@ body.touch-ui .toolbar [onclick="openPalette()"]::after{content:"☰ Comandi";fo
     <div class="tb-sep"></div>
     <!-- ZONA ESECUZIONE -->
     <div class="tb-zone">
-      <button class="tb-btn primary" id="btn-run" onclick="runGraph()" title="Run the graph (Ctrl+Enter)">▶ Run</button>
+      <button class="tb-btn primary js-run-btn" id="btn-run" onclick="runGraph()" title="Run the graph (Ctrl+Enter)">▶ Run</button>
       <button class="tb-btn" id="btn-stop" onclick="stopRun()" disabled title="Cancel the current run">■ Stop</button>
       <button class="tb-btn toggle js-live-btn" id="btn-live" onclick="toggleLive()" title="Live: ogni modifica ricalcola il modello esatto (anche al rilascio di uno slider)">Live</button>
       <button class="tb-btn toggle js-fast-btn" id="btn-fast" onclick="toggleFast()" title="⚡ Fast: trascinando, i nodi col ⚡ si aggiornano subito nella vista; il calcolo esatto parte solo con ▶ Run (Ctrl+Enter). Spegne Live.">⚡ Fast</button>
@@ -442,7 +446,7 @@ body.touch-ui .toolbar [onclick="openPalette()"]::after{content:"☰ Comandi";fo
           <label style="font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:4px">
             <input type="checkbox" id="sketch-closed"> closed</label>
           <button class="tb-btn toggle js-live-btn" id="sketch-live" onclick="toggleLive()" title="Auto-run on every change. Heavy graph? Turn this off while placing points, then Run when ready.">Live</button>
-          <button class="tb-btn" onclick="window.runGraph()" title="Run the graph now (Ctrl+Enter)">▶ Run</button>
+          <button class="tb-btn js-run-btn" onclick="window.runGraph()" title="Run the graph now (Ctrl+Enter)">▶ Run</button>
           <button class="tb-btn" id="sketch-del" disabled title="Delete the selected point (Del/Backspace)">🗑 Delete point</button>
           <span style="font-size:11px;color:var(--text-dim)">click add · click point=select · drag move · Del/shift/right-click delete</span>
           <button class="tb-btn" onclick="exitCurveDrawMode()" title="Finish drawing (Esc)">✓ Done</button>
@@ -633,7 +637,18 @@ async function fetchTimed(url, options = {}, timeout = 15000){
   try { return await fetch(url, {...options, signal: controller.signal}); }
   finally { clearTimeout(timer); }
 }
+// ● on every ▶ Run: the model changed and only a Run makes it exact. Live runs
+// by itself, so there the dot would only flicker — it shows with Live off
+// (⚡ Fast above all, where a drag shows an anticipation and never runs).
+function setNeedsRun(on){
+  on = !!on && !liveMode && !!currentName;
+  document.querySelectorAll('.js-run-btn').forEach(b => {
+    b.classList.toggle('needs-run', on);
+    b.title = on ? 'Il modello è cambiato: ▶ Run (Ctrl+Enter) per il calcolo esatto' : 'Run the graph (Ctrl+Enter)';
+  });
+}
 function previewStale(){
+  setNeedsRun(true);
   const el = document.getElementById('viewer-stats');
   // Live off: the ⚡ nodes would replay instantly, but only in Live (fastDrag) —
   // say so where the eye already is, or the feature looks broken (it is off by
@@ -645,6 +660,7 @@ function previewStale(){
 // The drag is being shown locally: say so instead of "out of date", which it is
 // not (it stayed lit for the whole gesture). The exact re-bake replaces it.
 function previewAnticipated(){
+  setNeedsRun(true);
   const el = document.getElementById('viewer-stats');
   el.textContent = liveMode ? '⚡ Anteprima istantanea — ricalcolo esatto al rilascio'
                             : '⚡ Anteprima veloce — ▶ Run (Ctrl+Enter) per il calcolo esatto';
@@ -669,6 +685,7 @@ function resetProjectSession(){
   if (gizmoNode) exitGizmoEdit();
   if (sketchNode) exitCurveDrawMode();
   lastView = null; lastRunJSON = null; lastObservedJSON = null; thumbWanted = false;
+  setNeedsRun(false);
   previewMeshes = {}; previewAnims = {}; lastNodeErrors = {};
   antFree();          // operands belong to the graph they came from: ids repeat across projects
   if (viewer){ viewer.clear(); viewer.resetFraming(); }
@@ -1259,7 +1276,7 @@ function drawCadSlider(ctx, node, w, width, y, H){
     ctx.fillText(`${w.name} (${trimNum(cfg.lo)}–${trimNum(cfg.hi)}${plus})  ${Number(w.value).toFixed(dec)}`,
                  margin + tw / 2, y + H * 0.7);
     ctx.textAlign = 'left';
-    if (w.cbParam) drawCbtFast(ctx, node, w, y, H);   // ⚡ this value replays live (🔦 step 3)
+    if (w.cbParam || cbTrace) drawCbtFast(ctx, node, w, y, H);   // ⚡ this value replays live (🔦 step 3)
   }
 }
 
@@ -2119,9 +2136,46 @@ function cbtNeedsTrace(node){
 // pointer down on a CodeBlock slider with ⚡ Fast (or Live) on: trace it in the
 // background the first time, so the ⚡ needs no trip to the node menu
 function cbtPrepare(node, w){
-  if (!fastDrag() || READ_ONLY || !node || node.cadType !== 'CodeBlock' || !w.cbParam || w.disabled) return;
-  if (cbtTracing || !cbtNeedsTrace(node)) return;
-  traceCodeblock(node, true);
+  if (!fastDrag() || READ_ONLY || !node || w.disabled) return;
+  // the block's own slider, or a value node wired straight into one of its #@param
+  const cb = node.cadType === 'CodeBlock' ? (w.cbParam ? node : null)
+           : (cbtWiredTargets(node)[0] || {}).node;
+  if (!cb || cbtTracing || !cbtNeedsTrace(cb)) return;
+  traceCodeblock(cb, true);
+}
+// ── a value WIRED into the block ──
+// The trace binds every numeric #@param by name, wired or not, so a Number
+// Slider wired STRAIGHT into a #@param socket can drive the replay exactly as
+// the block's own slider does. Only a direct wire from a value node whose own
+// value is not wired: anything in between (a Math node, a list) would have to
+// be evaluated in the browser, and then the anticipation could lie.
+function cbtSrcOf(node, name){
+  if (!lgraph) return null;
+  const ins = (node.inputs || []).filter(s => (s.cbName || s.cadName || s.name) === name && s.link != null);
+  if (ins.length !== 1) return null;                       // two wires = a list, not a value
+  const lk = lgraph.links[ins[0].link], src = lk && lgraph.getNodeById(lk.origin_id);
+  if (!src || src.cadType === 'CodeBlock' || typeof (src.properties || {}).value !== 'number') return null;
+  if ((src.inputs || []).some(s => s.link != null)) return null;
+  return src;
+}
+// [{node: CodeBlock, param}] the value node `src` drives directly
+function cbtWiredTargets(src){
+  const out = [];
+  if (!src || !lgraph || src.cadType === 'CodeBlock' || typeof (src.properties || {}).value !== 'number') return out;
+  for (const o of src.outputs || []) for (const lid of (o.links || [])){
+    const lk = lgraph.links[lid], tn = lk && lgraph.getNodeById(lk.target_id);
+    if (!tn || tn.cadType !== 'CodeBlock') continue;
+    const s = (tn.inputs || [])[lk.target_slot], name = s && (s.cbName || s.cadName || s.name);
+    if (name && (tn.widgets || []).some(w => w.cbParam === name) && cbtSrcOf(tn, name) === src)
+      out.push({node: tn, param: name});
+  }
+  return out;
+}
+// the traced param a value node drives live, if any
+function cbtWiredFast(src){
+  if (!cbTrace) return null;
+  for (const t of cbtWiredTargets(src)) if (t.node === cbTrace.node && cbtFast(t.node, t.param)) return t;
+  return null;
 }
 async function traceCodeblock(node, auto = false){
   if (!currentName || cbtTracing) return;
@@ -2317,7 +2371,8 @@ function cbtFast(node, name){
   return f ? (f.rebuild_ms <= CBT_FULL_MS ? 'full' : 'part') : null;
 }
 function drawCbtFast(ctx, node, w, y, H){
-  const lvl = w.cbParam && !w.disabled && cbtFast(node, w.cbParam);
+  const t = !w.cbParam && cbTrace && cbtWiredFast(node);
+  const lvl = w.disabled ? null : w.cbParam ? cbtFast(node, w.cbParam) : t ? cbtFast(t.node, t.param) : null;
   if (!lvl) return;
   ctx.save();
   ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -2330,8 +2385,13 @@ function cbtHolding(){ const L = cbTrace && cbTrace.live; return !!(L && (L.w._d
 function cbtNowVals(){
   const out = {}, base = cbTrace.data.values || {};
   for (const w of cbTrace.node.widgets || []){
-    if (!w.cbParam || w.disabled || !(w.cbParam in base)) continue;
-    const v = Number(w.value);
+    if (!w.cbParam || !(w.cbParam in base)) continue;
+    let v;
+    if (w.disabled){                                       // wired: only a value node wired straight in
+      const src = cbtSrcOf(cbTrace.node, w.cbParam);
+      if (!src) continue;
+      v = Number(src.properties.value);
+    } else v = Number(w.value);
     if (Number.isFinite(v)) out[w.cbParam] = v;
   }
   return out;
@@ -2354,15 +2414,27 @@ function cbtLiveChange(node){
   // a hand or ▶ on a slider; in ⚡ Fast also a typed value (Live just runs it)
   const w = (node.widgets || []).find(x => x.cbParam && (x._drag || isPlaying(x)))
          || (fastMode ? (node.widgets || []).find(x => x.cbParam && x.cbParam === node._cbtLast && x.hard) : null);
-  if (!w || !cbtFast(node, w.cbParam)) return false;
+  return !!w && cbtLiveStart(w, w.cbParam, node);
+}
+// onParamChange of a value node wired straight into the traced block
+function cbtLiveFrom(src){
+  const t = cbtWiredFast(src);
+  if (!t) return false;
+  const w = (src.widgets || []).find(x => x.hard && (x._drag || isPlaying(x)))
+         || (fastMode ? (src.widgets || []).find(x => x.hard && x.cadParam === 'value') : null);
+  return !!w && cbtLiveStart(w, t.param, src);
+}
+// `w` = the slider in the hand (`wn` = its node), driving the block's `param`
+function cbtLiveStart(w, param, wn){
+  if (!cbtFast(cbTrace.node, param)) return false;
   let L = cbTrace.live;
   if (!L){
     cbtShow(null);
-    L = cbTrace.live = {param: w.cbParam, w, items: null, tables: {}, objs: new Map(), also: [],
+    L = cbTrace.live = {param, w, wn, items: null, tables: {}, objs: new Map(), also: [],
                         busy: false, again: false, n: 0, ms: 0, d: null};
     cbTrace.shown = '⚡';                                 // the hover overlay stays off
-  } else if (L.w !== w){
-    L.w = w; L.param = w.cbParam; L.tables = {};          // another slider: the others' pieces stay
+  } else if (L.w !== w || L.param !== param){
+    L.w = w; L.wn = wn; L.param = param; L.tables = {};   // another slider: the others' pieces stay
   }
   cbtGhost(true);
   cbtLiveDraw();
@@ -2377,7 +2449,7 @@ async function cbtPump(){
   try {
     do {
       L.again = false;
-      const v = Number(L.w.value), cfg = L.w._dragCfg || sliderCfg(T.node, L.w);
+      const v = Number(L.w.value), cfg = L.w._dragCfg || sliderCfg(L.wn, L.w);
       const also = cbtPending().filter(n => n !== L.param);
       // the moving pieces' matrices depend on the OTHER values too: a new set, a new table
       const tkey = JSON.stringify([L.param, Object.entries(cbtValues()).filter(([n]) => n !== L.param)]);
@@ -2506,10 +2578,11 @@ function cbtLiveDraw(){
     L.objs.delete(k);
   }
   const d = L.d || {}, flips = (d.flips || {})[L.param] || [];
-  const dec = L.w.isInt ? 0 : stepDecimals((L.w._dragCfg || sliderCfg(T.node, L.w)).step);
+  const dec = L.w.isInt ? 0 : stepDecimals((L.w._dragCfg || sliderCfg(L.wn, L.w)).step);
   const info = cbtInfoEl();
   info.hidden = false;
   info.innerHTML = `⚡ <b style="color:#fbbf24">${cbtEsc(L.param)}</b> = ${v.toFixed(dec)}`
+    + (L.wn !== T.node ? ` <span style="color:#94a3b8">← ${cbtEsc(L.wn.title || L.wn.cadType)}</span>` : '')
     + (ns ? ` · <span style="color:#fbbf24">${ns} rifatt${ns === 1 ? 'o' : 'i'}</span>` : '')
     + (nm ? ` · <span style="color:#38bdf8">${nm} spostat${nm === 1 ? 'o' : 'i'}</span>` : '')
     + (nold ? ` · <span style="color:#a8a29e">${nold} ancora vecch${nold === 1 ? 'io' : 'i'}</span>` : '')
@@ -2760,7 +2833,7 @@ function openCurveEditor(node, name){
           '<label style="font-size:12px;color:var(--text-dim);display:flex;align-items:center;gap:4px">'+
             '<input type="checkbox" id="cv-comb"> curvature</label>'+
           '<button class="tb-btn toggle js-live-btn" id="cv-live" onclick="toggleLive()" title="Auto-run on every change. Heavy graph? Turn this off while dragging, then Run when ready.">Live</button>'+
-          '<button class="tb-btn" id="cv-run" onclick="window.runGraph()" title="Run the graph now (Ctrl+Enter)">▶ Run</button>'+
+          '<button class="tb-btn js-run-btn" id="cv-run" onclick="window.runGraph()" title="Run the graph now (Ctrl+Enter)">▶ Run</button>'+
           '<button class="tb-btn primary" id="cv-done">✓ Done</button>'+
         '</div>'+
       '</div>';
@@ -3603,7 +3676,7 @@ function setFastMode(on){
 window.toggleLive = function(){
   liveMode = !liveMode;
   if (liveMode && fastMode) setFastMode(false);
-  if(liveMode) scheduleLive();
+  if(liveMode){ setNeedsRun(false); scheduleLive(); }
   else { clearTimeout(liveTimer); runPending = false; }
   syncModeButtons();
 };
@@ -4197,6 +4270,11 @@ function onParamChange(node){
   if (node && node.cadGated) refreshSubtype(node);   // filter/transform: tag follows mode
   // 🔦⚡ a traced CodeBlock's slider: its pieces rebuilt live, the run on release
   if (node && node.cadType === 'CodeBlock' && fastDrag() && cbtLiveChange(node)){ scheduleLive(true); return; }
+  // …or a value node wired straight into one of its #@param (a Drop t it also feeds replays too)
+  if (node && node.cadType !== 'CodeBlock' && fastDrag() && cbtLiveFrom(node)){
+    if (applyDropTargets(node)) antTouched();
+    scheduleLive(true); return;
+  }
   const local = fastDrag() && applyLocalTransform(node);
   // Booleans downstream of the dragged node, redone on meshes in wasm. After a
   // local transform the node's own mesh is already handled — only what it feeds.
@@ -4842,6 +4920,7 @@ async function executeCurrentGraph(){
   // What is on screen now provably came from what is on disk now (runGraph saved
   // before executing) — the one moment a thumbnail can be taken truthfully.
   lastRunJSON = json;
+  setNeedsRun(false);
   if (!window.__noodleShot && json !== JSON.stringify(toGraphJSON(name))) previewStale();
   maybeThumb();
 }
