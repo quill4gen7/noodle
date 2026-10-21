@@ -234,3 +234,240 @@ def test_the_editor_lights_on_hover_and_never_runs():
     # hovering and letting go draw only: no run, no Live, no save in the hover path
     hover = blk[blk.index("function cbtShow"):blk.index("function cbtCheckStale")]
     assert "runGraph" not in hover and "scheduleLive" not in hover and "persistToServer" not in hover
+
+
+# ── step 3: replay — the lit pieces again, for another value, while dragging ──
+class Pos2:
+    """A Pos that writes its numbers into the moved shape's name."""
+    def __init__(self, *v):
+        self.v = tuple(float(x) for x in v)
+
+    def __mul__(self, s):
+        return Shape(f"at{self.v}({s.name})")
+
+
+SUBS = []
+
+
+class Body(Shape):
+    def __sub__(self, o):
+        SUBS.append(o)
+        return Body(f"({self.name}-{o.name})")
+
+
+def run_fn(code):
+    """The block as the transpiler runs it: inside a function, so helpers read
+    the params through closure cells (and loop variables too)."""
+    rt = fresh_rt()
+    ns = dict(vars(rt))
+    ns.update(Pos=Pos2, Box=Box, Cyl=Cyl, Body=Body)
+    body = cb_trace.instrument(code)
+    src = "def _blk():\n" + "".join("    " + ln + "\n" for ln in body.splitlines()) + "_blk()\n"
+    exec(compile(src, "<traced>", "exec"), ns)
+    return rt
+
+
+def keep_of(rt, budget=0.1):
+    out = []
+    for j, (i, S, mp, rung) in enumerate(rt._cbt_walk(budget)):
+        mb = set()
+        for (_T, _h, tp) in S:
+            mb |= tp
+        out.append({"key": f"cbt:{j}", "node": i, "S": S, "M0": rt._cbt_M(S), "rung": rung,
+                    "params": rt.R["nodes"][i]["p"] | mp, "moves_by": mb})
+    return out
+
+
+def replay(rt, V, focus):
+    rt._cbt_placed = lambda obj, M, curves: obj         # no build123d: the object itself
+    prev, res = rt._cbt_replay(keep_of(rt), V, focus)
+    return sorted(o.name for o in prev.values()), res
+
+
+PEGS = '''k = 2.0   #@param float min=1 max=9
+w = 50.0  #@param float min=10 max=90
+def peg():
+    return Pos(i * 10, 0, 0) * Box(k, k + 1, 1)
+pegs = []
+for i in range(3):
+    pegs += [peg()]
+body = Body("slab", 1.0)
+body = body - Pos(w, 0, 0) * Box(w, 5, 5)
+for g in pegs:
+    body = body - g
+result = body
+'''
+
+
+def test_a_replay_rebuilds_the_pieces_a_value_shapes_and_nothing_else():
+    rt = run_fn(PEGS)
+    SUBS.clear()
+    names, res = replay(rt, {"k": 4.0}, "k")
+    # each peg again with k = 4, at ITS OWN place: the helper reads k and the
+    # loop's i through closure cells, put back as they were at each call
+    assert names == ["at(0.0, 0.0, 0.0)(Box(4.0,5.0,1))", "at(10.0, 0.0, 0.0)(Box(4.0,5.0,1))",
+                     "at(20.0, 0.0, 0.0)(Box(4.0,5.0,1))"]
+    assert SUBS == []                                    # no boolean on the body ran
+    assert res["approx"] == [] and not res["errors"]
+    assert rt.R["vals"] == {"k": 2.0, "w": 50.0}
+    # the value that is not dragged keeps its own replayed value too
+    names, _ = replay(rt, {"k": 4.0, "w": 70.0}, "w")
+    assert names == ["at(70.0, 0.0, 0.0)(Box(70.0,5,5))"]
+
+
+def test_a_value_that_decides_a_branch_is_replayed_as_an_approximation():
+    code = '''a = 3.0  #@param float
+b = 2.0  #@param float
+n = 2    #@param int
+c = min(a, 9.0)
+if b > 1:
+    x = Box(b, 1, 1)
+else:
+    x = Cyl(b, 1)
+ys = []
+for i in range(n):
+    ys += [Pos(i, 0, 0) * Box(c, 1, 1)]
+body = Body("slab", 1.0) - x
+for y in ys:
+    body = body - y
+result = body
+'''
+    rt = run_fn(code)
+    assert rt.R["UNSAFE"] == {"b", "n"}        # min() chooses a value, not a branch
+    names, res = replay(rt, {"b": 5.0}, "b")   # b > 1 still: the same branch, exact
+    assert names == ["Box(5.0,1,1)"] and res["approx"] == []
+    names, res = replay(rt, {"b": 0.5}, "b")   # b > 1 no more: the real run takes the else
+    assert res["approx"] == ["b"] and res["flips"] == {"b": [5]}
+    _, res = replay(rt, {"n": 3}, "n")          # one more piece than the trace counted
+    assert res["approx"] == ["n"]
+    _, res = replay(rt, {"n": 2}, "n")
+    assert res["approx"] == []
+
+
+def test_a_replay_runs_nothing_into_the_trace():
+    rt = run_fn(PEGS)
+    before = (len(rt.R["nodes"]), len(rt.R["KEEP"]), len(rt.R["RCP"]))
+    replay(rt, {"k": 3.0}, "k")
+    assert (len(rt.R["nodes"]), len(rt.R["KEEP"]), len(rt.R["RCP"])) == before
+    assert rt.R["off"] is False
+
+
+def test_the_replay_surfaces_are_one_operation():
+    server = (ROOT / "server.py").read_text()
+    assert '@app.post("/api/graph/{name}/codeblock/{node_id}/trace/replay")' in server
+    assert "off_loop(api.codeblock_trace_replay" in server
+
+
+def test_a_remembering_number_copies_and_pickles_as_a_number():
+    import copy
+    import pickle
+    rt = fresh_rt()
+    a = rt.__cbt_param__(3.0, "a")
+    b = a * 2
+    assert copy.deepcopy(b) is b and copy.copy(b) is b
+    assert pickle.loads(pickle.dumps([b])) == [6.0]
+
+
+class Picks(list):
+    """A ShapeList: a list subclass, its own params empty, its items carry them."""
+
+
+def test_a_fillet_on_picks_of_a_changed_shape_rounds_the_new_one():
+    class Sk(Shape):
+        def vertices(self):
+            return Picks([Shape(self.name + ".v")])
+
+    def Poly(*pts):
+        return Sk(f"Poly{tuple(float(q) for q in pts)}")
+
+    def fil(vs, r):
+        return Shape(f"fil({vs[0].name},{float(r)})")
+    code = '''h = 1.0  #@param float
+f = Poly(h, 2)
+f = fil(f.vertices(), 0.4)
+result = Body("slab", 1.0) - f
+'''
+    rt = fresh_rt()
+    ns = dict(vars(rt))
+    ns.update(Poly=Poly, fil=fil, Body=Body)
+    exec(compile(cb_trace.instrument(code), "<traced>", "exec"), ns)
+    names, _ = replay(rt, {"h": 3.0}, "h")
+    assert names == ["fil(Poly(3.0, 2.0).v,0.4)"]
+
+
+class Curve:
+    """A builder-mode stand-in: it takes its size by attribute, unseen."""
+
+
+def make(c):
+    return Shape(f"face({float(c.n)})")
+
+
+def test_a_value_lost_inside_a_helper_is_found_again_by_calling_the_helper():
+    # make(c) is blind to `a` (an attribute the trace cannot see), but the
+    # helper prof(a) it came out of is not: the replay re-runs the helper
+    code = '''a = 2.0  #@param float
+def prof(v):
+    c = Curve()
+    c.n = v
+    return make(c), 1
+f, cf = prof(a)
+result = Body("slab", 1.0) - f
+'''
+    rt = fresh_rt()
+    ns = dict(vars(rt))
+    ns.update(Curve=Curve, make=make, Body=Body)
+    exec(compile(cb_trace.instrument(code), "<traced>", "exec"), ns)
+    names, res = replay(rt, {"a": 3.0}, "a")
+    assert names == ["face(3.0)"] and not any(it.get("old") for it in res["items"])
+
+
+def test_a_value_nothing_can_follow_comes_back_flagged_old():
+    code = '''a = 2.0  #@param float
+c = Curve()
+c.n = a
+f = make(c)
+g = Pos(a, 0, 0) * Box(1, 1, 1)
+result = Body("slab", 1.0) - f - g
+'''
+    rt = fresh_rt()
+    ns = dict(vars(rt))
+    ns.update(Curve=Curve, make=make, Body=Body, Pos=Pos2, Box=Box)
+    exec(compile(cb_trace.instrument(code), "<traced>", "exec"), ns)
+    lit = [it for it in keep_of(rt) if "a" in it["params"]]
+    assert len(lit) == 1                       # f never knew it depended on a
+    names, _ = replay(rt, {"a": 3.0}, "a")
+    assert names == ["at(3.0, 0.0, 0.0)(Box(1,1,1))"]
+
+
+def test_a_helper_called_by_a_replayed_helper_reads_the_new_values_too():
+    code = '''H = 10.0  #@param float
+top = H * 2
+y_o = lambda z: top * z / H
+y_i = lambda z: y_o(z) - 1
+result = Body("slab", 1.0) - Box(y_i(H), 1, 1)
+'''
+    rt = run_fn(code)
+    names, _ = replay(rt, {"H": 20.0}, "H")
+    assert names == ["Box(39.0,1,1)"]          # (2·20)·20/20 − 1, not the old 19
+
+
+def test_the_trace_says_what_a_drag_of_each_value_costs(tmp_path):
+    """⚡ in the editor: per value, how many pieces a drag REBUILDS (and their
+    measured cost) and how many it only moves — only when the trace is parked."""
+    import json
+    import sys
+    rt = run_fn(PEGS)
+    rt._cbt_placed = lambda obj, M, curves: obj
+    out = tmp_path / "t.json"
+    try:
+        rt._cbt_finish(0.1, str(out), tid="t-fast")
+        d = json.loads(out.read_text())
+        assert d["trace"] == "t-fast"
+        assert d["fast"]["k"]["rebuilt"] == 3 and d["fast"]["k"]["moved"] == 0
+        assert d["fast"]["w"]["rebuilt"] == 1
+        assert all(v["rebuild_ms"] >= 0 for v in d["fast"].values())
+        rt._cbt_finish(0.1, str(out))                   # nothing parked: no ⚡ anywhere
+        assert json.loads(out.read_text())["fast"] == {}
+    finally:
+        sys.modules.pop("_noodle_cbt", None)

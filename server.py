@@ -1325,6 +1325,22 @@ async def codeblock_trace(name: str, node_id: str, budget_ms: float | None = Non
         raise HTTPException(400, str(e.args[0] if isinstance(e, KeyError) else e)) from e
 
 
+@app.post("/api/graph/{name}/codeblock/{node_id}/trace/replay")
+async def codeblock_trace_replay(name: str, node_id: str, body: dict = Body(...)):
+    """🔦 While a slider drags: the pieces `body.focus` lights, rebuilt for
+    `body.values` from the trace `body.trace` parked in the warm worker. No
+    graph run, nothing written."""
+    require_project(name)
+    if not body.get("trace"):
+        raise HTTPException(400, "`trace` is required (the id a trace returned)")
+    try:
+        return await off_loop(api.codeblock_trace_replay, GraphStore(PROJECTS_DIR), name,
+                              body["trace"], body.get("values") or {}, body.get("focus"),
+                              body.get("probe"), body.get("heavy_ms"))
+    except (ValueError, KeyError, TypeError) as e:
+        raise HTTPException(400, str(e.args[0] if isinstance(e, KeyError) else e)) from e
+
+
 @app.post("/api/graph/{name}/codeblock/{node_id}/sections/run")
 async def codeblock_sections_run(name: str, node_id: str, section: str | None = None):
     """Run the block (and only what feeds it) from an instrumented copy: time and

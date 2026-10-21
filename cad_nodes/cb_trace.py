@@ -31,11 +31,30 @@ BUDGET_S = 0.100            # a piece that rebuilds within this is drawn whole
 
 # calls left alone: frame-sensitive builtins, and the recorder itself
 _SKIP = {"super", "locals", "globals", "vars", "exec", "eval", "isinstance", "issubclass",
-         "type", "print", "__cbt_call__", "__cbt_bin__", "__cbt_param__", "__cbt_done__"}
+         "type", "print", "__cbt_call__", "__cbt_bin__", "__cbt_param__", "__cbt_done__", "__cbt_ln__"}
 _OPS = {ast.Add: "add", ast.Sub: "sub", ast.BitAnd: "and", ast.Mult: "mul"}
 
 
+def _at(line, test):
+    """`__cbt_ln__(line) or test`: the block's own line stamped before a
+    decision is taken (the value and the truth of `test` are unchanged)."""
+    return ast.copy_location(ast.BoolOp(op=ast.Or(), values=[
+        ast.Call(func=ast.Name("__cbt_ln__", ast.Load()), args=[ast.Constant(line)], keywords=[]),
+        test]), test)
+
+
 class _Rewrite(ast.NodeTransformer):
+    def visit_Compare(self, node):
+        self.generic_visit(node)
+        return _at(node.lineno, node)
+
+    def _test(self, node):
+        self.generic_visit(node)
+        node.test = _at(node.lineno, node.test)
+        return node
+
+    visit_If = visit_While = visit_IfExp = _test
+
     def visit_Call(self, node):
         self.generic_visit(node)
         if isinstance(node.func, ast.Name) and node.func.id in _SKIP:
@@ -89,7 +108,21 @@ def instrument(code: str) -> str:
     return "\n".join(keep + pre + [ast.unparse(new) or "pass", f"__cbt_done__(locals(), {outs!r})"]) + "\n"
 
 
+# a replay of a parked trace (executor.codeblock_trace_replay): no graph, only
+# the trace's own function, its pieces meshed by the ordinary epilogue
+REPLAY = """
+import sys as _cbt_s, json as _cbt_j
+__result__, __panels__, __errors__, __timings__, __previews__ = None, {{}}, {{}}, {{}}, {{}}
+_cbt_T = getattr(_cbt_s.modules.get("_noodle_cbt"), "traces", {{}}).get({tid!r})
+if _cbt_T is None:
+    _cbt_res = {{"gone": True}}
+else:
+    __previews__, _cbt_res = _cbt_T["replay"]({values!r}, {focus!r}, {probe!r}, {heavy!r})
+with open({out!r}, "w") as _cbt_f:
+    _cbt_j.dump(_cbt_res, _cbt_f)
+"""
+
 TAIL = """
 # --- codeblock trace (injected by executor) ---
-_cbt_finish({budget!r}, {out!r})
+_cbt_finish({budget!r}, {out!r}, tid={tid!r})
 """

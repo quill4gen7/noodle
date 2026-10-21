@@ -31,7 +31,7 @@ ENGINE_CALLS = {
     "set_warm",
     "measure_graph",
     "codeblock_sections_run",   # api -> executor.codeblock_sections_run
-    "codeblock_trace",          # api -> executor.codeblock_trace_run (🔦)
+    "codeblock_trace", "codeblock_trace_replay",          # api -> executor.codeblock_trace_run (🔦)
     "operand_meshes",           # the editor's boolean anticipation (anticipate.js)
 }
 

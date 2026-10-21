@@ -608,6 +608,7 @@ window._noodle = { get lgraph(){ return lgraph; }, get lcanvas(){ return lcanvas
   get liveMode(){ return liveMode; },
   get previewMeshes(){ return previewMeshes; },
   get ant(){ return ant; },
+  get cbTrace(){ return cbTrace; },
   get antMarks(){ return antMarks; },              // boolean drag anticipation state (anticipate.js)
   build: UI_BUILD, readOnly: READ_ONLY,            // which code this tab runs; ?readonly=1
   paramChange(n){ return onParamChange(n); },
@@ -1248,6 +1249,7 @@ function drawCadSlider(ctx, node, w, width, y, H){
     ctx.fillText(`${w.name} (${trimNum(cfg.lo)}–${trimNum(cfg.hi)}${plus})  ${Number(w.value).toFixed(dec)}`,
                  margin + tw / 2, y + H * 0.7);
     ctx.textAlign = 'left';
+    if (w.cbParam) drawCbtFast(ctx, node, w, y, H);   // ⚡ this value replays live (🔦 step 3)
   }
 }
 
@@ -2083,10 +2085,14 @@ const cbtEsc = x => String(x).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;
 let cbTrace = null;   // {node, id, name, data, sig, stale, group, cache: Map(key → geometry), shown}
 function cbtSig(node){
   const codeW = (node.widgets||[]).find(x => x.cadParam === 'code');
-  return JSON.stringify([(codeW ? codeW.value : node.properties.code) || '', node._cb || {}]);
+  // numbers left out: a drag replays them from the trace (step 3) — only the code
+  // and what is not a number (a toggle, a select) make the traced pieces old
+  const other = Object.entries(node._cb || {}).filter(([, v]) => typeof v !== 'number');
+  return JSON.stringify([(codeW ? codeW.value : node.properties.code) || '', other]);
 }
 function cbtClear(){
   if (!cbTrace) return;
+  cbtLiveEnd();
   cbtShow(null);
   if (cbTrace.group && cbTrace.group.parent) cbTrace.group.parent.remove(cbTrace.group);
   for (const g of cbTrace.cache.values()) for (const x of [g.geo, g.edges]) if (x) x.dispose();
@@ -2121,7 +2127,11 @@ async function traceCodeblock(node){
 // geometry per key, built once (the view.json shapes: mesh / polylines / points)
 function cbtGeom(key){
   if (cbTrace.cache.has(key)) return cbTrace.cache.get(key);
-  const p = cbTrace.data.previews[key];
+  const g = cbtGeomOf(cbTrace.data.previews[key]);
+  cbTrace.cache.set(key, g);
+  return g;
+}
+function cbtGeomOf(p){
   let g = null;
   if (p && p.mesh){
     const m = meshFromData(p.mesh, '#ffffff'); m.material.dispose();
@@ -2135,15 +2145,14 @@ function cbtGeom(key){
     const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(p.points.flat(), 3));
     g = {kind: 'points', geo};
   }
-  cbTrace.cache.set(key, g);
   return g;
 }
-function cbtObjects(g, color, strong){
+function cbtObjects(g, color, strong, live = false){
   const out = [], fade = cbTrace.stale ? 0.5 : 1;
   if (g.kind === 'mesh'){
     // the piece lies ON the part's faces: pulled forward so it wins the depth test,
     // and its outline drawn through the part so a piece inside still reads
-    out.push(new THREE.Mesh(g.geo, new THREE.MeshBasicMaterial({color, transparent: true, opacity: (strong ? 0.42 : 0.16) * fade,
+    out.push(new THREE.Mesh(g.geo, new THREE.MeshBasicMaterial({color, transparent: true, opacity: live ? 0.62 : (strong ? 0.42 : 0.16) * fade,
       depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide})));
     out.push(new THREE.LineSegments(g.edges, new THREE.LineBasicMaterial({color, transparent: true,
       opacity: (strong ? 0.95 : 0.45) * fade, depthTest: false})));
@@ -2155,6 +2164,25 @@ function cbtObjects(g, color, strong){
   }
   for (const o of out){ o.renderOrder = 9; o.raycast = () => {}; }
   return out;
+}
+function cbtFastNote(param){
+  const lvl = cbtFast(cbTrace.node, param), f = lvl && cbTrace.data.fast[param];
+  if (!f) return '';
+  return `<br><span style="color:${lvl === 'full' ? '#facc15' : '#fb923c'}">⚡ trascinandolo: `
+    + (f.rebuilt ? `${f.rebuilt} rifatt${f.rebuilt === 1 ? 'o' : 'i'} (~${Math.round(f.rebuild_ms)} ms)` : '')
+    + (f.rebuilt && f.moved ? ', ' : '') + (f.moved ? `${f.moved} spostat${f.moved === 1 ? 'o' : 'i'} a 60 fps` : '')
+    + (lvl === 'part' ? ' — i più pesanti restano grigi fino al rilascio' : '')
+    + (fastDrag() ? '' : ' — con Live attivo') + '</span>';
+}
+function cbtInfoEl(){
+  let info = document.getElementById('cbt-info');
+  if (!info){
+    info = document.createElement('div'); info.id = 'cbt-info';
+    info.style.cssText = 'position:absolute;left:50%;bottom:52px;transform:translateX(-50%);z-index:6;max-width:80%;padding:6px 10px;border-radius:8px;'
+      + 'background:rgba(11,14,20,.82);border:1px solid #fbbf2466;color:#e5e7eb;font:12px/1.4 var(--mono,monospace);pointer-events:none';
+    document.querySelector('.viewer-wrap').appendChild(info);
+  }
+  return info;
 }
 function cbtShow(param){
   if (!cbTrace) return;
@@ -2175,12 +2203,7 @@ function cbtShow(param){
     if (strong && it.line) lines.add(it.line);
     for (const o of cbtObjects(g, strong ? CBT_SHAPE : CBT_MOVE, strong)) grp.add(o);
   }
-  if (!info){
-    info = document.createElement('div'); info.id = 'cbt-info';
-    info.style.cssText = 'position:absolute;left:50%;bottom:52px;transform:translateX(-50%);z-index:6;max-width:80%;padding:6px 10px;border-radius:8px;'
-      + 'background:rgba(11,14,20,.82);border:1px solid #fbbf2466;color:#e5e7eb;font:12px/1.4 var(--mono,monospace);pointer-events:none';
-    document.querySelector('.viewer-wrap').appendChild(info);
-  }
+  info = cbtInfoEl();
   info.hidden = false;
   const L = [...lines].sort((a, b) => a - b);
   info.innerHTML = keys.length
@@ -2188,13 +2211,14 @@ function cbtShow(param){
       + (nm ? ` · <span style="color:#38bdf8">${nm} solo spostat${nm === 1 ? 'o' : 'i'}</span>` : '')
       + (L.length ? ` · righe ${L.slice(0, 8).join(', ')}${L.length > 8 ? '…' : ''}` : '')
       + (cbTrace.stale ? ' · <span style="color:#f87171">traccia vecchia: 🔦 Aggiorna dal menu</span>' : '')
+      + (cbtFastNote(param))
     : `🔦 <b>${cbtEsc(param)}</b>: nessun pezzo del risultato dipende da questo valore`
       + ((cbTrace.data.silent || []).includes(param) ? ' (un if, un conteggio o un pezzo che non arriva in uscita)' : '');
   if (viewer) viewer.invalidate();
 }
 // the #@param slider under the pointer, on the traced block
 function cbtHover(e){
-  if (!cbTrace || !lcanvas) return;
+  if (!cbTrace || !lcanvas || cbTrace.live) return;
   const node = cbTrace.node;
   if (!node.graph){ cbtClear(); return; }
   let param = null;
@@ -2216,7 +2240,240 @@ function cbtCheckStale(){
   if (!cbTrace) return;
   if (!cbTrace.node.graph){ cbtClear(); return; }
   const stale = cbtSig(cbTrace.node) !== cbTrace.sig;
-  if (stale !== cbTrace.stale){ cbTrace.stale = stale; const p = cbTrace.shown; cbTrace.shown = undefined; cbtShow(p); }
+  if (stale !== cbTrace.stale){
+    cbTrace.stale = stale;
+    if (stale) cbtLiveEnd();
+    const p = cbTrace.shown; cbTrace.shown = undefined; cbtShow(p === '⚡' ? null : p);
+    if (lcanvas) lcanvas.setDirty(true, true);         // the ⚡ beside the sliders
+  }
+}
+// ── ⚡ step 3: the lit pieces FOLLOW a drag, live ───────────────────────────
+// While a hand (or ▶) is on a traced #@param slider, the server rebuilds the
+// pieces that value lights from the recipes the trace parked in the warm
+// worker (POST …/trace/replay) — never a boolean on the body, so it costs what
+// the pieces cost. One request in flight, the next with whatever the slider
+// says when it lands. A piece the value only MOVES comes back as a matrix, and
+// with it the matrices at 8 values across the drag window (`probe`): between
+// two answers the moves are interpolated as a screw (rotation about a fixed
+// axis + slide along it — a lerp would cut the chord of an arc) at 60 fps.
+// The baked result is ghosted meanwhile; the exact run on release replaces it
+// all (scheduleLive holds while the hand is down: cbtHolding). A piece shaped
+// by the value but not rebuilt (over budget, or still waiting) is drawn grey.
+// The ⚡ left of a slider says which values do this: yellow = every piece
+// rebuilt within ~250 ms, orange = the heavy ones lag (grey) until release,
+// grey ⚡ = it would, with Live on.
+const CBT_OLD = 0xa8a29e, CBT_FULL_MS = 250, CBT_PROBES = 7;
+function cbtFast(node, name){
+  if (!cbTrace || cbTrace.node !== node || cbTrace.stale || !cbTrace.data.trace) return null;
+  const f = (cbTrace.data.fast || {})[name];
+  return f ? (f.rebuild_ms <= CBT_FULL_MS ? 'full' : 'part') : null;
+}
+function drawCbtFast(ctx, node, w, y, H){
+  const lvl = w.cbParam && !w.disabled && cbtFast(node, w.cbParam);
+  if (!lvl) return;
+  ctx.save();
+  ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = !fastDrag() ? '#6b7280' : lvl === 'full' ? '#facc15' : '#fb923c';
+  ctx.fillText('⚡', 7.5, y + H / 2);
+  ctx.restore();
+}
+function cbtHolding(){ const L = cbTrace && cbTrace.live; return !!(L && (L.w._drag || isPlaying(L.w))); }
+// the values that differ from the trace (a wired one is the wire's business)
+function cbtValues(){
+  const V = {}, base = cbTrace.data.values || {};
+  for (const w of cbTrace.node.widgets || []){
+    if (!w.cbParam || w.disabled || !(w.cbParam in base)) continue;
+    const v = Number(w.value);
+    if (Number.isFinite(v) && Math.abs(v - base[w.cbParam]) > 1e-9) V[w.cbParam] = v;
+  }
+  return V;
+}
+// onParamChange of the traced block: true = shown live, the run waits for release
+function cbtLiveChange(node){
+  if (!cbTrace || cbTrace.node !== node) return false;
+  const w = (node.widgets || []).find(x => x.cbParam && (x._drag || isPlaying(x)));
+  if (!w || !cbtFast(node, w.cbParam)) return false;     // a typed value just runs
+  let L = cbTrace.live;
+  if (!L || L.w !== w){
+    cbtLiveEnd();
+    cbtShow(null);
+    L = cbTrace.live = {param: w.cbParam, w, items: null, tables: {}, objs: new Map(),
+                        busy: false, again: false, n: 0, ms: 0, d: null};
+    cbTrace.shown = '⚡';                                 // the hover overlay stays off
+  }
+  cbtGhost(true);
+  cbtLiveDraw();
+  cbtPump();
+  return true;
+}
+async function cbtPump(){
+  const T = cbTrace, L = T && T.live;
+  if (!L) return;
+  if (L.busy){ L.again = true; return; }
+  L.busy = true;
+  try {
+    do {
+      L.again = false;
+      const v = Number(L.w.value), cfg = L.w._dragCfg || sliderCfg(T.node, L.w);
+      const probe = [v];
+      for (let i = 0; i < CBT_PROBES; i++){
+        const x = cfg.lo + (cfg.hi - cfg.lo) * i / (CBT_PROBES - 1);
+        probe.push(L.w.isInt ? Math.round(x) : +x.toFixed(6));
+      }
+      const t0 = performance.now();
+      let d;
+      try {
+        const r = await fetchTimed(`${API}/api/graph/${encodeURIComponent(T.name)}/codeblock/${encodeURIComponent(T.id)}/trace/replay`,
+          {method: 'POST', headers: {'Content-Type': 'application/json'},
+           body: JSON.stringify({trace: T.data.trace, values: cbtValues(), focus: L.param, probe,
+                                 heavy_ms: CBT_FULL_MS})}, 30000);
+        d = await r.json();
+        if (!r.ok && !d.gone) throw new Error(d.detail || d.error || r.status);
+      } catch(e){ log('🔦 replay: ' + e.message, 'err'); break; }
+      if (cbTrace !== T || T.live !== L) return;           // released and baked, or another drag
+      if (d.gone){
+        T.data.trace = null;
+        toast('info', '🔦 Il worker non ha più la traccia: 🔦 Aggiorna traccia dal menu del blocco');
+        cbtLiveEnd(); if (lcanvas) lcanvas.setDirty(true, true);
+        return;
+      }
+      cbtTake(L, d, probe, v);
+      L.n++; L.ms = performance.now() - t0;
+      cbtLiveDraw();
+    } while (L.again && cbTrace && cbTrace.live === L);
+  } finally { L.busy = false; }
+}
+function cbtMat(D){ const m = new THREE.Matrix4(); m.set(...D); return m; }
+function cbtTake(L, d, probe, v){
+  const tables = {};
+  for (const [k, Ds] of Object.entries(d.frames || {})){
+    if (Ds.length !== probe.length) continue;           // a probe failed: alignment lost
+    tables[k] = Ds.map((D, i) => [probe[i], cbtMat(D)]).sort((a, b) => a[0] - b[0]);
+  }
+  const items = {};
+  for (const it of d.items || []){
+    const e = {old: !!it.old, vRef: v};
+    if (it.mesh){ e.g = cbtGeomOf((d.previews || {})[it.key]); if (!e.g) continue; }
+    else if (it.D) e.D = cbtMat(it.D);
+    items[it.key] = e;
+  }
+  const prev = L.items;
+  L.items = items; L.tables = tables; L.d = d;
+  cbtLiveDraw();                                         // nothing draws the old geometry any more
+  if (prev) for (const e of Object.values(prev)) if (e.g) for (const x of [e.g.geo, e.g.edges]) if (x) x.dispose();
+}
+// A·(the screw from A to B)^t: the rotation about B·A⁻¹'s own axis, through its
+// own fixed point, plus the slide along it — an arc stays an arc
+function cbtScrew(A, B, t){
+  const R = B.clone().multiply(A.clone().invert());
+  const d = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+  R.decompose(d, q, sc);
+  if (R.determinant() < 0 || Math.abs(sc.x - 1) + Math.abs(sc.y - 1) + Math.abs(sc.z - 1) > 1e-3)
+    return (t < 0.5 ? A : B).clone();                   // not rigid between the two: no path to follow
+  if (q.w < 0) q.set(-q.x, -q.y, -q.z, -q.w);
+  const w = Math.min(1, q.w), th = 2 * Math.acos(w), sn = Math.sqrt(Math.max(0, 1 - w * w));
+  if (th < 1e-7 || sn < 1e-9)
+    return new THREE.Matrix4().makeTranslation(d.x * t, d.y * t, d.z * t).multiply(A);
+  const u = new THREE.Vector3(q.x / sn, q.y / sn, q.z / sn);
+  const s = d.dot(u), dp = d.clone().addScaledVector(u, -s);
+  const c = dp.clone().multiplyScalar(0.5).addScaledVector(u.clone().cross(dp), 0.5 / Math.tan(th / 2));
+  return new THREE.Matrix4().makeTranslation(c.x + u.x * s * t, c.y + u.y * s * t, c.z + u.z * s * t)
+    .multiply(new THREE.Matrix4().makeRotationAxis(u, th * t))
+    .multiply(new THREE.Matrix4().makeTranslation(-c.x, -c.y, -c.z))
+    .multiply(A);
+}
+function cbtAt(rows, v){
+  if (!rows || !rows.length) return null;
+  if (v <= rows[0][0]) return rows[0][1].clone();
+  for (let i = 0; i + 1 < rows.length; i++){
+    const [a, A] = rows[i], [b, B] = rows[i + 1];
+    if (v <= b) return b - a > 1e-12 ? cbtScrew(A, B, (v - a) / (b - a)) : B.clone();
+  }
+  return rows[rows.length - 1][1].clone();
+}
+// where key k is drawn at value v, as a matrix on its geometry (null = as is)
+function cbtPose(L, k, v){
+  const rows = L.tables[k], e = L.items && L.items[k];
+  const Tv = rows ? cbtAt(rows, v) : null;
+  if (e && e.g) return Tv ? Tv.multiply(cbtAt(rows, e.vRef).invert()) : null;   // a mesh placed at vRef
+  return Tv || (e && e.D) || null;
+}
+function cbtLiveDraw(){
+  const T = cbTrace, L = T && T.live;
+  if (!L || !viewer) return;
+  const grp = T.group, v = Number(L.w.value), seen = new Set();
+  let ns = 0, nm = 0, nold = 0;
+  for (const k of (T.data.params || {})[L.param] || []){
+    const it = T.byKey[k]; if (!it) continue;
+    const e = L.items && L.items[k], g = (e && e.g) || cbtGeom(k);
+    if (!g) continue;
+    const strong = (it.shapes || []).includes(L.param);
+    // its shape not rebuilt (yet): flagged by the server, or no answer yet and
+    // the value already away from the trace's
+    const old = strong && (e ? !!e.old : Math.abs(v - ((T.data.values || {})[L.param] ?? v)) > 1e-9);
+    old ? nold++ : strong ? ns++ : nm++;
+    const color = old ? CBT_OLD : strong ? CBT_SHAPE : CBT_MOVE;
+    let o = L.objs.get(k);
+    if (!o || o.g !== g || o.color !== color){
+      if (o) for (const x of o.list){ grp.remove(x); if (x.material) x.material.dispose(); }
+      o = {g, color, list: cbtObjects(g, color, true, true)};
+      for (const x of o.list){ x.matrixAutoUpdate = false; grp.add(x); }
+      L.objs.set(k, o);
+    }
+    const M = cbtPose(L, k, v);
+    for (const x of o.list){ M ? x.matrix.copy(M) : x.matrix.identity(); x.matrixWorldNeedsUpdate = true; }
+    seen.add(k);
+  }
+  for (const [k, o] of L.objs) if (!seen.has(k)){
+    for (const x of o.list){ grp.remove(x); if (x.material) x.material.dispose(); }
+    L.objs.delete(k);
+  }
+  const d = L.d || {}, flips = (d.flips || {})[L.param] || [];
+  const dec = L.w.isInt ? 0 : stepDecimals((L.w._dragCfg || sliderCfg(T.node, L.w)).step);
+  const info = cbtInfoEl();
+  info.hidden = false;
+  info.innerHTML = `⚡ <b style="color:#fbbf24">${cbtEsc(L.param)}</b> = ${v.toFixed(dec)}`
+    + (ns ? ` · <span style="color:#fbbf24">${ns} rifatt${ns === 1 ? 'o' : 'i'}</span>` : '')
+    + (nm ? ` · <span style="color:#38bdf8">${nm} spostat${nm === 1 ? 'o' : 'i'}</span>` : '')
+    + (nold ? ` · <span style="color:#a8a29e">${nold} ancora vecch${nold === 1 ? 'io' : 'i'}</span>` : '')
+    + (L.n ? ` · ${Math.round(L.ms)} ms` : ' · …')
+    + (flips.length ? ` · <span style="color:#f87171">un if cambia strada (righe ${flips.slice(0, 6).join(', ')})</span>` : '')
+    + ' · esatto al rilascio';
+  viewer.invalidate();
+}
+// the baked scene, faded while the pieces move over it (and back) — all of it:
+// a block's result is usually drawn by the nodes downstream, not by the block
+function cbtGhost(on){
+  if (!cbTrace) return;
+  for (const m of Object.values(previewMeshes || {})) if (m && m.traverse) m.traverse(o => {
+    const mats = !o.material ? [] : Array.isArray(o.material) ? o.material : [o.material];
+    for (const mt of mats){
+      if (on && !mt.userData.cbtGhost){
+        mt.userData.cbtGhost = {t: mt.transparent, o: mt.opacity, d: mt.depthWrite};
+        mt.transparent = true; mt.opacity = Math.min(mt.opacity, 0.22); mt.depthWrite = false; mt.needsUpdate = true;
+      } else if (!on && mt.userData.cbtGhost){
+        const g = mt.userData.cbtGhost; delete mt.userData.cbtGhost;
+        mt.transparent = g.t; mt.opacity = g.o; mt.depthWrite = g.d; mt.needsUpdate = true;
+      }
+    }
+  });
+  if (viewer) viewer.invalidate();
+}
+function cbtLiveEnd(){
+  const T = cbTrace, L = T && T.live;
+  if (!L) return;
+  T.live = null;
+  cbtGhost(false);
+  for (const o of L.objs.values()) for (const x of o.list){ T.group.remove(x); if (x.material) x.material.dispose(); }
+  if (L.items) for (const e of Object.values(L.items)) if (e.g) for (const x of [e.g.geo, e.g.edges]) if (x) x.dispose();
+  T.shown = undefined;
+  cbtShow(null);
+}
+// after a render: the exact run landed — the live pieces have done their job
+function cbtAfterRender(){
+  if (!cbTrace || !cbTrace.live) return;
+  if (cbtHolding()) cbtGhost(true);                      // a new mesh under a hand still down
+  else cbtLiveEnd();
 }
 window.traceCodeblock = traceCodeblock;
 
@@ -3246,7 +3503,7 @@ function liveFire(){
   // heavy chain): input events are rAF-aligned, so the 120ms timer expired
   // DURING the frame and fired before the next move arrived — /execute ran in
   // the middle of a drag (measured: 3 per gesture on raccordo, headless).
-  if (antHolding()){ liveTimer = setTimeout(liveFire, 120); return; }
+  if (antHolding() || cbtHolding()){ liveTimer = setTimeout(liveFire, 120); return; }
   runGraph();
 }
 window.toggleLive = function(){
@@ -3837,6 +4094,8 @@ function onParamChange(node){
   scheduleHistory();   // param edits become undo steps (debounced across a drag)
   if (node && node.cadType === 'RefImage'){ syncRefImages(); return; }   // editor-only: no re-exec
   if (node && node.cadGated) refreshSubtype(node);   // filter/transform: tag follows mode
+  // 🔦⚡ a traced CodeBlock's slider: its pieces rebuilt live, the run on release
+  if (node && node.cadType === 'CodeBlock' && fastDrag() && cbtLiveChange(node)){ scheduleLive(true); return; }
   const local = fastDrag() && applyLocalTransform(node);
   // Booleans downstream of the dragged node, redone on meshes in wasm. After a
   // local transform the node's own mesh is already handled — only what it feeds.
@@ -4371,7 +4630,8 @@ window.runGraph = function(){
     try {
       while (runPending){ runPending = false; await executeCurrentGraph(); }
     } catch(e){ setStatus('execution failed','err'); log(e.message,'err'); }
-    finally { runTask = null; runContext = null; document.getElementById('btn-stop').disabled = true; }
+    finally { runTask = null; runContext = null; document.getElementById('btn-stop').disabled = true;
+              cbtAfterRender(); }   // ⚡ a failed run too: the live pieces must not stay up
   })();
   return runTask;
 };
@@ -5280,6 +5540,7 @@ function renderPreviews(view, bakedGraph = null){
   });
   previewMeshes = r.meshes;
   cbtCheckStale();                       // 🔦 the traced block edited since the trace?
+  cbtAfterRender();                      // ⚡ the exact run landed: the live pieces go
   previewAnims = {};                     // Drop timelines riding the previews (fastDrag replay)
   const pvs = (view && view.previews) || {};
   for (const id in pvs) if (pvs[id] && pvs[id].anim) previewAnims[id] = pvs[id].anim;
