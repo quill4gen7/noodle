@@ -19,6 +19,7 @@ import time
 import uuid
 from pathlib import Path
 
+from . import memguard
 from . import export_index
 from .graph import Graph
 from .job_files import atomic_copy, atomic_write, cleanup_runs, run_dir
@@ -247,9 +248,12 @@ class WarmWorker:
         t = threading.Thread(target=reader, daemon=True)
         t.start()
         deadline = time.monotonic() + max(0, timeout)
+        cap = memguard.limit_mb()
         while t.is_alive():
             if cancel_path is not None and cancel_path.exists():
                 return {"cancelled": True}
+            if memguard.over(proc.pid, cap):       # before it takes the machine down
+                return {"memory": True, "error": memguard.message()}
             left = deadline - time.monotonic()
             if left <= 0:
                 return None
@@ -315,7 +319,7 @@ class WarmWorker:
                 self._kill()
                 raise
             res = self._read_sentinel(deadline - time.monotonic(), cancel_path)
-            if res is None or res.get("cancelled"):
+            if res is None or res.get("cancelled") or res.get("memory"):
                 self._kill()  # only this job owns the worker lock
                 return res or {"timeout": True}
             return res
@@ -452,7 +456,12 @@ def _run_script(script_path: Path, cwd: Path, timeout: float,
         return {"timeout": True}
     with subprocess.Popen([sys.executable, str(script_path)], stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE, text=True, cwd=str(cwd)) as proc:
+        cap = memguard.limit_mb()
         while True:
+            if memguard.over(proc.pid, cap):
+                proc.kill()
+                proc.communicate()
+                return {"memory": True, "error": memguard.message()}
             if cancel_path is not None and cancel_path.exists():
                 proc.kill()
                 proc.communicate()
@@ -512,6 +521,12 @@ def execute_code(code: str, workdir: Path, timeout: int = 120,
         res = _run_script(script_path, workdir, timeout, jobdir / 'cancel')
         if res.get("timeout"):
             return _timeout_result(code, timeout)
+        if res.get("memory"):
+            return {"success": False, "memory": True, "code": code, "warnings": [],
+                    "errors": res["error"], "view": None,
+                    "error_detail": {"node_id": None, "node_type": None, "culprit": None,
+                                     "exception": "MemoryLimit", "message": res["error"],
+                                     "hint": "Un nodo o un blocco di codice ha chiesto troppa memoria."}}
         if res.get("cancelled"):
             return {"success": False, "cancelled": True, "code": code,
                     "errors": "Execution cancelled", "view": None}

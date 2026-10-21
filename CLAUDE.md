@@ -333,6 +333,12 @@ cad_nodes/
                        lock every time; five timeout+kill cycles leaked no threads,
                        no fds and no zombies. The bound is _read_sentinel's
                        join(timeout), and it holds.
+                       MEMORY CEILING (cad_nodes/memguard.py): every wait on a worker
+                       (warm and cold) checks its RAM+swap every 0.1s and kills it past
+                       NOODLE_WORKER_MAX_MB (default half the host's RAM) — the run fails
+                       with "Memoria esaurita", the worker respawns. Paid for: a runaway
+                       run filled RAM+swap and froze the whole machine (mini PC and
+                       gpunix, power pulled); the containers have no memory limit.
   worker.py / mesh_extractor.py   the subprocess + meshing. The warm worker owns
                        the persistent __MEMO__ store (LRU 256: node outputs,
                        preview meshes, view stats) — on a repeat run only the
