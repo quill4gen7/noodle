@@ -25,15 +25,30 @@ manifold3d==3.5.2
 # both the t slider and the browser live-replay scrub through.
 pybullet==3.2.7
 
-# HTTP API (MIT)
-fastapi==0.115.0
-# ASGI server (BSD-3)
-uvicorn[standard]==0.30.0
-# multipart form parsing for FastAPI (Apache-2.0)
-python-multipart==0.0.12
+# HTTP API (MIT). Security bump 2026-10: 0.115.0 dragged in starlette 0.38.6
+# (7 advisories) and python-multipart 0.0.12 (multipart DoS).
+fastapi==0.162.0
+# FastAPI's ASGI toolkit (BSD-3), pinned explicitly: fastapi only asks for
+# >=0.46. 1.7.0 is the newest starlette that still runs on Python 3.10 (the
+# image's python:3.10-slim); 1.8+ needs 3.11.
+starlette==1.7.0
+# ASGI server (BSD-3) — mcp 1.30 needs >=0.31.1
+uvicorn[standard]==0.54.0
+# multipart form parsing for FastAPI (Apache-2.0) — >=0.0.31 for the DoS fixes
+python-multipart==0.0.32
 
-# Model Context Protocol server SDK (MIT)
-mcp==1.2.0
+# Model Context Protocol server SDK (MIT) — newest 1.x; 2.x is a new API
+mcp==1.30.0
+
+# transitive deps of the HTTP stack, pinned past the 2026 advisory
+# fixes in (anyio >=4.14.2, idna >=3.15, certifi >=2026.10.19); left loose,
+# a resolver may still pick the vulnerable minimums the ranges allow.
+# async I/O under starlette/mcp (MIT)
+anyio==4.15.1
+# hostname codec under httpx (BSD-3)
+idna==3.20
+# CA bundle for outgoing HTTPS (MPL-2.0)
+certifi==2026.10.23
 
 # headless browser driving the REAL viewer for /api/graph/{name}/screenshot
 # (Apache-2.0). The agent needs to SEE its geometry: the Thread node shipped a
