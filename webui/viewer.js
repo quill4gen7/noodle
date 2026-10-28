@@ -731,7 +731,7 @@ export class CadViewer {
     if (mode === 'ortho') {
       const dist = from.position.distanceTo(tgt);
       const h = dist * Math.tan(THREE.MathUtils.degToRad(this._fov) / 2);  // half-height at target
-      to = this._ortho || new THREE.OrthographicCamera(-h * aspect, h * aspect, h, -h, -10000, 10000);
+      to = this._ortho || new THREE.OrthographicCamera(-h * aspect, h * aspect, h, -h, -(this._depth || 10000), this._depth || 10000);
       to.left = -h * aspect; to.right = h * aspect; to.top = h; to.bottom = -h; to.zoom = 1;
       to.up.copy(from.up); to.position.copy(from.position); to.quaternion.copy(from.quaternion);
       this._ortho = to;
@@ -764,6 +764,20 @@ export class CadViewer {
   // Re-target + re-distance the camera to fit the shown geometry WITHOUT moving
   // it: keep the current view direction, just frame the real bounds. `fit` (a
   // Box3) frames that box instead — /view passes the pieces left visible.
+  // Clip planes sized to the model: the fixed .1–5000 mm range cut away
+  // anything past ~2 m (the camera sits at 2× the model size), so big
+  // assemblies (a 50 m DWG) showed only fragments while orbiting. Small
+  // parts keep the old .1/5000 exactly.
+  _fitDepth(md) {
+    const far = Math.max(5000, md * 20);
+    const near = Math.max(.1, far / 1e5);
+    const p = this._persp;
+    if (p.far !== far || p.near !== near) { p.far = far; p.near = near; p.updateProjectionMatrix(); }
+    const o = this._ortho;
+    if (o && o.far !== far) { o.near = -far; o.far = far; o.updateProjectionMatrix(); }
+    this._depth = far;
+  }
+
   frame(fit = null) {
     this.invalidate();
     const box = new THREE.Box3();
@@ -774,6 +788,7 @@ export class CadViewer {
     const ctr = new THREE.Vector3(); box.getCenter(ctr);
     const size = new THREE.Vector3(); box.getSize(size);
     const md = Math.max(size.x, size.y, size.z) || 10, d = md * 2.0;
+    this._fitDepth(md);
     let dir = new THREE.Vector3().subVectors(this.camera.position, this.controls.target);
     if (dir.lengthSq() < 1e-6) dir.set(1, -1, 0.8);
     dir.normalize().multiplyScalar(d);
@@ -981,6 +996,7 @@ export class CadViewer {
     this.invalidate();
     const box = new THREE.Box3().setFromObject(this.previewGroup);
     const size = new THREE.Vector3(); box.getSize(size);
+    if (!box.isEmpty()) this._fitDepth(Math.max(size.x, size.y, size.z) || 10);
     if (!this._framed) { this.frame(); this._framed = true; }
     return { order, colors, meshes, size };
   }
@@ -996,6 +1012,8 @@ export class CadViewer {
         new THREE.MeshStandardMaterial({ color: 0xe94560, roughness: .35, metalness: .15, side: THREE.DoubleSide }));
       this.scene.add(this.currentMesh);          // real coords — no recentering
       this.invalidate();
+      geo.computeBoundingBox();
+      { const s = new THREE.Vector3(); geo.boundingBox.getSize(s); this._fitDepth(Math.max(s.x, s.y, s.z) || 10); }
       if (!this._framed) { this.frame(); this._framed = true; }
       if (onSize) {
         geo.computeBoundingBox(); const s = new THREE.Vector3(); geo.boundingBox.getSize(s);
