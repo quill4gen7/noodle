@@ -601,7 +601,7 @@ export class CadViewer {
       if (dirty || anim || moving) this._renderFrame(true);
       if (anim || moving) this.invalidate();
     };
-    this._onChange = () => this.invalidate();
+    this._onChange = () => { this._fitDepth(); this.invalidate(); };
     this.controls.addEventListener('change', this._onChange);
     this._onVisibility = () => {
       if (document.hidden){ cancelAnimationFrame(this._raf); this._raf = 0; }
@@ -764,17 +764,22 @@ export class CadViewer {
   // Re-target + re-distance the camera to fit the shown geometry WITHOUT moving
   // it: keep the current view direction, just frame the real bounds. `fit` (a
   // Box3) frames that box instead — /view passes the pieces left visible.
-  // Clip planes sized to the model: the fixed .1–5000 mm range cut away
-  // anything past ~2 m (the camera sits at 2× the model size), so big
-  // assemblies (a 50 m DWG) showed only fragments while orbiting. Small
-  // parts keep the old .1/5000 exactly.
-  _fitDepth(md) {
-    const far = Math.max(5000, md * 20);
+  // Clip planes sized to the WHOLE model as seen from where the camera is now.
+  // The fixed .1–5000 mm range cut away anything past ~2 m, and sizing them to
+  // the framed box broke "frame one piece, then zoom out" (the rest vanished).
+  // Re-run on every camera change; small parts keep the old .1/5000 exactly.
+  _fitDepth() {
+    const box = this._modelBox();
+    let far = 5000;
+    if (box) {
+      const sph = box.getBoundingSphere(new THREE.Sphere());
+      far = Math.max(5000, (this.camera.position.distanceTo(sph.center) + sph.radius) * 1.5);
+    }
     const near = Math.max(.1, far / 1e5);
     const p = this._persp;
-    if (p.far !== far || p.near !== near) { p.far = far; p.near = near; p.updateProjectionMatrix(); }
+    if (Math.abs(p.far - far) > far * .02 || p.near !== near) { p.far = far; p.near = near; p.updateProjectionMatrix(); }
     const o = this._ortho;
-    if (o && o.far !== far) { o.near = -far; o.far = far; o.updateProjectionMatrix(); }
+    if (o && Math.abs(o.far - far) > far * .02) { o.near = -far; o.far = far; o.updateProjectionMatrix(); }
     this._depth = far;
   }
 
@@ -788,7 +793,7 @@ export class CadViewer {
     const ctr = new THREE.Vector3(); box.getCenter(ctr);
     const size = new THREE.Vector3(); box.getSize(size);
     const md = Math.max(size.x, size.y, size.z) || 10, d = md * 2.0;
-    this._fitDepth(md);
+    this._fitDepth();
     let dir = new THREE.Vector3().subVectors(this.camera.position, this.controls.target);
     if (dir.lengthSq() < 1e-6) dir.set(1, -1, 0.8);
     dir.normalize().multiplyScalar(d);
@@ -996,7 +1001,7 @@ export class CadViewer {
     this.invalidate();
     const box = new THREE.Box3().setFromObject(this.previewGroup);
     const size = new THREE.Vector3(); box.getSize(size);
-    if (!box.isEmpty()) this._fitDepth(Math.max(size.x, size.y, size.z) || 10);
+    if (!box.isEmpty()) this._fitDepth();
     if (!this._framed) { this.frame(); this._framed = true; }
     return { order, colors, meshes, size };
   }
@@ -1013,7 +1018,7 @@ export class CadViewer {
       this.scene.add(this.currentMesh);          // real coords — no recentering
       this.invalidate();
       geo.computeBoundingBox();
-      { const s = new THREE.Vector3(); geo.boundingBox.getSize(s); this._fitDepth(Math.max(s.x, s.y, s.z) || 10); }
+      this._fitDepth();
       if (!this._framed) { this.frame(); this._framed = true; }
       if (onSize) {
         geo.computeBoundingBox(); const s = new THREE.Vector3(); geo.boundingBox.getSize(s);
