@@ -1,0 +1,2539 @@
+# noodle — agent guide
+
+A **node-based parametric CAD app** built on [build123d](https://build123d.readthedocs.io).
+You wire nodes in a web editor; the backend **transpiles the graph to build123d
+Python**, runs it in an isolated worker, and returns an STL + a mesh "view" for
+the 3D viewport. It ships with an **in-app AI copilot** (natural language → graph)
+and an **MCP server** exposing the same operations.
+
+This file is the orientation doc for an AI agent picking up the project. It
+covers what it is, how to run it, how it's laid out, and how to change it safely.
+
+> **Using noodle rather than changing it** — building or editing a model for
+> the user? You want the MCP tools (or their HTTP twins) and the guide they
+> serve: `cad_help` / `GET /api/agent/help`, source `cad_nodes/AGENT_HELP.md`,
+> with detail topics (`screenshots`, `retroeng`, `print`, `threads`, `fluid`).
+> Never hand-edit a project's graph.json — see §6e for why the API exists.
+
+---
+
+## 1. Run it
+
+The app is containerized (`noodle` service). The image is **build123d-only**
+on purpose — cadquery 2.7.0 pins an OCP/OCCT build that conflicts with build123d
+(see `PLAN_NODE_CAD.md` and the memory note "build123d/cadquery OCP conflict").
+
+```bash
+docker compose up -d --build      # build + start
+docker restart noodle         # after backend code changes (see §6)
+docker logs -f noodle         # tail logs
+```
+
+**Rootless podman** (quill's NixOS box — `docker` IS podman there): use
+`noodle-compose up -d` (on PATH via the project devShell) instead of plain
+compose for anything that CREATES the container. It is podman-compose plus
+`--userns=keep-id:uid=1000,gid=1000`, without which the container's uid 1000
+lands in a subuid and the server cannot write the bind-mounted `projects/`
+(measured: every /execute 500s with PermissionError; `PODMAN_USERNS` is not
+enough — podman reads it, podman-compose does not pass it through).
+`docker restart` / `docker logs` work as-is. The compose file itself stays
+docker-pure; don't add podman-specific keys to it.
+
+- Node editor: <http://localhost:8090/nodes>   ·   code view: `/ui` (read-only
+  build123d generated from the graph)   ·   health: `/health`
+- The container runs as the non-root user **noodle (uid 1000)**, Python 3.10,
+  serving `uvicorn server:app` on 8090.
+- Volumes (see `docker-compose.yml`): `./projects` is read-write; `cad_nodes/`,
+  `webui/`, `server.py`, `mcp_server.py` are mounted **read-only**, so
+  host edits are visible to the container but the running process must be
+  restarted to re-import them.
+
+**Copilot LLM backend** (env in `docker-compose.yml`): defaults to a free local
+**Ollama** at `host.docker.internal:11434` (`COPILOT_MODEL`, e.g. `qwen2.5`).
+For a keyed OpenAI-compatible provider instead, set `COPILOT_BASE_URL` +
+`COPILOT_API_KEY` + `COPILOT_MODEL` (Groq / OpenRouter / Gemini's OpenAI endpoint…).
+
+## 2. Develop & verify outside the editor
+
+Run the engine where it will really run — **in the container**. This needs no
+host setup and cannot drift from production:
+
+```bash
+docker exec -i noodle python - <<'PY' 2>/dev/null   # hides fontconfig noise
+import json, pathlib
+from cad_nodes.graph import Graph
+from cad_nodes.transpiler import transpile
+from cad_nodes.executor import execute_graph
+g = Graph.from_dict(json.loads(pathlib.Path("/app/projects/<name>/graph.json").read_text()))
+print(transpile(g))                                   # inspect generated build123d source
+view = execute_graph(g, pathlib.Path("/tmp/work"), timeout=60).get("view")
+print(view["success"], view.get("node_errors"))       # per-node errors if any
+PY
+```
+
+To exercise a **PREAMBLE helper** on its own — no graph, no worker — take it
+straight out of the transpiler and call it:
+
+```bash
+docker exec -i noodle python -c "
+from cad_nodes.transpiler import PREAMBLE
+G = {}; exec(PREAMBLE, G)
+print(G['_bbox_plane'])          # any helper, callable, with build123d loaded"
+```
+
+When the part you want to check is pure arithmetic, lift that fragment out and
+test it with no build123d in the room at all — `tests/test_polyhedron.py::
+_preamble_fragment` and `tests/test_thread.py::_fragment` both do this.
+
+A host venv also works and iterates faster, but it is **optional and frequently
+absent — never assume it exists**; create it with
+`python -m venv .venv-b123d && .venv-b123d/bin/pip install -r requirements.txt`.
+
+Then drive the live server: `curl -s -X POST localhost:8090/api/graph/<name>/execute`
+— and **look at the result**: `GET /api/graph/<name>/screenshot` (§9). Numbers
+verify what you thought to measure; a picture shows what you did not.
+
+## 3. Architecture & file map
+
+```
+server.py            FastAPI HTTP API (port 8090). Routes under /api/* :
+                       projects list/delete (the listing carries each project's
+                       `thumb` = its thumbnail mtime, 0 = none — see §9b),
+                       PUT|GET /api/projects/{name}/thumb (§9b),
+                       /api/graph/{name}/execute|code,
+                       /api/graph/{name}/code?map=1 (code + editable param
+                       source map), PATCH /api/graph/{name}/param (clamped
+                       single-param edit; `_cb.<name>` targets a CodeBlock
+                       override), /api/graph/{name}/codeblock/{id}/scan,
+                       /api/graph/{name}/export/{fmt} (the RESULT, one file) and
+                       /export/bundle (📦 every PREVIEWED node → STEP + STL, zipped
+                       — §9d); both also publish into exports/ with a provenance
+                       line in exports/index.jsonl,
+                       POST /api/graph/{name}/arrange (tidy node positions; with
+                       a graph body = stateless and returns it, without = load/
+                       arrange/save — §6c),
+                       /api/nodes (catalog), /api/copilot/chat|status,
+                       /api/aliases (GET the personal add-node search aliases)
+                       + PUT /api/aliases/{node_type} (replace one node's, []
+                       clears) — stored in projects/_aliases.json, see §6,
+                       /api/agent/help[?topic=] (self-contained remote-agent
+                       guide = cad_nodes/AGENT_HELP.md, also MCP cad_help/
+                       cad://help; the `## topic:` sections after its marker
+                       are served only on request — keep it in sync when the
+                       API surface changes; a test fails if it names a cad_*
+                       tool that does not exist),
+                       the agent editing surface (§6e): GET /api/graph/{name}/
+                       compact|validate, POST .../ops|set_param|edit_code,
+                       POST .../execute?lean=1 (+ body {overrides}), GET
+                       /api/nodes?query=|compact=1 and /api/nodes/{type},
+                       /api/agent/tags (ToAgent provenance index, §7b),
+                       /api/graph/{name}/slice_summary|section_outline (§7b),
+                       /api/graph/{name}/gens/{gen}/measures[/exact] (↔ Metro, §9c),
+                       /api/graph/{name}/screenshot (PNG of the viewport, §9 —
+                       the agent's eyes; also MCP cad_screenshot),
+                       POST /api/graph/{name}/anticipate (baked meshes of the
+                       operands a drag cannot change — §6b, anticipate.js),
+                       /api/graph/{name}/progress?run=<id> (SSE: per-node execution
+                       events, tailed from projects/<name>/.runs/<hash>/progress.jsonl
+                       — see transpiler `_ev` and cad_nodes/job_files.py. `run` is the
+                       id the caller is about to POST to /execute?run=; each run owns
+                       its own script/view/progress so two concurrent jobs cannot
+                       overwrite each other. A root progress.jsonl is only an atomic
+                       "latest run" pointer. The run closes with a `done` line so the
+                       stream hangs up. POST /runs/{run}/cancel writes a cancel file.
+                       Omit `run` and you get the next run that starts — MCP/curl),
+                       POST /api/graph/{name}/execute may take a graph snapshot body
+                       (the editor does; MCP/curl with no body run the file on disk),
+                       /api/system/health|logs|restart.
+                       NOTE every route that reaches the executor goes through
+                       `off_loop()` — execute, render, download, export,
+                       slice_summary, section_outline, subshapes. An engine call
+                       is seconds of blocking CPU and must NOT hold the event
+                       loop, or nothing else is served meanwhile (the progress
+                       stream reporting on that very run included). Six of the
+                       seven used to call it straight from `async def`; measured
+                       on threaded-jar-pour, /health took **3.39s** during a 3.8s
+                       render and **1.2ms** after. `subshapes` was the worst,
+                       since the selection picker calls it on every click.
+                       `off_loop` is one named helper rather than scattered
+                       `to_thread` calls so the rule stays greppable and its
+                       reasoning lives in one docstring; tests/test_off_loop.py
+                       pins it structurally (a wrapped call passes the engine
+                       function by NAME, so it is never a Call target — any
+                       ast.Call on an engine name is a regression). /screenshot
+                       is the deliberate exception: its work is in the browser
+                       process, so it only awaits I/O.
+mcp_server.py        MCP server exposing the same cad_nodes.api operations.
+webui/
+  viewer.js          ★ the SHARED Three.js viewport (ES module served at
+                       /static/viewer.js), imported by BOTH pages. `CadViewer`
+                       owns the Z-up CAD scene (grid/lights/ViewHelper), the
+                       animate loop, framing/resize, `loadSTL`, and the live
+                       multi-mesh `renderPreviews(previews, {colorOf,wireOf,
+                       onEmpty})` from a view.json. Page-specific behaviour stays
+                       in the pages and hooks onto the exposed scene/camera/
+                       previewGroup (nodes.html: the gizmo + click-to-select via
+                       viewer.pick()). Both pages now render identically.
+                       RENDERING (`makeMaterial`, HQ toggle in Settings): filmic
+                       tone mapping + a RoomEnvironment IBL, and a per-node
+                       `finish` — solid / glass (real `transmission`, not alpha) /
+                       emissive / metal — plus `rainbow` (a hue per piece via the
+                       golden angle, as geometry groups sharing one buffer).
+                       SELECTIVE BLOOM, and it has to be selective: `transmission`
+                       is not blending — three renders the scene to its own target
+                       and samples it refracted, so an emitter seen THROUGH glass
+                       arrives attenuated, falls under any luminance threshold, and
+                       a bloom on the finished image stops dead at the glass. So
+                       emitters get `GLOW_LAYER` (markGlow), render ALONE on black
+                       (background nulled, or the clear colour blooms too), blur at
+                       half res with threshold 0, and are composited ADDITIVELY on
+                       top — which is what makes the glow cross the glass and
+                       spread. `snapshot()` reads the canvas back as a JPEG data
+                       URL for the workflow thumbnail (§9b) — same render path,
+                       one extra frame, camera restored in a `finally`.
+                       Two things that bit: the glow target holds LINEAR
+                       un-tone-mapped values (three tone maps only to the canvas)
+                       and UnrealBloomPass returns emitters+blur, so the quad is
+                       scaled down or the core blows white twice over; and
+                       `emissiveIntensity` must stay BELOW 1 — past it ACES
+                       desaturates the highlight and the glowing body goes flat
+                       white. No refraction of the glow and no caustics: those need
+                       rays. Costs ~0-1fps (glass dominates); off unless HQ and
+                       something declares itself emissive.
+  anticipate.js      boolean drag anticipation (§6b): plan the dirty chain from a
+                       dragged node to the screen, redo it on meshes with the
+                       vendored manifold-wasm. Pure module (no three, no DOM).
+  view.html          the `/view/<graph>/<gen>` read-only viewer of a frozen
+                       GENERATION (§9c): hide / solo / invert pieces, state in
+                       the URL hash. What an agent links instead of screenshots.
+  index.html         the `/ui` code view — generated build123d source (read-only
+                       text) + STL preview. Parameter literals are highlighted
+                       and click-to-edit via a terminal-style inline editor that
+                       PATCHes the graph param and re-renders — non-destructive
+                       (the code is regenerated; structure stays in nodes.html).
+                       See PLAN_CODE_PARAMS.md.
+  nodes.html         the node editor + 3D viewer (litegraph-style). Holds
+                       WIRE_COLORS; INPUT_ACCEPTS is fetched at boot from
+                       /api/wiretypes (derived from casts.py, §5 — the inline
+                       literal is only an offline fallback).
+                       Execution glow (beginExecGlow/glowEvent/drawExecGlow): the nodes
+                       light up AS THEY RUN. Each event opens or closes a node's span.
+                       A node executing right now breathes amber; when it finishes it
+                       settles and fades — green if it really recomputed, cold blue if
+                       the memo cache served it, red if it threw.
+                       RUNS ARE IDENTIFIED, NOT INFERRED — three bugs were paid for here
+                       and every one of them read as "the glow stops at random":
+                       (1) runGraph mints a `run` id and passes it to BOTH
+                       /progress?run= and /execute?run=. Each run now has its own files
+                       under `.runs/`; the root progress.jsonl is only a latest-run
+                       pointer. The old tailer watched ONE shared file's SIZE and, when
+                       a run rewrote it to the same length inside one 50ms poll, dropped
+                       the whole run (measured: 5/5 nodes on voronoi-3d-lattice). (2) The stream is NOT closed
+                       when the POST resolves: the browser dispatches that GET up to
+                       ~90ms AFTER the POST and needs ~90ms more to connect, so a warm
+                       ~350ms run was over before its stream arrived — only run 1 glowed
+                       and runs 2-5 received nothing at all. The run marks its own end
+                       instead (executor writes a `done` line in a `finally`; the server
+                       hangs up on it, freeing the connection — Request.is_disconnected()
+                       NEVER fires inside a StreamingResponse, measured, so a stream with
+                       no defined end lingers the full 180s idle timeout holding one of
+                       Chrome's 6 per-host connections). PROGRESS_GRACE_MS is only the
+                       backstop. (3) beginExecGlow stamps each glow with an id and
+                       endExecGlow(id) refuses to close one that isn't its own — a
+                       superseded run rejects on a microtask, i.e. AFTER its successor
+                       installed its glow, so it used to tear down the run that mattered
+                       (in Live mode a run is superseded on every 120ms debounce tick).
+                       Regression tests: tests/perf/test_progress_truth.py (backend) and
+                       test_ui_reactivity.py::test_every_run_glows_in_the_editor — the
+                       backend ones ALL passed while (2) was broken, so the browser-level
+                       one is the load-bearing one.
+                       Cost badges (drawCostBadge, toolbar "Costi" toggle, remembered
+                       in localStorage `noodle:settings:showCost`): the same story made
+                       to stay — last run's wall-clock on each node's title bar, same
+                       colour vocabulary (blue "cache" = the memo store served it and it
+                       cost nothing, amber→green = a real recompute with the hue set by
+                       cost, red = it threw). The editor doubles as a profiler.
+                       parseCbParams() mirrors transpiler.parse_codeblock_params:
+                       a CodeBlock's `#@param`s become live widgets + dynamic
+                       input sockets (overrides in the `_cb` param namespace),
+                       editable via the ✎ Edit code modal. A BroadcastChannel
+                       ('noodle:link') cross-links the two views: clicking a
+                       value in /ui selects+flashes the node here; selecting a
+                       node here scrolls /ui to it (nodeByGraphId tracks on-disk
+                       ids). The /ui code view also scrubs numbers by drag,
+                       Tab-cycles spans, and Ctrl+Z-undoes param edits.
+cad_nodes/
+  catalog.py         ★ the node registry. Declarative NodeDef per node type:
+                       sockets (typed wires), params (widgets+defaults), and a
+                       code_template that the transpiler fills in. ADD NODES HERE.
+  casts.py           ★ wire types + the cast registry (§5) — the ONE place wire
+                       compatibility is defined; WIRE_COMPATIBLE (backend) and
+                       INPUT_ACCEPTS (frontend, via /api/wiretypes) derive from it.
+  transpiler.py      ★ Graph -> build123d source. Flat "algebra" assignments in
+                       topo order; group nodes (BuildPart/BuildSketch) emit
+                       nested `with` blocks. PREAMBLE injects runtime helpers
+                       (_at, _pushpull, _section, _bbox_plane, _rotate,
+                       _select_subshapes, _reanchor). Each node is wrapped in
+                       try/except so one failing node is recorded in __errors__,
+                       not fatal.
+                       TRAP, paid for: build123d's algebra-mode fillet()/chamfer()
+                       take NO target — they read `objects[0].topo_parent`, which
+                       after a boolean still names the PRE-boolean operand. Round a
+                       corner of a Union and you silently get that operand back,
+                       the rest of the part deleted and no error raised. So every
+                       rounding node passes its `part` EXPLICITLY and _reanchor()
+                       re-points the picks at it (in place — chamfer()'s 2D branch
+                       matches picks by TShape identity, so copies match nothing).
+                       Never call bare fillet()/chamfer() in a code_template.
+                       run(emit_map=True) / transpile_with_map() also return a
+                       param<->code source map (sentinel-wrapped literals measured
+                       on the final text) for the editable code view. A CodeBlock
+                       transpiles like two connected nodes: `#@param` decls
+                       (parse_codeblock_params) become the generated function's
+                       named ARGUMENTS — body stays pure (declaration lines dropped),
+                       each value appears once at the call site as an editable span
+                       (override in node.params["_cb"], wired socket drives + fans
+                       out). The body itself is an editable `code` span (kind=code).
+                       transpile(memo=True) — the execute path ONLY, /ui code stays
+                       clean — wraps each cacheable node in _memo_get/_memo_put
+                       keyed by a content hash (params+code+upstream keys, immune
+                       to var renumbering); non-deterministic nodes (Import*,
+                       open(), random.) poison their lineage, display/export
+                       side-effect nodes stay keyed but re-run. tests/test_memo.py.
+                       In memo mode each node also brackets itself in `_ev()`
+                       (PREAMBLE): a start/end NDJSON line appended+flushed to
+                       __PROGRESS_PATH__ = the workdir's progress.jsonl (injected by
+                       executor.build_script). That file is the ONLY progress channel
+                       that works on BOTH paths — the warm worker redirects stdout
+                       into a buffer during exec, and the cold subprocess has no pipe
+                       home at all. The editor tails it over SSE and lights each node
+                       AS IT RUNS. It is shared and rewritten in place, so a run BRACKETS
+                       itself in it: executor writes a `{"k":"run","r":<id>}` header when
+                       it opens the file and a `{"k":"done"}` line in a `finally` when it
+                       is over. Both are load-bearing — see the glow notes under
+                       webui/nodes.html for the three ways this went wrong without them.
+  executor.py        Runs the generated script in a worker subprocess; captures
+                       STL + view JSON + per-node errors. execute_graph(graph, workdir,
+                       run_id=…) — run_id names the run inside progress.jsonl.
+                       WarmWorker._lock serialises runs, and a run holds it for its
+                       whole duration — so ANYTHING taking that lock from the event
+                       loop freezes the server just as a CPU call would. shutdown()
+                       does (set_warm(False) → POST /api/system/warm), which is why
+                       that route goes through off_loop(): clicking the ⚙ toggle
+                       mid-run used to hang everything (/health 601ms → 1.0ms). The
+                       WAIT itself is correct and stays — killing the worker under a
+                       running job would be worse — and it is bounded, since a run
+                       cannot outlive its own timeout. warm_status() only reads
+                       _alive(), takes no lock, so the GET is free.
+                       MEASURED AND NOT A BUG, so nobody "fixes" it again: run() was
+                       suspected of wedging on stdin.write under the lock. It does
+                       not. Driven against a worker that is silent / deaf / flooding
+                       stdout and never reads stdin, run() returned {'timeout':True}
+                       at exactly its timeout in all three cases and released the
+                       lock every time; five timeout+kill cycles leaked no threads,
+                       no fds and no zombies. The bound is _read_sentinel's
+                       join(timeout), and it holds.
+                       MEMORY CEILING (cad_nodes/memguard.py): every wait on a worker
+                       (warm and cold) checks its RAM+swap every 0.1s and kills it past
+                       NOODLE_WORKER_MAX_MB (default half the host's RAM) — the run fails
+                       with "Memoria esaurita", the worker respawns. Paid for: a runaway
+                       run filled RAM+swap and froze the whole machine (mini PC and
+                       gpunix, power pulled); the containers have no memory limit.
+  worker.py / mesh_extractor.py   the subprocess + meshing. The warm worker owns
+                       the persistent __MEMO__ store (LRU 256: node outputs,
+                       preview meshes, view stats) — on a repeat run only the
+                       dirty subtree re-executes/re-meshes (~8.5s -> ~0.5s on the
+                       lego brick; cache dies with the worker = ⚙ warm toggle).
+                       Live-path bboxes use the POLES box (~2s -> ~3ms on the
+                       lego brick, view.bbox carries approx:true; never smaller,
+                       but on splines it is NOT ≤1% — measured +24% on
+                       voronoi-vase, +19% on pipe-fitting); exports and picker
+                       signatures keep exact geometry.
+                       TRAP, paid for: NEVER READ TRIANGULATION FOR A BBOX.
+                       build123d's `Shape.bounding_box()` — optimal=True AND
+                       False — lets OCCT read the triangulation /
+                       PolygonOnTriangulation stored on the edges, and once ANY
+                       face sharing a curve's edges was tessellated off the XY
+                       plane (the preview does it, Populate does it) that data is
+                       wrong for the curve. Six lines: a Spline+line profile in
+                       x=220 measures (0, 180, 90.28); `Face(w).tessellate(0.5,
+                       0.3)`; now it measures (90, 270, 180.27) — Bounding Box,
+                       Align, Bbox Plane, `_domain2d` (Voronoi) all read that.
+                       The rule: measure through `_bbox(shape, exact=True)` in the
+                       PREAMBLE (`BRepBndLib.AddOptimal`, useTriangulation=False;
+                       `exact=False` = `BRepBndLib.Add` without triangulation, the
+                       fast poles box — same cost as optimal=False, measured), or
+                       `mesh_extractor._geom_bbox` in the imported worker modules
+                       (they cannot see the PREAMBLE; measure.py/slice_summary.py
+                       import it). `_gh_bbox` is `_bbox`. Exact costs what it
+                       always did (lego brick 2.17s either way): the values on
+                       solids are identical, only the curve case changes.
+                       tests/test_bbox_no_triangulation.py pins every call site.
+  graph.py           Graph/Node/Connection dataclasses; from_dict/to_dict;
+                       validate() (raises on incompatible wires / unknown sockets).
+  api.py             High-level ops over a GraphStore: add_node, connect,
+                       set_param, delete_node, execute, transpile. Shared by the
+                       MCP server AND the copilot — the single source of truth.
+  store.py           GraphStore: load/save projects/<name>/{graph,meta,view}.json
+                       and output.stl.
+  copilot.py         ★ in-app NL copilot (§7). OpenAI-compatible tool loop.
+  screenshot.py      ★ the agent's EYES (§9): renders the viewport to a PNG by
+                       driving headless Chromium over this server's own /nodes
+                       page — the REAL viewer.js, so the picture an agent sees is
+                       the picture the user sees. Warm browser (the cost is the
+                       launch, not the frame). Camera presets + azim/elev/zoom,
+                       frame-one-node, ortho. NOT a second renderer, on purpose.
+  gh/                Grasshopper .gh reader, no Rhino needed (scripts/gh_report.py
+                       is the CLI): archive.py = GH_IO (raw deflate + chunk tree,
+                       no lengths, so an unknown type code is an error, never a
+                       desync); definition.py = components, values, wires (inputs
+                       of variable-parameter components live under ParameterData,
+                       a wire is stored on the RECEIVING side as Source[i]);
+                       geometry.py = the Rhino geometry the .gh caches as ON_Data
+                       (deflate + .NET BinaryFormatter -> rhino3dm, OPTIONAL and
+                       not in the image) and curve_code(), a CodeBlock rebuilding
+                       curves as exact OCCT B-splines. importer.py = the 1:1
+                       translation (scripts/gh_import.py): one node per GH
+                       component through the table components.py (type_guid ->
+                       kind alias|new|slider|panel|container|skip + param-name
+                       maps). Node ids are `n<k>` = the `#k` of gh_report, a
+                       wired floating param vanishes (downstream wired to its
+                       sources), flatten/reverse become ListFlatten/ListReverse,
+                       a Custom Preview becomes the eye + colour of what it
+                       draws; whatever the table does not cover is REPORTED,
+                       never guessed. The hand-made rebuild of ikeaLack.gh is
+                       projects/ikea-lack-cassetto. tests/test_gh_import.py,
+                       tests/test_gh_importer.py.
+  cb_trace.py / cb_trace_rt.py  🔦 Traccia (§9f): which pieces of a
+                       CodeBlock's result each #@param moves — a traced side
+                       run of the block (rewrite + injected runtime).
+  slice_summary.py   retro-engineering perception (§7b): slice_summary
+                       (symbolic cross-sections; STEP exact, STL arc-fitted)
+                       + section_outline (one exact section, edge by edge).
+                       Both take node=<ref> (executor) to slice ONE node.
+  measure.py         geometry FACTS by node reference (n5 | n51.body | n51[3]):
+                       props / interference / distance / section(+svg) / probe
+                       / summary. Worker-side; executor.measure_graph runs the
+                       memo'd program + an epilogue reading the named vars.
+                       POST /api/graph/{name}/measure, MCP cad_measure.
+  lint.py            soft graph findings (pure Python): slider vs #@param
+                       mismatch, hidden/dead `_cb` overrides, CodeBlock syntax
+                       (block-relative line/col), unassigned #@out. Attached to
+                       execute results as `lint`; GET .../lint, MCP cad_lint.
+                       CodeBlock `#@out name: type` = extra named output
+                       sockets (transpiler.parse_codeblock_outputs, mirrored by
+                       parseCbOutputs in nodes.html); `result` stays socket 0.
+  toposort.py        topological sort + cycle detection.
+  layout.py          ★ node SIZE model + automatic `arrange()` (§6c). The one
+                       place that knows how big a node is server-side.
+  catalog … examples/  sample graphs used by tests.
+projects/            saved graphs (written as uid 1000 — host-editable).
+tests/               test_engine.py, test_api.py — pure-Python (no build123d).
+PLAN_NODE_CAD.md     the original design doc (phases 0-5 = shipped, kept as the
+                     historical record) + the node catalogue, and the FORWARD
+                     roadmap: "Roadmap — prossimi passi". New work goes there.
+PLAN_THREADS.md      the Thread node (§5g): why threads are triangles, the four
+                     profile families, and the clearance measurements.
+PLAN_FLUID.md        the fluid lane (§5h): why the wind tunnel needs no GPU, the
+                     voxelisation that costs 500x less than the obvious one, and
+                     §7 — what the implementation actually cost, including the
+                     100 mm/s velocity clamp that had been switching gravity off
+                     in every collide scene, and why Cd only compares at equal Re.
+PLAN_VIZ_ALGORITHMS.md  the "algorithms as geometry" example family (softmax,
+                     gradient descent, determinant, CLT, Fourier, k-means…): the
+                     pattern they share, the idioms, the gotchas, and what's next.
+                     Read it before adding an explanatory example.
+```
+
+## 4. Data model
+
+A project is `projects/<name>/graph.json`:
+
+```jsonc
+{
+  "name": "demo",
+  "nodes": [
+    { "id": "n1", "type": "Sphere", "params": {"radius": 3},
+      "position": [120,80], "preview": true }      // preview: per-node eye override
+  ],
+  "connections": [
+    { "id": "l1", "from_node": "n1", "from_socket": "result",
+      "to_node": "n2", "to_socket": "shape" }
+  ],
+  "groups": [                                        // optional, editor-only
+    { "title": "Base body", "bounding": [20,40,300,760], "color": "#3f589e" }
+  ]
+}
+```
+
+`groups` are LiteGraph group boxes that visually cluster nodes (title + bounding
+rect + colour). They're **editor-only metadata**: the engine never reads them, but
+`Graph` carries them through `to_dict`/`from_dict` so logical grouping survives
+save/reload and api/copilot round-trips. Serialized/restored in `nodes.html`
+(`toGraphJSON`/`fromGraphJSON`); created with Ctrl+G (`groupSelected`).
+
+`preview` is the per-node eye: `True`/`False` force it, absent = auto (draw only
+terminal geometry nodes). **Every emit path must call `Transpiler._previewed`** —
+it is the ONE gate, and an emit path that forgets it leaves the eye wired to
+nothing, silently, for every node of that type (that was feedback
+20260718-164854: selectors, CenterOfMass, TraceImage, OrientForPrint and
+bypassed nodes all had dead toggles). Selectors are the special case: their
+output wire is `selection`/`data`, which says how they may be WIRED, not what
+they hold — at run time it is drawable sub-shapes, so they honour an EXPLICIT
+eye but never auto-draw (a graph is full of wired selectors; drawing them all
+unasked buries the part). `mesh_extractor._preview_geom` then dispatches on the
+runtime VALUE, not the declared type: points → dots, solid/sketch → mesh, curve
+→ polylines.
+
+`params._ui` is another editor-only namespace (like CodeBlock's `_cb`): per-slider
+drag window + step set via the slider's ⚙ (`{param: {min,max,step}}`). Sliders in
+the editor are a custom `cadslider` widget — the drag window defaults to ±10
+(clipped to catalog hard bounds, auto-grown to contain the value WITH headroom:
+a value never sits on the edge — `flessione = 10` used to get −10…10 and could
+not be dragged up at all, now −10…25) and drag snaps
+to the step; the typed ✎ field clamps only on the catalog's hard min/max. The
+drag is RELATIVE (a press never changes the value; moving shifts it by the
+distance, track = the whole window) and the window only grows during a session
+(`w._win`) and is frozen for the gesture — derived from the value alone it used to
+collapse back to −10…10 as soon as a 120 went under 10, and a press on the left of
+an absolute slider was what took it there. The
+engine resolves params by catalog name, so it never sees `_ui`.
+
+**PLAY** — a ▶ hotspot left of the ⚙ sweeps the param across its drag window on a
+clock; speed (sweeps/second) and mode (`once` / `loop` / `pingpong`) live in the
+same namespace, `_ui[param].play`. It drives the value through `w.callback`, i.e.
+through the exact path a hand on the slider uses, so undo, the ✎ field and the
+gizmo snapshots all behave as if it were being dragged — and that is also why it
+composes with Live at no cost: `scheduleLive()`'s 120ms debounce is reset every
+frame and never fires, so an anticipatable node (§6b) replays locally at 60fps
+and exactly ONE exact re-bake lands when play stops (measured: 0 runs during a
+sweep, 1 after). A node no fast path can anticipate would then show nothing until
+stop, so play instead **pumps** the engine — one run at a time, the next starting
+only when the last has landed, because `runGraph()` aborts whatever is in flight
+and overlapping calls would starve every run but the last (measured: ~1.1 runs/s,
+0 overlapping). The playing state is deliberately transient: never saved, and
+loading a graph or deleting a node stops it.
+
+Execution writes `output.stl` + `view.json` (meshes) alongside it.
+
+## 5. Wire types
+
+Typed wires gate which output may feed which input. The single source of truth
+is **`cad_nodes/casts.py`** (see PLAN_DATA_PROTOCOL.md): a small cast registry
+`CASTS[(src, dst)] -> coercion helper` from which both tables are **derived** —
+`WIRE_COMPATIBLE` (backend, enforced hard by `Graph.validate()`) and
+`INPUT_ACCEPTS` (frontend, fetched at boot from `/api/wiretypes`; the literal in
+`nodes.html` is only a fallback for when the endpoint is absent). They can no
+longer drift — to change compatibility, edit `casts.py` only.
+
+Types (constants in `casts.py`): `solid` (3D B-Rep — the old `geometry`),
+`surface` (2D sketch/face — the old `sketch`), `curve`, `plane`, `vector`
+(points), `selection` (picked sub-shapes), `mesh` (triangles — §5c), `data`,
+`tree` (declared, unused).
+`data` is the universal bus (any output → a `data` input; a `data` output feeds
+everything except `selection`/`tree`). Registered casts: `surface→solid`,
+`solid↔plane` (transforms treat a plane like geometry), `curve→surface`
+(closed curve → face via `_face`), `selection→vector`, `solid/surface→mesh`
+(`_to_mesh`). A `Socket` can also widen per-socket via `accepts=[…]`, carry an
+advisory `subtype` (legend only, not validation), or set `raw=True` to opt out of
+automatic boundary casts. The transpiler applies a registered cast automatically
+at the wire boundary (`Transpiler._cast`).
+
+## 5c. The mesh lane (triangles)
+
+**build123d cannot model meshes** — it treats them as an I/O format. `import_stl`
+returns a `Face` with only a triangulation and no surface (`is_valid=False`,
+`volume=0`, booleans refused outright); `Mesher.read` sews every triangle into a
+planar B-Rep face — **300s** to open a 147k-triangle STL, **81s** per boolean. And
+OCCT has no remesh/decimate/mesh-repair at all. So triangles get their own lane,
+on **trimesh** (MIT — noodle stays MIT; pymeshlab is GPL-3 and is deliberately NOT
+a dependency). Full findings + measurements: **`PLAN_MESH_LANE.md`**.
+
+- Nodes (category `mesh`, `catalog.py` §12b): `ImportMesh`, `ToMesh`, `MeshFix`
+  (merge verts, drop dup/degenerate faces + stray shards, fill holes, fix normals),
+  `MeshInspect` (text health report → wire into a `Display`), `ExportMesh`,
+  `MeshUnion`/`MeshSubtract`/`MeshIntersect` + `MeshSimplify` (**manifold3d**,
+  Apache-2.0), and `MeshToSolid` — the only bridge back, guarded by `max_tris`.
+- **Two engine gotchas, both load-bearing** (measured — PLAN_MESH_LANE.md §9):
+  `trimesh.Trimesh(...)` defaults to `process=True`, which re-merges manifold3d's
+  already-welded output and **silently breaks the manifold** — `_from_manifold` must
+  pass `process=False`. And a simplify tolerance at/above the part's wall thickness
+  (volume/area) *tears the part apart* while the triangle count climbs, so
+  `MeshSimplify` verifies its own result (volume drift + `decompose()` piece count)
+  and raises rather than returning a broken mesh.
+- `Transpiler._cast` only fires on the **item-access** branch: `multiple` collectors
+  and `list_access` sockets skip it (as the B-Rep `Union`/`Subtract` already did), so
+  `_mesh_bool` coerces every item with `_as_mesh` itself. A solid reaches `MeshUnion`
+  uncast — by design, and there's a test pinning it.
+- Runtime: the `Mesh` class in the transpiler PREAMBLE wraps a `trimesh.Trimesh`.
+  It carries a `_noodle_mesh` marker because `mesh_extractor` runs as an imported
+  module and *cannot* import a class that lives in the generated script's globals —
+  so it duck-types instead of `isinstance`.
+- **Transforms are NOT duplicated.** `Move`/`Rotate`/`Scale`/`Mirror` take a mesh
+  directly: their `shape` socket lists `accepts=[…, WIRE_MESH]`, the PREAMBLE
+  helpers branch on `_is_mesh` and apply a 4×4 (`_mesh_matrix`) instead of a
+  `Location`, and `output_follows="shape"` carries the mesh type back out. There is
+  no `MeshMove` and there must not be. (Arrays/Align don't take meshes yet — their
+  templates still build `Pos(…) * shape` inline.) `_at` — the `origin` socket every
+  primitive gets, wrapped on by the EMITTER, not by the template — branches the same
+  way: a mesh can't be `.moved()` nor go in a `Compound`, so it takes a `_mesh_matrix`
+  and many origins concatenate instead. A helper behind an `origin` node must
+  therefore NOT place its own result, or the translation lands twice
+  (`tests/test_polyhedron.py::test_origin_is_applied_exactly_once`).
+  `Rotate` also takes an optional
+  `pivot` point and an `about` select — world (global axis, the default) / part (own
+  bbox centre) / group (collective centre; under fan-out the emitter hoists ONE
+  `_pivot_of(…)` out of the lambda so the ensemble turns rigidly); centres are
+  measured on the tessellation, like `PlaceOnBed`.
+- **The cast is asymmetric on purpose.** `solid/surface → mesh` is automatic
+  (tessellation: milliseconds, safely lossy) — drop a `Box` straight into a mesh
+  input and it just works. `mesh → solid` is **not** a cast: rebuilding a B-Rep from
+  triangles costs ~300s, so it must stay an explicit guarded node (`MeshToSolid`,
+  phase 2), never an implicit coercion that hangs the app for five minutes because
+  someone wired a mesh into a `Fillet`.
+- Previews cost nothing: a mesh IS triangles, so `mesh_extractor` hands the arrays
+  straight to the viewer with no tessellation step.
+- Not yet built (phase 3): hull/smooth/split/refine, and meshes through
+  `ArrayLinear`/`ArrayPolar`/`Align` (their templates still build `Pos(…) * shape`
+  inline, so they need helpers first — the four core transforms already work).
+  Isotropic remesh has no non-GPL implementation that survives a real part — see
+  `PLAN_MESH_LANE.md` §5.
+- Example graph: `cad_nodes/examples/mesh-lane.json` (seeded into `projects/`). Tests: `tests/test_mesh_lane.py`.
+
+## 5d. Print physics (category `print`)
+
+Five nodes that answer what a slicer never asks: **which way up, and why**
+(`catalog.py` §12c, runtime in the PREAMBLE, full notes in **`PLAN_PRINT_PHYSICS.md`**).
+A printed part is anisotropic — the bond between layers is worth roughly a third to two
+thirds of the material within one — so orientation decides **where the part breaks**.
+
+- `PlaceOnBed` (lowest point → z=0; serves BOTH lanes: it measures on the mesh and moves
+  the original, so a solid stays a solid), `Drop` (PlaceOnBed as a scrubbable FALL: a
+  `timeline` slider 0→1, analytic bounce with restitution fixed per `material` — plastic
+  0.55, lead 0.08, rubber 0.85… — then, with `settle` on, the part TOPPLES for real:
+  `_settle_plan` walks the quasi-static cascade on the convex hull (com outside the
+  contact patch → tip about the nearest support edge until the next facet lands, ≤40
+  steps, replayed partially at scrub time). The energy guard — every step must strictly
+  lower the com — is what stops a sphere rolling forever while letting the edge-balanced
+  cube go over; balanced ties resolve deterministically. t=1 is always fully at rest;
+  optional `plane` input. Gizmo `kind:"timeline"` (nodes.html): Edit-on-canvas shows a
+  Z-only translate arrow — pull the part down to advance t, lift to rewind, one part
+  height ≈ the full slider; wired `t` locks it. LIVE REPLAY: `_drop` attaches the whole
+  journey as data to its result (`_noodle_anim`: bounce segs + topple steps, world
+  coords, baked t); `_preview_of` lifts it into previews[id].anim, and nodes.html
+  (`dropMatrixAt`/`applyDropAnim`) replays any t as pure matrix math at 60fps while the
+  slider or a wired Number Slider drags (drag anticipation — see §6b), mesh pose =
+  M(t)·M(t_baked)⁻¹ —
+  the engine re-bakes exactly when the drag settles. COLLISIONS: the `collide` toggle —
+  off by default, it costs real compute — un-fans multiple shapes wired into one Drop
+  into ONE scene (`_drop_collide` → `_dyn_sim`) and runs REAL rigid-body dynamics
+  (pybullet, DIRECT mode): every part is its convex hull, they all fall TOGETHER —
+  colliding mid-air, pushing each other over, tumbling, stacking — simulated once at a
+  fixed 1/240s step (deterministic per scene) in MILLIMETRES directly (so the fixed
+  collision margin is sub-micron, not the ~1mm it becomes when shrunk to metres; CCD +
+  hull-volume masses), recorded as 60Hz keyframes per body until the scene sleeps
+  (restitutionVelocityThreshold=100mm/s + friction/damping, ~0.6-1s). Each returned
+  shape carries its own keyframe plan (`_noodle_anim` kind "keys"); mesh_extractor emits
+  a `{kind:"Scene", bodies:[...]}` preview, viewer.js builds a Group of independently-
+  posable meshes, and nodes.html (`keyInterp`/`sceneBodyPose`) replays the whole pile
+  LIVE (lerp+slerp) while the slider drags. Limits: falling parts are hulls, chaotic like
+  real falling. THE CONTAINER: the `container` socket is an IMMOVABLE collider the parts
+  fall into — a bowl, a tray, a crate. It is the one body that is NOT hulled: bullet allows
+  a concave triangle soup for STATIC bodies only (`GEOM_FORCE_CONCAVE_TRIMESH`, mass 0,
+  `_static_colliders` feeds it in bed coordinates), so a bowl keeps its cavity and really
+  cradles what you pour in — verified against the analytic seat, balls resting on a
+  spherical inner wall to <0.03mm. Wiring one implies scene mode whatever the `collide`
+  toggle says (the emitter un-fans on `collide or container`), so a SINGLE part falls in
+  too — and then a plain preview carries an anim of kind "keys", which `applyDropAnim`
+  routes to `sceneBodyPose` instead of `dropMatrixAt`. It is not an output; with no
+  motion wired it never moves, so preview the bowl node itself. A MOVING CONTAINER
+  (`ContainerMotion`, labelled **Motion** → the `motion` socket) is the exception, and
+  §5d-bis below; the same node drives `Animate` with no physics at all (§5d-ter).
+  GRIP: `grip` scales the friction of the whole
+  scene (statics, parts, bed). It is not a detail — on a SLOPED static face high
+  friction grabs a part and flings it sideways instead of letting it slide off, so
+  `examples/galton-board.json` at grip 1 throws its balls to the walls (bimodal,
+  hollow centre, gaussian fit −0.13) and at 0.15 gives a real bell (fit +0.81).
+  MESH-LANE TRAP, paid for: `Mesh.__slots__` must list `_noodle_anim` (and now
+  `_noodle_extra`). A build123d
+  Shape takes any attribute, so the B-Rep lane carried the Drop timeline for free
+  and nobody noticed that on the mesh lane the assignment hit the slots wall and was
+  swallowed by `_drop`'s try/except — a dropped mesh simply never replayed, and a
+  collide scene of meshes came back as one merged blob instead of N posable bodies),
+  `PrintCheck` (report → Panel), `OverhangFaces`
+  (the faces needing support, as a mesh of its own → its own colour in the viewer),
+  `SupportVolume` (the support as a BODY), `OrientForPrint` (every stable pose scored; two
+  outputs — the oriented mesh and the table saying why — from ONE search, via
+  `_emit_orient`, modelled on `_emit_center`).
+- **Support is a sweep and a boolean, not an estimate**: a prism from every overhanging
+  triangle down to the bed, unioned (`manifold3d.batch_boolean`), minus the part *and the
+  part shifted down by the clearance gap* (that second copy carves the space the support
+  must leave, or it welds itself on). Checked against a pencil: a sphere of r=20 gives
+  1.63 cm³ where the integral says 1.73. ~0.6 s at 20k triangles — so `OrientForPrint`
+  uses it while the part is under `exact_below` triangles and the `area × height` proxy
+  above, **all or nothing**, and the report says which. It is the ENVELOPE (a slicer fills
+  it sparse) and it does not know about bridges — `PLAN_PRINT_PHYSICS.md` §5.
+- **The weak plane** is the smallest cross-section perpendicular to Z: `manifold3d`'s
+  `slice(z).area()` (~0.01 s for 80 sections, so scoring 100 poses is free). It is a
+  property of the part *in this orientation*, and turning the part moves it.
+- **Stable poses** = the convex-hull faces whose polygon contains the projected centre of
+  mass — scipy, because trimesh's `compute_stable_poses` needs `networkx`+`shapely`, which
+  are not in the image. Cluster hull normals by TOLERANCE, not by a rounded key.
+- Two traps, both paid for: the faces resting **on the bed** must be excluded from the
+  overhang (a flat base points down too, and counting it makes the one support-free
+  orientation look worst), and `PlaceOnBed` must measure on the **tessellation**, not on
+  `Shape.bounding_box()` — the fast OCCT box is oversized (hence `view.bbox.approx`), so a
+  part dropped by it hovers above the bed.
+- **Strength needs a load.** With a `load` vector the score is how much of it crosses the
+  layers; with none declared the optimiser optimises for printability and will hand you the
+  weakest possible part. That is the whole of `examples/print-orientation.json`.
+- **§5d-bis. The container that MOVES** (`ContainerMotion` → `Drop.motion`): the bowl
+  stops being furniture. It is a PRESCRIBED motion, not a simulated one — you dictate
+  it and the parts inside answer only through contact and friction, which is why they
+  lag, slide, climb the wall and spill instead of following rigidly. One node covers
+  the lot because `cycles` picks the shape of the motion: 0 = a RAMP (tilt, pour, tip a
+  crate) that goes there once and STAYS; >0 = an OSCILLATION about the start pose
+  (shake, stir, vibrate) that always returns to it. `delay` waits (fill the bowl, THEN
+  tilt); rotation is about the container's own centre unless a `pivot` is wired.
+  - **`resetBaseVelocity` is load-bearing, and this was measured.**
+    `resetBasePositionAndOrientation` ALONE does not carry the contents: it teleports
+    the body, so the contact has zero relative velocity, friction has nothing to
+    transmit and the tray slides out from under the part (a box on a tray translated
+    50mm rode along **1.2%** — i.e. not at all). Pairing it with `resetBaseVelocity`
+    every step gives **99.3%**. The obvious alternative — a real mass on a `JOINT_FIXED`
+    constraint driven by `changeConstraint` — carries just as well (99.9%) and is still
+    WRONG here: mass > 0 forbids `GEOM_FORCE_CONCAVE_TRIMESH`, so it would hull the bowl
+    and throw away the cavity, which is the only reason `container` exists.
+  - The motion is dictated in WORLD xyz and the colliders live in bed coordinates, so
+    `_motion_driver` carries it over: `R_bed = Bᵀ R_world B`, and since bullet poses a
+    body as `x → R x + pos`, turning about a pivot is ENTIRELY the `pos = p − R p` term
+    (get it wrong and the bowl swings through the scene on an invisible arm).
+  - **A driven rig must never let the scene fall asleep**: `_dyn_sim`'s 0.5s-of-calm
+    exit would otherwise trigger BEFORE a slow tilt even begins and the pile would ride
+    along frozen — hence the `tau <= _drive_until` guard, and `_t_max` grown to cover
+    the motion. A shaker never settles, so it runs its full declared length.
+  - **Drawing it needed no frontend change at all.** The container is not an output and
+    must not become one, so the posed container rides the result as `_noodle_extra`;
+    `mesh_extractor._preview_of` turns those into extra bodies of the same `Scene`
+    preview, each with its own `kind:"keys"` track — which `viewer.js` already renders
+    as independently-posable children and `sceneBodyPose` already replays at 60fps.
+    A single part + a moving container is PROMOTED to a Scene for this reason (else the
+    bowl would be invisible). Verified in the browser: scrubbing `t` moves all 4 bodies,
+    bowl included. Preview the Drop, not the bowl, or you get a static ghost of it too.
+  - **A finish PER BODY — the glass jar really does pour steel bolts.** A collide
+    scene is ONE preview, so `finishOf(id)` used to resolve once for the whole
+    pile and the container inherited the falling parts' material. Now each body
+    can name the node that DREW it: the emitter reads the `container` socket off
+    `graph.connections` and passes `{container_ids}` into `_drop` (only the
+    emitter can know this — the runtime is handed a shape, never a graph),
+    `_static_colliders` carries the id per collider, `_dyn_sim` stamps it on each
+    extra as `_noodle_owner`, `mesh_extractor._preview_of` emits it as
+    `body.owner`, and `objFromPreview`'s `bodies` branch resolves `colorOf` /
+    `finishOf` from it. Bodies with no owner are the Drop's own output and keep
+    the node-level look, so nothing changes for a scene without a container.
+    - **`Mesh.__slots__` must list `_noodle_owner`**, exactly as it must list
+      `_noodle_anim`: a build123d Shape takes any attribute, so the B-Rep lane
+      works either way and the mesh lane silently drops it inside `_drop`'s
+      `try/except`. The whole chain fails SILENTLY when any link is wrong —
+      check `body.owner` in view.json before blaming the renderer.
+    - The glow layer looks at body owners too, or an emissive container would
+      light nothing (`renderPreviews` sets `glowing` from both).
+    - Free side effect worth knowing: transmission costs a full scene re-render
+      per transparent body, so making the CONTENTS opaque and leaving only the
+      jar glass is also what makes the scene cheap enough to screenshot
+      headlessly at all (§9 runs on SwiftShader, with no GPU).
+  - Example: `examples/container-tilt.json` (balls land, then the bowl tips over its own
+    rim and pours them out). Costs ~5ms per simulated second to drive.
+- **§5d-ter. `Animate` — the same motion with NO physics.** A Motion turned out to be
+  worth having on its own: a lid unscrewing off a jar, a drawer sliding out, a hinge
+  swinging, a part lifted clear of an assembly. `Animate(shape, motion, t)` just MOVES
+  the shape along the plan and `t` scrubs it. Drop asks *what would happen*; Animate
+  says *do this*. Because of that the `ContainerMotion` node is now labelled just
+  **Motion** (the TYPE string is unchanged — saved graphs and `_container_motion` keep
+  their names; only the label and the aliases moved).
+  - **It cost almost nothing to build, and that is the design.** A screw needs no new
+    vocabulary because the plan already advances translation and rotation on ONE
+    phase: `move z 12` + `rotate z 720`, `cycles 0`, and the cap rises as it turns.
+    The pose comes from the same `_motion_driver`, called with an identity bed frame
+    (`B = I`, `o = 0`) and the shape's own tessellated bbox centre as the pivot — the
+    same reason `PlaceOnBed` measures on the tessellation: the fast OCCT box is
+    oversized and an off-centre axis is exactly what an unscrewing lid cannot afford.
+  - **It bakes keyframes rather than staying analytic**, and that is why the frontend
+    change was three lines: the browser already replays a `kind:"keys"` plan at 60fps
+    (`sceneBodyPose`, built for collide scenes), so `_animate` samples `pose(tau)` at
+    60Hz (≥24 samples per oscillation cycle, capped at 2000) and ships it as
+    `_noodle_anim`. No new format, no new replay path. What DID have to change:
+    `applyLocalTransform`/`applyDropTargets` keyed on `cadType === 'Drop'` — now on
+    `TIMELINE_NODES`, or Animate would be correct and silently un-scrubbable. Measured
+    in the browser: scrubbing its own `t` = 60fps replay + exactly ONE re-bake at
+    settle; a Number Slider wired into `t` = 0 runs.
+  - **It must NOT copy Drop's un-fan.** A Drop gathers several shapes into one scene
+    because they have to collide with each other; nothing here interacts, so five lids
+    wired in are five independent movements — the ordinary fan-out rule. Equally: no
+    `container`, no `collide`, no `grip`, no `material`. Everything that costs compute
+    stays in Drop. Both share one Motion node, and one `t` slider can drive both.
+  - **`hold` exists because of how the live scrub finds its targets.** One slider driving
+    a 1.2s unscrew AND an 8s pour needs the two timelines to be the same LENGTH — and the
+    obvious fix, rescaling `t` through a `Remap`, silently costs you the 60fps replay:
+    `applyDropTargets` follows DIRECT links from the dragged value node into a `t` socket
+    and cannot evaluate a node in between (nor should it — that would mean reimplementing
+    engine math in JS). So Animate pads its own timeline with stillness after the motion
+    instead, and the wire stays direct. Past `end` the phase already parks (at the
+    destination for a ramp, at the start for an oscillation), so holding is free and
+    exact. **Pad the short clock; never rescale the wire.**
+  - Examples: `examples/jar-cap-unscrew.json` (the bare mechanism — scrub `t` and the cap
+    spins up off its thread) and `examples/threaded-jar-pour.json`, where it earns its
+    keep: ONE slider unscrews the golden cap (Animate, 0.4s delay + 0.8s + 6.8s hold =
+    8.0s) and then tips the glass jar (Drop + container motion, T = 7.9875s) so six
+    rainbow bolts pour out and fall to the bed. Verified in the browser: dragging that
+    one slider moves the cap and all seven scene bodies at 60fps, with exactly one
+    re-bake at settle. Both lanes — a solid stays a solid.
+- Tests: `tests/test_print.py`. Agent-facing usage: AGENT_HELP topic `print`.
+
+## 5e. Voronoi 3D + universal Populate
+
+`PopulateGeometry` (display "Populate") and `Voronoi3D` are the point→partition
+pair. Helpers in the transpiler PREAMBLE; both stay memo-cacheable because the
+seed lives *inside* the helper (`np.random.RandomState`), not on the emitted line
+(`_MEMO_NONDET` matches emitted-line substrings only).
+
+- **Populate is universal** — one node, one `region` socket (`raw=True`,
+  `accepts=[solid, mesh]`), dispatching in `_populate` on the runtime TOPOLOGY of
+  what's wired (not duck-typing `position_at` — Edge *and* Face have one):
+  nothing → the legacy `0..w × 0..h` box at z=0 (bit-exact with the old node);
+  **open curve → 1D** along it, uniform by arc length (`edge.position_at(t)`, t is
+  already normalized arc length); **closed curve / flat XY face → 2D** *really
+  inside* the region (`Face.is_inside`, top-up rounds — not just its bbox); **curved
+  face → 2.5D** on the surface, uniform by area (`trimesh.sample.sample_surface`);
+  **solid / watertight mesh → 3D** inside the volume. The `raw` socket is
+  load-bearing: without it the `curve→surface` (`_face`) and `solid→mesh`
+  (`_to_mesh`) casts would fire at the wire and the helper could never tell a curve
+  from a face. A *closed* curve is re-filled inside the helper (`_face`) — the
+  legacy Rectangle/Circle-as-boundary idiom — while an open one scatters along.
+- **3D volume fill has no rtree** (`trimesh.contains` needs it, absent from the
+  image): point-in-mesh is `_winding_inside` — the generalized winding number in
+  pure numpy (|w|>0.25 = inside), run on a manifold3d-simplified *proxy* when the
+  mesh is heavy (>4k tris; it's only an inside oracle, so no verification like
+  MeshSimplify does). Rejection loop, 24 rounds, then a clear "run Mesh Fix" error.
+- **Voronoi3D** (`mesh` category, list output `cells`): `scipy.spatial.Voronoi` in
+  3D with sites mirrored across the **6 planes** of the domain box (body bbox if
+  wired, else the points' extent — the 3D analog of `_voronoi2d`'s mirror trick) so
+  every kept cell is finite. Each cell = its Voronoi vertices, shrunk toward the
+  centroid by `scale`, hulled straight into a Manifold (`Manifold.hull_points` — a
+  Voronoi cell is convex, the hull IS the cell), then `cell ^ body`. Output is a
+  list of `mesh` bodies (downstream is booleans; `MeshToSolid` is the explicit
+  bridge back to B-Rep). Coplanar/degenerate points → clear `QhullError`-wrapped
+  ValueError; cap 2000 points. ~0.1s for 60 cells clipped to a 5k-tri sphere.
+- **The lattice** = Populate(volume of a body) → Voronoi3D(same body, scale<1) →
+  `MeshSubtract` the shrunk cells from the body: the walls *between* cells become
+  the part. `examples/voronoi-3d-lattice.json`. Tests:
+  `tests/test_populate_voronoi3d.py` (pure-Python: wire shape + emission).
+
+## 5f. Union fuses, Join sews — and they are different OCCT operations
+
+A boolean merges shapes that **overlap** (`+`, BRepAlgoAPI); sewing stitches shapes
+that merely **share a border** (BRepBuilderAPI_Sewing, reached through
+`Face.sew_faces`/`Shell`, and `Wire.combine` for edges). Union used to be asked for
+both and silently answered the second one wrong: two faces on different planes came
+back as `f0 + f1` — a loose `Sketch` of 2 faces, no shell, no error, and in the
+viewport it *looks* joined.
+
+- **`Join`** (`boolean` category, `_join` in the PREAMBLE): one collector, curves +
+  surfaces + solids. Faces win over edges when a shape has both (an input with faces
+  is a surface; its edges are that surface's border). Six box faces → a closed shell
+  → a real `Solid`; five → an open `Shell` (previewed fine, 4 triangles for an L).
+  The closed test is load-bearing: `Solid(open_shell)` builds happily and returns an
+  **invalid** solid (measured: volume 800 on a 1000 box) rather than raising.
+  Pieces that do not touch are an **error**, not a silent Compound — that is the
+  entire point of the node. `tolerance` reaches `Wire.combine` only; `sew_faces`
+  has no tolerance argument and uses OCCT's own.
+- **`Union` refuses what it cannot fuse**: when every atom is a face, `_coplanar_check`
+  requires them planar and on one plane, else it raises and names Join. Solids are
+  untouched (disjoint solids fusing into a multi-piece part stays legal and is used),
+  and coplanar region merges keep working — `lego-brick` fuses `Text` glyph fragments
+  that way, `axl cage` fuses `MakeFace`/`Fillet2D` output. Curves never could reach
+  Union: there is no `curve→solid` cast, so `validate()` rejects the wire.
+- Tests: `tests/test_join.py` (pure-Python contract); the sewing itself is exercised
+  in the worker.
+
+**What Join feeds — and three traps found downstream of it.** The obvious next node
+after joining faces is `Shell` (thicken the open surface) or `Shell By Faces`:
+
+- **A failed `Solid.thicken` POISONS its input.** BRepOffset registers its
+  modifications on the input faces' TShapes, so a thicken that fails corrupts those
+  faces for every node still holding them — measured: `Polyhedron → Join(all but one
+  face) → Shell` made the *sibling* `Shell By Faces`, hollowing the same polyhedron
+  through the left-out face, return volume **4728 on a part of 2536**, invalid,
+  instead of 432. `_thicken` thickens a `deepcopy`. Same family as the `_reanchor`
+  trap: OCCT hands out shared topology and a node must not scribble on what it did
+  not build.
+- **OCCT cannot thicken every open shell**, and says so badly: it returns a SHELL
+  when it could not close the wall, and build123d's blind `TopoDS.Solid(...)` cast
+  turns that into `Standard_TypeMismatch: TopoDS::Solid`. Sharp dihedral angles
+  between many facets are its weak spot — of the platonic solids minus a face, the
+  tetra/cube/dodeca thicken fine and the **octa/icosa never do**, at any tolerance,
+  join mode or thickness (all swept). `_thicken` now raises a readable error naming
+  the way that does work, and refuses to return a wall that fails `is_valid` (it
+  renders like a part without being one).
+- **`_shell_faces` used to swallow its own failure** (`except Exception: return
+  _part`) — no error, no hollow, a node that quietly handed back its input. That is
+  what an open surface wired into `Shell By Faces` did. It now rejects a non-solid
+  with a message and propagates a real offset failure.
+- **The route that works** for a hollow polyhedron with an opening: hollow the CLOSED
+  solid and pick the openings there — `Polyhedron → FacesByArea/FacesByNormal →
+  ShellByFaces`. Verified end-to-end (icosahedron, wall 0.5 → volume 432.1, valid,
+  watertight) and on every platonic solid. Do NOT remove the faces first.
+
+## 5g. Threads (category `fastener`)
+
+One node, `Thread`, makes a real screw thread — ISO metric, trapezoidal lead
+screw, UNC/UNF, ACME, tapered NPT — male or female, multi-start, left or right
+handed. Runtime in the transpiler PREAMBLE (`_thread`), full notes and every
+measurement in **`PLAN_THREADS.md`**. It is on the MESH lane, and that is the
+whole story:
+
+- **build123d 0.11 has no thread primitive** (they live in `bd_warehouse`, not a
+  dependency), and OCCT cannot be made to do it. The helical sweep is fast on
+  either lane (~0.03s), but fusing the rib to its core through the B-Rep kernel
+  costs 2-8s and **gets it wrong without raising**: M6x1 came back as the bare
+  core (volume 227.9, the thread silently gone) and M20x2.5 came back with volume
+  **0**. Letting the section abut the core instead of overlapping it does not even
+  build (`StdFail_NotDone`). manifold3d does the same union in ~0.02s, watertight,
+  major diameter exact to 4 decimals.
+- **Every family is the same trapezoid** with different numbers (half angle, crest
+  flat, depth, taper), so one section builder covers all four. Inch sizes are
+  stored as they are quoted (inches + TPI) and converted once — never transcribed.
+- **Male and female differ ONLY in the root truncation** (17H/24 vs 15H/24 on the
+  60° families). The `internal` result is not a female thread, it is **the TAP**:
+  subtract it and it drills the hole and cuts the thread in one go.
+- **`clearance` loosens the thread it is set on** — set it on ONE half of a pair or
+  you get double the gap. Measured on M6x1 by boolean interference: tangent by
+  construction at 0, free from 0.1mm up (residuals ≤0.013mm³ = 0.006% of the
+  thread, non-monotone in facet count and sometimes negative — numerical noise,
+  not contact). 0.3 is the FDM default because the printer's error dwarfs the
+  model's.
+- **An inverted winding is silent and catastrophic**: manifold3d reads it as
+  NEGATIVE volume and SUBTRACTS the rib. The first build returned a M6 rod of
+  180.5mm³ against a bare core of 227.9 — smaller than its own core, watertight,
+  no error. The faces are reversed once, deliberately, with a comment.
+- **The placement socket is `at`, NOT `origin`** — and a new node with an optional
+  `shape` should copy this. The emitter wraps an `origin` socket around the node's
+  WHOLE result (§4 / `_at`), which with `shape` wired would move the finished
+  assembly, so a tapped hole could never leave the axis. `_thread` takes the point
+  itself and places the thread BEFORE the boolean. Free bonus: a **list** of points
+  drills a whole pattern of tapped holes in one node.
+- Example: `examples/bolt-and-nut.json` (a bolt whose thread ADDS to its shank, a
+  nut whose thread CUTS). Tests: `tests/test_thread.py`. Agent-facing usage:
+  AGENT_HELP topic `threads`.
+
+## 5h. Fluids (category `fluid`) — moving air, and what it does to a part
+
+Two nodes, one shared idea. **`Wind`** is a PLAN, not geometry — a plain dict, exactly
+like `ContainerMotion` (§5d-bis) — so it costs nothing and drives two different
+consumers. `Drop` asks *what happens to my part in this wind* (rigid bodies pushed by a
+fluid they do not disturb); **`WindTunnel`** asks the opposite, *what does the part do
+to the fluid*, and actually solves it (D3Q19 Lattice-Boltzmann in numpy, in the worker).
+No GPU, no OpenCL, no second image, no job queue — measured, ~20s at the default
+quality, and the memo cache pays for it once. Full notes and every measurement in
+**`PLAN_FLUID.md`** (§7 is the implementation record).
+
+- **THE BUG THAT WAS ALREADY THERE, and it is not about fluids**: `createMultiBody`
+  builds a **btMultiBody**, which carries a hard-wired `m_maxCoordinateVelocity` of 100
+  units/s — in millimetres, **10 cm/s**. Measured: a body released in vacuum held
+  exactly −100.0 mm/s for the whole drop instead of accelerating, so gravity was off in
+  all but name in EVERY collide scene, and nobody saw it because the timeline is
+  normalised and a slow-motion fall shown end to end reads as plausible.
+  `useMaximalCoordinates=True` makes it a btRigidBody: the same body then gives
+  −3270 / −6540 / −9810 mm/s at t = 1/3, 2/3, 1, free fall to the digit, and a 900→100mm
+  drop takes 0.40s against 0.40s analytic. Drag needed it more than anything (it goes as
+  v², and under the clamp it could not reach a thousandth of a part's weight). It is
+  retroactive: `container-tilt`, `drop-stack`, `threaded-jar-pour` were re-run and
+  LOOKED AT and are fine, but **`galton-board`'s gaussian fit drops from +0.81 to
+  +0.47** — still a bell, correctly tuned (four material/grip combinations tried, the
+  current one wins), just built against the old wrong physics.
+- **Everything is expressed relative to the PART's density** (`_medium_units`), and that
+  is the whole reason buoyancy comes out right. `_dyn_sim` works in mm with
+  `baseMass = hull volume`, i.e. every part has density 1 mass-unit/mm³ BY CONSTRUCTION.
+  Gravity and contact never notice (both are invariant under a global mass scaling) but
+  buoyancy and drag depend on the ABSOLUTE ratio — get the units wrong and wood sinks
+  while every test still passes. So `rho_rel = rho_fluid/rho_material`, nothing touches
+  `baseMass`, and **a vacuum cancels every added force exactly**, which is what makes
+  the change safe for existing scenes.
+- **A silhouette cannot make anything turn.** The first drag table projected the hull
+  per direction: areas correct (20.0× between a plate's largest and smallest, 1.00 for a
+  sphere) but **every centre of pressure came out exactly zero**, because for a centrally
+  symmetric body the silhouette's centroid IS the projected centre of mass. A plate would
+  never have flipped. `_body_aero` now integrates over the hull's FACES (Newtonian panel
+  drag): same cost, and the force stops being parallel to the wind — an inclined surface
+  gets a sideways push 0.90× the along-flow one at 45°, which is what makes a card fly.
+  Area still equals the silhouette exactly (a cube gives 400.00 for a 20mm face).
+- **A gas has no free surface; a liquid does.** Scaling drag by a submerged fraction that
+  air does not have made a 12 m/s wind move a plate by ONE MILLIMETRE. `_MEDIUM` carries
+  an `is_liquid` flag: a liquid fills up to `level`, a gas fills everything. And without
+  a `level` a buoyant part never stops rising — measured, a wooden cube reached z=858.
+  With it, wood settles 63% submerged against 60% theoretical.
+- **A wired Wind, or any non-vacuum medium, turns scene mode on by itself**, in BOTH the
+  emitter and `_drop`'s dispatch. The analytic path has nowhere to apply a force, so a
+  wind reaching it would be ignored in silence. And a Wind with the default `vacuum`
+  medium would blow on nothing, so a wind implies air unless something denser was chosen.
+- **The sleep guard lost its `_pose` test**: `if tau <= _drive_until` rather than
+  `if _pose is not None and tau <= _drive_until`. A gust that starts late finds the pile
+  asleep, exactly as a slowly tilting tray did. Backward-compatible by construction —
+  with the 0.0 default it is true only at k=0, where `still` is already 0.
+- **The bounce-back SIGN is the whole solver.** `np.roll(A, s)[x]` is `A[x-s]`, so the
+  neighbour at `x + c[q]` is `roll(solid, -c[q])`. With `+c[q]` the link set is mirrored,
+  reflected populations land on the wrong cells and **mass is destroyed instead of
+  bounced**: density drained from step one, went negative by step six, and the drag came
+  back `nan`. It looked like a stability problem — it diverged at EVERY tau, including
+  0.70 — and it was not.
+- **Cd is only comparable at the same Reynolds, and the report says so in six lines.**
+  With the sign fixed a sphere gives Cd 1.37 at Re 159 against Schiller-Naumann's 0.89
+  (1.54×, inside the factor-2 gate), but the teardrop < sphere < cube ordering still
+  fails — because each body lands at a DIFFERENT Re (86, 159, 183), and at these Re the
+  Cd runs as ~24/Re. The gate that passes is the PAIRED one: the same body turned around,
+  same grid, same Re. That one also corrected me — tail-downstream 1.157 beats
+  nose-upstream 1.314, because a teardrop is round in front and pointed behind.
+- **Voxelisation is shell-raster + flood-fill, never the winding number** (measured 8.65s
+  against 0.017s at 64×32×32 — the bridge cost more than the solver). `_winding_inside`
+  stays PopulateGeometry's point-in-mesh oracle; it is not a voxeliser.
+- **Streamlines are `Spline`s, one edge each, decimated to ≤32 points.** `_polylines_of`
+  samples EVERY EDGE at 33 points, so a `Polyline` of 120 points is 119 edges and 3927
+  points on the wire — 236k for sixty lines. A list of build123d curves then previews for
+  free (`_as_shape` compounds it, `_polylines_of` walks its edges): **frontend zero**,
+  as PLAN_FLUID promised. Seeds sit at 30–70% of the inlet, not across it — the domain is
+  4 body widths wide and a full-span grid draws a page of straight rules.
+- `WindTunnel` needs a custom emitter (`_emit_windtunnel`, modelled line for line on
+  `_emit_orient`): one solve, two outputs registered in `out_var_of`, `_rep = None`
+  pre-declared OUTSIDE the guard. Twenty seconds is too much to spend twice because a
+  Panel is wired in.
+- Examples: `examples/wind-drop.json` (the same plate twice, one facing the gust and one
+  edge-on: 59mm of drift and flat on the bed against 0.1mm and still standing) and
+  `examples/wind-tunnel.json`. Tests: `tests/test_fluid.py`. Agent-facing
+  usage: AGENT_HELP topic `fluid`.
+
+## 5i. Mechanisms (category `mechanism`) — move one part, the connected ones follow
+
+`SpurGear`, `Keyframes` (`KeyframeMotion`), `Joint`, `Mechanism` (catalog.py §12e,
+runtime in the PREAMBLE: `_spur_gear`, `_keyframes`, `_joint`, `_mechanism`). Full
+notes and measurements in **`PLAN_MECHANISM.md`**; it came from feedback
+`20261011-180120-creepyfinger-v4` (Animate cannot show coupled joints).
+
+- **Kinematics, checked by collisions — not dynamics.** Drivers (`turn`/`slide`/
+  `rpm` on a Joint) dictate degrees of freedom on a clock; a BFS per frame carries
+  them through the couplings live at that frame; a body nothing reaches keeps its
+  angle (neutral). Collisions are a manifold3d CHECK over sampled frames, reported
+  and output as `clash` — never a force. Pairs whose relative pose never changes
+  (a shaft through its own gear) are skipped.
+- **Gears find each other from the geometry, every frame**: parallel axes, centre
+  distance m(z1+z2)/2, faces overlapping along the axis. That is why a sliding-mesh
+  gearbox shifts with no special case (`examples/gearbox-2-speed.json`). Phase:
+  a tooth faces a space on the line of centres; `engage=clash` (default, quill's
+  choice) recovers the phase error of a pair entering mesh WHILE TURNING in
+  proportion to the axial overlap — the teeth grind during the entry and the check
+  shows it; `snap` jumps. The frame-0 alignment is assembly and always snaps.
+- **The gear's data rides on the shape** (`_noodle_gear`, world terms + the
+  Location it was built with; placement now = L_now · L_built⁻¹). Move/Rotate keep
+  it, a boolean does not — two gears on one shaft go into ONE Joint, not a Union.
+  Hence `at`, not `origin`, on SpurGear.
+- **A Joint's (and a Pin's) output is `data` that CARRIES geometry**:
+  `_GEOMETRY_CARRIERS` in the transpiler keeps their inputs out of the auto-preview,
+  or every body is drawn twice (at rest + posed — paid for: the shifted cluster
+  showed up twice at t=0.9; a Pin's point stayed behind as a stray dot).
+- **Closed loops** (a four-bar, a finger driven through a rod): `Joint.parent` puts a
+  joint ON another body (pivot/axis given at rest, then carried), and a `Pin` is a
+  point two bodies share. Free bodies tied to pins are solved per frame (damped
+  Gauss-Newton, warm-started from the previous frame — that keeps the linkage on
+  its assembly branch); a pin that cannot close is reported as `LOOP OPEN` (a dead
+  point). Verified on creepyfinger-v4's four-bar against its own kinematic table:
+  equal to 3 decimals, and it found the dead point at −13.9° the table had papered
+  over. Gear phase is measured on the actual tooth directions, so a gear on a
+  moving body (a planet) works too.
+- **Collisions are reported against the REST pose**: what already overlaps with
+  every angle at 0 (a horn on its spline, a hub in its bore) is listed apart from
+  what collides only while moving — otherwise the first one drowns the report.
+- Replay is the existing `keys` plan per body (a list → `Scene`, owner per shape),
+  so the frontend change was one entry in `TIMELINE_NODES`. `_mechanism` also
+  returns `trace` (seconds / degrees / mm per body) — the kinematic table.
+- Tests: `tests/test_mechanism.py` (pure-Python, stand-in shapes carrying
+  `_noodle_gear`, collision check off).
+
+## 5b. Lists & fan-out (Grasshopper-style)
+
+Inputs have a data-access mode (`Socket.list_access`):
+
+- **item-access** (default): the input FANS OUT. Wire several connections into it
+  (shift-drag in the editor) — or feed it a list-producing node — and the node
+  runs once per item, producing a **list** output. Two points → one Circle → two
+  circles. Scalars broadcast; shorter lists reuse their last item (longest-match).
+- **list_access** (`Socket("list", …, list_access=True)`) and every `multiple`
+  collector: consume the whole list as one value (List/Sort/Item/Slice…, Loft).
+
+**Params as inputs:** an input socket that shares a param's name overrides the
+widget when wired, and falls back to it when not (e.g. `Vector`/`ConstructPoint`
+x/y/z, `Move` `offset`). Wire a list into such an input and the node fans out —
+`Range → ConstructPoint.x → Move.offset` scatters one copy per position.
+
+The transpiler wraps a fanned node as `_fanout(lambda …: <expr>, {…})` and tracks
+which node outputs are lists (`_produces_list` + `_LIST_PRODUCERS`) so lists
+propagate down a chain. List nodes live in the `data` category (ListCreate,
+ListSort, ListItem, ListReverse, ListSlice, First/Last, Flatten, Concat, …);
+`_sort` uses build123d `ShapeList.sort_by` for shapes, Python `sorted` otherwise.
+Other list-producers: `Voronoi2D` (scipy → cell faces), `Voronoi3D` (scipy 3D +
+`manifold3d.hull_points`/boolean → convex mesh **cells** clipped to a body, §5e),
+`DivideSurface` (`Face.position_at` UV grid → points), `PopulateGeometry`
+(universal scatter, §5e) — all fan out downstream (Extrude per cell, scatter per
+point). scipy/numpy are available in the worker.
+Frontend multi-connect = dynamic input slots sharing one socket name (see
+`onConnectionsChange` + `fromGraphJSON` in `nodes.html`).
+
+## 6. How to change things
+
+**Add or edit a node** — almost always pure data in `catalog.py`:
+
+```python
+register(NodeDef("MyNode", "category", "My Node",
+    inputs=[Socket("shape", WIRE_SOLID), Socket("plane", WIRE_PLANE, required=False)],
+    params=[_f("amount", 1.0, 0.0, 100)],          # _f/_i = float/int slider helpers
+    outputs=_geo(),                                 # _geo/_sk = solid/surface output
+    code_template={"algebra": "my_op({shape}, {amount})"},
+    description="..."))
+```
+
+`{socket}` → the upstream variable; `{param}` → the formatted value. If the node
+needs runtime logic that doesn't fit one expression, add a helper to the
+transpiler **PREAMBLE** and call it from the template (e.g. `_bbox_plane`,
+`_rotate`). Wire compatibility changes go in `cad_nodes/casts.py` (§5) — the
+frontend picks them up from `/api/wiretypes`.
+
+**Search aliases.** `aliases=[…]` adds the words a user from another CAD would type into
+the add-node search (`Split` answers to "cut" and "trim"): litegraph 0.7.18
+matches ONLY the registered type path and its `searchbox_extras` are gated by the
+same test, so nodes.html overrides the canvas INSTANCE's `onSearchBox`
+(`nodeSearchRows` — the constructor sets `this.onSearchBox = null`, which would
+shadow the prototype) and matches type + label + aliases itself.
+
+**Personal aliases** are the same idea, user-side and hot: a node's right-click
+menu → "🔎 Search aliases…" opens a chip modal (`editAliases`) where the built-in
+ones sit LOCKED next to yours, which carry a red ✕. Every add/remove PUTs the
+whole personal list to `/api/aliases/{type}` and re-draws from the response (so
+the chips show what is really stored, server-side normalisation included; a
+failed save rolls them back). That writes `projects/_aliases.json` (`{node_type: [word, …]}` — a file, so the
+project/library listings that filter on `is_dir()` never see it; `_`-prefixed, so
+`validate_graph_id` can never let a project collide with it). The editor loads
+them at boot into `USER_ALIASES` and `aliasesOf()` merges the two lists, ranked
+alike. The file is deliberately plain and greppable: **a word that earns its keep
+gets promoted BY HAND into `NodeDef.aliases`** in catalog.py, and dropped from the
+JSON. Catalog aliases are shown in the modal but never editable there — code owns them.
+
+**Group nodes** (BuildPart/BuildSketch) use `is_group=True` + a `builder`
+template and emit nested `with` blocks — see existing examples.
+
+A child is substituted INLINE into the parent's `with` block instead of being
+emitted as a statement of its own, and that one difference hid two bugs for a
+long time — **no saved project uses a group**, so nothing exercised the path
+(`tests/test_group_children.py` now does):
+
+- **A child used to lose every parameter.** `_input_values` reports `"None"` for
+  each UNWIRED socket, but a socket sharing a param's name must fall back to the
+  widget (params-as-inputs, §5b). `_emit_simple` had that rule inline; the group
+  path merged blindly over it, so a child came out `Box(None, None, None)` and
+  the group died with an OCCT constructor TypeError. Both paths now go through
+  `_merge_inputs`, so the rule lives in ONE place.
+- **A child emitted no progress events**, so a BuildPart of twenty nodes lit one
+  glow while the twenty stayed dark all run. Children can't be `_guard`ed (they
+  are not statements), so they bracket themselves: `_ev('s'/'e')` inline, plus an
+  inner try/except that REPORTS and re-raises — a failing child still fails its
+  group exactly as before, but it no longer unwinds past its own start event and
+  leaves that node breathing amber forever. On a memo HIT the block is skipped
+  entirely, so `_guard(sub_ids=…)` reports the children cached too; without that
+  they would light on a cold run and go dark on every warm one, which is
+  indistinguishable from the glow failing at random.
+
+### 6b. Drag anticipation (the old ✥ fastDrag)
+
+Two toolbar modes, mutually exclusive (turning one on turns the other off):
+**Live** re-runs exactly after every change (anticipating while a hand is down,
+if the ⚙ setting `fastEnabled` allows — `noodle:settings:fastDrag`); **⚡ Fast**
+(`fastMode`, remembered in `noodle:settings:fastMode`) anticipates and NEVER
+runs by itself — ▶ Run / Ctrl+Enter computes. `fastDrag()` = `fastMode ||
+(liveMode && fastEnabled)`. Fast exists because quill found the re-run on
+release annoying on heavy graphs (creepyfinger): with it the anticipated
+geometry simply stays until Run, and the ⚡ marks are yellow in either mode,
+grey in neither. Other editor switches of the same review: **autosave** can be
+turned off (⚙, `noodle:settings:autosave`; the pill then reads «Non salvato ·
+clic per salvare», runs post their snapshot without saving, the local draft
+still guards a crash) and **Costi** left the toolbar for ⚙ only.
+
+The contract: while a param drags, replay it locally in Three.js; when the drag
+settles, `scheduleLive()` re-bakes it exactly. The local replay must therefore be
+an *anticipation of the engine's answer*, never a different one.
+
+**When you add a node, ask whether it can be anticipated.** Compatibility is
+decided at DRAG TIME, not at node creation — it depends on the wiring and on
+whether a preview mesh exists, so it cannot be a static flag on the NodeDef:
+
+- `applyLocalTransform(node)` — the node's own preview moved as a delta from the
+  baked params. Today: Move/Rotate/Scale (a `Location`) and the `TIMELINE_NODES`
+  — Drop and Animate — replaying the `_noodle_anim` they ship. Add a node here
+  only if the transform is expressible as a matrix on the already-meshed preview.
+- `applyDropTargets(node)` — a value node (Number Slider…) wired into the `t` of a
+  timeline node, which replays each target instead of itself.
+
+- `applyBoolAnticipation(node)` — **booleans downstream of the dragged node**, redone
+  on meshes in the browser with manifold-wasm (`webui/anticipate.js`, vendored
+  `manifold-3d` 3.5.4, Apache-2.0 — the same library as the mesh lane). The reason:
+  on `raccordo` a Fillet radius re-runs in 19ms and then waits ~800ms for the Union
+  and Subtract after it, plus ~330ms of meshing/transport, so the node you touch is
+  never the cost. `plan()` finds the chain from the dragged node to what is drawn;
+  the inputs the drag cannot change are fetched ONCE per drag as baked meshes
+  (`POST /api/graph/{name}/anticipate` → `executor.operand_meshes`: a side run pruned
+  to their ancestors, all memo hits, `publish=False` — ~150ms), then each animation
+  frame re-evaluates the chain and swaps the drawn geometry; `renderPreviews` puts
+  the baked geometry back when the exact re-bake lands. Supported: Move, Rotate
+  (world, no pivot), Union, Subtract, Intersect, Box/Cylinder/Sphere (no `origin`,
+  arc 360) and value nodes into their pins — anything else in the chain refuses the
+  plan. Measured on raccordo: ~55ms per frame, bbox identical to the re-bake and
+  volume within −0.2…−0.8% (chordal error of the tessellated cylinders), 0
+  `/execute` during the drag. Per frame the boolean with the helical thread costs
+  25ms and `calculateNormals` 16ms; the cylinder booleans ~1ms each.
+  Tests: `tests/ui/anticipate.test.cjs`, `tests/test_anticipate.py`.
+
+All three return **false** when they cannot help, and the caller falls through to the
+plain debounced re-run. That fallback is what makes an unanticipated node correct
+but merely slower — so when in doubt, return false. A node that anticipates
+WRONGLY is far worse than one that does not anticipate at all.
+
+**Never build a preview key by hand — `graphIdOf(node)` is the only way across.**
+`previewMeshes` and `previewAnims` are keyed by the **on-disk graph id** (viewer.js
+keys `meshes[id]` by the `view.previews` key); a litegraph node carries a separate
+**runtime** id. As `nodeFor`'s comment already said, those "coincide only by luck" —
+and every replay/gizmo call site was building `'n'+node.id` anyway. It worked on a
+graph the editor had saved and reloaded in one go, which is why every test of the
+scrub passed, and it broke everywhere else — including on every hand-authored
+example, whose ids are words like `drop`. **Measured on `examples/threaded-jar-pour`:
+the Drop (runtime 30) looked up `n30` while its mesh sat under `n29`, and a Number
+Slider (runtime 31) resolved `n31` — the TORUS's mesh.** So the failure mode is not
+merely a lost 60fps scrub: a false hit hands a node ANOTHER node's geometry to
+transform, and the Move/Rotate/Scale gizmo reads the same map. It also cost a full
+12-minute screen recording that looked plausible until the frames were examined —
+the cap unscrewed (its ids happened to match) while the jar never tipped.
+`graphIdOf` / `previewMeshOf` / `previewAnimOf` are now the only readers;
+`tests/test_print.py::test_the_live_replay_resolves_meshes_by_ON_DISK_id` pins that
+no caller reconstructs the key, because this failed **silently** and would return
+the same way.
+
+### 6c. Node size & `arrange()` — why a graph you generate stops overlapping itself
+
+A node's on-canvas size is computed by **litegraph, in the browser**, from its
+socket and widget count — and, except for a resized sticky `Note`, it is never
+written to graph.json. So everything that placed nodes server-side (`api.add_node`,
+the copilot's 6-column grid, an agent writing graph.json by hand) was placing boxes
+whose height it could not know. Measured on the 58 saved projects: **539 pairs of
+nodes overlapping**, hiding each other.
+
+`cad_nodes/layout.py` fixes the cause, not the symptom.
+
+- **`node_size(ndef, node=None)` mirrors `LGraphNode.computeSize` exactly**, and is
+  pinned to reality rather than to itself: `scripts/capture_node_sizes.py` drops one
+  node of every registered type into a throwaway project, opens it in a headless
+  browser and reads `node.size` back out of the live editor into
+  `tests/fixtures/node_sizes.json`; `tests/test_layout.py` then asserts — pure
+  Python, no browser — that the model reproduces all 188. **If that test fails,
+  layout.py is wrong, not the fixture.** Re-run the capture after changing how
+  nodes.html builds sockets or widgets.
+- **The terms that a naive estimate gets wrong**, and they dominate: a float/int
+  param with BOTH min and max makes **two** widgets (the cadslider *and* the ✎
+  field); a `note` param makes **none**; and every fan-out-capable input carries a
+  `＋ name` toggle, which is a widget too. A `Vector` is 9 widgets and ~314px tall,
+  not the ~190 you would guess — which is exactly why `copilot.py`'s 180px row pitch
+  overlaps by construction.
+- **`node.position` is the BODY's top-left**; litegraph draws the title bar in the
+  30px ABOVE it. `node_box()` accounts for it — ignore it and titles collide while
+  the arithmetic says they don't.
+- **`arrange(graph)`** (also `api.arrange`): longest-path layering → column, barycentre
+  ordering within a column to cut crossings, then stacking on the real sizes. It
+  **asserts zero overlaps before returning** — a silent collision is the one outcome
+  it exists to prevent.
+- **Groups are the trap.** Membership is purely geometric (a group is a bare
+  rectangle, there is no member list), so `arrange` resolves membership BEFORE moving
+  anything and re-fits the boxes after. That alone is not enough: the barycentre
+  happily interleaves two groups down the same columns, and the boxes refitted around
+  them come out **cutting across each other** — visually worse than the unarranged
+  graph even though no two nodes collide. So each group also gets its own y-**band**,
+  packed per column. Across all saved projects that took group-box collisions from 43
+  to 2 (the survivors are graphs whose groups genuinely interleave in the dependency
+  order); it is reported as `group_overlaps`, not raised, since the nodes are still
+  correctly placed. Containment (a nested group) is not a collision.
+- Found while building it, because the model disagreed with the editor by exactly 96px:
+  `_curvePreviewH` was applied **only in the node constructor**, so a `GraphMapper`
+  rendered correctly when dropped and, after save+reload, drew its curve mini-preview
+  **on top of its own widgets**. All five `computeSize` call sites in nodes.html are
+  now one `resizeNode()` helper.
+- **Reaching it**: `⊞ Riordina` in the toolbar (Ctrl+Shift+A) → `POST /api/graph/
+  {name}/arrange`, or `api.arrange` for MCP/agents. The route has two modes and the
+  distinction matters: **with a graph body** it arranges THAT graph and returns it,
+  touching nothing on disk — which is what the editor posts, because the open canvas
+  may not be what is saved and arranging the stored copy would discard unsaved edits
+  and desync undo. **With no body** it loads, arranges and saves, for an agent or a
+  curl. The button applies the result through `fromGraphJSON` and then
+  `recordHistory()`, so Ctrl+Z puts every node back; it deliberately does NOT
+  `scheduleLive()` — moving a node cannot change the model.
+
+### 6c-bis. 🎨 Aspetto — one modal for colour, finish and wireframe
+
+A node's right-click menu used to carry three separate entries for how it LOOKS: a
+Wireframe toggle and two submenus. Their common flaw was that you could not see
+the result without closing them first. They are replaced by one live modal
+(`editAppearance`, `nodes.html`); the old entries are gone and a test pins that.
+
+- **UI-only.** The state model is unchanged — `previewColor` / `previewFinish` /
+  `wireframe` on the node, `color` / `finish` / `wireframe` in graph.json. No
+  migration, nothing else in the app has to know.
+- **Live, because it costs nothing.** These three never reach the transpiler —
+  the generated source is byte-identical with and without them (pinned in
+  `tests/test_print.py`), which is also why editing them never invalidates the
+  memo cache. So every click is a `refreshDisplay()` (re-render the last view),
+  never a run. Cancel/Esc restores the state captured on open, and the whole
+  visit is ONE undo step, not one per click.
+- **A multi-selection is styled together** — the submenus could not do that.
+- **Per PIECE, and it needed no new state.** Since §5d-bis every body of a collide
+  scene names the node that DREW it (`body.owner`), so "glass jar, metal bolts"
+  was already expressible per node — but only if you knew to open the modal on
+  the CONTAINER's node, whose own preview is usually switched off. Nobody guesses
+  that. `piecesOf(node)` groups the last view's bodies by owner, and when there is
+  more than one the modal shows a **Pezzo** row that retargets it. Switching
+  re-reads that node's own values (showing the previous piece's colour would be a
+  lie), and Cancel restores every piece VISITED, not just the one on screen. It
+  is a view onto the per-node fields that already exist — no per-body override
+  map, so graph.json is untouched and a test pins that no such state was invented.
+- Giving ONE bolt of a fan-out its own material is still absent: those are one
+  node by construction, and telling them apart would need real per-body state
+  with an answer for what happens when the count changes. `rainbow` remains that
+  answer.
+- Tests: `tests/test_appearance.py`.
+
+### 6d. Naming a node — and the input panel
+
+There is a per-node `title` (`Node.title`, persisted only when it differs from the
+type's label). It is documentation on any node, and on a **pure parameter source**
+(`category == "input"`: Number Slider, Integer, Number, Boolean, String) it is also
+a promotion: `arrange()` lifts every NAMED one out of the dependency flow and stacks
+it in a panel at the left, one click away.
+
+- **Naming is the whole mark, and that is the point.** Every knob in a graph is
+  called "Number Slider" until you rename it, so "has a name" already separates the
+  parameters the user cares about from the scratch ones — no second piece of UI, and
+  the panel comes out exactly as long as the labelling you bothered to do.
+- **Sorted by name, which is also how you order it**: prefix the names and they sort
+  that way. Rename with `✎ Rinomina…` in the node's right-click menu or **F2**;
+  clearing the field restores the type's label (and drops `title` from graph.json).
+- **An explicitly GROUPED node is left where it is** — putting a node in a group is a
+  stronger statement about where it belongs than naming it is.
+- **The title feeds litegraph's width**, so `node_size()` measures a renamed node with
+  its own name; forgetting that would desync the model from the editor for exactly
+  the nodes this feature creates. Verified against the browser: a 42-character name
+  gives 361.20000 in Python against 361.20001 on the canvas.
+- Still open: a graph with many UNNAMED sources still stacks them all in column 0, so
+  the result stays tall and narrow (`retromy`: 2010×8179). Naming them is the fix,
+  and now it is available.
+
+**Straighter wires, auto groups** (`layout.py`, measured over the 52 examples +
+59 saved projects + tars-pet-sg92r): ordering now routes a long wire through one
+dummy per column it crosses and keeps the best of 12 sweeps by crossing count;
+placement (`_align`) pulls each node to the weighted centre of its neighbours
+(weight = 1/source fan-out, so a hub does not drag chains apart) and re-packs each
+column in order with pool-adjacent-violators. Groups are rigid rectangles packed
+first-fit (two band orders tried, shorter kept) so boxes never cut across. Totals:
+crossings 1038 → 763, wire length −6.5 %, height +7 %; sg92r 75 → 49 crossings.
+Uniform weights in the ORDERING step measured better (763 vs 844) — keep them.
+`arrange(groups="auto")` (`?groups=auto`, `api.propose_groups`, ⌘K "Riordina +
+gruppi automatici") adds `propose_groups()`: "Parametri" (every input source,
+lifted into the panel — a group titled Parametri/Parameters/Params made only of
+sources IS the panel), connected hubs (fan-out ≥ 3), one box per remaining chain
+titled by its most downstream user name, else `<hub>[index]`. Opt-in only.
+
+**Editor readability** ("Graph clarity" block in nodes.html): selecting nodes
+dims everything outside their lineage (one even-odd veil + the lineage wires
+redrawn, upstream cyan / downstream amber); nameless ListItems and chain nodes
+DISPLAY a derived title (`Progetto[5] → Batteria`, `Export STL · Stampa frontale`)
+via `getTitle` — never saved; a minimap in the canvas corner (click/drag to
+navigate). All three toggle from ⌘K or the canvas right-click, remembered in
+localStorage. `flags.collapsed` is now persisted as `collapsed: true`.
+
+**Apply / reload rules:**
+- Backend Python change → `docker restart noodle` (process caches imports;
+  the read-only mount alone isn't enough).
+- Frontend (`webui/*`) change → a plain reload is enough: `_revalidate_ui` in
+  server.py serves /static and the pages with `Cache-Control: no-cache` (ETag →
+  304). Without it a browser kept an OLD viewer.js under a NEW page and the
+  module import failed — a blank editor and viewer (paid for when `poseAnim`
+  moved into viewer.js). A browser that cached before that header existed
+  still needs ONE hard refresh.
+- Verify engine logic fast in the container (§2) before restarting.
+
+**Gotchas:**
+- The container runs as **uid 1000** (`noodle`), matching the typical host user,
+  so `projects/` is host-editable. Projects created by pre-non-root images are
+  root-owned — fix once with `sudo chown -R 1000:1000 projects feedback`. The
+  canonical writer is still the server API (`/api/graph/{name}/...` or the UI).
+- Project names are validated (`cad_nodes/store.py::validate_graph_id`): one
+  path segment, `[A-Za-z0-9][A-Za-z0-9._ -]{0,63}`. Anything else is a 400
+  (path-traversal guard) — keep any new route that touches `projects/` on
+  `project_dir()`/`GraphStore.dir()`.
+- Running build123d prints noisy fontconfig warnings to **stderr** — redirect
+  `2>/dev/null` and read stdout.
+- The copilot/MCP both go through `cad_nodes.api`; new capabilities belong there
+  so all three surfaces (UI, MCP, copilot) get them.
+
+### 6e. The agent editing surface — why it exists, and its invariants
+
+Real use, four sessions of an agent designing a robot enclosure: it never touched
+MCP or the CLI. It went through `docker exec` + curl and **hand-edited graph.json
+with string replace** — because the tools answered 300KB of generated code per
+run, accepted any param silently, and had no way to change one line of a
+CodeBlock. The editor and the agent then overwrote each other's saves. The
+surface below is the answer; all of it lives in `cad_nodes/api.py`, with thin
+MCP (one contiguous section of `mcp_server.py`) and HTTP twins.
+
+- **Params are validated at the edge** (`_apply_param`): catalog name or a
+  CodeBlock `#@param` (bare name → the `_cb` override), `_`-prefixed editor
+  state and `selection`/`trace` pass through; everything else is an error that
+  LISTS the valid names. Out-of-range numbers clamp (as the editor's typed field
+  does) and say so in `notes` — except an input slider's `value`, whose catalog
+  range is only the default drag window: there the `_ui` window WIDENS to fit
+  (tars-pet keeps a 0-100 slider at 180). Stored graphs are never rejected —
+  saves and `validate` only REPORT (`check_params`).
+- **Nodes are addressed by id OR exact title** (`resolve_node`); id wins, an
+  ambiguous title is an error naming the ids.
+- **One implementation of every edit**: the `_op_*` functions mutate an
+  in-memory Graph; the single-call functions are load → op → save, and
+  `apply_ops` is load → many ops → validate → ONE save, or nothing (errors name
+  the op index). Ids are never renumbered.
+- **New nodes without a position are placed** (`_place_new`) with `layout`'s
+  real sizes: right of their upstream after a batch, else right of the graph,
+  nudged down until nothing overlaps. `arrange()` is still the real layout.
+- **Lean reads**: `summarize_execute` (no code/stdout/meshes, floats to 6
+  significant/4 decimals — 930KB → 6KB on a 61-node graph), `get_graph_compact`,
+  `compact_catalog` (the copilot's prompt uses it too). The HTTP `/execute`
+  default payload is UNCHANGED — `nodes.html` reads `data.code` for its Code
+  tab — the lean shape is `?lean=1`.
+- **Versions**: every write call takes an optional `base_version` (stale → 409,
+  `api.StaleGraphError`) and returns the new `version` — `graph_version()` reads
+  `store.version()`, the content hash of §6f.
+- Tests: `tests/test_agent_api.py`, `tests/test_mcp_agent.py`,
+  `tests/test_server_agent_routes.py`.
+
+### 6f. Live sync — the editor and an agent on the same graph
+
+graph.json has two writers: the editor's saves and an agent (API/MCP/copilot).
+The incident: an agent wrote the graph while the editor was open, the editor's
+next save put its older canvas back, and the agent kept telling the user "reload
+before saving". Three pieces fix it:
+
+- **Versions** (`cad_nodes/graph_version.py`): version = hash of graph.json's
+  bytes (covers every writer, needs no state, cannot miss a same-size edit the
+  way mtime can). `POST /api/graph/{name}` and `GraphStore.save` take an optional
+  `base_version`; a stale one is refused with **409** + the current
+  `{version, graph}`. No base = overwrite, as before. `GET …/version[?graph=1]`.
+- **Merge** (`cad_nodes/graph_merge.py`, `POST …/merge`, stateless): three-way,
+  field by field, each side diffed against ITS OWN spelling of the base (the
+  editor writes every widget value, an agent may omit defaults). A true conflict
+  keeps the human's value and is reported; position/collapse/size are quiet.
+- **Editor** (nodes.html, "Live sync" block): every save carries its base; a
+  1.5s poll of `/version` merges outside writes into the canvas — patched in
+  place when only values moved, rebuilt (viewport + selection kept) otherwise;
+  deferred while the human is dragging or has a modal open. Changed nodes glow
+  amber, a pill shows while edits keep arriving, conflicts get a keep-mine /
+  take-theirs box and hold saving until answered. Undo snapshots are rebased
+  with the merge's `ops`, so Ctrl+Z never takes an agent's edit back out. A save
+  of what disk already holds is skipped (every Live run saves first, and the
+  echo would only bump the version under an agent).
+- **Stable ids**: litegraph numbers nodes 1..N in load order and the save used
+  to write those back (n51 → n49 → n48). `fromGraphJSON` now pins runtime id K
+  to disk id `nK` (other ids ride on `node._gid`); `graphIdOf()` is the only way
+  from a node to its id.
+- Found on the way: `openGraph(currentName)` returns early for the open graph,
+  so the copilot's and Import's "reload" were no-ops (then reverted by the next
+  save) — they now `syncPullNow()`; and `checkDirty` re-armed the 2.5s autosave
+  debounce every second, so an idle dirty graph never autosaved.
+- **Verifying the editor: same project, same node, same build.** Paid for on
+  `raccordo` n48 (2026-10-05): the user's tab, loaded at 23:43:45, ran the OLD
+  absolute slider and saved x 127.785 → 10.0 and y 120.75 → 7.5 (a value pinned
+  at the cap of a collapsed −10…10 window); the fixes landed at 23:45:59 and
+  23:51:49, and the agent verified them in headless pages opened LATER, on
+  copies (`zz-probe-preview`), on n23/n19 — then said "fixed" twice. Once x
+  was 10 on disk, every fresh page derives −10…10 from it (the grown window
+  `w._win` lives only for the session), so "I see 10" was the truth on disk.
+  Three tools now close those gaps: the page carries its **build**
+  (`UI_BUILD`, injected by server.py `/nodes`, = `GET /api/system/ui-build`),
+  shows a reload banner when the server's moves on, and sends `ui=<build>` on
+  every `/version` poll (so `docker logs noodle | grep version?ui=` says which
+  build each open tab runs); `/nodes?p=<name>&readonly=1` opens the REAL project
+  and can never save, draft, thumbnail or run (non-GETs refused at `fetch`,
+  except the stateless `/merge` and `/anticipate`); `scripts/editor_probe.py`
+  drives that page and prints, per slider, canvas value vs disk value and the
+  window the canvas draws. Page loads and writes are logged as
+  `client=browser|headless|curl|python …` (User-Agent), because from the host
+  the user (via a LAN forward) and an agent's curl share the gateway IP;
+  a headless page inside the container shows up as 127.0.0.1.
+
+### 6g. Touch (tablets/phones) — the `── touch ──` block in nodes.html
+
+litegraph runs on **pointer events** (`touchPreInit`, before `new LGraphCanvas`).
+Everything finger-specific lives in one JS block and one CSS block named
+`── touch ──`; gestures: one finger = mouse left button, two = pan + pinch-zoom,
+long-press = right-click, double-tap = node search, "+ Nodo" / "Seleziona"
+floating buttons. Traps worth knowing before touching canvas code:
+
+- litegraph 0.7.18's pointer path **inverts `isPrimary`** in processMouseDown, so
+  a window-capture router shows every event litegraph handles with
+  `isPrimary=undefined` (= a MouseEvent). Without it double-click dies — for the
+  mouse too. Non-primary fingers never reach litegraph.
+- The graph canvas backing store is in **device pixels** (`TOUCH.dpr`, ≤2): the
+  ratio is folded into `ds.toCanvasContext`, so `ds.scale/offset`, events and
+  graph-space drawing (`onDrawForeground`) stay in CSS px. **Screen-space**
+  hooks (`onDrawOverlay`, `onRenderBackground`) get an identity transform in
+  device px — `ctx.scale(TOUCH.dpr, TOUCH.dpr)` first; size with the CSS rect,
+  not `canvas.width` (see the `renderInfo`/`centerOnNode` overrides).
+- `body.touch-ui` = the last pointer was not a mouse; it drives bigger targets
+  and the single-node selection bar. Under 800px the layout is one pane at a
+  time (`body[data-mtab]` = graph | view | panel).
+- Use `pointerdown`, not `mousedown`, for outside-click handlers: litegraph's
+  preventDefault on pointerdown suppresses the compat mouse events.
+
+## 7. The AI copilot — scope & guardrails
+
+`cad_nodes/copilot.py` drives an OpenAI-compatible tool loop bound to ONE graph.
+Tools: `get_graph`, `get_node_def`, `add_node`, `copy_node`, `connect`,
+`set_param`, `delete_node`, `execute`. It has **no tool that edits app code or
+node definitions** — by construction it can only manipulate a graph.
+
+Enforced policy (system prompt + tool layer):
+- It **assembles workflows** from existing catalog nodes and **creates new custom
+  nodes from scratch** (a custom node is a `CodeBlock` — arbitrary build123d code
+  in its `code` param).
+- It must **never** modify the app or any built-in node's behaviour.
+- It may **not edit the `code` of a custom node that pre-existed the conversation**.
+  `set_param` refuses an in-place code edit of such a node; the model is told to
+  warn the user and use `copy_node` to work on a duplicate, leaving the original
+  intact. (Nodes created in the current session are freely editable — they're
+  tracked in `state["created"]`.)
+
+If you extend the copilot, preserve these invariants.
+
+## 7b. Retro-engineering ("retroeng") — STL/STEP → parametric graph
+
+When the user says **"retroeng"** (e.g. *"fai il retroeng dell'STL che ti ho
+passato"* / "reverse-engineer this part"), they mean the `PLAN_RETROENG.md`
+workflow: rebuild an imported mesh/solid as a **parametric graph of catalog
+nodes**. "The file I just passed" resolves through the **ToAgent tag index**:
+in the editor the user tags an ImportSTL/ImportSTEP node with a `ToAgent` node
+(label + auto-stamped save date); `GET /api/agent/tags` (= `api.agent_tags`,
+MCP `cad_agent_tags`) lists every tag across ALL projects with the tagged
+file's project-relative path. Pick the most recent (or label-matching) entry —
+don't ask "which STL?".
+
+The loop (validated on real parts: STEP rebuilt at Δvolume 0.05%, a 59k-tri
+STL at +2.2% — see `projects/retro_nodes` and `projects/retromy`):
+
+1. **Perceive** — `GET /api/graph/{name}/slice_summary?path=<file>&n=10`
+   (`api.slice_summary`): symbolic cross-sections on all 3 axes (`circle r=3
+   @(x,y)`, `rect 40x30`; dedup "z=a…b identical" ⇒ extrusion + its height).
+   STEP sections are exact; STL is arc-fitted. The `text` field is the
+   LLM-facing format. Omit `path` to slice the graph's OWN result.
+2. **Microscope** where the summary is ambiguous —
+   `.../section_outline?axis=z&pos=…`: ONE exact section, edge by edge.
+   Mesh gotcha: a single section can drop loops near tangent surfaces —
+   confirm with nearby sections or with per-section areas.
+3. **Rebuild** with catalog nodes via `cad_nodes.api` — one `apply_ops`
+   batch (§6e). Proceduralize, don't trace: constant section → Extrude; N equal
+   circles in a regular layout → ArrayLinear/ArrayPolar with a count slider,
+   not copies; small rounds → a downstream Fillet; overall dims → sliders.
+   The user's stated intent about what to parameterize wins over defaults.
+4. **Verify with the same tool** — execute, re-slice your own result
+   (`slice_summary` without `path`) and diff the two summaries as text;
+   comparing per-section AREAS localizes residuals; bbox + volume checksum
+   is the final seal.
+
+The agent-facing version of this loop is AGENT_HELP topic `retroeng`.
+
+Not yet built (see PLAN_RETROENG.md): vision contact-sheet, gcode stripper,
+numeric `cad_compare`.
+
+## 8. Tests
+
+`tests/` are pure-Python (no build123d needed): toposort, graph validation,
+transpiler output, api ops.
+
+```bash
+python -m pytest tests/ -v        # pytest may need installing in your env
+```
+
+## 9. The agent's eyes — `/api/graph/{name}/screenshot`
+
+`GET /api/graph/{name}/screenshot` → `image/png` (= `cad_screenshot` on MCP,
+`api.screenshot`, code in `cad_nodes/screenshot.py`). Args: `view`
+(`iso|front|back|left|right|top|bottom`) or `azim`+`elev`, `zoom`, `node`+
+`isolate` (frame one node), `width`/`height`/`scale`, `projection`,
+`chrome`, `run`. Headers: `X-Noodle-Ran`, `X-Noodle-Size-Mm`.
+
+**Why it exists, concretely.** The Thread node (§5g) shipped with volume
+1922mm³, a watertight mesh, an exact major diameter and 237 green tests — and
+no thread on the bolt at all: the example wired a shank as fat as the nominal
+diameter, so the union filled every groove. Nothing in the API could report
+that. The first rendered picture did, immediately. **Numbers verify what you
+thought to measure; a picture shows what you did not.**
+
+- **It is the REAL viewer, not a second renderer.** Headless Chromium over this
+  server's own `/nodes` page: same `viewer.js`, materials, finishes, selective
+  bloom, same camera code. A numpy rasterizer was considered and rejected — it
+  would be free to drift from the thing users actually look at, and blind to
+  precisely the work that went into glass/emissive/rainbow/bloom.
+- **No GPU needed**: SwiftShader, verified pixel-identical to hardware GL. A GPU
+  is opt-in: `NOODLE_BROWSER_GPU=vulkan|gl` + the `docker-compose.gpu.yml`
+  overlay (CDI device AND the Vulkan/EGL manifests — the device alone silently
+  stays on SwiftShader). On podman: `podman-compose -f docker-compose.yml -f
+  docker-compose.gpu.yml --podman-run-args="--userns=keep-id:uid=1000,gid=1000"
+  up -d --force-recreate`.
+- **The browser is kept WARM**, like the execution worker: ~5-10s cold, **~0.7s**
+  warm with `run=0`. Take extra angles freely; re-run only when geometry changed.
+- **…and the page is FROZEN between shots** (`_freeze`: a CDP debugger pause).
+  It is the real editor, whose animate loop redraws 60×/s forever; left warm
+  and running after one shot it held ~11 cores on SwiftShader for ten hours.
+  `Page.setWebLifecycleState frozen` does NOT work (headless pages are always
+  visible, and Chromium only freezes hidden ones — it answers OK anyway). A
+  FAILED shot closes the page instead of parking it: a half-booted page used to
+  fail every later shot until a restart.
+- **The warm page must not show you the PREVIOUS graph.** It only re-navigated
+  when the URL changed, so shooting the same project twice reused whatever was on
+  screen — edit a graph, shoot it with `run=0`, and you were handed the geometry
+  from before the edit, silently. That is the exact failure this endpoint exists
+  to prevent, and it cost three rounds of "why is the picture identical" before it
+  was found. `graph.json`'s mtime now decides: unchanged → reuse the page (the
+  fast multi-angle path is intact), changed → re-read AND re-run. Note it re-reads
+  with `window.openGraph(name)` rather than a reload: the editor guards
+  `beforeunload` while the doc is dirty, and a navigation stalls on that until the
+  element screenshot times out. A run is unavoidable on change — opening a project
+  does not restore previews from view.json (§9b), only running draws.
+- **The shot page is a READER — taking a picture must never destroy the subject.**
+  It loads the real editor, and `runGraph()` began with `await saveGraph()` like
+  any user, so a shot whose warm page held a STALE in-memory graph wrote that
+  stale copy straight over `graph.json`. Measured, the hard way: three rounds of
+  careful graph edits were reverted to a pre-fix version by the act of
+  screenshotting them, with the save logged from `127.0.0.1` (the headless
+  browser), not from the user. `runGraph` now skips the save when
+  `window.__noodleShot` is set — and that is also *more* correct, since /execute
+  runs the graph ON DISK, which is exactly what an agent wants rendered. The flag
+  already existed for the thumbnail (§9b); it now guards the write too.
+- **A heavy glass scene can be too slow to shoot at all.** `transmission` makes
+  three.js re-render the whole scene per transparent body; on SwiftShader (no GPU)
+  a pile of six glass bodies never finishes a frame and `Locator.screenshot` times
+  out with a misleading "element not stable". `hq=0` completes. If a scene must be
+  shot at HQ, give only the things that need it a glass finish — which per-body
+  finishes (§5d-bis) now make possible.
+- **NOT through `off_loop()`** (unlike every other engine route) and deliberately: the work
+  happens in the browser process, so the coroutine only awaits I/O. The graph run
+  it triggers goes through /execute, which is already off the loop.
+- **Two traps paid for.** `openGraph` is async, so calling `runGraph()` too early
+  executes an EMPTY graph and the wait for previews then times out with nothing
+  to explain it — wait for `lgraph._nodes.length > 0` first. And the first `iso`
+  preset used a POSITIVE azimuth, which puts the camera behind anything modelled
+  facing front: every default shot came back with its lettering mirrored. It is
+  now front-right-top (-45°, true isometric 35.264°). Both were found by looking.
+- **Deployment**: `playwright install --with-deps` resolves an UBUNTU package set
+  and dies on Debian (`ttf-ubuntu-font-family has no installation candidate`),
+  taking the browser with it — the Dockerfile lists the libs by hand, and
+  `fonts-liberation` is the one that matters (without a font, every label in the
+  viewport renders as a blank box). Browsers go to `/opt/playwright`, world-
+  readable, because the server runs as uid 1000 and cannot read root's HOME.
+  Only the **headless shell** is installed: `playwright install chromium` fetches
+  the full browser too (549MB) and noodle never opens a window — the shell does
+  WebGL2 through SwiftShader (ANGLE/Vulkan), verified. Measured cost of the whole
+  feature: **1.87GB -> 2.6GB** (+730MB); installing both browsers made it 3.35GB.
+  A missing browser is a **503**, not a 500.
+- **`node` may name ANY geometry node**, not only a drawn one: `api.screenshot`
+  resolves it by id or title and, when its eye is not on, turns it on in
+  graph.json for the shot and restores it in a `finally` (the shot page reads
+  the graph from disk, so there is no in-memory way). A node with nothing
+  drawable (a slider) is a 400 before any browser work.
+- **The shot page shows the viewport ALONE** (`screenshot._SHOT_LAYOUT`, an init
+  script): the page is the real editor, laid out for a human. At width ≤ 800 it
+  took the phone layout — graph pane only — so the canvas was hidden and every
+  narrow shot waited 30s for "element is not visible" and came back 502 (blamed
+  at first on `node`/`isolate`, which were innocent); at desktop widths the
+  viewport was the right half under a toolbar, so 900×600 came back as ~472×307
+  CSS px. Now `width`×`height` IS the picture, at any width. Hidden layout must
+  not be a grid row: with toolbar/statusbar `display:none` the workspace lands
+  in the toolbar's grid row and gets its height — hence `display:block` + `100vh`.
+- **A failed capture is never a 200.** `api._check_png` rejects anything that
+  is not a PNG or is under 200 bytes (`ScreenshotFailed`), and the route maps
+  every non-HTTP failure to a **502** with the reason — an agent doing
+  `curl -o shot.png` used to save an error body as its "picture".
+- Agent-facing usage: AGENT_HELP topic `screenshots`.
+- Tests: `tests/test_screenshot.py` (pure-Python: camera planning, the clamps,
+  and that HTTP/MCP expose one operation rather than two).
+
+## 9b. Workflow thumbnails — the picture the library lists you by
+
+A name does not say what a part is. `projects/<name>/thumb.jpg` does, and it shows
+up in the `/` gallery cards and the editor's project dropdown (placeholder `⬡`
+when absent). Roadmap item 2 of `PLAN_NODE_CAD.md`.
+
+- **It is NOT taken with §9.** The agent's eyes drive a *second, headless* browser
+  that re-executes the graph to redraw a frame the user is already looking at.
+  The thumbnail is instead read straight off the editor's own canvas
+  (`CadViewer.snapshot()` → `PUT /api/projects/{name}/thumb`): one extra render of
+  a scene drawn 60×/s anyway, no execution, and it is literally what the user sees
+  — glass, bloom, rainbow and camera angle included. The server only stores bytes.
+- **The read-back must be in the same task as the render.** Without
+  `preserveDrawingBuffer` the WebGL buffer is cleared once the browser composites,
+  so an `await` between `_renderFrame()` and `toDataURL()` comes back blank.
+  `_renderFrame()` is shared with the animate loop for the same reason a second
+  renderer was rejected in §9: a copy of the bloom sequence would drift.
+- **The gate is not "Live mode", it is `lastRunJSON === lastSavedJSON`** — the
+  geometry on screen was computed from the graph now on disk. In Live that is true
+  the instant the run lands, so it is free and invisible; outside Live, Run-then-Save
+  satisfies it too, and a bare save shoots nothing rather than storing a lie.
+  Opening another graph clears `lastRunJSON` (the viewport still shows the one you
+  left). Empty viewport → no upload, so the last good picture survives.
+- **The agent's headless page is not a user.** It loads this same editor and *does*
+  save (runGraph saves first), so `screenshot.py` stamps `window.__noodleShot` in an
+  init script and `maybeThumb()` bails. Without it every agent screenshot would
+  silently overwrite the user's thumbnail with the agent's camera angle.
+- Grid, origin axes and the nav gizmo are hidden for the shot and restored in a
+  `finally` — a 200px card wants the part, and yanking the user's camera on every
+  save would be worse than having no thumbnail. ~10-20KB per JPEG, long side 480.
+- Secondary and maybe the biggest win: **the thumbnail is a proof of execution**.
+  A workflow that cannot produce one is broken, and you see it from the gallery
+  without opening it.
+- Tests: `tests/test_thumbnail.py`.
+
+## 9c. Generations + the read-only viewer — a link instead of a screenshot
+
+`/view/<graph>/<gen>` (`webui/view.html`) is a read-only 3D viewer for a
+**generation**: a frozen copy of one run — `view.json` + the `graph.json` that
+made it + a meta (label, date, graph version, content hash, piece names) — under
+`projects/<graph>/gens/g<N>/`. An agent sends the user that link instead of
+screenshots: the user orbits the real scene, and the link keeps showing THAT
+result while the workflow moves on.
+
+- **Made by** `api.snapshot` = `POST /api/graph/{name}/snapshot?label=&run=` =
+  MCP `cad_snapshot` (returns `{gen, url, pieces, reused}`); listed by
+  `GET .../gens` / `cad_list_gens`; files at `GET .../gens/{gen}/{view|graph|meta}`
+  (immutable, cached a year). `run=1` (default) executes first, so the gen is the
+  graph as SAVED, not whatever last ran — through `off_loop()`. A result identical
+  to the newest gen (same previews hash, same label) is returned with
+  `reused: true` instead of piling up duplicates. Numbers are never reused
+  (`mkdir` claims them), so a link means one thing forever. The absolute URL uses
+  `NOODLE_PUBLIC_URL` if set, else the request's base (HTTP) / localhost (MCP).
+- **The page reads only the frozen copy** — never `/api/graph/{name}/view`, which is
+  live — and writes nothing. It renders through the shared `CadViewer`, with
+  colour/finish/wireframe taken from the FROZEN graph. A badge says when the live
+  workflow has changed since (graph version differs). `/view/<graph>` opens the
+  newest gen and rewrites the URL to the fixed `/gN` one.
+- **Pieces**: one row per drawn node; a node whose preview holds several pieces
+  expands — fanned-out lists (`parts` → the one merged buffer is split into
+  geometry groups with a material each, and a hidden part is
+  `material.visible=false`) and collide scenes (`bodies` → the Group's children).
+  Visibility lives at LEAF level, which is what makes **Inverti** well defined.
+  Click/dblclick (solo) in the list, click in 3D to select, H hide, Alt+click hide,
+  I invert, A all, F frame visible (measured on visible leaves only — `Box3.
+  setFromObject` counts hidden children, hence `CadViewer.frame(box)`).
+- **State in the hash**: `#hide=n3,n7.2` (a bare node id = all its pieces), kept in
+  sync as the user clicks — so an agent can send a link already set up (lid
+  hidden), and "Copia link" hands back exactly what the user is looking at.
+- **Touch / narrow screens**: under 760px the header folds into a `⋯` menu (info,
+  share via `navigator.share` → copy, ortho, editor) and the pieces become a bottom
+  sheet — tap the handle to collapse, drag it to resize; a ResizeObserver keeps the
+  canvas out from under it. On `pointer:coarse` rows are 44px, every row carries an
+  explicit ● (toggle) and ◎ (solo) button, and a tap toggles at once: a finger has no
+  double-click, so the 220ms wait that tells a mouse click from a dblclick would only
+  be lag. A tap in 3D selects and opens a floating bar (Nascondi / Solo / ✕) — the
+  touch twin of `H`. Tap vs orbit: 12px / 500ms tolerance for a finger, 5px for a
+  mouse, never during a pinch; double tap = frame the visible pieces.
+- Tests: `tests/test_generations.py`.
+- **`/views` — every proposal in one place** (`webui/gens.html`, `api.recent_gens`,
+  `GET /api/gens/recent?limit=&project=`, MCP `cad_recent_gens`). Paid for in
+  friction: an agent asked for several alternatives sent one link per design, and
+  "the second one" / "the round one" never meant the same thing to both sides.
+  Every gen of every project is a card, newest first, grouped by day, and each
+  goes by ONE name — its **ref** `<graph>/g<N>` — on the card, in the `/view`
+  header chip (click = copy `ref (label)`) and in `cad_snapshot`'s result. `/view`
+  also gets ‹ › (`[` `]`) through the project's gens and a link to the gallery
+  (also in the editor toolbar ◫, home and library).
+  Two files sit BESIDE a gen without touching its immutable view/graph/meta:
+  `seen.json` (`/view` POSTs `…/gens/{gen}/seen` on open → `last_seen: true` in the
+  listing = what the user means by "this one"; kept even past `limit`) and
+  `thumb.jpg`, **write-once**, drawn by the first page that renders the gen with
+  the SHARED CadViewer — `/views` draws the missing ones on an off-screen canvas,
+  `/view` takes one before the link's hidden pieces apply. The thumb GET route is
+  declared before the generic `gens/{gen}/{part}` one, or `{part}` swallows it.
+  `scripts/build_pages.py` maps the listing to the static `gens.json` (flagged
+  `thumb: true` so a static page never tries to upload) and points ◫ at `../`.
+- **Timelines play.** A generation of a graph with `Animate` / `Drop` nodes carries
+  their plans (`previews[id].anim`, a scene's `bodies[i].anim`), and `/view` shows a
+  ▶ player — so a movement (lid open ⇄ closed) is ONE link, not one per pose. One
+  clock drives every plan through `poseAnim()`, the SAME function the editor's live
+  scrub uses: `dropMatrixAt` / `keyInterp` / `sceneBodyPose` / `poseAnim` moved from
+  nodes.html into viewer.js for exactly that reason (two copies would drift).
+  `t` is each plan's own normalised 0..1, one pass lasts the longest plan's `T`,
+  with a 0.6s pause at the ends. Mode defaults to `pingpong` when every plan is an
+  Animate (kinematics) and `loop` as soon as a Drop is involved (a fall played
+  backwards is nonsense). Hash: `t=`, `play=1`, `mode=`; they are read ONCE at load
+  (`HASH0`) because the first `writeHash()` runs before the timeline exists and
+  used to eat `play=1`. "Inquadra" frames the union over the whole movement
+  (sampled), so an opening lid never swings out of the frame. The clock follows
+  wall time (dt capped at 0.5s): a slow device skips frames rather than slowing the
+  motion — the glass jar runs at ~1.7fps on SwiftShader, fine on a real GPU.
+  `api.snapshot` reports `timeline: {seconds}` and marks `animated` pieces.
+- **One track per movement (≡ Tracce).** Every animated node is also a TRACK
+  with its own `t`, slider and ▶ (played alone, over its own `T`); the master
+  slider still moves them all. Why: choreographing a sequence on one clock
+  (`delay` + `hold` arithmetic) is what an agent got wrong on `walle` — it chained
+  Animate(open) → Animate(close), which does NOT sequence: the downstream one
+  moves its input frozen at the upstream's `t`, and only the last plan replays,
+  so the lid stayed shut and the head folded through it. Now the agent makes one
+  Animate per moving part and the USER plays the order; `lint.py` flags the chain
+  (`animate_chain`). Hash: `tt=<id>:<t>,…` (only tracks that differ from the
+  master `t`), `tracks=1` (panel open). Framing restores every track's own `t`.
+  Example project: `projects/cassone-demo` (a chest whose lid opens on a hinge).
+- **✎ Disegna — the user draws FOR the agent.** In /view (button, or `D`) the
+  user paints on the part — circles a hole in red, marks a fillet, writes ON
+  it — picks colour/size; it is stored AS THEY DRAW as a NOTE beside
+  the gen (`gens/gN/notes/aK.{json,jpg}` — the gen's own files stay immutable;
+  `aK.claim` is kept so an id is never reused, like a gen number). Strokes are
+  paint ON THE SURFACE, not on the screen: each pointer sample is a raycast
+  (`firstHit`) kept with its face normal, drawn as a tube lifted along it, so a
+  mark means a PLACE in model mm and stays put while the view orbits. Width is
+  picked in px and turned into mm where the stroke starts. Routing: a press ON
+  the part paints and is stopped at `#vp` in the CAPTURE phase, before
+  OrbitControls; background / right button / wheel still move the view; a
+  second finger cancels the stroke and RE-DISPATCHES the first finger's
+  pointerdown to the canvas, or OrbitControls would see a lone finger and
+  rotate instead of pinching. The JPEG is the user's own view (`snapshot({frame:
+  false})`). The pen lifts wherever it leaves the surface (over the hole it
+  circles), so the server also summarises per GESTURE (`marks`): `shape` loop/
+  line/dot — loop = sweeps ≥270° round its centre, because a circle round a hole
+  arrives as an open C — `centre`/`bbox` and `on` = node(s) of the gen's frozen
+  graph. Agent side: `cad_notes` / `GET /api/notes`, `cad_note_image`,
+  `cad_note_done` (reply shown under the note); `recent_gens` counts open
+  `notes`; `#note=aK` opens the viewer on one. Tests: `tests/test_notes.py`.
+  - **The bar is four tabs + one common row** (`PLAN_VIEW_TOOLS.md` §1):
+    ✎ Matita (✎ penna — flat —, ✎³ penna 3D, T vernice, ▭ decal) · ◆ Tag (⚑
+    targhetta, 🖼 Img) · ▣ Blocky (▣ forma + its kind, the gizmo modes ✥ ⟳ ▣
+    ◌) · 🔧 Tool (↔ metro + modes, ✂ sezione — a disabled placeholder until
+    task A). Keys `1-4`; P/T/E/M/F as before, a key shared by several tools
+    (P, T) takes the one used last; tab + tool per tab remembered in
+    localStorage `noodle:view:drawTools`. Common row, every tab: ↶ ↷ 🗑 ⌫ Muovi,
+    colours, sizes. The TAB row ends with the note's name + state (`#d-save`:
+    ● g4#a1, green saved / ◌ saving / ⚠ not saved — click copies the ref),
+    Fatto ✓ · ⋯ (Pulisci, on every screen — and 🗑 next to ↷ is the same
+    Pulisci in sight, since nobody found it in the menu) · ▾ · ✕. On a phone that end
+    sits on its own line above the tabs, the tool row scrolls sideways, the
+    common row stays; on `pointer:coarse` those buttons are ≥ 44px.
+    **▾ hides the bar while you work** (quill: «nascondere la tab disegna
+    mentre si fa un'operazione»; key **B** — H already hides a piece): only
+    the top row is left (`#vp.dhide`: the tool in hand as a chip that
+    reopens it, the name, Fatto ⋯ ▴ ✕), at the top on a desktop and at the
+    bottom on a phone, where the bar was. The tool is NOT deselected — you
+    keep drawing, placing/scaling shapes (their own `#s-bar` stays), measuring;
+    the ✂ cut's controls live in the tool row, so with the bar hidden its own
+    `#cutbar` comes back. Not remembered: entering ✎ always opens it whole. There is **no note text field** any more: a note is what is
+    drawn and written on the part; `text` stays in the data ('' for new notes,
+    an old note's sentence is kept when it is resumed).
+    **A tool is one `registerTool({id, tab, key, icon, label, title, mode,
+    cursor, hint, options, select, deselect, down/move/up/cancel, click,
+    ownsTaps, disabled})`** — `webui/view-tools.js`, a table + a dispatcher
+    that calls the active tool's handlers in the CAPTURE phase on `#vp` (a
+    gesture stays with the tool that got its pointerdown); `ctx` carries
+    what view.html shares with a tool module. Tests:
+    `tests/ui/view-tools.test.cjs`.
+  - **↷ redo**: the action stack has two sides (`actions` / `redone`); ↶
+    steps back, ↷ steps forward, a new action (`pushAction`) empties the redo
+    side; Ctrl+Shift+Z / Ctrl+Y. Every step goes through the autosave (PUT;
+    DELETE when nothing is left — a ↷ after that is a new note, new id) and
+    re-shoots the view pictures it touched (`refreshViews`), both ways. A
+    module's action may carry its own `undo()` / `redo()`.
+  - **One picture per VIEW, not per note** — paid for on the first real note:
+    the main JPEG is the LAST view, and a cross drawn under a bolt head from
+    below was simply not in it (nor a line along the thread); the agent found
+    them only in the coordinates. Now the pen-up shoots the current view
+    (`takeView`), re-shooting instead of adding when the camera has not moved;
+    views equal to the final one are dropped at send. Files `aK.vN.jpg`, a
+    mark carries `view` (0 = main) + its own `image_path`, `cad_note_image(…,
+    mark=N)`.
+  - **↶ takes back ACTIONS and never leaves a lying photo.** The undo stack
+    holds actions (pen gesture, ⌫ erase drag, T label, label edit), so undoing
+    an erase puts the strokes back in their original order (`k`). Paid for on
+    `prova-disegno/g1#a1`: ↶ took «xBIG» off the model but not off the photo
+    of its view, and an agent read the leftover «x» on a hole as "remove it".
+    Now every view that lost (or regained) something is re-shot FROM ITS OWN
+    camera (`refreshViews` → `shootFrom`: camera swapped in and out inside one
+    task, `_renderFrame` before the browser composites); a view left empty
+    keeps its camera with `image: null` and is not sent; only a persp↔ortho
+    change falls back to a fresh picture of the current view.
+  - **✎ as a 3D pen — ink piles up where you INSIST** (`webui/pen3d.js`,
+    pure, `tests/ui/pen3d.test.cjs`). quill: «penna 3D immaginaria con cui
+    fare cacchette… solo se si insiste a girare su un punto, senza torri
+    fuori controllo». Each pen sample gets a `lift` (mm along its normal) on
+    top of the 0.6 r the tube always has: the ink under the pen is measured
+    as the LENGTH of earlier stroke inside its reach, in passes (one straight
+    pass = 2 × reach) — counting runs of samples read a circle's seam, where
+    it starts AND ends, as two passes. Under 1.5 passes → 0 (a line crossed
+    once or twice stays flat); from there one layer (0.7 × width) on top of
+    the highest ink under the pen, so each further loop adds ONE layer; along
+    the stroke the lift moves ≤ 1 mm per mm (a ramp, never a wall — off a
+    heap it hangs a moment, like a real 3D pen). The pen's own last 2.5
+    widths are its wake, not old ink. Painted text never stacks. Measured in
+    the browser: 1 and 2 loops flat, 8 loops ≈ 2.5 mm. The note carries
+    `lifts` per stroke (only when > 0) and `height_mm` per stroke and per mark
+    — read by the agent as «material here, this tall».
+  - **The note saves itself — there is no send button.** Paid for on
+    `creepyfinger-v4/g13` (feedback 20261008-153010): quill drew for a quarter
+    of an hour, the page was reloaded, and it was gone — the server log showed
+    not one write in between, because a note reached the server only when
+    "Invia all'agente" was pressed. Now every change goes through `syncDraw()`,
+    which schedules `flushSave()` (900ms debounce, one request in flight): the
+    first change POSTs and gets the id, every later one PUTs the WHOLE note
+    back under that id (`PUT …/notes/{id}` → `api.add_note(note_id=)` →
+    `store.save_gen_note`, which keeps `created`, sets `updated`, deletes the
+    pictures the rewrite no longer names and REOPENS a note the agent had
+    closed, its reply kept in `reopened`). **The undo history rides along**
+    (quill: «salva la history nel file così si può annullare anche se
+    ricarico»): `historyOut()` names items by their `k` (unique, ++seq) —
+    `live` = the k of each item of the note in its own order, `pool` = every
+    item an action still points at that is off the part, in full, plus
+    `actions`/`redone` by k — and the server keeps it as `aK.history.json`
+    beside the note (never in the note, never shown to the agent); `resumeNote`
+    reads it back (`historyIn`), so ↶ ↷ survive a reload. 🗑 Pulisci
+    (`clearAll`, also visible next to ↷) is an erase of everything, so ↶ undoes
+    it and it no longer asks. A note with nothing on it but something to bring
+    back is KEPT with `empty: true` — hidden from `list_notes`, the open-note
+    counts and the /view list, resumed by its page; with no history either, or
+    on «Fatto», it is DELETEd. It compares a signature of the content, computed with
+    every view at its own index — tied to the camera, orbiting after a stroke
+    re-saved the note. A failed save shows `⚠ non salvata, riprovo` in the
+    `#d-save` chip and retries every 4s; `visibilitychange` (a phone
+    backgrounding the page) saves at once, `beforeunload` with a change still
+    unsent saves AND asks. «Fatto ✓» closes the note:
+    the next mark starts a new one. The live note is drawn by the draft, not
+    by `noteObject` (it would show twice), and is «✎ in corso» in the list.
+    **…and it comes BACK into the draft** (`resumeNote`): strokes (painted
+    letters re-linked to their words), labels, placed pictures (fetched and
+    turned back into data URLs, since every PUT re-sends them), measures,
+    shapes (`rot` = surfQuat(normal)⁻¹ · quat, `ffd` kept) and the view
+    pictures, with `save.id` on the note — so it stays ONE note across a
+    reload. The page remembers the note it was drawing per gen in
+    localStorage (`noodle:view:live:<graph>/<gen>`, a convenience: the server
+    holds the note) and resumes it on load unless it is done; any note has a
+    ✎ in the list to continue it. The undo history is not rebuilt: ↶ starts
+    from the note as saved (⌫ still rubs anything out).
+  - **The brush: alpha + width, for ✎ and ✎³ alike** (common row). Three
+    ALPHAS (`webui/ink.js`): *sfumato* `soft` (the spray that evens out; ✎³ a
+    tapered, matte bead), *normale* `normal` (a marker's crisp edge; ✎³ the
+    round tube), *stellina* `star` (stars stamped along the stroke at a fixed
+    pace — `stamp` = arc length so far, each star drawn by the segment its
+    centre falls in; ✎³ the tube through a star nozzle). Width = a slider
+    1…80 px on a square law. Both remembered (`noodle:view:penAlpha|penSize`).
+    Each stroke saves `pen` (spray|3d) and `alpha`, so a reloaded ✎³ line stays
+    filament even when it never piled up; absent = what the pen drew before
+    alphas (soft spray, round tube). 🖼 Two picture squares: one among the
+    tips (a photo as the ALPHA — stamped on ✎, a relief on ✎³) and one among
+    the colours (a photo as the colour TEXTURE — along the stroke, per stamp,
+    wrapped round the tube). `webui/brush-img.js` prepares any photo with no
+    question asked: ground read on a ring 4–8% inside the border (the outer
+    band is often a frame — taken for the ground it turned a leaf inside out),
+    crop to the subject, polarity, levels with a floor over the ground's
+    grain, round feather; the texture is cropped by covering and sampled
+    mirrored (no seam). The pictures travel INSIDE the note as small JPEG
+    data URLs (`brushes`, strokes name them by `brush`/`tex` index; the agent's
+    listing leaves them out). The toast steps past every visible bar
+    (`placeToast`): it used to cover the folded ✎ row and the shape's bar.
+  - **⌫ eraser**: any object of the note, whole — a stroke (the pen already
+    splits them where it leaves the surface), a painted word, a targhetta, a
+    decal, a picture, a dimension (along its line), a shape — hit-tested in 3D — the point on the PART vs each stroke's
+    polyline, radius from the size buttons in px → mm (`ERASE_PX`). Picking
+    the tubes would miss 3px lines and catch strokes on the far side. Draft
+    only; sent notes stay immutable.
+  - **T — text ON the part, and it is DATA.** Drag a box (a tap = default box,
+    smaller on a phone), type, Enter; tap a label with T to edit; ⌫ rubs it
+    out. Three STYLES = three tools (T vernice and ▭ decal in ✎ Matita, ⚑
+    targhetta in ◆ Tag), the last one remembered (`noodle:view:labelStyle`),
+    stored per label as `style` ("tag" when absent, for old notes):
+    **✎ vernice** (`paint`, the default) — quill: «come disegna già a mano può
+    stampare testo?». The words are laid out in the box in SCREEN space with a
+    single-stroke font (Hershey Roman Simplex, public domain, embedded as
+    `HERSHEY`; à è é ì ò ù = base + a drawn accent), every glyph polyline is
+    sampled every ~2.5 px and each sample goes through the pen's `surfaceHit`.
+    Out come ordinary pen strokes (broken off the surface and on depth jumps,
+    width from the size button capped at a sixth of the letter height), so the
+    text lies on a plane, a cylinder, a thread, anything, with no special case
+    and no new rendering. The strokes carry `label`: one gesture for ↶ and ⌫, a
+    tap with T re-letters it, and the server marks them `kind: "text"` and keeps
+    them OUT of `marks` (forty «line» marks for one word buried the real
+    circle). Why the decal stopped being the default: it doubled on ridges by
+    parallax and needed a special case per surface (plane, cylinder, sphere…).
+    **⚑ targhetta** — anchor dot + stem
+    along the normal + a `THREE.Sprite` plate that always faces the camera,
+    every piece drawn twice (depth-tested full, and `depthTest:false` at 0.35
+    on top) so it reads from behind and shows through the part faded. Asked by
+    quill: a decal vanishes as soon as you orbit behind. **▭ decal** — three's
+    vendored `DecalGeometry` from a `CanvasTexture`; normal = mean of a
+    5×5 raycast grid under the box, up = camera up projected on the plane,
+    size = the box's corners met with that plane (`planeSize` — px×mmPerPx
+    ignored foreshortening and halved labels on a slanted top face). Back
+    faces are dropped (`frontFaces`) and coverage < 50% → a targhetta. RIDGED
+    surfaces get the targhetta too (`probeUnder`: |Σn|/n < 0.9 — a thread is
+    ~0.87, 90° of cylinder 0.90): a decal projects along the normal, and on the
+    bolt of `zz-note-probe` «filetto M8?» came out doubled by parallax. The old
+    fallback, a one-sided flat card lifted to the highest crest, is gone: on a
+    box straddling the bolt head it floated 3.4 mm off the part — the «faccia
+    volante» quill saw. **Regular surfaces are not projected** (quill: «sulle
+    curve proiettala o usa uv per superfici regolari»): `fitSurface` samples a
+    7×7 raycast grid and tries plane (normals within 4°) → cylinder (axis =
+    smallest eigenvector of Σnnᵀ, after RANSAC over normal pairs — 2 samples of
+    49 on a cross-hole ledge had turned the nut's side into a «sphere»; radius
+    by a Kåsa fit on the POINTS, since the viewport's flat facets make normal-
+    based radii wrong by half a facet) → sphere (only if the normals turn round
+    two axes: a thin cylinder band fits a sphere just as well). A fit with low
+    residual gets its own grid patch with UVs (`patchGeometry`): on a cylinder
+    an isometry, box width = arc length, ≤150° of arc; sphere by the
+    exponential map. Stored as `surface` (plane|cylinder|sphere|decal|tag) +
+    `fit`, so a saved note is redrawn without refitting. The note carries `labels: [{text, style, surface, fit, at,
+    normal, up, size_mm, color, node, view}]`; `_link_labels` adds
+    `near_marks` (within 1.5 label sizes, else the nearest within 2) and lists
+    the texts under each mark's `labels` — recomputed on read like `marks`.
+    A note of labels alone is valid. `near_marks`' fallback (the nearest mark
+    when none is within 1.5 sizes) reaches 2 label sizes, no further.
+  - **Img — a picture placed on the part.** «Img» picks a PNG/JPEG (on a phone
+    the camera too: `accept="image/*"`), shrunk in the browser to a long side
+    of 1600 px; drag a box and it lands in proportion — on the SURFACE, not on
+    screen (`L.h = L.w / aspect`: a 2:1 picture came out 1.2:1 on the slanted
+    top of the nut) — through the ▭ decal path (fitted patch, DecalGeometry,
+    targhetta). Stored as `aK.img<N>.png|jpg` beside the note (PNG/JPEG by
+    magic bytes, ≤ 4 MB each, ≤ 8; body limit 40 MB), described in `images`
+    like a label; `GET …/notes/{id}/img/{k}`; `cad_notes` gives each its
+    `image_path`/`image_url`. ↶ and ⌫ as a label; replacing = rub out + place.
+  - **The other way round: the agent TAGS the pieces it shows.**
+    `api.tag_gen` / `POST …/gens/{gen}/tags` / MCP `cad_tag_gen` (or `tags=` on
+    `cad_snapshot`, one call; a bad tag there is `tags_error`, not a failed
+    snapshot) write `gens/gN/tags.json` beside the gen — `[{text, node, at?,
+    color?}]`, `node` resolved against the gen's frozen `pieces` (id or exact
+    title; unknown/ambiguous → an error listing them). /view draws them as
+    targhette — anchor dot + stem + a `THREE.Sprite` plate facing the camera,
+    each piece drawn twice (depth-tested, and `depthTest:false` at 0.35) so a
+    tag reads from behind and shows through the part faded — in the agent's
+    look (cyan rim, a drawn ◆). Without `at` the anchor is the piece's topmost
+    point nearest the opening camera (a ray at the bbox centre dives into the
+    hole of a nut). «◆ Tag» hides them all (`#tags=0`), a hidden piece hides
+    its tags, a tap selects the piece, the piece row carries a ◆N badge.
+  - **Opening a note fits it to THIS screen** (`goToNote`): the camera carries
+    `aspect` (and ortho `zoom`); on a narrower screen it backs off by the ratio,
+    then until every stroke projects inside. `cam.lookAt` inside that loop is
+    load-bearing — the controls orient the camera only on `update()`, and
+    without it every stroke tested off-screen and the part shrank to a dot.
+- **↔ Metro — dimensions ON the part, both ways** (`PLAN_VIEW_MEASURE.md`).
+  `measureObject` in view.html is the third kind of targhetta: two anchors, a
+  line with arrowheads (outside, pointing in, when there is no room), extension
+  lines when `n`+`off` lift it, a ring for Ø/R, the plate BESIDE the line on
+  screen (re-decided each frame in `onBeforeRender`), every piece twice like
+  `tagObject` (depth-tested + 0.35 ghost). mm, 2 decimals, decimal comma; `≈`
+  when the value came from a tessellated curve. Violet = the user's, cyan ◆ =
+  the agent's, or green/amber/red by `status`. «↔ Quote» / `#measures=0`.
+  - **The user's** (✎ Disegna → ↔, `M`): a TAP takes a point — the tool never
+    captures the pointer, so a drag still orbits; with a mouse a rubber
+    dimension follows; Shift locks to the dominant axis; Esc drops the first
+    point; Enter / the same feature twice = its Ø or length. Modes (remembered,
+    `noodle:view:measureMode`): Auto, Punto–punto, Spigolo, Foro / cerchio,
+    Faccia–faccia. Part of the draft like a stroke (↶, ⌫ along its line, view
+    pictures); sent as the note's `measures` (`api._measures`), read by the
+    agent through `cad_notes` with a one-line `summary` and `near_marks` (a Ø
+    reaches 1.5·r: the pen circles the RIM, the Ø sits at the centre). On a
+    phone, press and HOLD: a lens above the finger, lifting takes the point.
+  - **Snaps without a B-Rep** — `webui/measure.js`, pure, tested in node
+    (`tests/ui/measure.test.cjs`): weld → sharp edges (>28°) → chains between
+    corners classified line / circle / arc / curve (PCA plane + Kåsa +
+    Gauss–Newton), planar faces by flood fill (same normal AND same plane),
+    cylinders from a smooth patch's normals, a spatial grid. Built lazily per
+    piece (~170 ms on the 19k-tri nut). Priority: vertex > circle centre >
+    edge > face > free. A thread is the trap: thousands of crests, each a
+    "vertex" — a spot with >10 sharp edges within 2·rE snaps circles only, a
+    piece over 20k sharp edges snaps faces only. Two EDGES are measured
+    lato–lato — at their closest points (`polylineGap`, segment–segment), in
+    Auto and in the Spigolo–spigolo mode; `exact` does the same on the B-Rep.
+    A silhouette edge is where a ray GRAZES past the part, so a miss looks
+    around within the snap radius and accepts only an edge/vertex/circle
+    there (never a free point in the air). Two traps paid for: a point
+    lying ON the tapped plane measured 0 (now: the distance to the tapped
+    spot), and `e.at || e` on an end given as `[x,y,z]` — an Array HAS `.at`
+    (Array.prototype.at), so every agent dimension vanished silently.
+  - **The agent's**: `api.measure_gen` / `POST|GET …/gens/{gen}/measures` /
+    MCP `cad_measure_gen` / `measures=` on `cad_snapshot`, stored in
+    `gens/gN/measures.json` (beside tags.json, not in it). `between: [refA,
+    refB]` measures the gen's FROZEN graph on the B-Rep (`measure.py
+    distance`) so the agent never guesses points; `expected` ± `tolerance`
+    judges `status`. A tap on any dimension explains it (toast).
+  - **✓ Verifica esatto**: a user's dimension, tapped, can be redone on the
+    gen's frozen B-Rep — `measure.py` op `exact` finds the same vertex /
+    circle edge / edge / planar face again and re-measures; `POST
+    …/measures/exact` (off_loop, writes nothing). A draft takes the exact
+    value. Mesh-lane pieces have no B-Rep and say so. Static preview: the
+    snaps work (computation in the browser), exact does not.
+  Tests: `tests/test_measures.py`, `tests/test_notes.py`, `tests/ui/measure.test.cjs`.
+- **▣ Forme — basic shapes placed ON the part** (✎ Disegna → ▣, `F`): a cube,
+  a cylinder or a sphere, in the pen's colour, sent as the note's `shapes`
+  (`kind`, `size` in its own frame — a cylinder is [Ø, Ø, h] along `axis` —
+  `center`, `quat`, `anchor`/`normal` of the surface, the piece; `cad_notes`
+  adds a `summary` and `near_marks`). A tap on the part sets one down SITTING
+  on the surface (local Z = the normal). Selected, it wears ONE set of handles
+  at a time, picked in ▣ Blocky's tool row (`#s-modes`; `gizmoMode`,
+  remembered in localStorage `noodle:view:gizmoMode`; `refreshCage`
+  builds only the active set, one function per set, and `handleAt` finds what
+  is there): **✥ Sposta** = three arrows along its own X/Y/Z, on a LEASH (the
+  centre stays in the piece's box grown by max(¼ of the piece, the shape's
+  size)); **⟳ Ruota** = three rings about the centre (Shift 15°); **▣ Gabbia**
+  = ALL IN ONE (quill: «fai valere gli spigoli della gabbia per deform, e un po'
+  c'è tutto in uno» — the old Scala ⇄ Deforma chip and `cageMode` are gone, a
+  stored `noodle:view:cageMode` is simply never read): the 8 **vertices**
+  (amber cubes) and the 12 **edges** (pale-amber diamonds at their middle,
+  picked on a fat rod over the middle 60% of the edge, distance measured to the
+  SEGMENT on screen) bend the shape — an edge moves its two vertices by ONE
+  delta, clamped once for both (`FFD.moveEdge`), so the side stays parallel;
+  Shift keeps only the dominant axis of the move (in mm). The six **face**
+  handles (±X red, ±Y green, ±Z blue) stretch ONE axis with the opposite face
+  fixed (a cylinder keeps round, a sphere scales whole), the violet
+  **centre** dot scales the whole about its base. Precedence: whatever pick
+  volume is hit, the handle nearest the pointer on screen wins — the centre
+  included, at its old size and grab (mark min(1.4·grab, 0.15·side), grab
+  1.4·grab). Shrinking it and letting every handle beat it (edaaf40) answered
+  the wrong complaint: what took «every press» was the BODY moving the shape.
+  **Scale
+  after a bend** (quill: «si scala con la deformazione applicata»): `ffd` is
+  normalised, so a face / the centre scales `size` and the bend grows with it;
+  the face handles sit on the BENT face (`FFD.faceMean`, the mean of its 4
+  corners), the fixed side is the opposite bent face's centre, and the centre
+  dot sits at the bent body's centre. The deformation is a trilinear FFD
+  (`webui/ffd.js`, pure, `tests/ui/ffd.test.cjs`): a
+  corner's motion fades over the whole body, the other 7 corners and the
+  three faces that do not touch it stay exactly put, so the cage's edges stay
+  straight and the millimetre paper bends with the body (it reads the REST
+  position, `restPos`); corners keep their octant and the minimum apart. The
+  note carries `ffd` (8 offsets in the shape's frame, 1 = its size) AND
+  `corners` (the 8 in world mm, for a text-only reader); `cad_notes` says
+  «deformed». **◌ Nascondi** = no handles; the right button / double tap
+  still slides the body. A pen
+  colour clicked with a shape selected RECOLOURS it (one undo step; the pen
+  takes it too). Standard sizes next to the label: **1mm** / **10mm** (every
+  side, Ø and height) and **½ vol** (same shape, scaled until it is half the
+  volume of the piece it sits on — the gen's `previews[id].volume`, a
+  body's, or a fanned part's triangles; disabled with the reason when none is
+  known); the base stays on the surface. On a deformed shape they rescale
+  the cage and KEEP the deformation (`ffd` is normalised, so the bend scales
+  with it); ½ vol counts the nominal box, not the bend. A drag that changes
+  nothing is not an undo step. MOVING IS
+  NOT FREE: a slide re-anchors the body on the surface hit under the
+  pointer (`stickAt`) or does nothing — quill: «si clicca e appiccica sui
+  pezzi». **The slide is the RIGHT button dragged on a shape** (mouse; off the
+  shapes the right button is still the pan, and no context menu opens over a
+  shape) **or a double tap and drag** (finger: the second press ≤ 300 ms and
+  ≤ 20 px from a tap on a shape, `DTAP_MS`/`DTAP_PX`; it wins over the handles
+  a small cage spreads under the finger). The LEFT button / one finger on the
+  body does not move it (quill: «se premi su un punto qualsiasi della
+  superficie sposta il pezzo»): a tap selects the shape, a drag orbits like
+  anywhere else; handles still take the left button. A second finger during a
+  slide puts the shape back and re-dispatches the first finger to
+  OrbitControls, like ✎'s pinch. The body is GRAPH PAPER in the shape's colour (`mmGridMaterial`, a
+  shader injected into the standard material): 1 / 5 / 10 mm rules in the
+  shape's own millimetres (local position × size, triplanar per face), the
+  1 mm rule fading where it would be denser than a few px. The minimum side
+  follows the PIECE it sits on (2% of its size, capped at 1 mm — or the next
+  drag would snap a 1mm preset back up), so
+  corners never meet; the handle MARKS shrink with the shape (≤ 10% of its
+  shortest side) while the GRAB volumes stay ~6/9 px, nearest one wins, and
+  on the body of the selected shape a handle wins only within half a grab
+  radius (else a small shape could never be moved). Phone: the tool row
+  wraps and each tool's menu shows only while it is in hand — 604px of tools
+  in a 390px screen had been scrolling the whole viewer sideways; `#s-bar`
+  moves to the top, takes the full width (`width:max-content` — at left:50%
+  it shrank to the modes row and wrapped Togli/✓ off the size row) and
+  «· deformato» becomes an amber ≈. A click in the bar's first 400ms is the
+  placing tap's ghost and is ignored (`sBarGhost`).
+  Screens: `docs/asset/view-shapes-*.png`.
+- **⊞ Piano — the pencil draws in the void too** (`webui/view-plane.js`,
+  PLAN_VIEW_TOOLS §4; quill: «disegni sui piani anche se non c'è un pezzo, tipo
+  ZBrush»). In ✎ Matita, ⊞ + a menu: Superficie (default, as before) / XY / XZ /
+  YZ / Vista (perpendicular to the camera, FIXED when picked). For ✎ ✎³ and T
+  vernice only: `inkHit()` = `surfaceHit()` first, then `VP.planeHit()` — over
+  the part you still draw ON it, in the void on the plane, and with a plane in
+  use a drag in the void DRAWS instead of orbiting (right button, wheel, two
+  fingers, ✋ Muovi still move the view; the hint says so). The plane goes
+  through the point a stroke began on the part (Alt+click on the part puts it
+  there without drawing), else the centre of the visible pieces;
+  **Shift+wheel** moves it along the normal in round 1-2-5 mm steps (~8 px of
+  screen, `mmPerPx`), a phone gets a vertical slider at the side. It is a veil
+  ruled 1 / 10 mm (the ▣ Forme paper, own ShaderMaterial) over a rectangle
+  round the pieces AND what was drawn on it; its position is in the bar beside
+  ⊞ and on the slider — NOT in 3D: a label there sat on the very stroke and
+  went into the view photo with it. Mixed strokes: leaving the part's edge
+  starts a new stroke (same gesture) that begins at the last point ON the part
+  — and the plane is re-anchored right there first, or a Vista plane through
+  the start of the stroke put the void part 7 mm behind the silhouette
+  (measured on `creepyfinger-v4/g64`; near_piece read 3.08 mm instead of 0); a
+  jump > max(pen rule, 4 mm) still breaks it. Data: a sample on the plane has
+  normal = the plane's, the stroke no `piece` and `plane: {origin, normal}`
+  (a painted label keeps its plane, `L.plane`, for re-lettering). Server
+  (`api.add_note` / `_marks`): such a gesture is a mark of `kind: "plane"` with
+  its `plane` and `near_piece` {node, title, distance_mm} — point-to-TRIANGLE
+  distance (`_point_tri_dist`, numpy) on the gen's FROZEN view.json meshes,
+  computed once at save and stored on the stroke. The ⌫ eraser finds void ink
+  on SCREEN (`planeInkNear`, segment by segment). `near_piece` skips the
+  pieces the note's `hide=` had hidden (a node, a scene body, or one piece of
+  a fan-out buffer by its `parts` counts). The sheet is a faint veil fading to
+  a rounded-square border (it used to cover most of g64's view), and the line
+  where the plane meets the shown pieces is drawn on it — ✂'s CPU slice
+  (`sliceTriangles`), solid + faint through the part, computed 150 ms after
+  the plane moves and never while a pointer button is down, cached per plane
+  (+ section state), the removed side of a ✂ cut dropped. Tests:
+  `tests/test_view_plane.py`.
+- **🖥 Schermo / ∿ Curva — a glass in front of the part** (`webui/view-screen.js`,
+  ✎ Matita row). quill: «come piano ma proietta il piano dove guardi e blocca la
+  vista». Taking either tool lays a plane square to the view, a hair in front of
+  the nearest VISIBLE VERTEX (the bbox's near corner floats far off in an iso
+  view), and turns `controls.enabled` off; putting it down (✋ Muovi, another tool,
+  closing ✎) frees the view, and the glass is re-laid wherever the camera is when
+  a stroke starts (🔒 frees the view without leaving the tool). Unlike ⊞ the part
+  is never drawn on. ∿ Curva = a centripetal Catmull-Rom through movable points
+  (tap adds, drag moves, drag on the curve inserts, double tap removes, ◯ closes,
+  Enter/✓ ends, Esc drops, ↶ takes back the last point); the handles are an SVG
+  over the canvas. Both emit ordinary pen strokes with `plane`. A Curva stroke
+  also carries `curve: {points, closed}` (note, history pool, api validation): a
+  tap on a saved curve with ∿ takes it up again on ITS OWN plane, and finishing
+  it pushes ONE `reshape` action (before/after geometry, in the saved history
+  too — a module's undo()/redo() would have cut the history there). Every point
+  taken off a saved curve = an erase. `ctx` is filled after `install()`: use the
+  DOM there, not `C.vp`.
+- **The viewer draws on demand** (`CadViewer.invalidate()`, no continuous loop):
+  anything that changes the scene from outside the viewer must ask for a frame.
+  `/view` does it in `poseTrack()` (every timeline pose) and `apply()` (hidden
+  pieces); without it the ▶ player moves the meshes and the canvas stays still.
+  `_tick` clears the dirty flag BEFORE it draws, so a hook that runs inside the
+  frame (`scene.onBeforeRender`) and asks for another one gets it.
+- **✂ Sezione — one plane, the cut face hatched** (`PLAN_VIEW_SECTION.md` §1
+  phase 1). ONE state, two ways in: ✂ beside Tutti/Inverti/Inquadra (key X,
+  floating X/Y/Z · slider · ⇄ · ✕ bar) and the `section` tool in ✎ Disegna's
+  🔧 Tool tab (key X there too) — `webui/view-section.js` builds the controls
+  twice from one function. ✂ in a list row leaves that piece WHOLE (the bolt
+  intact in the cut nut). Hash `cut=z:12.5&cutflip=1&nocut=n3,n7.2` (nocut
+  encoded like `hide=`); a new plane takes the half facing the camera off;
+  the slider spans the box of the SHOWN pieces. Rendering in
+  `webui/section.js` (for the editor later), pure geometry in
+  `section-core.js` (`tests/ui/section.test.cjs`):
+  - the cut is `material.clippingPlanes` set in each piece's `onBeforeRender`,
+    on whatever material it wears at draw time — never `renderer.
+    clippingPlanes` (it would cut grid, notes, tags) — so a restyle (🔍 Aspetto)
+    keeps the cut with no call to remember;
+  - the cap is the stencil trick PER PIECE (back faces +1, front −1, a quad on
+    the plane where ≠ 0, `clearStencil` after each): one stencil for all could
+    not tell nested pieces apart. It needs `stencil: true` on the renderer
+    (three ≥ r163 no longer asks for one). Caps are opaque, so the
+    transmission target (which has a stencil too) draws them behind glass;
+  - only CLOSED pieces get a cap (`closedRange`: every welded edge used an even
+    number of times); lines, dots and open shells are cut and not capped;
+  - hatch in the plane's own axes in mm (pitch ≈ 9 px snapped to 1/2/5, so it
+    neither swims nor crawls), 45°/135° chosen greedily between pieces whose
+    boxes overlap; the dark contour is the CPU triangle/plane slice, hidden
+    while ▶ plays and redrawn when the pieces stop (`setMoving` / `posed`);
+  - `firstHit` (the ONE raycast: pen, metro, forme, targhette, selection)
+    skips hits on the removed side and returns the CAP when the ray is inside
+    a cut piece at the plane (odd number of that piece's surfaces crossed —
+    the stencil's parity); `h.cap` → the metro takes a free point there;
+  - a note drawn on a sectioned view saves `cut: {axis, pos, flip, nocut?}`
+    and the server adds `keeps: "y >= 0"`; `cad_notes` shows it
+    (`tests/test_view_section.py`).
+- **🔍 Aspetto — glass, glow or ghost, for THIS view only** (`webui/view-look.js`,
+  PLAN_VIEW_SECTION §2): 🎨 on every row of the piece list (a node row = all its
+  leaves), on the selection bar, or `G`; the gen stays immutable, the look lives
+  in the hash — `#look=n3:glass,n7.2:emissive:#ffcc00,n5:ghost,n9:#ff0000`
+  (finish and/or colour, a bare node id = all its leaves), read once at boot,
+  written on every change. Per LEAF, like visibility: a whole object swaps its
+  material; one piece of a fan-out gets a PROXY mesh (shared buffers, a group
+  of its own) and its group material hidden — swapping the group in place
+  would make one emissive piece light the whole buffer, because the glow pass
+  renders whole objects. `markGlow` + `viewer.syncGlow()` after each change.
+  - **👻 fantasma** is a finish of `makeMaterial` (editor too, 🎨 modal):
+    alpha 0.15, `depthWrite:false`, plus opaque sharp edges (`ghostEdges`,
+    EdgesGeometry 30°, never pickable). Ghost in ghost shows (glass in glass
+    does not — §0 of the plan), and it is the same on a phone. A pick goes
+    THROUGH a ghost (`firstHit` → `hitOf(hits, skipGhost)`): click the servo
+    inside the ghost shell and you get the servo, and the pen draws on it.
+  - **«Guarda dentro»** (in the menu): the piece stays, everything that COVERS
+    it goes all-glass or all-ghost, never a mix; again = back. «Covers» is
+    rays, not boxes (`coverOf`: 60 surface points × 26 directions, first other
+    piece hit, ≥10% of rays): measured on `creepyfinger-v4/g64`, the
+    electronics sit in a shell cut in two halves and neither half's bbox holds
+    60% of theirs (0.40 / 0.55) — the plan's «bbox che lo contiene» found
+    nothing. Rays give the two shells + the phalanx in front of the servo.
+  - Not verified: a real Android phone (glass there loses the inner glass
+    entirely, `WEBGL_multisampled_render_to_texture`, plan §0.2). A big
+    emissive body floods the frame with bloom (existing glow pass, not new).
+- **Plates step aside when you zoom into them** (`webui/view-plates.js`,
+  PLAN_VIEW_TOOLS §3). ONE builder for the three plates of /view —
+  `makePlate()` (dot + stem + plate: the user's ⚑ targhetta via `tagObject`,
+  the agent's tags) and `plateSprites()` (the bare plate: the ↔ metro's value,
+  whose side of the line is its `place(cam)` callback). They stay what they
+  were — mm-sized sprites, solid + 0.35 ghost — until the plate on screen is
+  too big to read as a word: ≥ 92% of the viewport wide, letters ≥ 56 px
+  (`letter` = letter height / plate height, from the canvas builder), or a big
+  plate cut by the screen edge. Hysteresis 1.0 / 0.8. Then it SLIDES away
+  from the zoom point (last wheel cursor, pinch centre, else the middle; a
+  mouse orbit/pan resets it), preferring its stem's direction on screen, and
+  never onto its own anchor (`keep`) — or, with no room, FADES to 0.15 (down
+  to 0.06 the more oversized it is), stem included, dot never. ~150 ms. The
+  plan's "60% of the viewport" was tuned up by eye on creepyfinger-v4 g51/g64:
+  an 84%-wide agent tag still reads at a glance. Hover holds a stepped-aside
+  plate at full opacity only when the pointer ENTERS it (zooming at the cursor
+  puts the cursor on it already, and a wheel lets go); on touch, a TAP decided
+  on lift (the first finger of a pinch lands on it too). It all runs in
+  `scene.onBeforeRender` (main frame only, not the bloom target), so only
+  when a frame is drawn. **Trap, paid for:** an `invalidate()` from inside a
+  frame used to be eaten (`_tick` cleared `_dirty` AFTER rendering) and a
+  plate froze half faded; `_tick` now clears it before drawing, so the
+  transition asks for its next frame with a plain `invalidate()`. No
+  registry: plates are found by `traverseVisible` each frame.
+  Tests: `tests/ui/plates.test.cjs`.
+- **✂ × 🔍 × ⊞ — where the four tools meet** (`tests/test_view_int.py`).
+  ONE `firstHit` → `hitOf(hits, skipGhost)`: the first pass looks through
+  ghosts, the second takes them; inside each pass a hit on the side the cut
+  removed is air and the cap parity is counted on the hits that pass may take
+  — so a ghost's cap is looked through with the ghost. section.js re-hooks
+  the cut EVERY frame (a flag per object), because Aspetto adds children after
+  bind: a fan-out piece's proxy (`userData.lookProxy`, its own group 0) and a
+  ghost's edges were drawn whole on a cut view; the cap reads colour and
+  visibility from the proxy, and a ghost's cap is hatched at 0.3 alpha with
+  no depth (CustomBlending, so it stays in the opaque list and in stencil
+  order). One stencil count per LEAF, not per drawn object: no double cap.
+  In the piece list ✂ and 🎨 are 24 px (36 on touch) before ◎.
+
+- **✎ spray, ✎³ filament — two pens that LOOK different** (`webui/ink.js`, pure,
+  `tests/ui/ink.test.cjs`; materials in `webui/view-ink.js`). quill: «i tubi
+  della penna 3D più ombreggiati … e quella normale più simile a vernice spray
+  che si omogeneizza». Only the drawing changed: the note's data are the same.
+  ✎ is a flat band on the surface, one quad per segment, each quad a soft
+  CAPSULE in its own coordinates (round ends, a fading mist to 1.3 r with a
+  speckle fixed in model space; T vernice letters crisper, and the fade never
+  eats a thin line's last pixel — `fwidth`). **The trick for the even coat:**
+  blending sums coverage, so crossings and every joint went darker; a coat of
+  paint is the MAX. The canvas has no destination alpha, the depth buffer does
+  the max: each fragment writes `gl_FragDepth` pulled toward the camera by its
+  coverage (a × r, view-space mm, never under the depth step at that
+  distance), pass 1 writes depth only, pass 2 blends with LessEqual — one blend
+  per pixel. A new colour starts a RUN (`nextRun`) one `runStep` nearer, drawn
+  after the previous one (renderOrder 100+2·run): the last colour covers, its
+  mist blends over the earlier ink, not over the part. Runs cap at 4 so a long
+  note never floats its last colour off the part. Both passes stay in the
+  OPAQUE list (CustomBlending blends with `transparent:false`): ink on a piece
+  inside 🔎 glass is still in the transmission target, a 👻 ghost blends over
+  it. ✎³ is a real tube framed by the SURFACE normal (no twist), Catmull-Rom
+  smoothed (×3), 16 sides, hemispherical ends, MeshPhysical with a clearcoat,
+  NOT tone mapped (ACES turned green into pastel) and a baked occlusion round
+  the section (dark underside = contact with the part / the layer below),
+  alternate layers ±8%. A saved stroke does not say which pen drew it: it is
+  filament if it piled up (`lifts`), spray otherwise — a ✎³ line that never
+  stacked comes back as spray after a reload. `disposeObj` skips the shared
+  spray materials (`isShared`).
+
+## 9f. 🔦 Traccia — which pieces of a CodeBlock each `#@param` moves
+
+quill: «i blocchi di codice sono lunghi, modificare un valore è lentissimo e
+devi sapere cosa stai muovendo: non puoi scoprirlo senza leggere il codice».
+A CodeBlock's node menu → **🔦 Traccia valori** runs the SAVED block once
+from a traced copy; then hovering one of its sliders lights, on top of the
+result, the pieces that value moves — amber where it SHAPES the piece, faint
+blue where it only MOVES it (a Pos / Rot / gira applied to what contains it),
+with the code lines in a label. Hover runs nothing; releasing a slider
+recomputes nothing; Live may stay off. `cbtCheckStale` marks the overlay old
+when the block's code or `_cb` changed since. 🔦 Spegni traccia clears it.
+
+- **Why it can be fast, measured** on creepyfinger-v4 (1289 lines, 97 values),
+  walle-v7 and tars: the booleans are 69-86% of a run; a primitive costs
+  ~0.5 ms, an extrude 1-8 ms, a loft ~8 ms; and the PIECES that go into the
+  booleans (the cheaper operand, not the body) rebuild within 100 ms in
+  95-100% of cases, median < 1 ms. Deferring the booleans instead does NOT
+  work: creepyfinger's `pulisci()` reads `.solids()` after every boolean, so
+  all 257 of them got forced anyway.
+- **How** (`cad_nodes/cb_trace.py` rewrites, `cb_trace_rt.py` is the runtime,
+  injected as SOURCE in front of the script like the sections markers; the
+  executor run is `codeblock_trace_run`, modelled on the sections run, saves
+  nothing). The copy wraps every call in `__cbt_call__(line, f, …)` and every
+  `+ - & *` in `__cbt_bin__` — no build123d class is patched in the warm worker.
+  Numbers carry their params (`_TF`/`_TI`, through `math`, `round`, helpers; a
+  traced `range(n)` hands out counters that remember n, so a loop's pieces
+  light with the count). Objects carry params, cost and contents by id.
+- **The piece tree**: a boolean makes each operand a node; a move with the same
+  TShape (`IsPartner`, matrix from the two locations) or a `mirror` carries the
+  contents with a matrix; a fillet/chamfer on picked sub-shapes (results of
+  `.edges()`, `group_by`… remember the shape they came from) adds a FEATURE
+  node. **The body is the LEFT operand of `-` / `&`** (what is cut from), else
+  the dearest operand only if it is itself a boolean result — "the dearest"
+  alone was wrong twice (a moved cube dearer than the plate it sits on; a
+  composite tool dearer than the box it cuts). The walk splits bodies, draws
+  pieces whole within the budget (100 ms), else their parts, else their
+  curves, else their points (a 2D fillet's vertices).
+- **Traps paid for**: the rotation is snapped to orthogonal and applied with
+  `BRepBuilderAPI_Transform` — build123d's `transform_shape` goes through a
+  GTrsf and refused 284 of 286 pieces ("non-orthogonal"); every bookkeeping
+  step is guarded so the user's code never breaks, which also HIDES runtime
+  bugs (a NameError lost every param silently) — `tests/test_cb_trace.py`
+  drives the runtime with stand-in shapes for exactly that reason, and
+  `stats.unplaced` names what could not be drawn instead of dropping it.
+- Limits: a value used only in an `if` lights nothing (`silent` in the
+  answer); numbers read back from geometry (`bb.min.Y`) lose their params;
+  the overlay is in the block's own output frame (a Move node downstream is
+  not applied).
+- Surfaces: `POST /api/graph/{name}/codeblock/{node}/trace` (`off_loop`),
+  `api.codeblock_trace`, MCP `cad_codeblock_trace` (lean: per value the pieces
+  it shapes with their lines, how many it moves, `silent`).
+
+**⚡ Step 3 — the lit pieces follow a drag.** With Live on, a hand (or ▶) on a
+traced slider no longer waits for the run: the pieces that value lights are
+rebuilt by the server and drawn over the ghosted scene; the one exact run
+happens on release (`liveFire` holds while `cbtHolding()`).
+
+- **Replay, not a run** (`POST …/codeblock/{node}/trace/replay`, body `{trace,
+  values, focus, probe, heavy_ms}`, `executor.codeblock_trace_replay`). The
+  trace PARKS its recipes in the warm worker (`sys.modules["_noodle_cbt"]`, ONE
+  trace — creepyfinger's holds ~2 GB; `gone: true` = trace again). Every
+  recorded object keeps up to 4 recipes (`R["RCP"]`, innermost first, all kept
+  alive in `R["KEEP"]` — a freed id once handed a new shape a stale recipe);
+  numbers carry theirs in `_r` (`param`/`op`/`call`/`item`); a call snapshots
+  the closure cells and globals of user functions so helpers and loop variables
+  replay at THEIR value. Only the lit pieces are rebuilt, never a boolean on the
+  body; a piece the values only move comes back as a matrix `D` (16 floats, row
+  major, relative to where the trace drew it). Over budget (`heavy_ms`, the
+  editor asks 250) the cheapest first, the rest `old: true`; wall clock
+  2.5×budget. `probe`: up to 8 values of `focus` measured as matrices only.
+- **Branches**: comparisons, `bool()` and `index()` of traced numbers are
+  recorded with their outcome and line; after a replay they are re-decided in
+  FRAME mode (numbers and locations only, 0.25 s) and `approx`/`flips` name the
+  lines whose `if` would go the other way. **Never re-decide in full mode**:
+  it rebuilt whole bodies (`pulisci`/`.solids()` loops) and on 2026-10-21 that
+  filled the mini PC's RAM and swap and froze it — hence also `memguard` (a
+  worker over `NOODLE_WORKER_MAX_MB` is killed: "Memoria esaurita").
+- **60 fps between answers**: the first answer of a drag asks the current
+  value only, the second adds 5 values across the drag window (a probe costs
+  a placement recompute per moving piece: 0.33 s each on creepyfinger's
+  `flessione`, so 8 per answer had made every answer 3 s), later ones the
+  current value again, merged into the table; between two samples a moved piece follows the SCREW from
+  one matrix to the next (rotation about B·A⁻¹'s own axis through its fixed
+  point + the slide along it — a lerp would cut an arc's chord). A rebuilt mesh
+  is placed at the value it was built for, so `T(v)·T(v_ref)⁻¹` carries it.
+  One request in flight; the next goes with whatever the slider says when it
+  lands. Measured: tars 17-35 ms per answer for a small value, ~1.7 s for
+  `gioco` (78 rebuilt, 29 left grey); creepyfinger `largo_retro` ~0.8 s,
+  container peak 1.4 GB.
+- **In ⚡ Fast** the first press on a slider of an untraced (or edited, or
+  `gone`) block traces it in the background (`cbtPrepare`), posting the
+  canvas as the body — tracing never saves. The overlay stays after release
+  until a run lands; dragging a second slider keeps the first one's pieces
+  (`also` = values moved since the last exact run, `cbtPending`). A typed
+  value replays too. The live pieces are half see-through lit solids with a
+  coloured outline: they are what goes INTO the booleans (a shell before its
+  cavity is cut), so opaque they hid the inside and flat amber read as a blob.
+- **A value WIRED into the block replays too** (`cbtLiveFrom`, `cbtSrcOf`,
+  `cbtWiredTargets`): the trace binds every numeric `#@param` by name, wired or
+  not, so a Number Slider wired STRAIGHT into a `#@param` socket drives the
+  replay like the block's own slider (its press traces the block, it gets the
+  ⚡, the label says `c = 9 ← Lato`). Only a direct wire from a value node
+  whose own value is not wired, and one wire per socket: anything in between
+  (a Math node, a list) would have to be evaluated in the browser, and the
+  anticipation could lie. Measured on a toy block: 23 ms per answer, 0 runs.
+- **Readable at a glance**: a fast slider gets a bold 13px ⚡ and, with ⚡ Fast or
+  Live on, its whole track outlined in the same colour (`drawCbtFast`). **L**
+  switches Live ⇄ ⚡ Fast (`switchMode`; from neither it turns ⚡ Fast on), also
+  in ⌘K and the shortcuts list.
+- **● on ▶ Run** (`setNeedsRun`, every `.js-run-btn`): with Live off, the
+  viewport is not the exact model — set by `previewStale`/`previewAnticipated`,
+  cleared when a run lands, never shown in Live (it runs by itself).
+- **⚡ beside a slider** = this value replays live (`data.fast[p]` from the
+  trace: pieces rebuilt + their measured cost, pieces moved). Yellow = within
+  250 ms, orange = the heavy pieces stay grey until release, grey = Live is
+  off. The hover label says the same in words. `cbtSig` ignores numeric `_cb`
+  values (a drag must not make the trace "old"); code or a toggle/select does.
+- Validated by replaying against a real trace at the new value (bbox per
+  piece): tars 96%, walle 93%, creepyfinger 83%; the misses checked in-process
+  were the truth's own run-to-run instability, not the replay.
+
+## 9d. Exports — the bake bundle and the per-workflow index
+
+**The 📦 bake** (`⬇ Export` in the editor, default choice; `⬇ STEP+STL` on each home
+card; `POST /api/graph/{name}/export/bundle`; `api.export_all`; MCP `cad_export_all`)
+exports what the viewport SHOWS, not `__result__`: every entry of `__previews__` (the
+one dict `Transpiler._previewed` fills) becomes `NN_<title>_<id>.step` + `.stl`, zipped
+with a `manifest.json`. Runtime in `cad_nodes/bake.py` (runs in the worker). It bakes the
+SAVED params — a Drop/Animate comes out posed at its slider's `t`, and a Drop's moving
+container (`_noodle_extra`) gets its own `_container` pair. What a format cannot hold
+is recorded in the manifest (`skipped`), never raised: a mesh-lane node has no B-Rep, so
+STL only (MeshToSolid is the explicit, slow bridge — §5c); a curve gets STEP only;
+points get nothing. The bake must never re-parent what it exports: on the warm
+worker the previewed shapes are the memo cache's own objects, shared with
+`__result__`, and `Compound(children=...)` moves them under the new compound —
+after one bake the next ⬇ STEP of the result failed. `bake._as_brep` uses
+`Compound(list)`, and wraps a single shape that has a parent (build123d cannot
+STEP-export it directly); `tests/test_bake.py`. The home card exports the graph ON DISK (no body); the editor saves
+first and posts its snapshot.
+
+**The index** — `projects/<name>/exports/index.jsonl`, `cad_nodes/export_index.py`.
+Every file in exports/ says who wrote it: an Export node (`_out(path, node_id)` in the
+PREAMBLE appends the line from inside the worker — the generated script cannot import
+cad_nodes), the ⬇ button (`exports/<name>.<ext>`), or a bundle
+(`exports/<name>_<date>.zip`, with the node list inside). JSONL and O_APPEND because
+TWO processes write it; `load()` folds it (last line per file wins, deleted files drop
+out) and, given the current graph, adds the node's current title, whether it still
+exists, and `fresh` = `graph_key` unchanged. `graph_key` hashes types + params (minus
+`_ui`) + bypass + wiring only, so moving or restyling a node does not mark exports
+stale; the executor hands it to the worker as `__GRAPH_KEY__`. A file older than the
+index still finds its Export node by file name (`guessed`). The library (`/library`)
+shows it all, with search, `?p=<project>` focus, and a link per node to
+`/nodes?p=<project>&node=<id>`, which selects and flashes that node.
+
+Sorting: home and the editor's project menu share `localStorage noodle:sort:workflows`
+(`date` = graph.json mtime, the `/api/projects` `mtime` field; or `name`); the library
+keeps its own `noodle:sort:library`. Tests: `tests/test_export_index.py`.
+
+## 9e. ▦ Sezioni — a CodeBlock read as the nodes it already contains
+
+Agents write long CodeBlocks (the TARS-pet body: ~570 lines, 18 sections). Asking
+them to build the same thing out of catalogue nodes would make their work heavier;
+instead noodle READS the block. `cad_nodes/sections.py` (pure `ast`, no build123d):
+
+- **Sections** come from the block's own header comments (`# ---- servo ----`,
+  `# ======== frontale ========`, ≥ 2 of them), else statements are grouped by the
+  variable they build, with `#@param` lines → *Parametri*, pure arithmetic of
+  params → *Quote*, `def`s → *Funzioni*; a single-assignment wrapper of one group
+  (`dummy = Compound(ghost)`, `result = body`) joins that group.
+- **Kinds**: params | quote | funcs | part | **chain** — a section that keeps working
+  on a shape an earlier section made (`bezel -= …`), i.e. one step of a part, as a
+  feature tree would show it. Detected through `x += …` anywhere in the statement
+  and in-place mutators (`ghost.append`).
+- **Edges**: straight-line reaching definitions per statement; names a compound
+  statement binds before use (loop / comprehension targets, inner assignments) are
+  local, so `for sx in …` never "reads" another section's `sx`; calling a helper adds
+  its free variables at the call site (Python binds them when it runs). Also
+  `outputs` (#@out / result → section), `result_items` (each item of a
+  `result = [...]` list → the section that makes it) and `unused` sections.
+- **The run** (`executor.codeblock_sections_run`, `POST …/sections/run`): the block
+  and ONLY its ancestors, all previews off, the block's code replaced by
+  `sections.instrument()` — a COPY with `__sec_mark__('sN', locals())` after every
+  contiguous range of every section (+ a nonce comment so its memo key is unique,
+  upstream stays cached). Per-section time = sum of its ranges; numbers each
+  section leaves; for `?section=sN` its shapes (what it hands on first, scratch lists
+  only if nothing else) as `view.previews`; `failed_in` = first section whose marker
+  never ran. `execute_code(publish=False)`: no view.json, no root progress pointer.
+- **UI**: ▦ Sezioni under ✎ Edit code opens a read-only full-screen view: columns
+  by dependency (Parametri/Quote/Funzioni left; their edges drawn only for the
+  selection), colour by kind, dashed = unused, ⏱ Misura, per-section code, uses /
+  used by / values, ▶ Anteprima in its own CadViewer, ✎ Nel codice selects the lines.
+  It saves the canvas first (the analysis reads the saved block).
+- Next steps (not built): edit a section's lines from its node; per-section memo
+  so a change re-runs from that section on; explode into real wired CodeBlocks.
+- Tests: `tests/test_sections.py` (analysis), `tests/test_sections_run.py` (image).
