@@ -1743,6 +1743,16 @@ def gen_ref(graph_id: str, gen: str) -> str:
     return f"{graph_id}/{gen}"
 
 
+def _view_bytes(store: GraphStore, name: str, gen: str) -> int:
+    """Size of a gen's view.json — /views skips drawing a thumbnail for a scene
+    too heavy to download (some reach 45MB), and cannot learn it from the
+    response once it is gzipped and streamed."""
+    try:
+        return (store.gen_dir(name, gen) / "view.json").stat().st_size
+    except (OSError, ValueError):
+        return 0
+
+
 def recent_gens(store: GraphStore, limit: int = 60, graph_id: str = "",
                 base_url: str = "") -> list[dict]:
     """Every generation of every project (or of `graph_id`), newest first.
@@ -1772,6 +1782,7 @@ def recent_gens(store: GraphStore, limit: int = 60, graph_id: str = "",
                 "pieces": [p.get("title") for p in pieces],
                 "animated": bool(m.get("timeline")),
                 "thumb": extra["thumb"], "seen": extra["seen"],
+                "view_bytes": _view_bytes(store, name, gen),
                 "notes": _open_notes(store, name, gen),
                 "url": gen_url(name, gen, base_url),
             })

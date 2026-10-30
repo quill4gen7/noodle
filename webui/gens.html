@@ -143,9 +143,32 @@ function dayOf(iso) {
 const thumbURL = g => `/api/graph/${enc(g.graph)}/gens/${g.gen}/thumb`;
 const viewURL = g => `/view/${enc(g.graph)}/${g.gen}`;
 
+// The listing can arrive CUT: behind nginx -> rootless podman a body the backend
+// closed right after writing lost its tail past ~108KB (2026-10-30, 246 gens),
+// and `r.json()` then threw out of load() — an empty page with nothing on it
+// but "Uncaught (in promise)". So: retry a few times, then SAY it failed.
+async function fetchGens() {
+  let err;
+  for (let i = 0; i < 3; i++) {
+    try {
+      const r = await fetch('/api/gens/recent?limit=0', { cache: 'no-store' });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return (await r.json()).gens;
+    } catch (e) { err = e; await new Promise(res => setTimeout(res, 400 * (i + 1))); }
+  }
+  throw err;
+}
+
 async function load() {
-  const r = await fetch('/api/gens/recent?limit=0', { cache: 'no-store' });
-  GENS = r.ok ? (await r.json()).gens : [];
+  try { GENS = await fetchGens(); }
+  catch (e) {
+    console.warn('gens listing', e);
+    $('count').textContent = '';
+    $('list').innerHTML = `<div class="empty">Non riesco a caricare l'elenco delle preview
+      (${esc(String(e && e.message || e))}).<br><button id="retry">Riprova</button></div>`;
+    $('retry').onclick = load;
+    return;
+  }
   const sel = $('proj'), keep = sel.value || params.get('p') || '';
   sel.innerHTML = '<option value="">Tutti i workflow</option>' +
     [...new Set(GENS.map(g => g.graph))].sort().map(p => `<option>${esc(p)}</option>`).join('');
@@ -212,32 +235,67 @@ $('proj').addEventListener('change', () => {
 $('reload').onclick = load;
 
 // ── the missing card pictures, drawn here with the shared viewer ─────────────
-let viewer = null, drawing = false;
+// One at a time, and none of them may hold up the rest: a scene too heavy to
+// draw (tappo-epaper154-batteria's are 45MB of view.json each) is skipped, a
+// draw that hangs times out, and a failure says so on its card instead of
+// leaving "disegno l'anteprima…" there forever. Cards on screen go first.
+const THUMB_MAX_BYTES = 15e6;        // view.json on disk (`view_bytes` in the listing)
+const THUMB_TIMEOUT_MS = 20000;
+let viewer = null, drawing = false, drawTok = 0;
+const withTimeout = (p, ms, what) => Promise.race([p,
+  new Promise((_, rej) => setTimeout(() => rej(new Error(`${what}: timeout`)), ms))]);
+function cardPic(g) { return document.querySelector(`.card[data-ref="${CSS.escape(g.ref)}"] .wait`); }
+function onScreen(g) {
+  const el = cardPic(g); if (!el) return false;
+  const r = el.getBoundingClientRect();
+  return r.bottom > 0 && r.top < innerHeight;
+}
+async function drawOne(g, tok) {
+  // a timed-out draw keeps running; it must never shoot (and store, write-once)
+  // the NEXT card's scene under its own name
+  const stale = () => { if (tok !== drawTok) throw new Error('superato'); };
+  const base = `/api/graph/${enc(g.graph)}/gens/${g.gen}`;
+  if ((g.view_bytes || 0) > THUMB_MAX_BYTES) throw new Error('scena troppo pesante');
+  const vr = await fetch(`${base}/view`);
+  if (!vr.ok) throw new Error(`view HTTP ${vr.status}`);
+  const [view, graph] = await Promise.all([vr.json(), fetch(`${base}/graph`).then(r => r.json())]);
+  stale();
+  const byId = Object.fromEntries((graph.nodes || []).map(n => [n.id, n]));
+  viewer = viewer || new CadViewer($('thumbc'));
+  viewer.resize();
+  viewer.renderPreviews(view.previews || {}, {
+    colorOf: (id, order) => (byId[id] && byId[id].color) || PALETTE[Math.max(0, (order || []).indexOf(id)) % PALETTE.length],
+    finishOf: id => (byId[id] && byId[id].finish) || null,
+    wireOf: id => !!(byId[id] && byId[id].wireframe),
+  });
+  const url = viewer.snapshot({ maxSize: 480, quality: 0.85 });
+  if (!url) throw new Error('niente da disegnare');
+  const blob = await (await fetch(url)).blob();
+  stale();
+  const r = await fetch(`${base}/thumb`, { method: 'PUT', body: blob, headers: { 'Content-Type': 'image/jpeg' } });
+  if (!r.ok) throw new Error(`thumb HTTP ${r.status}`);
+}
 async function drawMissingThumbs() {
   if (drawing) return; drawing = true;
+  const failed = new Set();
   try {
-    for (const g of GENS) {
-      if (g.thumb) continue;
+    for (;;) {
+      const todo = GENS.filter(g => !g.thumb && !failed.has(g.ref));
+      if (!todo.length) break;
+      const g = todo.find(onScreen) || todo[0];
       try {
-        viewer = viewer || new CadViewer($('thumbc'));
-        const base = `/api/graph/${enc(g.graph)}/gens/${g.gen}`;
-        const [view, graph] = await Promise.all(['view', 'graph'].map(p => fetch(`${base}/${p}`).then(r => r.json())));
-        const byId = Object.fromEntries((graph.nodes || []).map(n => [n.id, n]));
-        viewer.resize();
-        viewer.renderPreviews(view.previews || {}, {
-          colorOf: (id, order) => (byId[id] && byId[id].color) || PALETTE[Math.max(0, (order || []).indexOf(id)) % PALETTE.length],
-          finishOf: id => (byId[id] && byId[id].finish) || null,
-          wireOf: id => !!(byId[id] && byId[id].wireframe),
-        });
-        const url = viewer.snapshot({ maxSize: 480, quality: 0.85 });
-        if (!url) continue;
-        const blob = await (await fetch(url)).blob();
-        const r = await fetch(`${base}/thumb`, { method: 'PUT', body: blob, headers: { 'Content-Type': 'image/jpeg' } });
-        if (!r.ok) continue;
+        const tok = ++drawTok;
+        try { await withTimeout(drawOne(g, tok), THUMB_TIMEOUT_MS, g.ref); }
+        finally { if (tok === drawTok) drawTok++; }
         g.thumb = true;
-        const pic = document.querySelector(`.card[data-ref="${CSS.escape(g.ref)}"] .wait`);
+        const pic = cardPic(g);
         if (pic) pic.outerHTML = `<img src="${thumbURL(g)}" alt="${esc(g.ref)}">`;
-      } catch (err) { console.warn('thumbnail', g.ref, err); }
+      } catch (err) {
+        failed.add(g.ref);
+        console.warn('thumbnail', g.ref, err);
+        const pic = cardPic(g);
+        if (pic) { pic.textContent = '⬡ anteprima non disponibile'; pic.title = String(err && err.message || err); }
+      }
     }
   } finally { drawing = false; }
 }

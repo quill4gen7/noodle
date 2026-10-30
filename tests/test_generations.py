@@ -258,3 +258,26 @@ def test_on_a_phone_the_sheet_and_the_player_fold_by_a_real_handle():
     assert 'id="tl-grab"' in VIEW and "#tl.min" in VIEW       # the player folds to ▶ + time
     # floating buttons sit above the player at its real height, not a fixed 112px
     assert "--tlh" in VIEW and "bottom:112px" not in VIEW
+
+
+def test_listing_says_how_heavy_each_scene_is(store):
+    # /views skips drawing a thumbnail for a scene too heavy to download; once
+    # gzipped and streamed the response no longer tells it, so the listing does
+    api.snapshot(store, "demo", run=False)
+    size = (store.gen_dir("demo", "g1") / "view.json").stat().st_size
+    assert api.recent_gens(store)[0]["view_bytes"] == size > 0
+
+
+def test_the_gallery_survives_a_cut_listing_and_a_stuck_thumbnail():
+    # 2026-10-30: the listing arrived truncated past ~108KB behind nginx ->
+    # rootless podman, r.json() threw, and /views stayed blank. And one heavy
+    # or hung scene used to hold up every thumbnail after it.
+    assert "app.add_middleware(_GZipExceptStreams)" in SERVER
+    # and never the SSE progress stream: gzip would hold the glow until the end
+    assert 'endswith("/progress")' in SERVER and '@app.get("/api/graph/{name}/progress")' in SERVER
+    assert "\ndef recent_generations(" in SERVER          # threadpool, not the loop
+    assert "async function fetchGens()" in GALLERY and 'id="retry"' in GALLERY
+    assert "THUMB_TIMEOUT_MS" in GALLERY and "view_bytes" in GALLERY
+    assert "anteprima non disponibile" in GALLERY
+    # a timed-out draw must not store the next card's picture under its name
+    assert "drawTok" in GALLERY and "stale();" in GALLERY
