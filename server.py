@@ -26,6 +26,7 @@ from fastapi.responses import (
     StreamingResponse,
 )
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
 
 # Node-based CAD engine (pure imports; build123d only used in the subprocess)
@@ -71,6 +72,32 @@ FEEDBACK_DIR.mkdir(parents=True, exist_ok=True)
 APP_VERSION = "0.1.0"
 
 app = FastAPI(title="noodle", version="0.1.0")
+
+# Compress what we send. Measured on the gpunix (2026-10-30): /api/gens/recent
+# is 115KB of JSON with 246 generations and a gen's view.json reaches 45MB
+# (12MB gzipped). Behind nginx -> rootless podman (pasta) a response the
+# backend closed right after writing lost its tail past ~108KB when the client
+# sat on the LAN: /views got a cut JSON, threw, and drew nothing. A smaller body
+# is less exposed and every page loads faster.
+#
+# Server-Sent Events must NOT be compressed: gzip buffers, and the progress glow
+# then arrives in one lump when the run is over. Starlette 1.x skips
+# text/event-stream by itself, but the 0.38 that fastapi 0.115 pulls in does
+# not (measured: the whole stream landed 4.3s late, gzipped) — so the stream
+# routes are passed through by path, whatever version is installed.
+class _GZipExceptStreams:
+    def __init__(self, app):
+        self.app = app
+        self.gzip = GZipMiddleware(app, minimum_size=1024, compresslevel=5)
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and not scope.get("path", "").endswith("/progress"):
+            await self.gzip(scope, receive, send)
+        else:
+            await self.app(scope, receive, send)
+
+
+app.add_middleware(_GZipExceptStreams)
 
 # Serve webui static files
 app.mount("/static", StaticFiles(directory="/app/webui"), name="static")
@@ -619,10 +646,13 @@ async def list_generations(request: Request, name: str):
 
 
 @app.get("/api/gens/recent")
-async def recent_generations(request: Request, limit: int = 60, project: str = ""):
+def recent_generations(request: Request, limit: int = 60, project: str = ""):
     """Every project's generations, newest first, with `ref`, thumbnail flag
     and `seen` — the /views gallery, and what an agent reads to learn which of
-    its proposals the user last opened (`last_seen`)."""
+    its proposals the user last opened (`last_seen`).
+
+    A plain `def` on purpose: it reads a few files per generation (meta, seen,
+    notes), so FastAPI runs it in its threadpool instead of on the event loop."""
     if project:
         require_project(project)
     return {"gens": _gen_http(api.recent_gens, GraphStore(PROJECTS_DIR), limit=limit,
