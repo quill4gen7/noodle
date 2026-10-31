@@ -226,49 +226,177 @@ def _mesh_volume(tris) -> float:
                                np.cross(tris[:, 1], tris[:, 2])).sum()) / 6.0)
 
 
-def _mesh_section_loops(tris, axis: str, pos: float):
-    """Slice the mesh with the plane axis=pos -> list of closed 2D loops
-    (in-plane coords, ordered vertices, last != first)."""
+def _mesh_segments(tris, axis: str, pos: float):
+    """Triangle/plane crossings -> (k, 2, 2) in-plane segments, vectorised.
+
+    A vertex lying exactly ON the plane used to drop its triangle's crossing
+    (one sign change instead of two) and leave a gap in the loop; the plane is
+    nudged off any such vertex instead."""
+    import numpy as np
     ai = _AXIS_I[axis]
     ui, vi = _PROJ_I[axis]
     d = tris[:, :, ai] - pos
+    if np.any(np.abs(d) < 1e-9):
+        pos = pos + 1e-6
+        d = tris[:, :, ai] - pos
     hit = (d.min(axis=1) < 0) & (d.max(axis=1) > 0)
-    segs = []
-    for T, dd in zip(tris[hit], d[hit], strict=True):
-        pts = []
-        for i, j in ((0, 1), (1, 2), (2, 0)):
-            if dd[i] * dd[j] < 0:
-                t = dd[i] / (dd[i] - dd[j])
-                p = T[i] + t * (T[j] - T[i])
-                pts.append((p[ui], p[vi]))
-        if len(pts) == 2:
-            segs.append(pts)
-    def q(p):
-        return (round(p[0], 3), round(p[1], 3))
+    T, D = tris[hit], d[hit]
+    if not len(T):
+        return np.zeros((0, 2, 2))
+    pts, mask = [], []
+    for i, j in ((0, 1), (1, 2), (2, 0)):
+        di, dj = D[:, i], D[:, j]
+        m = di * dj < 0
+        t = np.where(m, di / np.where(m, di - dj, 1.0), 0.0)
+        p = T[:, i] + t[:, None] * (T[:, j] - T[:, i])
+        pts.append(p[:, [ui, vi]])
+        mask.append(m)
+    M = np.stack(mask, axis=1)
+    P = np.stack(pts, axis=1)
+    ok = M.sum(axis=1) == 2
+    order = np.argsort(~M[ok], axis=1, kind="stable")[:, :2]
+    return np.take_along_axis(P[ok], order[:, :, None], axis=1)
 
-    adj: dict = {}
-    for a, b in segs:
-        qa, qb = q(a), q(b)
-        if qa == qb:
-            continue
-        adj.setdefault(qa, []).append(qb)
-        adj.setdefault(qb, []).append(qa)
-    loops, used = [], set()
-    for start in adj:
-        if start in used:
-            continue
-        loop, prev, cur = [start], None, start
-        used.add(start)
+
+def _chain_segments(S, weld: float = 1e-3):
+    """Segments -> (closed loops, open chains) as lists of (u, v) tuples.
+
+    Edge-based walk, so a non-manifold vertex (a scan's shells touching) does
+    not end a loop early; every segment is used exactly once."""
+    import numpy as np
+    from collections import defaultdict
+    if not len(S):
+        return [], []
+    pts = S.reshape(-1, 2)
+    key = np.round(pts / weld).astype(np.int64)
+    uniq, inv = np.unique(key, axis=0, return_inverse=True)
+    inv = np.asarray(inv).reshape(-1)
+    coords = np.zeros((len(uniq), 2))
+    np.add.at(coords, inv, pts)
+    coords /= np.bincount(inv, minlength=len(uniq))[:, None]
+    E = inv.reshape(-1, 2)
+    E = E[E[:, 0] != E[:, 1]]
+    if not len(E):
+        return [], []
+    E = np.unique(np.sort(E, axis=1), axis=0)     # a doubled triangle = one edge
+    adj = defaultdict(list)
+    for k, (a, b) in enumerate(E.tolist()):
+        adj[a].append(k)
+        adj[b].append(k)
+    used = [False] * len(E)
+    El = E.tolist()
+
+    def walk(start):
+        chain, cur = [start], start
         while True:
-            nxt = next((p for p in adj.get(cur, ()) if p != prev and p not in used), None)
+            nxt = next((k for k in adj[cur] if not used[k]), None)
             if nxt is None:
-                break
-            loop.append(nxt)
-            used.add(nxt)
-            prev, cur = cur, nxt
-        if len(loop) >= 3 and (start in adj.get(cur, ()) or cur == start):
-            loops.append(loop)
-    return loops
+                return chain
+            used[nxt] = True
+            a, b = El[nxt]
+            cur = b if a == cur else a
+            chain.append(cur)
+            if cur == start:
+                return chain
+
+    loops, opens = [], []
+    starts = [n for n in adj if len(adj[n]) % 2] + list(adj)
+    for s0 in starts:
+        while any(not used[k] for k in adj[s0]):
+            ch = walk(s0)
+            pts_ = [tuple(coords[i]) for i in ch]
+            if len(ch) > 3 and ch[0] == ch[-1]:
+                loops.append(pts_[:-1])
+            elif len(ch) >= 2:
+                opens.append(pts_)
+    return loops, opens
+
+
+def _stitch_chains(opens, gap: float):
+    """Join open chains whose ends are within `gap` (a scan's separate shells,
+    holes in the mesh); a chain whose own ends meet is closed. Returns
+    (new loops, still-open chains)."""
+    import numpy as np
+    from scipy.spatial import cKDTree
+    chains = [list(c) for c in opens if len(c) >= 2]
+    loops = []
+    while chains:
+        # close the chains whose own two ends already meet
+        rest = []
+        for c in chains:
+            if len(c) > 3 and math.dist(c[0], c[-1]) <= gap:
+                loops.append(c)
+            else:
+                rest.append(c)
+        chains = rest
+        if len(chains) < 2:
+            break
+        ends = np.array([c[0] for c in chains] + [c[-1] for c in chains])
+        pairs = cKDTree(ends).query_pairs(gap, output_type="ndarray")
+        n = len(chains)
+        best = None
+        for i, j in pairs.tolist():
+            ci, cj = i % n, j % n
+            if ci == cj:
+                continue
+            dd = float(np.hypot(*(ends[i] - ends[j])))
+            if best is None or dd < best[0]:
+                best = (dd, i, j)
+        if best is None:
+            break
+        _, i, j = best
+        ci, cj = i % n, j % n
+        a, b = chains[ci], chains[cj]
+        # orient so a's end meets b's start
+        if i < n:
+            a = a[::-1]                   # a's matched end is its start
+        if j >= n:
+            b = b[::-1]                   # b's matched end is its end
+        merged = a + b
+        chains = [c for k, c in enumerate(chains) if k not in (ci, cj)] + [merged]
+    return loops, chains
+
+
+def _mesh_section(tris, axis: str, pos: float, gap: float | None = None,
+                  min_area: float = 0.5):
+    """Robust mesh section -> (loops, open chains). Loops that close only by
+    stitching across a gap <= `gap` (default 0.2% of the part diagonal) count
+    as closed; loops smaller than `min_area` mm2 are scan noise and dropped."""
+    S = _mesh_segments(tris, axis, pos)
+    loops, opens = _chain_segments(S)
+    if gap is None:
+        lo = tris.reshape(-1, 3).min(axis=0)
+        hi = tris.reshape(-1, 3).max(axis=0)
+        gap = max(0.05, 0.002 * float(math.dist(lo, hi)))
+    if opens and gap > 0:
+        more, opens = _stitch_chains(opens, gap)
+        loops += more
+    # A long chain whose ends nearly meet RELATIVE to its length is a loop
+    # with a hole in the scan under it (measured: a 407 mm outline open by
+    # 2.3 mm). Close it, and say how wide the bridged gap was.
+    bridged = []
+    still = []
+    for c in opens:
+        length = sum(math.dist(c[k], c[k + 1]) for k in range(len(c) - 1))
+        g = math.dist(c[0], c[-1])
+        if len(c) > 3 and g <= max(gap, 0.02 * length):
+            loops.append(c)
+            if g > gap:
+                bridged.append(round(g, 2))
+        else:
+            still.append(c)
+    opens = still
+    loops = [lp for lp in loops if len(lp) >= 3 and abs(_poly_area(lp)) >= min_area]
+    opens = [c for c in opens
+             if sum(math.dist(c[k], c[k + 1]) for k in range(len(c) - 1)) >= 1.0]
+    _mesh_section.bridged = bridged       # read by the describers below
+    return loops, opens
+
+
+def _mesh_section_loops(tris, axis: str, pos: float):
+    """Slice the mesh with the plane axis=pos -> list of closed 2D loops
+    (in-plane coords, ordered vertices, last != first)."""
+    return _mesh_section(tris, axis, pos)[0]
 
 
 def _fit_circle(pts):
@@ -443,10 +571,24 @@ def _point_in_poly(p, pts) -> bool:
 
 
 def _mesh_section_desc(tris, axis: str, pos: float) -> str:
-    loops = _mesh_section_loops(tris, axis, pos)
+    loops, opens = _mesh_section(tris, axis, pos)
+    tail = _open_tail(opens)
     if not loops:
-        return "(empty)"
-    # Nest: a loop inside another is that loop's hole (one level, like B-Rep).
+        return "(empty)" + tail
+    return _mesh_groups_desc(loops) + tail
+
+
+def _open_tail(opens) -> str:
+    tail = f" (+{len(opens)} open chain(s))" if opens else ""
+    br = getattr(_mesh_section, "bridged", [])
+    if br:
+        tail += f" (closed across scan gap(s) {', '.join(map(str, br))} mm)"
+    return tail
+
+
+def _mesh_groups(loops):
+    """Nest loops: one inside another is its hole (one level, like B-Rep).
+    -> [[outer_pts, [hole_pts...]], ...] largest first."""
     loops = sorted(loops, key=lambda lp: -abs(_poly_area(lp)))
     groups = []  # [outer_pts, [hole_pts...]]
     for lp in loops:
@@ -456,6 +598,11 @@ def _mesh_section_desc(tris, axis: str, pos: float) -> str:
             host[1].append(lp)
         else:
             groups.append([lp, []])
+    return groups
+
+
+def _mesh_groups_desc(loops) -> str:
+    groups = _mesh_groups(loops)
     parts = []
     for outer, holes in groups:
         txt = _mesh_loop_desc(outer)
@@ -669,3 +816,90 @@ def summarize(shape, n_per_axis: int = 10) -> dict:
             "size": [round(s, 3) for s in size],
             "volume": volume, "solids": n_solids,
             "axes": axes, "text": "\n".join(lines)}
+
+
+# ---------------------------------------------------------------------------
+# lens_data — the geometry behind the "lente" picture (cad_nodes/lens.py):
+# every section as drawable 2D loops + their symbolic description, and the
+# part's bbox so the cutting plane can be drawn across it in 3D.
+# ---------------------------------------------------------------------------
+def _thin(pts, max_pts: int):
+    """Keep at most `max_pts` vertices (evenly strided) — enough to draw."""
+    n = len(pts)
+    if n <= max_pts:
+        return [[round(p[0], 3), round(p[1], 3)] for p in pts]
+    step = n / max_pts
+    return [[round(pts[int(i * step)][0], 3), round(pts[int(i * step)][1], 3)]
+            for i in range(max_pts)]
+
+
+def _positions(lo: float, hi: float, positions, n: int):
+    if positions:
+        return [float(p) for p in positions]
+    n = max(1, int(n))
+    step = (hi - lo) / n
+    return [lo + (i + 0.5) * step for i in range(n)]
+
+
+def lens_data(shape, axis: str = "z", positions=None, n: int = 1,
+              max_pts: int = 600) -> dict:
+    """Sections for the lens: {bbox, axis, coords, sections: [{pos, text,
+    loops: [{pts, desc, hole}], open: [pts]}]}. `positions` (mm along `axis`)
+    or `n` evenly spaced ones. `shape` is a Shape or an STL path."""
+    axis = str(axis).lower()
+    if axis not in _AXIS_I:
+        return {"success": False, "error": f"axis must be x, y or z, not {axis!r}"}
+    ai = _AXIS_I[axis]
+    out = {"success": True, "axis": axis, "coords": _COORDS[axis], "sections": []}
+    if isinstance(shape, str):
+        tris = _load_stl(shape)
+        if not len(tris):
+            return {"success": False, "error": "empty or unreadable STL"}
+        lo = tris.reshape(-1, 3).min(axis=0)
+        hi = tris.reshape(-1, 3).max(axis=0)
+        out["bbox"] = {"min": [float(v) for v in lo], "max": [float(v) for v in hi]}
+        out["source"] = "mesh"
+        for pos in _positions(float(lo[ai]), float(hi[ai]), positions, n):
+            loops, opens = _mesh_section(tris, axis, pos)
+            sec = {"pos": round(pos, 3), "loops": [], "open": []}
+            for outer, holes in _mesh_groups(loops):
+                sec["loops"].append({"pts": _thin(outer, max_pts),
+                                     "desc": _mesh_loop_desc(outer), "hole": False})
+                for h in holes:
+                    sec["loops"].append({"pts": _thin(h, max_pts),
+                                         "desc": _mesh_loop_desc(h), "hole": True})
+            sec["open"] = [_thin(c, max_pts) for c in opens]
+            sec["text"] = (_mesh_groups_desc(loops) if loops else "(empty)") + _open_tail(opens)
+            out["sections"].append(sec)
+        return out
+
+    shape = _norm_shape(shape)
+    if shape is None:
+        return {"success": False,
+                "error": "no shape to slice (the graph produced no result)"}
+    from .mesh_extractor import _geom_bbox
+    bb = _geom_bbox(shape)
+    lo = [bb.min.X, bb.min.Y, bb.min.Z]
+    hi = [bb.max.X, bb.max.Y, bb.max.Z]
+    out["bbox"] = {"min": lo, "max": hi}
+    out["source"] = "brep"
+    proj, mkpl = _PROJ[axis], _PLANE[axis]
+    for pos in _positions(lo[ai], hi[ai], positions, n):
+        sec = {"pos": round(pos, 3), "loops": [], "open": []}
+        try:
+            cut = section(shape, section_by=mkpl(float(pos)))
+            faces = [] if cut is None else list(cut.faces())
+        except Exception as e:  # noqa: BLE001
+            sec["text"] = f"(section failed: {type(e).__name__})"
+            out["sections"].append(sec)
+            continue
+        for f in faces:
+            for hole, w in [(False, f.outer_wire())] + [(True, h) for h in f.inner_wires()]:
+                m = max(16, min(max_pts, int(w.length / 0.5)))
+                pts = [proj(w.position_at(i / m)) for i in range(m)]
+                sec["loops"].append({"pts": _thin(pts, max_pts),
+                                     "desc": _wire_desc(w, proj), "hole": hole})
+        sec["text"] = (" ; ".join(_face_desc(f, proj) for f in faces)
+                       if faces else "(empty)")
+        out["sections"].append(sec)
+    return out

@@ -831,6 +831,24 @@ def section_outline_file(path: Path, workdir: Path, axis: str = "z",
                       f"axis={str(axis)!r}, position={float(position)}", timeout)
 
 
+def lens_data_graph(graph: Graph, workdir: Path, axis: str = "z",
+                    positions=None, n: int = 1, timeout: int = 120,
+                    node: str | None = None) -> dict:
+    """Drawable sections of the graph's result (or one node's output) for the
+    lens picture — see slice_summary.lens_data and cad_nodes/lens.py."""
+    return _run_slice(_graph_code(graph, node), workdir, "lens_data",
+                      f"axis={str(axis)!r}, positions={positions!r}, n={int(n)}",
+                      timeout)
+
+
+def lens_data_file(path: Path, workdir: Path, axis: str = "z", positions=None,
+                   n: int = 1, timeout: int = 120) -> dict:
+    """Drawable sections of a STEP/STL file for the lens picture."""
+    return _run_slice(_import_code(path), workdir, "lens_data",
+                      f"axis={str(axis)!r}, positions={positions!r}, n={int(n)}",
+                      timeout)
+
+
 _EXPORTERS = {
     "step": ("export_step", "step"),
     "stl": ("export_stl", "stl"),

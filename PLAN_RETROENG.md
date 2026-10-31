@@ -1,6 +1,16 @@
 # PLAN_RETROENG — retro-ingegneria STL/STEP/gcode → grafo procedurale (note)
 
-Stato: **fasi 1 e 3 implementate** (2026-07-03) — `cad_nodes/slice_summary.py`:
+Stato: **fase 2 implementata** (2026-10-31) — `cad_nodes/lens.py`: `cad_lens`
+(vista prospettica + piani di taglio + contorni veri proiettati sul pezzo,
+accanto alle sezioni 2D quotate; sweep fino a 12 tagli) e `cad_views` (N
+angoli su un foglio con camera e terna XYZ); montaggio con lo stesso Chromium
+degli screenshot, nessuna libreria immagini. Sezioni mesh robuste sugli scan
+(saldatura, cammino per spigoli, ricucitura dei buchi, rumore scartato).
+Lezione del caso `reddit-coscia-scan`: un loft di sezioni campionate copia la
+forma ma non è un retroeng — serve il metodo del progettista (datum, patch,
+sformi), vedi `cad_help(topic="retroeng")` punto 2c.
+
+**Fasi 1 e 3 implementate** (2026-07-03) — `cad_nodes/slice_summary.py`:
 `slice_summary` (STEP esatto + STL con arc-fitting) e `section_outline` (il
 "microscopio"), esposti su HTTP / MCP / copilot via `cad_nodes.api`; nodo
 `ToAgent` per taggare i file da retroingegnerizzare (label+data+provenienza,

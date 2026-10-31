@@ -267,6 +267,41 @@ _CAMERA_JS = """
 }
 """
 
+# Where things land on the picture: world points -> CSS pixels of the canvas
+# (the screenshot is the canvas at `scale`), plus the camera itself, so a
+# caption can say exactly where the eye was.
+_PROBE_JS = """
+([pts]) => {
+  const v = window._noodle.viewer, THREE = window._noodle.THREE;
+  const c = document.getElementById('viewer-canvas');
+  const r = c.getBoundingClientRect();
+  v.camera.updateMatrixWorld(); v.camera.updateProjectionMatrix();
+  const P = (x, y, z) => {
+    const q = new THREE.Vector3(x, y, z).project(v.camera);
+    return [ (q.x + 1) / 2 * r.width, (1 - q.y) / 2 * r.height, q.z ];
+  };
+  const t = v.controls.target;
+  const L = v.camera.position.distanceTo(t) * 0.12;
+  const o = P(t.x, t.y, t.z);
+  const ax = [[L,0,0],[0,L,0],[0,0,L]].map(d => {
+    const q = P(t.x + d[0], t.y + d[1], t.z + d[2]);
+    return [q[0] - o[0], q[1] - o[1]];
+  });
+  const cam = v.camera;
+  return {
+    px: pts.map(p => P(p[0], p[1], p[2])),
+    axes: {x: ax[0], y: ax[1], z: ax[2]},
+    canvas: [r.width, r.height],
+    camera: {position: cam.position.toArray().map(n => +n.toFixed(3)),
+             target: [t.x, t.y, t.z].map(n => +n.toFixed(3)),
+             up: cam.up.toArray(),
+             projection: cam.isOrthographicCamera ? 'ortho' : 'persp',
+             fov: cam.isOrthographicCamera ? null : cam.fov,
+             distance: +cam.position.distanceTo(t).toFixed(3)},
+  };
+}
+"""
+
 _HIDE_CHROME = """
 () => {
   const s = document.createElement('style');
@@ -304,8 +339,15 @@ async def render(graph_id: str, *, view: str = "iso",
                  projection: str = "", node: str = "", isolate: bool = False,
                  hq: bool = True, chrome: bool = False, run: bool = True,
                  scale: int = 2, base_url: str = "",
+                 probe: Optional[list] = None,
                  timeout: float = 90.0) -> tuple[bytes, dict]:
     """Screenshot `graph_id`'s viewport. Returns (png_bytes, meta).
+
+    `probe` = [[x, y, z], ...] world points to project onto the picture: meta
+    then carries `probe_px` ([u, v, depth] in CSS pixels of the shot, depth
+    -1..1 in front of the camera) — how the lens draws a section ON the part.
+    meta always carries `camera` (position, target, up, fov, projection) and
+    `axes_px`, the screen directions of +X/+Y/+Z from the target.
 
     `meta` reports what actually happened — notably whether the graph was
     re-executed, since `run=False` falls back to running when the viewport has
@@ -375,6 +417,8 @@ async def render(graph_id: str, *, view: str = "iso",
                 await page.evaluate(_HIDE_CHROME)
             await page.wait_for_timeout(200)           # let a frame land
 
+            cam = await page.evaluate(_PROBE_JS, [probe or []])
+
             png = await page.locator("#viewer-canvas").screenshot()
 
             if not chrome:                             # leave the page as we found it
@@ -401,7 +445,33 @@ async def render(graph_id: str, *, view: str = "iso",
             "bytes": len(png)}
     if isinstance(info, dict) and info.get("size"):
         meta["size_mm"] = [round(v, 3) for v in info["size"]]
+    if isinstance(cam, dict):
+        meta["camera"] = cam.get("camera")
+        meta["axes_px"] = cam.get("axes")
+        meta["canvas_css"] = cam.get("canvas")
+        if probe:
+            meta["probe_px"] = cam.get("px")
     return png, meta
+
+
+async def render_html(html: str, width: int = 1600, height: int = 900,
+                      scale: int = 1, timeout: float = 60.0) -> bytes:
+    """Rasterise a self-contained HTML page (inline SVG / data: images) with
+    the same warm Chromium the shots use — the montage engine of the lens and
+    the multi-view sheet, so the container needs no image library. The whole
+    page is captured (full_page), `width` is the layout width."""
+    async with _lock:
+        if _browser is None or not _browser.is_connected():
+            await _ensure_page(2, True, 900, 700)      # boots the browser
+        page = await _browser.new_page(
+            viewport={"width": int(width), "height": int(height)},
+            device_scale_factor=max(1, min(int(scale), 3)))
+        try:
+            await page.set_content(html, timeout=int(timeout * 1000))
+            await page.wait_for_load_state("load")
+            return await page.screenshot(full_page=True, type="png")
+        finally:
+            await page.close()
 
 
 async def shutdown() -> None:

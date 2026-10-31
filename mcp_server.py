@@ -201,6 +201,54 @@ async def cad_screenshot(graph_id: str, view: str = "iso", azim: float = None,
 
 
 @mcp.tool()
+async def cad_lens(graph_id: str, axis: str = "z", positions: Optional[list] = None,
+                   n: int = 1, path: str = "", node: str = "", view: str = "iso",
+                   azim: float = None, elev: float = None, zoom: float = 1.0,
+                   width: int = 1000, height: int = 700, run: bool = False,
+                   isolate: bool = False) -> list:
+    """The retro-engineering LENS — WHERE a section is and WHAT it is, in one
+    picture: the part in perspective with the cutting plane(s) and the real
+    section contour(s) drawn ON it, beside the 2D section plot(s) (mm grid,
+    holes, Ø of circles, open scan chains dashed) and the symbolic text.
+
+    `positions` = mm along `axis` (up to 12 = a sweep contact sheet, one
+    colour per cut) or `n` evenly spaced. `path` = a project STL/STEP to slice
+    (e.g. the scan) — the 3D view is still the graph's viewport, so show the
+    same part there (an Import node) or compare the scan's cut with your own
+    model. `view`/`azim`/`elev`/`zoom` as cad_screenshot. Returns the PNG plus
+    a JSON text (camera, per-section text)."""
+    try:
+        png, meta = await api.lens(
+            STORE, graph_id, axis=axis, positions=positions, n=n, path=path,
+            node=node, view=view, azim=azim, elev=elev, zoom=zoom, width=width,
+            height=height, run=run, isolate=isolate)
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(f"{type(e).__name__}: {e}") from e
+    return [Image(data=png, format="png"), json.dumps(meta, separators=(",", ":"))]
+
+
+@mcp.tool()
+async def cad_views(graph_id: str, angles: Optional[list] = None, node: str = "",
+                    isolate: bool = False, zoom: float = 1.0, cols: int = 3,
+                    cell_w: int = 560, cell_h: int = 420, run: bool = True,
+                    cut_axis: str = "", cut_pos: float = None, path: str = "") -> list:
+    """MANY angles of the same object on ONE sheet: each view captioned with
+    its camera (azimuth/elevation, position -> target, fov) and an XYZ triad
+    drawn from the real projection, so orientation is never a guess.
+    `angles` = [[azim, elev], ...] (default 9: four iso corners, top, bottom,
+    front, right, back). `cut_axis`+`cut_pos` draw that section (of the graph,
+    or of `path`) in every view. Returns the PNG plus the cameras as JSON."""
+    try:
+        png, meta = await api.views_sheet(
+            STORE, graph_id, angles=angles, node=node, isolate=isolate,
+            zoom=zoom, cols=cols, cell_w=cell_w, cell_h=cell_h, run=run,
+            cut_axis=cut_axis, cut_pos=cut_pos, path=path)
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(f"{type(e).__name__}: {e}") from e
+    return [Image(data=png, format="png"), json.dumps(meta, separators=(",", ":"))]
+
+
+@mcp.tool()
 def cad_snapshot(graph_id: str, label: str = "", run: bool = True,
                  tags: Optional[list] = None, measures: Optional[list] = None) -> dict:
     """SHOW the user a result: freeze the graph's current geometry as a new

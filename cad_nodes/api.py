@@ -1026,6 +1026,12 @@ def summarize_execute(result: dict, include_code: bool = False,
     view = result.get("view")
     if view:
         out["view"] = lean_view(view, keep_mesh=include_mesh)
+        prev = view.get("previews") if isinstance(view, dict) else None
+        if isinstance(prev, dict):
+            extra = [f"{nid}: {e['warning']}" for nid, e in prev.items()
+                     if isinstance(e, dict) and e.get("warning")]
+            if extra:
+                out["warnings"] = list(out.get("warnings") or []) + extra
     timings = result.get("node_timings") or {}
     slow = sorted(((t, n) for n, t in timings.items() if t >= 0.05), reverse=True)[:5]
     if slow:
@@ -1258,6 +1264,28 @@ async def screenshot(store: GraphStore, graph_id: str, **opts):
                 store.save(graph_id, fresh)
             except KeyError:
                 pass
+    _check_png(png, graph_id)
+    return png, meta
+
+
+async def lens(store: GraphStore, graph_id: str, **opts):
+    """The retro-engineering LENS: perspective + cutting plane(s) + the real
+    section contour projected on the part, beside the 2D section plot(s) with
+    a mm grid. Returns (png, meta). See cad_nodes/lens.py."""
+    from . import lens as _lens
+    store.load(graph_id)                 # 404 on an unknown/invalid project id
+    png, meta = await _lens.lens(store, graph_id, **opts)
+    _check_png(png, graph_id)
+    return png, meta
+
+
+async def views_sheet(store: GraphStore, graph_id: str, **opts):
+    """N camera angles of the graph's geometry on one sheet, each captioned
+    with the camera (azim/elev, position -> target, fov) and an XYZ triad.
+    Returns (png, meta). See cad_nodes/lens.py."""
+    from . import lens as _lens
+    store.load(graph_id)
+    png, meta = await _lens.views_sheet(store, graph_id, **opts)
     _check_png(png, graph_id)
     return png, meta
 

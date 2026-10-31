@@ -253,6 +253,8 @@ section is slow, or where a run fails (`run=True` → `failed_in`).
 | `POST /api/graph/{name}/import` (multipart `file`) | upload STEP/STL/SVG/DXF **and** add its Import node |
 | `POST /api/graph/{name}/asset` (multipart `file`) · `GET .../assets` | upload into `assets/` without a node · list them |
 | `GET /api/graph/{name}/screenshot?view=&node=&…` | **PNG of the viewport** (`cad_screenshot`) |
+| `GET /api/graph/{name}/lens?axis=&positions=&n=&path=&node=&…` | **lens**: perspective + cut planes + section contours + 2D sections, one PNG (`cad_lens`); `format=json` → {meta, png_base64} |
+| `GET /api/graph/{name}/views_sheet?angles=az:el;…&cut_axis=&cut_pos=` | many camera angles on one PNG with camera data + XYZ triad (`cad_views`) |
 | `POST /api/graph/{name}/snapshot?label=&run=` · `GET .../gens` | freeze a generation → `{gen, url}` for the read-only viewer (`cad_snapshot`, `cad_list_gens`) — send the user the `url` |
 | `GET /api/gens/recent?limit=&project=` · page `/views` | generations of every project, newest first, with `ref` (`graph/gN`), `seen` and `last_seen` = the one the user opened last (`cad_recent_gens`) |
 | `POST /api/graph/{name}/gens/{gen}/measures` body `{measures, replace?}` · `GET` same | dimensions drawn on a generation, coloured by status (`cad_measure_gen`) |
@@ -387,7 +389,8 @@ rewrite a CodeBlock the user made** — copy it and edit the copy.
 
 "Retroeng the STL/STEP I passed" means: `GET /api/agent/tags`
 (`cad_agent_tags`) finds the ToAgent-tagged file; `slice_summary` with that
-`path` perceives it as symbolic cross-sections; rebuild it procedurally with
+`path` perceives it as symbolic cross-sections, `cad_views` + `cad_lens` show
+where those sections are on the part; rebuild it procedurally with
 catalog nodes; verify with `slice_summary` without `path` on your own result.
 Full loop: `cad_help(topic="retroeng")`.
 
@@ -456,6 +459,30 @@ ImportSTL/ImportSTEP node with a **ToAgent** node in the editor.
    cross-sections on all 3 axes (`circle r=3 @(x,y)`, `rect 40x30`;
    "z=a…b identical" ⇒ an extrusion and its height). STEP is exact, STL is
    arc-fitted. The `text` field is the format meant for you.
+2b. **See where you are cutting** — text sections alone do not say where they
+   are, and a 3D view alone does not say what the profile is:
+   - `cad_views(graph, cut_axis=…, cut_pos=…, path=…)` — 9 camera angles on
+     ONE sheet, each captioned with azim/elev, camera position → target, fov
+     and an XYZ triad from the real projection. Do this first: it fixes the
+     orientation before you reason about it.
+   - `cad_lens(graph, axis="y", n=6 | positions=[…], path=…)` — the LENS: the
+     part in perspective with the cutting planes and the REAL section contours
+     drawn on it (one colour per cut), beside the 2D sections on a mm grid
+     with holes, Ø of circles and the symbolic text. A sweep (`n` up to 12)
+     is a contact sheet of the part along one axis. The 3D view is the
+     graph's viewport: show the scan there (its Import node) or compare the
+     scan's cut on your own model. `node=` sections one node's output — use
+     it when the combined result holds a heavy imported mesh.
+   Scans: sections weld vertices, survive non-manifold shells, stitch chains
+   across small mesh gaps (said in the text: "closed across scan gap(s)
+   2.3 mm") and drop specks < 0.5 mm²; what stays open is drawn dashed and
+   counted ("+N open chain(s)").
+2c. **Find the designer's method, not the surface.** Look for the datums
+   (planes and axes many features share — e.g. a bearing axis lying ON the
+   rim/parting plane), patch boundaries (sharp crease lines on a freeform
+   skin), drafts, symmetries and patterns, then rebuild THAT feature tree. A
+   loft through dozens of sampled scan sections copies the shape but is not
+   a reconstruction: nobody can edit or machine it.
 3. **Microscope** where a line is ambiguous (`poly(…)`, unclear joins):
    `cad_section_outline(graph, axis="z", position=…, path=…)` /
    `GET .../section_outline?axis=z&pos=…&path=…` — ONE exact section, every loop

@@ -1517,6 +1517,75 @@ async def api_delete_font(filename: str):
     return {"status": "deleted", "file": filename}
 
 
+def _png_or_json(png: bytes, meta: dict, fmt: str):
+    import base64 as _b64
+    if fmt == "json":
+        return {"meta": meta, "png_base64": _b64.b64encode(png).decode()}
+    return Response(content=png, media_type="image/png",
+                    headers={"X-Noodle-Meta": json.dumps(
+                        {k: meta.get(k) for k in ("axis", "azim", "elev", "camera",
+                                                  "bytes") if k in meta},
+                        separators=(",", ":"))[:6000]})
+
+
+@app.get("/api/graph/{name}/lens")
+async def api_lens(
+    name: str, axis: str = "z", positions: str = "", n: int = 1,
+    path: str = "", node: str = "", view: str = "iso", azim: float = None,
+    elev: float = None, zoom: float = 1.0, width: int = 1000, height: int = 700,
+    run: bool = False, isolate: bool = False, cols: int = 3, format: str = "png",
+):
+    """The retro-engineering LENS (cad_nodes/lens.py): the part in perspective
+    with the cutting plane(s) and the real section contour(s) drawn on it, next
+    to the 2D section plot(s). `positions` = comma-separated mm along `axis`
+    (or `n` evenly spaced). `path` = a project STL/STEP to slice instead of
+    the graph result. `format=json` returns {meta, png_base64}."""
+    require_project(name)
+    pos = [float(p) for p in positions.split(",") if p.strip()] or None
+    try:
+        png, meta = await api.lens(
+            GraphStore(PROJECTS_DIR), name, axis=axis, positions=pos, n=n,
+            path=path, node=node, view=view, azim=azim, elev=elev, zoom=zoom,
+            width=width, height=height, run=run, isolate=isolate, cols=cols)
+    except ScreenshotUnavailable as e:
+        raise HTTPException(503, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:  # noqa: BLE001
+        logger.error("lens '%s' failed: %s: %s", name, type(e).__name__, e)
+        raise HTTPException(502, f"lens failed: {type(e).__name__}: {e}") from e
+    return _png_or_json(png, meta, format)
+
+
+@app.get("/api/graph/{name}/views_sheet")
+async def api_views_sheet(
+    name: str, angles: str = "", node: str = "", isolate: bool = False,
+    zoom: float = 1.0, cell_w: int = 560, cell_h: int = 420, cols: int = 3,
+    run: bool = True, cut_axis: str = "", cut_pos: float = None, path: str = "",
+    format: str = "png",
+):
+    """Several camera angles on one sheet with camera data and an XYZ triad
+    (cad_nodes/lens.py). `angles` = "az:el;az:el;..." (default: 9 views).
+    `cut_axis`+`cut_pos` draw that section in every view."""
+    require_project(name)
+    angs = None
+    if angles.strip():
+        angs = [tuple(float(v) for v in a.split(":")) for a in angles.split(";") if a.strip()]
+    try:
+        png, meta = await api.views_sheet(
+            GraphStore(PROJECTS_DIR), name, angles=angs, node=node,
+            isolate=isolate, zoom=zoom, cell_w=cell_w, cell_h=cell_h, cols=cols,
+            run=run, cut_axis=cut_axis, cut_pos=cut_pos, path=path)
+    except ScreenshotUnavailable as e:
+        raise HTTPException(503, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:  # noqa: BLE001
+        logger.error("views_sheet '%s' failed: %s: %s", name, type(e).__name__, e)
+        raise HTTPException(502, f"views sheet failed: {type(e).__name__}: {e}") from e
+    return _png_or_json(png, meta, format)
+
+
 @app.get("/api/graph/{name}/screenshot")
 async def api_screenshot(
     name: str,

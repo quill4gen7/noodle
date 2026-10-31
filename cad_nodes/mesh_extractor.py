@@ -494,8 +494,16 @@ def _preview_geom(value, linear_frac: float = 0.02, angular: float = 0.4) -> dic
     polys = _polylines_of(shape)
     if polys:
         flat = [p for poly in polys for p in poly]
-        return {"kind": type(shape).__name__, "polylines": polys,
-                "bbox": _bbox_of_coords(flat)}
+        entry = {"kind": type(shape).__name__, "polylines": polys,
+                 "bbox": _bbox_of_coords(flat)}
+        # A solid/face that would not tessellate is drawn as bare edges. Say
+        # so: a wireframe that looks like a style choice hid a 0.3 mm2 sliver
+        # face for a whole afternoon (OCCT BRepMesh left it untriangulated).
+        if type(shape).__name__ in ("Solid", "Shell", "Face", "Compound") and (
+                _num(lambda: len(shape.faces())) or 0):
+            entry["warning"] = ("tessellation failed — shown as edges only; "
+                                "look for a tiny/degenerate face (cad_measure props)")
+        return entry
     return None
 
 
