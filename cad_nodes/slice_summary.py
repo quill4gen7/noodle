@@ -512,6 +512,19 @@ def _mesh_loop_desc(pts) -> str:
     # Vertices of a regular N-gon also sit on a circle — demand smoothness too.
     if res < max(0.06, 0.005 * r) and len(pts) >= 12 and _max_turn_deg(pts) < 30:
         return f"circle r={_f(r)} @{_pt((cx, cy))}"
+    # A SCANNED hole is a circle with noise on it: judge the fit by its RMS
+    # residual relative to the radius (and cap the worst point), not by the
+    # max residual alone — the 30 bolt holes of a scanned flange came out as
+    # "poly(~2: 2 ARC)" and "slot c2c=0.04" before this.
+    if len(pts) >= 16 and r > 0:
+        import numpy as np
+        P = np.asarray(pts, dtype=float)
+        d = np.hypot(P[:, 0] - cx, P[:, 1] - cy) - r
+        rms = float(np.sqrt((d * d).mean()))
+        ang = np.sort(np.arctan2(P[:, 1] - cy, P[:, 0] - cx))
+        gapmax = float(np.max(np.diff(np.r_[ang, ang[0] + 2 * np.pi])))
+        if rms < max(0.05, 0.02 * r) and res < max(0.15, 0.08 * r) and gapmax < 0.8:
+            return f"circle r={_f(r)} @{_pt((cx, cy))} (fit rms {_f(rms)})"
     xs = [p[0] for p in pts]
     ys = [p[1] for p in pts]
     bbox_c = ((max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2)

@@ -94,3 +94,20 @@ def test_section_svg_and_overlay_are_svg():
 def test_triad_handles_axis_pointing_at_camera():
     svg = lens._triad_svg({"x": [10, 0], "y": [0, 0], "z": [0, -10]}, 400, 300)
     assert "Y⊙" in svg
+
+
+def test_noisy_scanned_hole_is_a_circle():
+    rng = np.random.default_rng(3)
+    a = np.linspace(0, 2 * math.pi, 70, endpoint=False)
+    r = 2.8 + rng.normal(0, 0.03, len(a))
+    pts = [(10 + rr * math.cos(t), -5 + rr * math.sin(t)) for rr, t in zip(r, a)]
+    d = ss._mesh_loop_desc(pts)
+    assert d.startswith("circle r=2.8")
+
+
+def test_square_is_not_a_noisy_circle():
+    sq = [(x, 0) for x in np.linspace(0, 10, 10, endpoint=False)] + \
+         [(10, y) for y in np.linspace(0, 10, 10, endpoint=False)] + \
+         [(x, 10) for x in np.linspace(10, 0, 10, endpoint=False)] + \
+         [(0, y) for y in np.linspace(10, 0, 10, endpoint=False)]
+    assert not ss._mesh_loop_desc(sq).startswith("circle")
